@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  ArrowDown,
+  Activity,
   ArrowLeft,
   BookOpen,
   Check,
@@ -19,14 +19,22 @@ import {
   Waves,
 } from 'lucide-react';
 import { getGenreDisplayMeta, sanitizeCustomVibe } from '../../shared/promptComposer';
-import type { ProtocolRecommendation, ResolvedGenre } from '../../shared/types';
-import { DEVICE_LABELS, ENERGY_LABELS, GENRE_META, TARGET_LABELS } from '../../shared/types';
+import type { ProtocolRecommendation, ResolvedGenre, UserProfile } from '../../shared/types';
+import {
+  DEVICE_LABELS,
+  ENERGY_LABELS,
+  GENRE_META,
+  STATE_LABELS,
+  TARGET_LABELS,
+  formatProfileSummary,
+} from '../../shared/types';
 import type { FieldMood } from './AmbientField';
 import { SonicOrb } from './SonicOrb';
 
 interface ProtocolRevealViewProps {
   loading: boolean;
   recommendation: ProtocolRecommendation | null;
+  profile?: UserProfile | null;
   mood: FieldMood;
   customLiveGenAvailable?: boolean;
   onSwapGenre: (genre: ResolvedGenre) => void;
@@ -54,9 +62,63 @@ const SOURCE_BADGES = {
   },
 };
 
+/**
+ * Lightweight animated SVG wave showing the exact Layer 1 cortical modulation rhythm
+ * so the listener can visually see the scientific signal before pressing Play.
+ */
+function SoundWavePreview({
+  modulationHz,
+  modulationDepth,
+  safetyMode,
+}: {
+  modulationHz: number;
+  modulationDepth: number;
+  safetyMode: boolean;
+}) {
+  const cycles = Math.max(4, Math.min(18, Math.round(modulationHz)));
+  const amp = Math.max(8, Math.min(20, Math.round(modulationDepth * 42)));
+  const points: string[] = [];
+  const totalPts = 96;
+  for (let i = 0; i <= totalPts; i++) {
+    const x = (i / totalPts) * 320;
+    const t = i / totalPts;
+    const envelope = Math.sin(Math.PI * t);
+    const y = 26 + Math.sin(t * Math.PI * 2 * cycles) * amp * (0.45 + 0.55 * envelope);
+    points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  const strokeColor = safetyMode ? '#fbbf24' : '#22d3ee';
+
+  return (
+    <div className="rounded-xl border border-cyan-400/20 bg-[#04070f]/90 px-3 py-2">
+      <div className="mb-1 flex items-center justify-between font-mono-tech text-[10px] text-slate-400">
+        <span className="inline-flex items-center gap-1 text-cyan-300">
+          <Activity className="h-3 w-3" />
+          Live DSP Envelope Preview
+        </span>
+        <span>
+          {modulationHz} Hz AM · {Math.round(modulationDepth * 100)}% depth
+        </span>
+      </div>
+      <svg viewBox="0 0 320 52" className="h-11 w-full overflow-visible">
+        <line x1="0" y1="26" x2="320" y2="26" stroke="rgba(148,163,184,0.16)" strokeDasharray="3 3" />
+        <polyline
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points.join(' ')}
+          className="animate-pulse"
+        />
+      </svg>
+    </div>
+  );
+}
+
 export function ProtocolRevealView({
   loading,
   recommendation,
+  profile,
   mood,
   customLiveGenAvailable,
   onSwapGenre,
@@ -68,12 +130,12 @@ export function ProtocolRevealView({
   const [customDraft, setCustomDraft] = useState('');
   const [customError, setCustomError] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [showFormulaFacts, setShowFormulaFacts] = useState(false);
 
   // Live conversational "Thinking & Searching Studies" state machine (runs once per unique sessionId)
   const [revealedSessionId, setRevealedSessionId] = useState<string | null>(null);
   const [thoughtStep, setThoughtStep] = useState(0);
 
-  // Step 0 -> Step 1 while API is fetching
   useEffect(() => {
     if (loading || !recommendation) {
       setThoughtStep(0);
@@ -83,7 +145,6 @@ export function ProtocolRevealView({
     return undefined;
   }, [loading, recommendation === null]);
 
-  // Once real recommendation arrives for a new session, smoothly reveal the real matched studies & fusion
   const currentSessionId = recommendation?.sessionId ?? null;
   const isRevealed = Boolean(!loading && currentSessionId && revealedSessionId === currentSessionId);
 
@@ -91,14 +152,13 @@ export function ProtocolRevealView({
     if (loading || !currentSessionId || revealedSessionId === currentSessionId) return;
 
     const timers: number[] = [];
-    // Ensure step 1 is visible briefly, then step 2 (real studies discovered), step 3 (fusion), then reveal
     timers.push(window.setTimeout(() => setThoughtStep((s) => Math.max(s, 1)), 250));
-    timers.push(window.setTimeout(() => setThoughtStep(2), 900));
-    timers.push(window.setTimeout(() => setThoughtStep(3), 1750));
+    timers.push(window.setTimeout(() => setThoughtStep(2), 1000));
+    timers.push(window.setTimeout(() => setThoughtStep(3), 1950));
     timers.push(
       window.setTimeout(() => {
         setRevealedSessionId(currentSessionId);
-      }, 2550)
+      }, 2900)
     );
 
     return () => {
@@ -106,6 +166,13 @@ export function ProtocolRevealView({
     };
   }, [loading, currentSessionId, revealedSessionId]);
 
+  const profileLine = profile
+    ? `${profile.displayName ? `${profile.displayName} · ` : ''}${formatProfileSummary(profile)}`
+    : recommendation?.cohortLabel ?? 'Your Neural Profile';
+
+  // =========================================================================
+  // STAGE 1: LIVE THINKING & SCIENTIFIC PROTOCOL SEARCH (~2.9s, skippable)
+  // =========================================================================
   if (loading || !recommendation || !isRevealed) {
     const coreStudies = recommendation?.studies ?? [];
     const livePapers = recommendation?.livePubMedPapers ?? [];
@@ -120,35 +187,37 @@ export function ProtocolRevealView({
     const traceSteps = [
       {
         idx: 0,
-        title: 'Reading your mental state & profile',
+        title: 'Analyzing your identity, state & goal',
         detail: recommendation
-          ? `${TARGET_LABELS[recommendation.targetState]} · ${recommendation.cohortLabel}`
-          : 'Mapping your current state, target goal & listening context...',
+          ? `${profileLine} · ${STATE_LABELS[recommendation.currentState].split(' ')[0]} (${recommendation.baselineScore}/5) → ${TARGET_LABELS[recommendation.targetState]} for ${recommendation.plannedDurationMin} min`
+          : 'Reading your profile, baseline state, and listening environment...',
       },
       {
         idx: 1,
-        title: 'Searching peer-reviewed literature (NIH PubMed & OpenAlex)',
+        title: 'Searching peer-reviewed protocols (NIH PubMed & OpenAlex)',
         detail:
           recommendation && thoughtStep >= 2
-            ? `Found ${totalFound} verified studies (${coreStudies.length} core DSP DOIs${
+            ? `Found ${totalFound} verified peer-reviewed studies (${coreStudies.length} core DSP DOIs${
                 livePapers.length > 0 ? ` + ${livePapers.length} live PubMed/OpenAlex papers` : ''
               })`
-            : 'Querying live neuroscience archives for verifiable DOI & PubMed citations...',
+            : 'Scanning clinical neuroscience archives for real DOI & PubMed mechanisms...',
       },
       {
         idx: 2,
-        title: 'Extracting acoustic mechanisms from matched studies',
+        title: 'Designing the exact sounds from those studies',
         detail:
           recommendation && thoughtStep >= 2
-            ? `Calibrating ${recommendation.arm.name} (${recommendation.params.modulationHz} Hz AM · ${recommendation.params.bpm > 0 ? `${recommendation.params.bpm} BPM` : 'Ambient'})`
-            : 'Aligning cortical modulation depth, crossover & tempo...',
+            ? `${recommendation.arm.name}: ${recommendation.params.modulationHz} Hz AM (${recommendation.params.crossoverHz}–${((recommendation.params.upperCrossoverHz ?? 4500) / 1000).toFixed(1)} kHz) · ${
+                recommendation.params.bpm > 0 ? `${recommendation.params.bpm} BPM` : 'Beatless Ambient'
+              } · ${recommendation.params.noiseColor} noise (${Math.round(recommendation.params.noiseLevel * 100)}%)`
+            : 'Translating cortical entrainment findings into real-time Web Audio DSP rules...',
       },
       {
         idx: 3,
-        title: 'Fusing Layer 1 science into your Layer 2 sound',
+        title: 'Fusing Layer 1 (Science) + Layer 2 (Your Music)',
         detail:
           recommendation && readyGenre
-            ? `Blending 3-Band LR4 DSP cleanly into ${readyGenre}...`
+            ? `Routing ${readyGenre} cleanly through the 3-Band LR4 acoustic matrix...`
             : 'Preparing your personalized 2-layer audio formula...',
       },
     ];
@@ -159,14 +228,14 @@ export function ProtocolRevealView({
           <SonicOrb mood={mood} size="lg" label="Thinking..." />
           <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/[0.08] px-3 py-1 text-[11px] font-medium text-cyan-200">
             <Search className="h-3.5 w-3.5 animate-pulse text-cyan-300" />
-            nootropic.fm · Researching &amp; Calibrating
+            nootropic.fm · Searching Scientific Protocols
           </div>
           <h1 className="animate-rise mt-3 text-2xl font-bold text-white sm:text-3xl">
-            Give me a second — <span className="text-aurora">searching the science...</span>
+            Give me a moment — <span className="text-aurora">searching the science for you...</span>
           </h1>
         </div>
 
-        {/* Live Conversational Research Trace Card */}
+        {/* Live Conversational Research Trace */}
         <div className="animate-step glass-stage w-full rounded-3xl border border-cyan-400/25 p-5 sm:p-6 space-y-3.5">
           <div className="flex items-center justify-between text-[11px]">
             <span className="font-mono-tech uppercase tracking-[0.16em] text-cyan-300/85">
@@ -185,8 +254,7 @@ export function ProtocolRevealView({
 
           <div className="space-y-3">
             {traceSteps.map((st) => {
-              const isDone =
-                thoughtStep > st.idx && (st.idx === 0 || Boolean(recommendation));
+              const isDone = thoughtStep > st.idx && (st.idx === 0 || Boolean(recommendation));
               const isActive = thoughtStep === st.idx;
               const isWaiting = thoughtStep < st.idx;
 
@@ -224,7 +292,7 @@ export function ProtocolRevealView({
                     </div>
                     <div className="text-[11px] leading-relaxed text-slate-400">{st.detail}</div>
 
-                    {/* Preview real discovered study badges as soon as step 2 lights up */}
+                    {/* Real discovered study chips lighting up in Step 2 */}
                     {st.idx === 1 && recommendation && thoughtStep >= 2 && (
                       <div className="animate-step flex flex-wrap gap-1.5 pt-1">
                         {coreStudies.slice(0, 3).map((s) => (
@@ -255,6 +323,10 @@ export function ProtocolRevealView({
     );
   }
 
+  // =========================================================================
+  // STAGE 2: "WOW" SCIENCE-FIRST BLUEPRINT REVEAL
+  // Order: 1) Studies Found -> 2) Exact Sounds Generated (Layer 1 + Layer 2) -> 3) Apply & Play CTA
+  // =========================================================================
   const activeGenreDisplay = getGenreDisplayMeta(
     recommendation.customGenreSlug ?? recommendation.params.genre,
     recommendation.customGenreLabel
@@ -264,6 +336,9 @@ export function ProtocolRevealView({
   const totalStudiesCount = recommendation.studies.length + livePapers.length;
   const upperKhz = ((recommendation.params.upperCrossoverHz ?? 4500) / 1000).toFixed(1);
   const sourceBadge = SOURCE_BADGES[recommendation.audioSource] ?? SOURCE_BADGES.studio_library;
+  const entryMin = Math.max(1, Math.round(recommendation.plannedDurationMin * 0.15));
+  const landingMin = Math.max(1, Math.round(recommendation.plannedDurationMin * 0.12));
+  const peakMin = Math.max(1, recommendation.plannedDurationMin - entryMin - landingMin);
 
   const applyCustomSwap = () => {
     const check = sanitizeCustomVibe(customDraft);
@@ -278,29 +353,31 @@ export function ProtocolRevealView({
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      {/* Conversational Header from nootropic.fm */}
+      {/* Conversational WOW Header */}
       <div className="animate-rise text-center space-y-2.5">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/12 px-3 py-1 text-[11px] font-semibold text-emerald-300">
-            <Sparkles className="h-3.5 w-3.5" />
-            Research Complete · {recommendation.cohortLabel}
-          </span>
-          <a
-            href="#matched-studies"
-            className="inline-flex items-center gap-1 rounded-full border border-cyan-400/35 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold text-cyan-200 transition hover:bg-cyan-400/20"
-          >
-            <BookOpen className="h-3 w-3" />
-            {totalStudiesCount} Verified Studies Matched
-            <ArrowDown className="h-3 w-3" />
-          </a>
+        <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/12 px-3.5 py-1 text-[11px] font-semibold text-emerald-300">
+          <Sparkles className="h-3.5 w-3.5" />
+          Research Complete · {totalStudiesCount} Verified Studies Matched · {profileLine}
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">
-          Here’s what I <span className="text-aurora">found for you.</span>
+          Here’s what the science found
+          {profile?.displayName ? (
+            <>
+              {' '}
+              for <span className="text-aurora">{profile.displayName}.</span>
+            </>
+          ) : (
+            <>
+              {' '}
+              <span className="text-aurora">for you.</span>
+            </>
+          )}
         </h1>
         <p className="mx-auto max-w-xl text-xs leading-relaxed text-slate-300 sm:text-sm">
-          I matched <strong>{totalStudiesCount} peer-reviewed studies</strong> to your goal and fused
-          real-time 3-Band LR4 neuro-modulation inside your sound — sub-bass (&lt;
-          {recommendation.params.crossoverHz} Hz) and highs (&gt;{upperKhz} kHz) stay untouched.
+          To move you from <strong>{STATE_LABELS[recommendation.currentState].split(' ')[0]}</strong> to{' '}
+          <strong className="text-cyan-200">{TARGET_LABELS[recommendation.targetState]}</strong> for{' '}
+          <strong>{recommendation.plannedDurationMin} minutes</strong>, here are the peer-reviewed
+          studies I matched and the exact sound layers I will generate for you.
         </p>
       </div>
 
@@ -319,25 +396,166 @@ export function ProtocolRevealView({
         </div>
       )}
 
-      {/* VISUAL 2-LAYER ARCHITECTURE: LAYER 1 (+) LAYER 2 */}
-      <div className="animate-rise space-y-2">
-        {/* LAYER 1: SCIENTIFIC SIGNAL */}
+      {/* ================================================================= */}
+      {/* BLOCK 1: VERIFIED STUDIES FOUND FIRST (Core DOIs + Live PubMed)   */}
+      {/* ================================================================= */}
+      <div className="animate-rise glass-card rounded-3xl border border-cyan-400/25 p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-cyan-300">
+            <BookOpen className="h-5 w-5" />
+            <h2 className="text-base font-bold text-white">
+              1. Peer-Reviewed Studies Found ({totalStudiesCount} verified sources)
+            </h2>
+          </div>
+          <span className="font-mono-tech rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-200">
+            Click any study to verify
+          </span>
+        </div>
+
+        {/* Core Acoustic Science Studies */}
+        <div className="space-y-2.5">
+          {recommendation.studies.map((study, idx) => (
+            <div
+              key={study.id}
+              style={{ animationDelay: `${idx * 80}ms` }}
+              className="animate-rise rounded-2xl border border-slate-800/90 bg-slate-950/70 p-4 space-y-2 transition hover:border-cyan-400/40"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-cyan-300">
+                    {study.authors.split(',')[0]} et al. ({study.year}) · {study.journal}
+                  </div>
+                  <div className="mt-0.5 text-sm font-medium text-white">{study.title}</div>
+                </div>
+                <a
+                  href={study.doiOrUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-cyan-400/35 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-400/20"
+                >
+                  Open Paper
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+
+              <div className="flex items-start gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/8 px-3 py-2 text-xs text-cyan-100">
+                <Waves className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
+                <span>
+                  <strong className="text-cyan-200">Sound generated from this study:</strong>{' '}
+                  {study.soundEffect}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Live Matched NIH PubMed & OpenAlex Papers */}
+        {livePapers.length > 0 && (
+          <div className="space-y-2.5 border-t border-slate-800/80 pt-3.5">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+              <Cpu className="h-3.5 w-3.5" />
+              Live Matched Literature (NIH PubMed &amp; OpenAlex)
+            </div>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {livePapers.map((p, idx) => (
+                <a
+                  key={p.pmid}
+                  href={p.doiUrl || p.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ animationDelay: `${(idx + recommendation.studies.length) * 80}ms` }}
+                  className="animate-rise group flex flex-col justify-between rounded-2xl border border-emerald-400/25 bg-emerald-500/[0.04] p-3.5 space-y-2 transition hover:border-emerald-400/55"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-emerald-300">
+                      <span className="font-mono-tech uppercase">
+                        {p.source === 'openalex' ? 'OpenAlex · DOI' : `NIH PubMed · ${p.pmid}`} · {p.year}
+                      </span>
+                      <ExternalLink className="h-3.5 w-3.5 text-slate-500 group-hover:text-emerald-300" />
+                    </div>
+                    <div className="mt-1 text-xs font-semibold leading-snug text-white group-hover:text-emerald-100">
+                      {p.title}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-slate-400">
+                      {p.authors} · {p.journal}
+                    </div>
+                  </div>
+                  {p.appliedMechanism && (
+                    <div className="rounded-lg bg-slate-950/80 px-2.5 py-1.5 text-[11px] text-cyan-200/90">
+                      <strong className="text-cyan-300">→ Applied:</strong> {p.appliedMechanism}
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ================================================================= */}
+      {/* BLOCK 2: EXACT SOUNDS GENERATED & FUSED (LAYER 1 + LAYER 2)       */}
+      {/* ================================================================= */}
+      <div className="animate-rise delay-75 space-y-2">
+        <div className="px-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          2. Exact Sound Architecture I Will Generate &amp; Fuse Live
+        </div>
+
+        {/* LAYER 1: SCIENTIFIC SIGNAL + WAVE PREVIEW */}
         <div className="glass-stage rounded-3xl border border-cyan-400/30 p-5 sm:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="font-mono-tech rounded-lg border border-cyan-400/40 bg-cyan-400/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200">
-                Layer 1 · Scientific Signal
+                Layer 1 · Scientific Audio DSP
               </span>
               <span className="text-sm font-bold text-white">{recommendation.arm.name}</span>
             </div>
             <span className="font-mono-tech text-[11px] text-cyan-300">
-              {recommendation.params.modulationHz} Hz · {recommendation.params.crossoverHz}Hz–{upperKhz}kHz
+              {recommendation.params.modulationHz} Hz AM · {recommendation.params.crossoverHz}Hz–{upperKhz}kHz
             </span>
+          </div>
+
+          <SoundWavePreview
+            modulationHz={recommendation.params.modulationHz}
+            modulationDepth={recommendation.params.modulationDepth}
+            safetyMode={recommendation.safetyMode}
+          />
+
+          {/* Exact Sound Parameter Pills */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-slate-800/90 bg-slate-950/75 p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Cortical AM</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-bold text-cyan-300">
+                {recommendation.params.modulationHz} Hz
+              </div>
+              <div className="text-[10px] text-slate-400">3-Band LR4 clean sub</div>
+            </div>
+            <div className="rounded-xl border border-slate-800/90 bg-slate-950/75 p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Pulse Tempo</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-bold text-white">
+                {recommendation.params.bpm > 0 ? `${recommendation.params.bpm} BPM` : 'Ambient'}
+              </div>
+              <div className="text-[10px] text-slate-400">{energyInfo.label}</div>
+            </div>
+            <div className="rounded-xl border border-slate-800/90 bg-slate-950/75 p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Noise Floor</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-bold text-indigo-200 capitalize">
+                {recommendation.params.noiseColor.replace('_', ' ')}
+              </div>
+              <div className="text-[10px] text-slate-400">
+                {Math.round(recommendation.params.noiseLevel * 100)}% stochastic mask
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-800/90 bg-slate-950/75 p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Iso-Arc</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-bold text-emerald-300">
+                {entryMin}m → {peakMin}m → {landingMin}m
+              </div>
+              <div className="text-[10px] text-slate-400">Entry · Peak · Land</div>
+            </div>
           </div>
 
           <p className="text-xs leading-relaxed text-slate-300">{recommendation.rationale}</p>
 
-          {/* How this session was personalized for your profile */}
           {recommendation.personalizationSummary && recommendation.personalizationSummary.length > 0 && (
             <div className="flex flex-wrap gap-1.5 text-[11px]">
               {recommendation.personalizationSummary.map((item) => (
@@ -356,16 +574,16 @@ export function ProtocolRevealView({
         <div className="relative flex items-center justify-center py-0.5">
           <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 bg-[#070b15] px-4 py-1 text-[11px] font-semibold text-cyan-200 shadow-[0_0_24px_rgba(34,211,238,0.22)]">
             <Plus className="h-3.5 w-3.5 text-cyan-300" />
-            Fused in real time with
+            Fused live in real time with your favorite music
           </div>
         </div>
 
-        {/* LAYER 2: MUSIC CARRIER (Transparent Audio Source + 1-Tap Swap + Custom Vibe) */}
+        {/* LAYER 2: PREFERRED MUSIC CARRIER */}
         <div className="glass-stage rounded-3xl border border-indigo-400/30 p-5 sm:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="font-mono-tech rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-200">
-                Layer 2 · Music Carrier
+                Layer 2 · Your Preferred Music
               </span>
               <span className="text-sm font-bold text-white">{activeGenreDisplay.label}</span>
             </div>
@@ -375,14 +593,14 @@ export function ProtocolRevealView({
                 {sourceBadge.label}
               </span>
               <span className="font-mono-tech rounded-lg border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-indigo-200">
-                {energyInfo.label}
+                {DEVICE_LABELS[recommendation.device]}
               </span>
             </div>
           </div>
 
           <p className="text-xs leading-relaxed text-slate-300">
             Preferred lyric-free aesthetics trigger striatal dopamine release (<em>Salimpoor et al. 2011</em>),
-            sustaining attention longer while verbal working memory stays clear (<em>Perham &amp; Currie 2014</em>).
+            sustaining attention while verbal working memory stays completely clear (<em>Perham &amp; Currie 2014</em>).
           </p>
 
           {recommendation.genreAdaptationNote && (
@@ -410,10 +628,10 @@ export function ProtocolRevealView({
             </div>
           )}
 
-          {/* 1-Tap Layer 2 Swap (Core + Custom Vibe) */}
+          {/* 1-Tap Layer 2 Swap */}
           <div className="space-y-2 pt-1">
             <div className="text-[11px] font-medium text-slate-400">
-              Swap Layer 2 in 1 tap before playing:
+              Want a different music layer? Swap in 1 tap before playing:
             </div>
             <div className="flex flex-wrap gap-1.5">
               {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
@@ -478,66 +696,17 @@ export function ProtocolRevealView({
             {customError && <p className="text-[11px] text-rose-300">{customError}</p>}
             {showCustomSwap && !customLiveGenAvailable && (
               <p className="text-[10px] text-slate-500">
-                Searches our instant Community R2 Cache first; uncached vibes start smoothly on our closest studio match.
+                Checks Community R2 Cache first; uncached vibes start smoothly on our closest studio match.
               </p>
             )}
           </div>
         </div>
       </div>
 
-      {/* Shareable "NOOTROPIC AUDIO FORMULA FACTS" + Play CTA */}
-      <div className="animate-rise delay-75 glass-stage rounded-3xl p-5 sm:p-7 space-y-5">
-        <div className="overflow-hidden rounded-2xl border border-cyan-400/25 bg-[#050812]/90">
-          <div className="flex items-center justify-between border-b-2 border-cyan-400/35 bg-cyan-400/[0.07] px-4 py-3">
-            <div>
-              <div className="font-mono-tech text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-300">
-                NOOTROPIC.FM · AUDIO FORMULA FACTS
-              </div>
-              <div className="mt-0.5 text-[11px] text-slate-400">
-                Dose: {recommendation.plannedDurationMin} min · Output:{' '}
-                {DEVICE_LABELS[recommendation.device]} · Cohort Fit:{' '}
-                <span className="font-mono-tech text-emerald-300">{recommendation.confidencePct}%</span>
-              </div>
-            </div>
-            <span className="font-mono-tech rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-200">
-              {energyInfo.label}
-            </span>
-          </div>
-
-          <div className="divide-y divide-slate-800/80">
-            {recommendation.formulaIngredients.map((ing) => (
-              <div
-                key={ing.role}
-                className="grid grid-cols-1 gap-1 px-4 py-2.5 sm:grid-cols-12 sm:items-center sm:gap-2"
-              >
-                <div className="font-mono-tech text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:col-span-3">
-                  {ing.role}
-                </div>
-                <div className="text-xs font-semibold text-white sm:col-span-4">{ing.compound}</div>
-                <div className="font-mono-tech text-xs text-cyan-300 sm:col-span-3">{ing.dose}</div>
-                <div className="text-[10px] text-slate-400 sm:col-span-2 sm:text-right">
-                  {ing.evidenceTag}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/90 bg-slate-950/70 px-4 py-2.5 text-[11px] text-slate-400">
-            <span className="inline-flex items-center gap-1.5">
-              <FlaskConical className="h-3.5 w-3.5 text-purple-400" />
-              {recommendation.ephemeralMode
-                ? 'Local-Only Mode (Zero Remote Tracking)'
-                : recommendation.isExploration
-                  ? 'Bandit Mode: Controlled Exploration Trial'
-                  : `Bandit Mode: Optimal Fit (${recommendation.cohortTrials} cohort trials)`}
-            </span>
-            <span className="font-mono-tech text-[10px] text-cyan-300/80">
-              3-Band LR4 · &lt;{recommendation.params.crossoverHz}Hz &amp; &gt;{upperKhz}kHz Pure
-            </span>
-          </div>
-        </div>
-
-        {/* Primary Play CTA */}
+      {/* ================================================================= */}
+      {/* BLOCK 3: APPLY LAYERS & PLAY CTA (+ Expandable Formula Facts)     */}
+      {/* ================================================================= */}
+      <div className="animate-rise delay-150 glass-stage rounded-3xl p-5 sm:p-6 space-y-4">
         <div className="flex flex-col items-center gap-3 sm:flex-row">
           <button
             type="button"
@@ -553,116 +722,52 @@ export function ProtocolRevealView({
             className="btn-aurora flex flex-1 w-full items-center justify-center gap-2.5 rounded-2xl px-6 py-4 text-base font-bold text-slate-950"
           >
             <Play className="h-5 w-5 fill-slate-950" />
-            Tune My Mind ({recommendation.plannedDurationMin} min · {activeGenreDisplay.label} ·{' '}
-            {TARGET_LABELS[recommendation.targetState]})
+            Apply Layers &amp; Tune My Mind ({recommendation.plannedDurationMin} min ·{' '}
+            {activeGenreDisplay.label})
           </button>
         </div>
-      </div>
 
-      {/* Core DSP Peer-Reviewed Studies (Verified External DOI Links — Staggered Reveal) */}
-      <div
-        id="matched-studies"
-        className="animate-rise delay-150 glass-card scroll-mt-24 rounded-3xl p-5 sm:p-7 space-y-4"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-cyan-300">
-            <BookOpen className="h-5 w-5" />
-            <h2 className="text-base font-semibold text-white">
-              Core Acoustic Science ({recommendation.studies.length} verified studies)
-            </h2>
-          </div>
-          <span className="font-mono-tech rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-200">
-            Direct DOI Links · DSP-Linked
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-3 text-[11px] text-slate-400">
+          <span className="inline-flex items-center gap-1.5">
+            <FlaskConical className="h-3.5 w-3.5 text-purple-400" />
+            {recommendation.ephemeralMode
+              ? 'Local-Only Mode (Zero Remote Tracking)'
+              : recommendation.isExploration
+                ? 'Bandit Mode: Controlled Exploration Trial'
+                : `Bandit Mode: ${recommendation.confidencePct}% Cohort Fit (${recommendation.cohortTrials} trials)`}
           </span>
+          <button
+            type="button"
+            onClick={() => setShowFormulaFacts((v) => !v)}
+            className="inline-flex items-center gap-1 font-medium text-cyan-300 hover:text-cyan-200"
+          >
+            <span>Full Audio Formula Facts</span>
+            <ChevronDown className={`h-3.5 w-3.5 transition ${showFormulaFacts ? 'rotate-180' : ''}`} />
+          </button>
         </div>
 
-        <div className="space-y-3">
-          {recommendation.studies.map((study, idx) => (
-            <div
-              key={study.id}
-              style={{ animationDelay: `${idx * 90}ms` }}
-              className="animate-rise rounded-2xl border border-slate-800/90 bg-slate-950/65 p-4 space-y-2 transition hover:border-cyan-400/35"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold text-cyan-300">
-                    {study.authors.split(',')[0]} et al. ({study.year}) · {study.journal}
-                  </div>
-                  <div className="mt-0.5 text-sm font-medium text-white">{study.title}</div>
-                </div>
-                <a
-                  href={study.doiOrUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-cyan-400/35 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-400/20"
+        {showFormulaFacts && (
+          <div className="animate-step overflow-hidden rounded-2xl border border-cyan-400/25 bg-[#050812]/90">
+            <div className="divide-y divide-slate-800/80">
+              {recommendation.formulaIngredients.map((ing) => (
+                <div
+                  key={ing.role}
+                  className="grid grid-cols-1 gap-1 px-4 py-2.5 sm:grid-cols-12 sm:items-center sm:gap-2"
                 >
-                  Open Paper
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-
-              <div className="flex items-start gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/8 px-3 py-2 text-xs text-cyan-100">
-                <Waves className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
-                <span>
-                  <strong className="text-cyan-200">Applied in your audio:</strong> {study.soundEffect}
-                </span>
-              </div>
-
-              <p className="text-xs leading-relaxed text-slate-400">{study.summary}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Live Dual-Source Literature (NIH PubMed + OpenAlex) with Verified External Links */}
-      {livePapers.length > 0 && (
-        <div className="animate-rise delay-225 glass-card rounded-3xl p-5 sm:p-7 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-indigo-300">
-              <Cpu className="h-5 w-5" />
-              <h2 className="text-base font-semibold text-white">
-                Live Matched Literature (NIH PubMed &amp; OpenAlex)
-              </h2>
-            </div>
-            <span className="font-mono-tech rounded-full border border-indigo-400/30 bg-indigo-500/12 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-200">
-              Verified External Links
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {livePapers.map((p, idx) => (
-              <a
-                key={p.pmid}
-                href={p.doiUrl || p.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ animationDelay: `${idx * 90}ms` }}
-                className="animate-rise group flex flex-col justify-between rounded-2xl border border-slate-800/90 bg-slate-950/60 p-4 space-y-2 transition hover:border-indigo-400/45"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-indigo-300">
-                    <span className="font-mono-tech">
-                      {p.source === 'openalex' ? 'OpenAlex · DOI' : `PubMed · ${p.pmid}`} · {p.year}
-                    </span>
-                    <ExternalLink className="h-3.5 w-3.5 text-slate-500 group-hover:text-indigo-300" />
+                  <div className="font-mono-tech text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:col-span-3">
+                    {ing.role}
                   </div>
-                  <div className="mt-1.5 text-xs font-semibold leading-snug text-white group-hover:text-indigo-100">
-                    {p.title}
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-400">
-                    {p.authors} · {p.journal}
+                  <div className="text-xs font-semibold text-white sm:col-span-4">{ing.compound}</div>
+                  <div className="font-mono-tech text-xs text-cyan-300 sm:col-span-3">{ing.dose}</div>
+                  <div className="text-[10px] text-slate-400 sm:col-span-2 sm:text-right">
+                    {ing.evidenceTag}
                   </div>
                 </div>
-                {p.appliedMechanism && (
-                  <div className="rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2.5 py-1.5 text-[11px] text-indigo-100/90">
-                    <strong className="text-indigo-200">Mechanism:</strong> {p.appliedMechanism}
-                  </div>
-                )}
-              </a>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

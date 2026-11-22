@@ -24,14 +24,18 @@ export const API_BASE =
 
 export const PROFILE_STORAGE_KEY = 'nootropic_fm_profile_id_v1';
 export const PROFILE_TOKEN_KEY = 'nootropic_fm_profile_token_v2';
+export const PROFILE_SYNC_CODE_KEY = 'nootropic_fm_sync_code_v2';
 export const PROFILE_EXPIRES_KEY = 'nootropic_fm_profile_expires_v2';
 const PROFILE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90-day client storage TTL
 
-export function saveStoredProfileAuth(profileId: string, token?: string): void {
+export function saveStoredProfileAuth(profileId: string, token?: string, syncCode?: string): void {
   try {
     localStorage.setItem(PROFILE_STORAGE_KEY, profileId);
     if (token) {
       localStorage.setItem(PROFILE_TOKEN_KEY, token);
+    }
+    if (syncCode) {
+      localStorage.setItem(PROFILE_SYNC_CODE_KEY, syncCode);
     }
     localStorage.setItem(PROFILE_EXPIRES_KEY, String(Date.now() + PROFILE_TTL_MS));
   } catch {
@@ -39,7 +43,11 @@ export function saveStoredProfileAuth(profileId: string, token?: string): void {
   }
 }
 
-export function getStoredProfileAuth(): { profileId: string; token: string | null } | null {
+export function getStoredProfileAuth(): {
+  profileId: string;
+  token: string | null;
+  syncCode: string | null;
+} | null {
   try {
     const profileId = localStorage.getItem(PROFILE_STORAGE_KEY);
     if (!profileId) return null;
@@ -49,7 +57,8 @@ export function getStoredProfileAuth(): { profileId: string; token: string | nul
       return null;
     }
     const token = localStorage.getItem(PROFILE_TOKEN_KEY);
-    return { profileId, token };
+    const syncCode = localStorage.getItem(PROFILE_SYNC_CODE_KEY);
+    return { profileId, token, syncCode };
   } catch {
     return null;
   }
@@ -59,6 +68,7 @@ export function clearStoredProfileAuth(): void {
   try {
     localStorage.removeItem(PROFILE_STORAGE_KEY);
     localStorage.removeItem(PROFILE_TOKEN_KEY);
+    localStorage.removeItem(PROFILE_SYNC_CODE_KEY);
     localStorage.removeItem(PROFILE_EXPIRES_KEY);
   } catch {
     // ignore
@@ -97,7 +107,7 @@ export const api = {
   getConfig: () => apiFetch<{ config: AppRuntimeConfig }>('/api/config'),
 
   saveProfile: (profile: Partial<UserProfile>) =>
-    apiFetch<{ profile: UserProfile; profileToken?: string }>('/api/profile', {
+    apiFetch<{ profile: UserProfile; profileToken?: string; syncCode?: string }>('/api/profile', {
       method: 'POST',
       body: JSON.stringify(profile),
     }),
@@ -107,7 +117,19 @@ export const api = {
       profile: UserProfile;
       pendingDebrief: SessionRecord | null;
       profileToken?: string;
+      syncCode?: string;
     }>(`/api/profile/${encodeURIComponent(id)}`),
+
+  restoreIdentity: (syncCode: string) =>
+    apiFetch<{
+      profile: UserProfile;
+      profileToken: string;
+      syncCode: string;
+      pendingDebrief: SessionRecord | null;
+    }>('/api/identity/restore', {
+      method: 'POST',
+      body: JSON.stringify({ syncCode }),
+    }),
 
   deleteProfile: (id: string) =>
     apiFetch<{ ok: boolean; deletedProfileId: string }>(`/api/profile/${encodeURIComponent(id)}`, {

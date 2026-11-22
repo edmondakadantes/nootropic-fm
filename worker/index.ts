@@ -102,6 +102,70 @@ function generateProfileToken(): string {
     .join('')}`;
 }
 
+const SYNC_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+function generateSyncCode(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  let chars = '';
+  for (let i = 0; i < 8; i++) {
+    chars += SYNC_ALPHABET[bytes[i] % SYNC_ALPHABET.length];
+  }
+  return `NFM-${chars.slice(0, 4)}-${chars.slice(4, 8)}`;
+}
+
+function normalizeSyncCode(raw: string): string {
+  const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const body = cleaned.startsWith('NFM') ? cleaned.slice(3) : cleaned;
+  if (body.length !== 8) return '';
+  return `NFM-${body.slice(0, 4)}-${body.slice(4, 8)}`;
+}
+
+function sanitizeDisplayName(raw?: string): string {
+  if (!raw) return '';
+  return raw
+    .replace(/[^a-zA-Z0-9\s'-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 28);
+}
+
+function sanitizeOccupation(raw?: string): string {
+  if (!raw) return '';
+  return raw
+    .replace(/[^a-zA-Z0-9\s/&-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40);
+}
+
+function parseGenderValue(raw?: string): UserProfile['gender'] {
+  if (raw === 'male' || raw === 'female' || raw === 'non_binary' || raw === 'prefer_not_to_say') {
+    return raw;
+  }
+  return 'prefer_not_to_say';
+}
+
+function tokenHashMatches(providedHash: string, storedField: string): boolean {
+  const hashes = storedField
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const h of hashes) {
+    if (constantTimeEqual(providedHash, h)) return true;
+  }
+  return false;
+}
+
+function appendTokenHash(existingField: string, newHash: string): string {
+  const hashes = existingField
+    .split(',')
+    .map((s) => s.trim())
+    .filter((h) => h.length > 0 && h !== newHash);
+  hashes.push(newHash);
+  return hashes.slice(-3).join(',');
+}
+
 function isAuthorizedAdmin(request: Request, env: Env): boolean {
   const expected = env.ADMIN_EXPORT_KEY?.trim();
   if (!expected) return false;
@@ -155,12 +219,15 @@ function json(data: unknown, status = 200, request?: Request): Response {
   });
 }
 
-function mapProfileRow(row: Record<string, unknown>): UserProfile {
+function mapProfileRow(row: Record<string, unknown>, sessionCount?: number): UserProfile {
   return {
     id: String(row.id),
+    displayName: row.display_name ? String(row.display_name) : undefined,
     age: Math.max(18, Number(row.age)),
     ageBand: ageToBand(Math.max(18, Number(row.age))),
+    gender: parseGenderValue(row.gender ? String(row.gender) : undefined),
     role: String(row.role) as UserProfile['role'],
+    occupationLabel: row.occupation_label ? String(row.occupation_label) : undefined,
     texturePref: String(row.texture_pref) as UserProfile['texturePref'],
     noiseSensitivity: String(row.noise_sensitivity) as UserProfile['noiseSensitivity'],
     defaultDevice: String(row.default_device) as OutputDevice,
@@ -170,6 +237,7 @@ function mapProfileRow(row: Record<string, unknown>): UserProfile {
       row.preferred_mod_mult === null || row.preferred_mod_mult === undefined
         ? 1.0
         : Number(row.preferred_mod_mult),
+    ...(typeof sessionCount === 'number' ? { sessionCount } : {}),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -635,7 +703,7 @@ async function verifyProfileAccess(
     return { ok: false, row };
   }
   const providedHash = await sha256Hex(providedToken);
-  if (!constantTimeEqual(providedHash, storedHash)) {
+  if (!tokenHashMatches(providedHash, storedHash)) {
     return { ok: false, row };
   }
   return { ok: true, row };
@@ -820,40 +888,62 @@ export default {
           : `anon_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
         let profileToken: string | undefined;
         let tokenHash = '';
+        let syncCode: string | undefined;
+        let syncCodeHash: string | null = null;
 
         if (isUpdating) {
-          const existing = await env.DB.prepare('SELECT token_hash FROM profiles WHERE id = ?')
+          const existing = await env.DB.prepare(
+            'SELECT token_hash, sync_code_hash FROM profiles WHERE id = ?'
+          )
             .bind(id)
-            .first<{ token_hash?: string }>();
+            .first<{ token_hash?: string; sync_code_hash?: string }>();
           if (existing?.token_hash) {
             const provided = request.headers.get('x-profile-token')?.trim() ?? '';
             const providedHash = provided ? await sha256Hex(provided) : '';
-            if (!provided || !constantTimeEqual(providedHash, existing.token_hash)) {
+            if (!provided || !tokenHashMatches(providedHash, existing.token_hash)) {
               // Do not overwrite another user's profile; allocate a clean profile instead
               id = `anon_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
               profileToken = generateProfileToken();
               tokenHash = await sha256Hex(profileToken);
+              syncCode = generateSyncCode();
+              syncCodeHash = await sha256Hex(syncCode);
             } else {
               tokenHash = existing.token_hash;
+              if (existing.sync_code_hash) {
+                syncCodeHash = existing.sync_code_hash;
+              } else {
+                syncCode = generateSyncCode();
+                syncCodeHash = await sha256Hex(syncCode);
+              }
             }
           } else {
             profileToken = generateProfileToken();
             tokenHash = await sha256Hex(profileToken);
+            syncCode = generateSyncCode();
+            syncCodeHash = await sha256Hex(syncCode);
           }
         } else {
           profileToken = generateProfileToken();
           tokenHash = await sha256Hex(profileToken);
+          syncCode = generateSyncCode();
+          syncCodeHash = await sha256Hex(syncCode);
         }
 
         const age = Math.round(rawAge);
         const ageBand = ageToBand(age);
         const now = new Date().toISOString();
+        const displayName = sanitizeDisplayName(body.displayName);
+        const gender = parseGenderValue(body.gender);
+        const occupationLabel = sanitizeOccupation(body.occupationLabel);
 
         const profile: UserProfile = {
           id,
+          displayName: displayName || undefined,
           age,
           ageBand,
+          gender,
           role: body.role ?? 'other',
+          occupationLabel: occupationLabel || undefined,
           texturePref: body.texturePref ?? 'warm_organic',
           noiseSensitivity: body.noiseSensitivity ?? 'medium',
           defaultDevice: body.defaultDevice ?? 'headphones',
@@ -865,37 +955,122 @@ export default {
         };
 
         await env.DB.prepare(
-          `INSERT INTO profiles (id, age, age_band, role, texture_pref, noise_sensitivity, default_device, primary_challenge, research_consent, token_hash, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO profiles (id, display_name, age, age_band, gender, role, occupation_label, texture_pref, noise_sensitivity, default_device, primary_challenge, research_consent, token_hash, sync_code_hash, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
+             display_name = excluded.display_name,
              age = excluded.age,
              age_band = excluded.age_band,
+             gender = excluded.gender,
              role = excluded.role,
+             occupation_label = excluded.occupation_label,
              texture_pref = excluded.texture_pref,
              noise_sensitivity = excluded.noise_sensitivity,
              default_device = excluded.default_device,
              primary_challenge = excluded.primary_challenge,
              research_consent = excluded.research_consent,
              token_hash = COALESCE(profiles.token_hash, excluded.token_hash),
+             sync_code_hash = COALESCE(profiles.sync_code_hash, excluded.sync_code_hash),
              updated_at = excluded.updated_at`
         )
           .bind(
             profile.id,
+            displayName,
             profile.age,
             profile.ageBand,
+            gender,
             profile.role,
+            occupationLabel,
             profile.texturePref,
             profile.noiseSensitivity,
             profile.defaultDevice,
             profile.primaryChallenge,
             profile.researchConsent ? 1 : 0,
             tokenHash,
+            syncCodeHash,
             profile.createdAt,
             profile.updatedAt
           )
           .run();
 
-        return json({ profile, ...(profileToken ? { profileToken } : {}) }, 200, request);
+        return json(
+          {
+            profile,
+            ...(profileToken ? { profileToken } : {}),
+            ...(syncCode ? { syncCode } : {}),
+          },
+          200,
+          request
+        );
+      }
+
+      // POST /api/identity/restore — Restore Passwordless Neural Identity on any device via NFM-XXXX-XXXX Sync Key
+      if (url.pathname === '/api/identity/restore' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'identity_restore', 15);
+        if (!allowed) {
+          return json(
+            { error: 'Too many restore attempts today. Please try again tomorrow.' },
+            429,
+            request
+          );
+        }
+        const body = (await request.json().catch(() => ({}))) as { syncCode?: string };
+        const normalized = normalizeSyncCode(String(body.syncCode ?? ''));
+        if (!normalized) {
+          return json(
+            { error: 'Please enter a valid Sync Key (format: NFM-XXXX-XXXX).' },
+            400,
+            request
+          );
+        }
+
+        const codeHash = await sha256Hex(normalized);
+        const row = await env.DB.prepare('SELECT * FROM profiles WHERE sync_code_hash = ?')
+          .bind(codeHash)
+          .first<Record<string, unknown>>();
+        if (!row) {
+          return json(
+            { error: 'Identity Sync Key not found. Double-check the code and try again.' },
+            404,
+            request
+          );
+        }
+
+        const id = String(row.id);
+        const freshToken = generateProfileToken();
+        const freshTokenHash = await sha256Hex(freshToken);
+        const mergedHashes = appendTokenHash(
+          row.token_hash ? String(row.token_hash) : '',
+          freshTokenHash
+        );
+
+        await env.DB.prepare('UPDATE profiles SET token_hash = ?, updated_at = ? WHERE id = ?')
+          .bind(mergedHashes, new Date().toISOString(), id)
+          .run();
+
+        const [pendingRow, countRow] = await Promise.all([
+          env.DB.prepare(
+            `SELECT * FROM sessions
+             WHERE profile_id = ? AND status = 'pending_debrief' AND actual_duration_sec >= 60
+             ORDER BY created_at DESC LIMIT 1`
+          )
+            .bind(id)
+            .first(),
+          env.DB.prepare('SELECT COUNT(*) AS cnt FROM sessions WHERE profile_id = ?')
+            .bind(id)
+            .first<{ cnt: number }>(),
+        ]);
+
+        return json(
+          {
+            profile: mapProfileRow(row, Number(countRow?.cnt ?? 0)),
+            profileToken: freshToken,
+            syncCode: normalized,
+            pendingDebrief: pendingRow ? mapSessionRow(pendingRow) : null,
+          },
+          200,
+          request
+        );
       }
 
       // GET /api/profile/:id — Authenticated via X-Profile-Token; returns pendingDebrief ONLY if listened >= 60s
@@ -905,19 +1080,35 @@ export default {
         if (!auth.row) return json({ error: 'Profile not found' }, 404, request);
         if (!auth.ok) return json({ error: 'Unauthorized profile access' }, 401, request);
 
-        const pendingRow = await env.DB.prepare(
-          `SELECT * FROM sessions
-           WHERE profile_id = ? AND status = 'pending_debrief' AND actual_duration_sec >= 60
-           ORDER BY created_at DESC LIMIT 1`
-        )
-          .bind(id)
-          .first();
+        // Seamless 1-time Sync Code issuance for legacy profiles created before migration 0005
+        let issuedSyncCode: string | undefined;
+        if (!auth.row.sync_code_hash) {
+          issuedSyncCode = generateSyncCode();
+          const hash = await sha256Hex(issuedSyncCode);
+          await env.DB.prepare('UPDATE profiles SET sync_code_hash = ? WHERE id = ?')
+            .bind(hash, id)
+            .run();
+        }
+
+        const [pendingRow, countRow] = await Promise.all([
+          env.DB.prepare(
+            `SELECT * FROM sessions
+             WHERE profile_id = ? AND status = 'pending_debrief' AND actual_duration_sec >= 60
+             ORDER BY created_at DESC LIMIT 1`
+          )
+            .bind(id)
+            .first(),
+          env.DB.prepare('SELECT COUNT(*) AS cnt FROM sessions WHERE profile_id = ?')
+            .bind(id)
+            .first<{ cnt: number }>(),
+        ]);
 
         return json(
           {
-            profile: mapProfileRow(auth.row),
+            profile: mapProfileRow(auth.row, Number(countRow?.cnt ?? 0)),
             pendingDebrief: pendingRow ? mapSessionRow(pendingRow) : null,
             ...(auth.issuedLegacyToken ? { profileToken: auth.issuedLegacyToken } : {}),
+            ...(issuedSyncCode ? { syncCode: issuedSyncCode } : {}),
           },
           200,
           request
@@ -985,9 +1176,12 @@ export default {
           const safeAge = Math.max(18, Math.min(95, Number(body.ephemeralProfile?.age ?? body.ageOverride ?? 32)));
           profile = {
             id: 'ephemeral_local',
+            displayName: sanitizeDisplayName(body.ephemeralProfile?.displayName) || undefined,
             age: safeAge,
             ageBand: ageToBand(safeAge),
+            gender: parseGenderValue(body.ephemeralProfile?.gender),
             role: body.ephemeralProfile?.role ?? 'other',
+            occupationLabel: sanitizeOccupation(body.ephemeralProfile?.occupationLabel) || undefined,
             texturePref: body.ephemeralProfile?.texturePref ?? 'warm_organic',
             noiseSensitivity: body.ephemeralProfile?.noiseSensitivity ?? 'medium',
             defaultDevice: body.device ?? 'headphones',
@@ -2401,7 +2595,9 @@ export default {
           `SELECT
             s.id AS session_id,
             p.age_band,
+            p.gender,
             p.role,
+            p.occupation_label,
             p.texture_pref,
             p.noise_sensitivity,
             p.preferred_mod_mult,
@@ -2445,7 +2641,7 @@ export default {
 
         if (format === 'csv') {
           const headers = [
-            'session_id', 'age_band', 'role', 'cohort_key', 'time_of_day_bucket',
+            'session_id', 'age_band', 'gender', 'role', 'occupation_label', 'cohort_key', 'time_of_day_bucket',
             'current_state', 'baseline_score', 'target_state', 'environment', 'device',
             'safety_mode', 'planned_duration_min', 'actual_duration_sec', 'completion_ratio',
             'arm_id', 'is_exploration', 'is_control_trial', 'energy_tier',
@@ -2459,7 +2655,7 @@ export default {
           for (const r of rows.results) {
             const ap = JSON.parse(String(r.acoustic_params_json)) as AcousticParams;
             const vals = [
-              r.session_id, r.age_band, r.role, r.cohort_key, r.time_of_day_bucket,
+              r.session_id, r.age_band, r.gender ?? 'prefer_not_to_say', r.role, r.occupation_label ?? '', r.cohort_key, r.time_of_day_bucket,
               r.current_state, r.baseline_score, r.target_state, r.environment, r.device,
               r.safety_mode, r.planned_duration_min, r.actual_duration_sec, r.completion_ratio,
               r.arm_id, r.is_exploration, r.is_control_trial ?? 0, r.energy_tier ?? ap.energyTier ?? 'focus',

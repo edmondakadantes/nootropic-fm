@@ -1,5 +1,7 @@
 export type AgeBand = '18-24' | '25-34' | '35-44' | '45-54' | '55+';
 
+export type UserGender = 'male' | 'female' | 'non_binary' | 'prefer_not_to_say';
+
 export type UserRole =
   | 'driver'
   | 'knowledge_worker'
@@ -67,15 +69,19 @@ export type AudioSourceType =
 
 export interface UserProfile {
   id: string;
+  displayName?: string;
   age: number;
   ageBand: AgeBand;
+  gender?: UserGender;
   role: UserRole;
+  occupationLabel?: string;
   texturePref: TexturePreference;
   noiseSensitivity: NoiseSensitivity;
   defaultDevice: OutputDevice;
   primaryChallenge: PrimaryChallenge;
   researchConsent: boolean;
   preferredModMult?: number;
+  sessionCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -159,8 +165,11 @@ export interface LiveAdjustment {
 
 export interface ParsedCheckIn {
   rawText: string;
+  extractedName?: string;
   extractedAge?: number;
+  extractedGender?: UserGender;
   extractedRole?: UserRole;
+  extractedOccupation?: string;
   extractedGenre?: ResolvedGenre;
   extractedCustomGenre?: string;
   currentState: CurrentState;
@@ -465,6 +474,37 @@ export const DEVICE_LABELS: Record<OutputDevice, string> = {
   speakers: 'Speakers',
   car_audio: 'Vehicle Speakers',
 };
+
+export const GENDER_LABELS: Record<UserGender, string> = {
+  male: 'Male',
+  female: 'Female',
+  non_binary: 'Non-binary',
+  prefer_not_to_say: 'Prefer not to say',
+};
+
+export const ROLE_SHORT_LABELS: Record<UserRole, string> = {
+  knowledge_worker: 'Programmer / Tech',
+  driver: 'Driver / Road',
+  student: 'Student / Study',
+  creative: 'Creative',
+  entrepreneur: 'Founder / Lead',
+  other: 'Other',
+};
+
+export function formatProfileSummary(p: {
+  age: number;
+  gender?: UserGender;
+  role: UserRole;
+  occupationLabel?: string;
+}): string {
+  const parts: string[] = [`${Math.max(18, Math.round(p.age))}yo`];
+  if (p.gender && p.gender !== 'prefer_not_to_say') {
+    parts.push(GENDER_LABELS[p.gender]);
+  }
+  const job = p.occupationLabel?.trim() || ROLE_SHORT_LABELS[p.role] || 'Listener';
+  parts.push(job);
+  return parts.join(' · ');
+}
 
 export const ENERGY_LABELS: Record<EnergyTier, { label: string; bpmRange: string }> = {
   calm: { label: 'Calm / Slow', bpmRange: 'Beatless · 60–76 BPM' },

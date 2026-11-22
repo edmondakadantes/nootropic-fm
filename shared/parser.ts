@@ -8,6 +8,7 @@ import type {
   SessionEnvironment,
   TargetState,
   TexturePreference,
+  UserGender,
   UserProfile,
   UserRole,
 } from './types';
@@ -19,6 +20,120 @@ function normalizeText(input: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function titleCasePhrase(text: string): string {
+  return text
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function extractGender(norm: string): UserGender | undefined {
+  if (/\b(non-binary|nonbinary|non binary|nb|enby)\b/.test(norm)) return 'non_binary';
+  if (/\b(female|woman|girl|lady|she\/her|femeie)\b/.test(norm)) return 'female';
+  if (/\b(male|man|guy|he\/him|barbat)\b/.test(norm)) return 'male';
+  return undefined;
+}
+
+const OCCUPATION_PATTERNS: Array<{ rx: RegExp; label: string; role: UserRole }> = [
+  { rx: /\b(minibus\s*driver|bus\s*driver|sofer\s*(?:de\s*)?microbuz)\b/, label: 'Minibus Driver', role: 'driver' },
+  { rx: /\b(truck\s*driver|trucker|sofer\s*(?:de\s*)?camion)\b/, label: 'Truck Driver', role: 'driver' },
+  { rx: /\b(delivery\s*driver|uber\s*driver|taxi\s*driver|chauffeur|driver|sofer)\b/, label: 'Driver', role: 'driver' },
+  { rx: /\b(software\s*engineer|software\s*developer)\b/, label: 'Software Engineer', role: 'knowledge_worker' },
+  { rx: /\b(programmer|programator)\b/, label: 'Programmer', role: 'knowledge_worker' },
+  { rx: /\b(developer|coder|web\s*dev|devops|data\s*scientist)\b/, label: 'Developer', role: 'knowledge_worker' },
+  { rx: /\b(engineer|architect|analyst|accountant|lawyer|doctor|physician|nurse|consultant)\b/, label: '', role: 'knowledge_worker' },
+  { rx: /\b(medical\s*student|med\s*student)\b/, label: 'Medical Student', role: 'student' },
+  { rx: /\b(phd\s*student|grad\s*student|researcher|student)\b/, label: 'Student', role: 'student' },
+  { rx: /\b(designer|ux\s*designer|ui\s*designer|graphic\s*designer)\b/, label: 'Designer', role: 'creative' },
+  { rx: /\b(writer|author|copywriter|journalist|editor|filmmaker|musician|artist|creative)\b/, label: '', role: 'creative' },
+  { rx: /\b(founder|co-founder|ceo|entrepreneur|antreprenor|business\s*owner|manager|director)\b/, label: '', role: 'entrepreneur' },
+];
+
+function extractOccupationAndRole(norm: string): { role?: UserRole; occupationLabel?: string } {
+  for (const entry of OCCUPATION_PATTERNS) {
+    const m = norm.match(entry.rx);
+    if (m) {
+      return {
+        role: entry.role,
+        occupationLabel: entry.label || titleCasePhrase(m[1]),
+      };
+    }
+  }
+  return {};
+}
+
+export interface ParsedProfileSentence {
+  displayName?: string;
+  age?: number;
+  gender?: UserGender;
+  role?: UserRole;
+  occupationLabel?: string;
+  detectedHints: string[];
+}
+
+/**
+ * Parses Beat 1 natural self-introduction (e.g. "I'm Alex, 40 years old male, programmer")
+ * into structured Neural Identity fields in zero milliseconds.
+ */
+export function parseProfileSentence(rawText: string): ParsedProfileSentence {
+  const norm = normalizeText(rawText);
+  const detectedHints: string[] = [];
+
+  // Optional first name ("I'm Alex", "My name is Sara", "Call me Dan")
+  let displayName: string | undefined;
+  const nameMatch = rawText.match(
+    /(?:my\s+name\s+is|call\s+me|i['’]?m|i\s+am)\s+([A-Z][a-z]{1,18})(?=\s*(?:,|\.|and|\d|a\s|an\s|$))/i
+  );
+  if (nameMatch) {
+    const candidate = nameMatch[1].trim();
+    const stopWords = new Set([
+      'male', 'female', 'tired', 'distracted', 'stressed', 'anxious', 'driving', 'studying',
+      'working', 'looking', 'feeling', 'here', 'ready', 'years', 'old', 'from', 'just',
+      'programmer', 'developer', 'engineer', 'driver', 'student', 'founder', 'designer', 'creative',
+    ]);
+    if (!stopWords.has(candidate.toLowerCase())) {
+      displayName = titleCasePhrase(candidate);
+      detectedHints.push(`Name: ${displayName}`);
+    }
+  }
+
+  // Age (18–95 strictly)
+  let age: number | undefined;
+  const ageMatch =
+    norm.match(/(\d{2})\s*(?:-|\s)?(?:year|years|yr|yrs|yo)\b/) ||
+    norm.match(/(?:age|am)\s+(\d{2})(?:\s*(?:de\s+)?ani)?\b/) ||
+    norm.match(/\b(\d{2})\b/);
+  if (ageMatch) {
+    const candidate = Number(ageMatch[1]);
+    if (candidate >= 18 && candidate <= 95) {
+      age = candidate;
+      detectedHints.push(`Age ${candidate}`);
+    }
+  }
+
+  // Gender
+  const gender = extractGender(norm);
+  if (gender) {
+    detectedHints.push(gender === 'non_binary' ? 'Non-binary' : titleCasePhrase(gender));
+  }
+
+  // Occupation & Role
+  const { role, occupationLabel } = extractOccupationAndRole(norm);
+  if (occupationLabel) {
+    detectedHints.push(occupationLabel);
+  }
+
+  return {
+    displayName,
+    age,
+    gender,
+    role,
+    occupationLabel,
+    detectedHints,
+  };
 }
 
 export interface ParsedOnboarding {
@@ -249,9 +364,16 @@ export function parseNaturalCheckIn(
     detectedKeywords.push('Neutral');
   }
 
-  // 5. Target state
+  // 5. Target state (handle negated fatigue like "stop feeling tired" -> energy_lift!)
   let targetState: TargetState = 'alert_focus';
-  if (/\b(sleep|fall asleep|wind down|bedtime|insomnia|somn|adorm|culcare)/.test(norm)) {
+  if (
+    /\b(stop\s+(?:feeling\s+|being\s+)?(?:tired|sleepy|fatigued|drained)|not\s+(?:feel\s+|be\s+)?(?:tired|sleepy|fatigued)|no\s+longer\s+(?:tired|sleepy|fatigued)|don['’]?t\s+want\s+to\s+(?:feel\s+|be\s+)?(?:tired|sleepy)|shake\s+off\s+(?:fatigue|tiredness|sleepiness)|beat\s+(?:fatigue|tiredness|sleepiness|the\s+slump)|nu\s+mai\s+fiu\s+obosit|energy|energized|awake|alertness|boost|wake\s+up|vigilant|energie|treaz|vigilent)\b/.test(
+      norm
+    )
+  ) {
+    targetState = 'energy_lift';
+    detectedKeywords.push('→ Energy Lift');
+  } else if (/\b(sleep|fall asleep|wind down|bedtime|insomnia|somn|adorm|culcare)/.test(norm)) {
     targetState = environment === 'driving' ? 'alert_focus' : 'sleep_winddown';
     detectedKeywords.push(
       environment === 'driving' ? '→ Alert Focus (Road Safe)' : '→ Sleep Wind-Down'
@@ -259,15 +381,18 @@ export function parseNaturalCheckIn(
   } else if (/\b(calm|relax|de-stress|destress|unwind|breathe|peaceful|linist|calmez)/.test(norm)) {
     targetState = environment === 'driving' ? 'alert_focus' : 'calm_reset';
     detectedKeywords.push('→ Calm Reset');
-  } else if (/\b(energy|energized|awake|alertness|boost|wake up|vigilant|energie|treaz|vigilent)/.test(norm)) {
-    targetState = 'energy_lift';
-    detectedKeywords.push('→ Energy Lift');
   } else if (/\b(flow|deep work|deep focus|coding|programming|writing|creative|profund)/.test(norm)) {
     targetState = 'deep_flow';
     detectedKeywords.push('→ Deep Flow');
   } else if (/\b(focus|focused|concentrate|concentrated|sharp|clarity|productive|attention|concentr|atent)/.test(norm)) {
     targetState = 'alert_focus';
     detectedKeywords.push('→ Alert Focus');
+  }
+
+  const extractedGender = extractGender(norm);
+  const occInfo = extractOccupationAndRole(norm);
+  if (!extractedRole && occInfo.role) {
+    extractedRole = occInfo.role;
   }
 
   // 6. Optional Musical Genre / Custom Vibe detection from free text
@@ -303,7 +428,9 @@ export function parseNaturalCheckIn(
   return {
     rawText,
     extractedAge,
+    extractedGender,
     extractedRole,
+    extractedOccupation: occInfo.occupationLabel,
     extractedGenre,
     extractedCustomGenre,
     currentState,

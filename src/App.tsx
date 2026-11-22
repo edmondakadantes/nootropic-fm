@@ -1,28 +1,34 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   BarChart3,
+  Check,
+  Copy,
   Download,
+  KeyRound,
+  LogOut,
   Radio,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  UserCheck,
   X,
 } from 'lucide-react';
 import { sanitizeCustomVibe } from '../shared/promptComposer';
 import { formatCohortLabel, swapRecommendationGenre } from '../shared/protocols';
-import type {
-  AppRuntimeConfig,
-  CurrentState,
-  LiveAdjustment,
-  MusicGenreChoice,
-  OutputDevice,
-  ProtocolRecommendation,
-  ResolvedGenre,
-  SessionEnvironment,
-  SessionRecord,
-  TargetState,
-  UserProfile,
+import {
+  formatProfileSummary,
+  type AppRuntimeConfig,
+  type CurrentState,
+  type LiveAdjustment,
+  type MusicGenreChoice,
+  type OutputDevice,
+  type ProtocolRecommendation,
+  type ResolvedGenre,
+  type SessionEnvironment,
+  type SessionRecord,
+  type TargetState,
+  type UserProfile,
 } from '../shared/types';
 import { AmbientField, type FieldMood } from './components/AmbientField';
 import { CheckInView } from './components/CheckInView';
@@ -45,14 +51,24 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [runtimeConfig, setRuntimeConfig] = useState<AppRuntimeConfig | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [syncCode, setSyncCode] = useState<string | null>(null);
   const [pendingDebrief, setPendingDebrief] = useState<SessionRecord | null>(null);
   const [activeRec, setActiveRec] = useState<ProtocolRecommendation | null>(null);
   const [researching, setResearching] = useState(false);
   const [fieldMood, setFieldMood] = useState<FieldMood>('default');
   const [audioActive, setAudioActive] = useState(false);
+
+  // Modals: Privacy + Passwordless Neural Identity / Sync / Switch
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [deletingData, setDeletingData] = useState(false);
   const [privacyStatus, setPrivacyStatus] = useState<string | null>(null);
+
+  const [showIdentityModal, setShowIdentityModal] = useState(false);
+  const [restoreInput, setRestoreInput] = useState('');
+  const [restoring, setRestoring] = useState(false);
+  const [identityStatus, setIdentityStatus] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
+  const [copiedSync, setCopiedSync] = useState(false);
+
   const [installPrompt, setInstallPrompt] = useState<{
     prompt: () => Promise<void>;
     userChoice: Promise<{ outcome: string }>;
@@ -86,7 +102,6 @@ export default function App() {
 
   useEffect(() => {
     const boot = async () => {
-      // Fetch runtime config (region opt-in, live music gen capability, popular R2 custom vibes)
       const configPromise = api
         .getConfig()
         .then((res) => setRuntimeConfig(res.config))
@@ -100,16 +115,28 @@ export default function App() {
         return;
       }
 
+      if (stored.syncCode) {
+        setSyncCode(stored.syncCode);
+      }
+
       try {
         const res = await api.getProfile(stored.profileId);
-        if (res.profileToken) {
-          saveStoredProfileAuth(res.profile.id, res.profileToken);
+        if (res.profileToken || res.syncCode) {
+          saveStoredProfileAuth(
+            res.profile.id,
+            res.profileToken ?? undefined,
+            res.syncCode ?? stored.syncCode ?? undefined
+          );
+        }
+        if (res.syncCode) {
+          setSyncCode(res.syncCode);
         }
         setProfile(res.profile);
         setPendingDebrief(res.pendingDebrief);
         setScreen('checkin');
       } catch {
         clearStoredProfileAuth();
+        setSyncCode(null);
         setScreen('checkin');
       } finally {
         await configPromise;
@@ -163,32 +190,13 @@ export default function App() {
     [moodFromTarget]
   );
 
-  const handleSaveProfile = async (
-    data: Partial<UserProfile>,
-    firstSession?: {
-      rawInputText: string;
-      currentState: CurrentState;
-      baselineScore: number;
-      targetState: TargetState;
-      environment: SessionEnvironment;
-      device: OutputDevice;
-      durationMin: number;
-      ageOverride?: number;
-      requestedGenre?: MusicGenreChoice;
-    }
-  ) => {
+  const handleSaveProfile = async (data: Partial<UserProfile>) => {
     setErrorBanner(null);
-    const { profile: saved, profileToken } = await api.saveProfile(data);
-    saveStoredProfileAuth(saved.id, profileToken);
+    const { profile: saved, profileToken, syncCode: issuedCode } = await api.saveProfile(data);
+    saveStoredProfileAuth(saved.id, profileToken, issuedCode ?? syncCode ?? undefined);
+    if (issuedCode) setSyncCode(issuedCode);
     setProfile(saved);
-    if (firstSession) {
-      await startSession({
-        profileId: saved.id,
-        ...firstSession,
-      });
-    } else {
-      setScreen('checkin');
-    }
+    setScreen('checkin');
   };
 
   const handleLaunchUnifiedSession = async (payload: {
@@ -219,14 +227,15 @@ export default function App() {
 
     let activeProfile = profile;
     if (!activeProfile) {
-      const { profile: saved, profileToken } = await api.saveProfile(
+      const { profile: saved, profileToken, syncCode: issuedCode } = await api.saveProfile(
         payload.profileUpdate ?? {
-          age: Math.max(18, payload.ageOverride ?? 32),
+          age: Math.max(18, payload.ageOverride ?? 34),
           defaultDevice: payload.device,
           researchConsent: true,
         }
       );
-      saveStoredProfileAuth(saved.id, profileToken);
+      saveStoredProfileAuth(saved.id, profileToken, issuedCode);
+      if (issuedCode) setSyncCode(issuedCode);
       setProfile(saved);
       activeProfile = saved;
     }
@@ -263,7 +272,6 @@ export default function App() {
       const sanitized = sanitizeCustomVibe(customLabel);
       if (!sanitized || sanitized.rejectedReason || !sanitized.slug) return;
 
-      // Fast check if this custom vibe already exists in Cloudflare R2 Community Cache
       let cachedUrl: string | undefined;
       try {
         const st = await api.getMusicStatus(sanitized.slug, activeRec.params.energyTier);
@@ -345,6 +353,56 @@ export default function App() {
     await api.dismissPending(id).catch(() => {});
   };
 
+  const handleRestoreIdentity = async () => {
+    if (!restoreInput.trim()) return;
+    setRestoring(true);
+    setIdentityStatus(null);
+    try {
+      const res = await api.restoreIdentity(restoreInput.trim());
+      saveStoredProfileAuth(res.profile.id, res.profileToken, res.syncCode);
+      setProfile(res.profile);
+      setSyncCode(res.syncCode);
+      setPendingDebrief(res.pendingDebrief);
+      setRestoreInput('');
+      setIdentityStatus({
+        kind: 'ok',
+        msg: `Identity restored: ${res.profile.displayName ? `${res.profile.displayName} · ` : ''}${formatProfileSummary(res.profile)}!`,
+      });
+      setScreen('checkin');
+    } catch (err) {
+      setIdentityStatus({
+        kind: 'err',
+        msg: err instanceof Error ? err.message : 'Unable to restore identity.',
+      });
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const handleSwitchIdentity = () => {
+    // Signs out locally without deleting remote D1 history (can always restore via Sync Key!)
+    clearStoredProfileAuth();
+    setProfile(null);
+    setSyncCode(null);
+    setPendingDebrief(null);
+    setActiveRec(null);
+    setDebriefContext(null);
+    setAudioActive(false);
+    setShowIdentityModal(false);
+    setScreen('checkin');
+  };
+
+  const handleCopySyncCode = async () => {
+    if (!syncCode) return;
+    try {
+      await navigator.clipboard.writeText(syncCode);
+      setCopiedSync(true);
+      window.setTimeout(() => setCopiedSync(false), 2000);
+    } catch {
+      // ignore clipboard restrictions
+    }
+  };
+
   const handleDeleteMyData = async () => {
     setDeletingData(true);
     setPrivacyStatus(null);
@@ -354,13 +412,14 @@ export default function App() {
       }
       clearStoredProfileAuth();
       setProfile(null);
+      setSyncCode(null);
       setPendingDebrief(null);
       setActiveRec(null);
       setDebriefContext(null);
       setAudioActive(false);
       setScreen('checkin');
       setPrivacyStatus(
-        'Your profile, session history, and personal Bandit records have been permanently erased from Cloudflare D1 and this browser.'
+        'Your Neural Identity, Sync Key, session history, and personal Bandit records have been permanently erased from Cloudflare D1 and this browser.'
       );
     } catch (err) {
       setPrivacyStatus(
@@ -447,21 +506,33 @@ export default function App() {
               <span>Research Brain</span>
             </button>
 
-            {profile && (
-              <button
-                type="button"
-                onClick={() => setScreen('onboarding')}
-                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
-                  screen === 'onboarding'
-                    ? 'bg-slate-800/90 text-white border border-slate-700'
-                    : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
-                }`}
-                title="Edit your profile"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Age {profile.age}</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setIdentityStatus(null);
+                setShowIdentityModal(true);
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
+                profile
+                  ? 'border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/18'
+                  : 'border border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:text-white'
+              }`}
+              title="Neural Identity, Cross-Device Sync Key & Switch Profile"
+            >
+              {profile ? (
+                <>
+                  <UserCheck className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">
+                    {profile.displayName ? `${profile.displayName} · ${profile.age}` : `Age ${profile.age}`}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <KeyRound className="h-3.5 w-3.5 text-cyan-300" />
+                  <span className="hidden sm:inline">Sync ID</span>
+                </>
+              )}
+            </button>
           </nav>
         </div>
       </header>
@@ -482,6 +553,7 @@ export default function App() {
           <OnboardingView
             initialProfile={profile}
             onComplete={handleSaveProfile}
+            onCancel={() => setScreen('checkin')}
             onMoodChange={setFieldMood}
           />
         ) : screen === 'checkin' ? (
@@ -491,6 +563,10 @@ export default function App() {
             pendingDebrief={pendingDebrief}
             onOpenPendingDebrief={handleOpenPendingDebrief}
             onDismissPending={() => void handleDismissPending()}
+            onOpenIdentityModal={() => {
+              setIdentityStatus(null);
+              setShowIdentityModal(true);
+            }}
             onMoodChange={setFieldMood}
             onLaunchUnifiedSession={handleLaunchUnifiedSession}
           />
@@ -498,6 +574,7 @@ export default function App() {
           <ProtocolRevealView
             loading={researching}
             recommendation={activeRec}
+            profile={profile}
             mood={fieldMood}
             customLiveGenAvailable={runtimeConfig?.customLiveGenAvailable}
             onSwapGenre={handleSwapRevealGenre}
@@ -532,6 +609,128 @@ export default function App() {
         )}
       </main>
 
+      {/* Passwordless Neural Identity, Cross-Device Sync & Switch Modal */}
+      {showIdentityModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage w-full max-w-md rounded-3xl p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-cyan-300">
+                <KeyRound className="h-5 w-5" />
+                <h3 className="text-base font-semibold text-white">Your Neural Identity</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowIdentityModal(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {profile && (
+              <div className="space-y-3 rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.06] p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-bold text-white">
+                      {profile.displayName || 'Anonymous Listener'}
+                    </div>
+                    <div className="font-mono-tech mt-0.5 text-[11px] text-cyan-200">
+                      {formatProfileSummary(profile)}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-slate-400">
+                      {profile.sessionCount ?? 0} sessions tuned · Personal Bandit active
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowIdentityModal(false);
+                      setScreen('onboarding');
+                    }}
+                    className="inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 hover:border-cyan-400/50 hover:text-white"
+                  >
+                    <SlidersHorizontal className="h-3 w-3" />
+                    Edit
+                  </button>
+                </div>
+
+                {syncCode && (
+                  <div className="space-y-1.5 border-t border-cyan-400/15 pt-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                      Cross-Device Sync Key (Phone &amp; Laptop · No Password Needed)
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-700/80 bg-slate-950/90 px-3 py-2">
+                      <code className="font-mono-tech text-sm font-bold tracking-widest text-cyan-300">
+                        {syncCode}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopySyncCode()}
+                        className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/35 bg-cyan-400/12 px-2.5 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-400/20"
+                      >
+                        {copiedSync ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        {copiedSync ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSwitchIdentity}
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-700/90 bg-slate-900/80 px-3.5 py-2.5 text-xs font-medium text-slate-200 transition hover:border-amber-400/50 hover:text-amber-200"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Switch Person / Start Fresh Identity on This Device
+                </button>
+              </div>
+            )}
+
+            {/* Restore Identity via Sync Key */}
+            <div className="space-y-2.5">
+              <div className="text-xs font-semibold text-white">
+                {profile ? 'Or restore another Identity with a Sync Key:' : 'Restore your Neural Identity on this device:'}
+              </div>
+              <p className="text-[11px] leading-relaxed text-slate-400">
+                Enter your <code className="font-mono-tech text-cyan-300">NFM-XXXX-XXXX</code> key to
+                carry your profile and learned audio preferences across devices — no email or password.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={restoreInput}
+                  onChange={(e) => setRestoreInput(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleRestoreIdentity();
+                  }}
+                  placeholder="NFM-XXXX-XXXX"
+                  className="font-mono-tech flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs uppercase tracking-wider text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={restoring || !restoreInput.trim()}
+                  onClick={() => void handleRestoreIdentity()}
+                  className="btn-aurora rounded-xl px-4 py-2.5 text-xs font-bold text-slate-950 disabled:opacity-50"
+                >
+                  {restoring ? 'Syncing...' : 'Restore'}
+                </button>
+              </div>
+              {identityStatus && (
+                <div
+                  className={`rounded-xl border px-3 py-2 text-xs ${
+                    identityStatus.kind === 'ok'
+                      ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200'
+                      : 'border-rose-400/35 bg-rose-500/10 text-rose-200'
+                  }`}
+                >
+                  {identityStatus.msg}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Privacy & Delete My Data Modal */}
       {showPrivacyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
@@ -561,8 +760,9 @@ export default function App() {
                 retention beacons.
               </p>
               <p>
-                <strong>Pseudonymized &amp; 18+ only:</strong> Profiles use a random device token
-                (90-day local TTL) and are never exposed in public Research Brain feeds.
+                <strong>Passwordless &amp; 18+ only:</strong> Neural Identities use a random device
+                token + hashed Sync Key (90-day local TTL) and are never exposed in public Research
+                Brain feeds.
               </p>
             </div>
 
@@ -575,7 +775,7 @@ export default function App() {
             {profile ? (
               <div className="space-y-2.5 border-t border-slate-800 pt-3">
                 <div className="text-[11px] text-slate-400">
-                  Active pseudonymized profile stored on this device (Age {profile.age}).
+                  Active Neural Identity stored on this device ({formatProfileSummary(profile)}).
                 </div>
                 <button
                   type="button"
@@ -584,12 +784,12 @@ export default function App() {
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-500/45 bg-rose-500/15 px-4 py-3 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
                 >
                   <Trash2 className="h-4 w-4" />
-                  {deletingData ? 'Erasing data...' : 'Delete My Profile & Session Data'}
+                  {deletingData ? 'Erasing data...' : 'Delete My Identity & All Session Data'}
                 </button>
               </div>
             ) : (
               <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5 text-xs text-slate-400">
-                No personal profile is currently stored in this browser.
+                No personal Neural Identity is currently stored in this browser.
               </div>
             )}
           </div>
