@@ -170,6 +170,22 @@ export function OnboardingView({
               </button>
             ))}
           </div>
+          {role === 'other' && (
+            <div className="animate-step rounded-xl border border-indigo-400/40 bg-indigo-500/[0.08] p-3 space-y-1.5">
+              <label className="block text-[11px] font-semibold text-indigo-200">
+                Type your profession or craft:
+              </label>
+              <input
+                type="text"
+                autoFocus
+                maxLength={40}
+                value={occupationLabel}
+                onChange={(e) => setOccupationLabel(e.target.value)}
+                placeholder="e.g. Architect, Surgeon, Pilot, Chef, Trader, Musician..."
+                className="w-full rounded-xl border border-indigo-400/35 bg-slate-950/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+              />
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

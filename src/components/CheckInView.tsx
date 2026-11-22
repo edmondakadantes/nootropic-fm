@@ -12,9 +12,9 @@ import {
   MicOff,
   Music2,
   Plus,
+  QrCode,
   ShieldCheck,
   Sparkles,
-  UserCheck,
   Volume2,
   X,
 } from 'lucide-react';
@@ -54,10 +54,12 @@ import {
 } from '../../shared/types';
 import type { FieldMood } from './AmbientField';
 import { NeuralCompassSelector, NeuralTrajectoryPreview } from './NeuralCompass';
+import { NeuralFingerprintSigil } from './NeuralFingerprintPass';
 import { SonicOrb } from './SonicOrb';
 
 interface CheckInViewProps {
   profile: UserProfile | null;
+  syncCode: string | null;
   runtimeConfig: AppRuntimeConfig | null;
   pendingDebrief: SessionRecord | null;
   onOpenPendingDebrief: () => void;
@@ -146,6 +148,7 @@ function browserHasGpc(): boolean {
 
 export function CheckInView({
   profile,
+  syncCode,
   runtimeConfig,
   pendingDebrief,
   onOpenPendingDebrief,
@@ -510,13 +513,15 @@ export function CheckInView({
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center space-y-5">
-      {/* Returning Listener Neural Identity Bar */}
+      {/* Returning Listener Neural Fingerprint Identity Bar */}
       {profile && (
         <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.06] px-4 py-2.5 backdrop-blur-md">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-400/15 text-cyan-200">
-              <UserCheck className="h-4 w-4" />
-            </span>
+            <NeuralFingerprintSigil
+              seed={syncCode || profile.id}
+              size={38}
+              className="rounded-xl border border-cyan-400/25 bg-slate-950/80 p-0.5"
+            />
             <div className="min-w-0">
               <div className="truncate text-xs font-semibold text-white">
                 {profile.displayName ? `Welcome back, ${profile.displayName}` : 'Welcome back'}
@@ -525,17 +530,17 @@ export function CheckInView({
                 </span>
               </div>
               <div className="text-[10px] text-slate-400">
-                Neural Identity active · {profile.sessionCount ?? 0} sessions tuned
+                Neural Fingerprint active · {profile.sessionCount ?? 0} sessions tuned
               </div>
             </div>
           </div>
           <button
             type="button"
             onClick={onOpenIdentityModal}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-700/90 bg-slate-900/80 px-3 py-1.5 text-[11px] font-medium text-slate-200 transition hover:border-cyan-400/50 hover:text-cyan-200"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/35 bg-slate-900/90 px-3 py-1.5 text-[11px] font-semibold text-cyan-200 transition hover:bg-cyan-400/15"
           >
-            <KeyRound className="h-3.5 w-3.5 text-cyan-300" />
-            Identity &amp; Sync
+            <QrCode className="h-3.5 w-3.5 text-cyan-300" />
+            Neural Pass &amp; QR
           </button>
         </div>
       )}
@@ -757,21 +762,21 @@ export function CheckInView({
 
           {/* Structured compact identity controls (synced live with natural text!) */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
-            <div className="sm:col-span-5">
+            <div className="sm:col-span-8">
               <label className="mb-1 block text-[11px] font-medium text-slate-400">
-                First name / Nickname <span className="text-slate-500">(optional)</span>
+                First name / Callsign <span className="text-slate-500">(optional — stay anonymous anytime)</span>
               </label>
               <input
                 type="text"
                 maxLength={28}
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="e.g. Alex (or stay anonymous)"
+                placeholder="e.g. Alex (or leave blank for pure anonymous fingerprint)"
                 className="w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
               />
             </div>
 
-            <div className="sm:col-span-3">
+            <div className="sm:col-span-4">
               <label className="mb-1 block text-[11px] font-medium text-slate-400">
                 Age <span className="text-cyan-300">(18+)</span>
               </label>
@@ -786,20 +791,6 @@ export function CheckInView({
                   if (val >= 18 && val <= 95) setAgeError(null);
                 }}
                 className="font-mono-tech w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
-              />
-            </div>
-
-            <div className="sm:col-span-4">
-              <label className="mb-1 block text-[11px] font-medium text-slate-400">
-                Occupation <span className="text-slate-500">(optional)</span>
-              </label>
-              <input
-                type="text"
-                maxLength={40}
-                value={occupationLabel}
-                onChange={(e) => setOccupationLabel(e.target.value)}
-                placeholder="e.g. Programmer, Driver"
-                className="w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
               />
             </div>
           </div>
@@ -827,8 +818,8 @@ export function CheckInView({
             </div>
           </div>
 
-          {/* Primary Work / Archetype */}
-          <div className="space-y-1.5">
+          {/* Primary Work / Archetype + Dedicated Inline Input when "Other" is Selected */}
+          <div className="space-y-2">
             <div className="text-[11px] font-medium text-slate-400">What best describes your day?</div>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {(Object.keys(ROLE_SHORT_LABELS) as UserRole[]).map((r) => (
@@ -847,7 +838,7 @@ export function CheckInView({
                   }}
                   className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
                     role === r
-                      ? 'border-indigo-400/70 bg-indigo-500/18 text-white'
+                      ? 'border-indigo-400/70 bg-indigo-500/18 text-white shadow-[0_0_16px_rgba(129,140,248,0.2)]'
                       : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
                   }`}
                 >
@@ -855,6 +846,43 @@ export function CheckInView({
                 </button>
               ))}
             </div>
+
+            {/* Dedicated Profession Input — prominently highlighted when "Other" is selected! */}
+            {role === 'other' ? (
+              <div className="animate-step rounded-2xl border border-indigo-400/40 bg-indigo-500/[0.08] p-3 space-y-1.5">
+                <label className="block text-[11px] font-semibold text-indigo-200">
+                  Type your profession or craft:
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  maxLength={40}
+                  value={occupationLabel}
+                  onChange={(e) => setOccupationLabel(e.target.value)}
+                  placeholder="e.g. Architect, Surgeon, Pilot, Chef, Trader, Musician, Therapist..."
+                  className="w-full rounded-xl border border-indigo-400/35 bg-slate-950/90 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                />
+              </div>
+            ) : (
+              <input
+                type="text"
+                maxLength={40}
+                value={occupationLabel}
+                onChange={(e) => setOccupationLabel(e.target.value)}
+                placeholder={`Optional exact title (e.g. ${
+                  role === 'driver'
+                    ? 'Minibus Driver, Trucker'
+                    : role === 'student'
+                      ? 'Medical Student, PhD'
+                      : role === 'creative'
+                        ? 'Product Designer, Writer'
+                        : role === 'entrepreneur'
+                          ? 'SaaS Founder, Operations Lead'
+                          : 'Software Programmer, Data Analyst'
+                })`}
+                className="w-full rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 py-2 text-[11px] text-slate-200 placeholder-slate-500 focus:border-cyan-400/60 focus:outline-none"
+              />
+            )}
           </div>
 
           {ageError && <p className="text-xs font-medium text-rose-300">{ageError}</p>}
@@ -872,11 +900,11 @@ export function CheckInView({
             />
             <span>
               <strong className="inline-flex items-center gap-1 text-emerald-300">
-                <ShieldCheck className="h-3.5 w-3.5" /> Save my Neural Identity &amp; enable self-learning (18+, optional):
+                <ShieldCheck className="h-3.5 w-3.5" /> Mint my 1-of-1 Neural Fingerprint &amp; QR Pass (18+, optional):
               </strong>{' '}
-              Issues your personal Sync Key (<code className="font-mono-tech text-cyan-300">NFM-...</code>)
-              so the platform learns from your before → after Δ, listen retention &amp; occasional (~12%)
-              blind pure-music controls. Leave unchecked for 100% local-only mode.
+              Generates your anonymous acoustic sigil + scannable QR Sync Key (zero email, zero
+              password) so the engine learns from your before → after Δ &amp; listen retention.
+              Leave unchecked for 100% local-only mode.
             </span>
           </label>
 

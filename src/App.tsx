@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   BarChart3,
-  Check,
-  Copy,
   Download,
+  Fingerprint,
   KeyRound,
   LogOut,
   Radio,
@@ -11,7 +10,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Trash2,
-  UserCheck,
   X,
 } from 'lucide-react';
 import { sanitizeCustomVibe } from '../shared/promptComposer';
@@ -34,6 +32,7 @@ import { AmbientField, type FieldMood } from './components/AmbientField';
 import { CheckInView } from './components/CheckInView';
 import { DebriefView } from './components/DebriefView';
 import { InsightsView } from './components/InsightsView';
+import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFingerprintPass';
 import { OnboardingView } from './components/OnboardingView';
 import { PlayerView } from './components/PlayerView';
 import { ProtocolRevealView } from './components/ProtocolRevealView';
@@ -67,7 +66,7 @@ export default function App() {
   const [restoreInput, setRestoreInput] = useState('');
   const [restoring, setRestoring] = useState(false);
   const [identityStatus, setIdentityStatus] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
-  const [copiedSync, setCopiedSync] = useState(false);
+  const [qrToast, setQrToast] = useState<string | null>(null);
 
   const [installPrompt, setInstallPrompt] = useState<{
     prompt: () => Promise<void>;
@@ -106,6 +105,32 @@ export default function App() {
         .getConfig()
         .then((res) => setRuntimeConfig(res.config))
         .catch(() => {});
+
+      // 1. Magic Scanned QR Auto-Restore via private URL hash (#sync=NFM-XXXX-XXXX)
+      // Hash fragments never leave the browser in HTTP logs or Referer headers.
+      const hashMatch = window.location.hash.match(/^#sync=([A-Za-z0-9-]+)$/i);
+      if (hashMatch) {
+        const scannedCode = decodeURIComponent(hashMatch[1]).trim();
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        try {
+          const res = await api.restoreIdentity(scannedCode);
+          saveStoredProfileAuth(res.profile.id, res.profileToken, res.syncCode);
+          setProfile(res.profile);
+          setSyncCode(res.syncCode);
+          setPendingDebrief(res.pendingDebrief);
+          setQrToast(
+            `Neural Fingerprint synced via QR — welcome back${
+              res.profile.displayName ? `, ${res.profile.displayName}` : ''
+            } (${formatProfileSummary(res.profile)})!`
+          );
+          await configPromise;
+          setBooting(false);
+          setScreen('checkin');
+          return;
+        } catch {
+          setErrorBanner('Scanned QR Sync Key was invalid or already erased.');
+        }
+      }
 
       const stored = getStoredProfileAuth();
       if (!stored?.profileId) {
@@ -388,7 +413,7 @@ export default function App() {
   };
 
   const handleSwitchIdentity = () => {
-    // Signs out locally without deleting remote D1 history (can always restore via Sync Key!)
+    // Signs out locally without deleting remote D1 history (can always restore via QR / Sync Key!)
     clearStoredProfileAuth();
     setProfile(null);
     setSyncCode(null);
@@ -398,17 +423,6 @@ export default function App() {
     setAudioActive(false);
     setShowIdentityModal(false);
     setScreen('checkin');
-  };
-
-  const handleCopySyncCode = async () => {
-    if (!syncCode) return;
-    try {
-      await navigator.clipboard.writeText(syncCode);
-      setCopiedSync(true);
-      window.setTimeout(() => setCopiedSync(false), 2000);
-    } catch {
-      // ignore clipboard restrictions
-    }
   };
 
   const handleDeleteMyData = async () => {
@@ -520,24 +534,24 @@ export default function App() {
                 setIdentityStatus(null);
                 setShowIdentityModal(true);
               }}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
+              className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition ${
                 profile
                   ? 'border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/18'
                   : 'border border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:text-white'
               }`}
-              title="Neural Identity, Cross-Device Sync Key & Switch Profile"
+              title="Neural Fingerprint Pass, Scannable QR & Switch Identity"
             >
               {profile ? (
                 <>
-                  <UserCheck className="h-3.5 w-3.5" />
+                  <NeuralFingerprintSigil seed={syncCode || profile.id} size={22} />
                   <span className="hidden sm:inline">
-                    {profile.displayName ? `${profile.displayName} · ${profile.age}` : `Age ${profile.age}`}
+                    {profile.displayName ? `${profile.displayName} · ${profile.age}` : `Pass · ${profile.age}`}
                   </span>
                 </>
               ) : (
                 <>
                   <KeyRound className="h-3.5 w-3.5 text-cyan-300" />
-                  <span className="hidden sm:inline">Sync ID</span>
+                  <span className="hidden sm:inline">Sync QR</span>
                 </>
               )}
             </button>
@@ -547,6 +561,22 @@ export default function App() {
 
       {/* Main Content Stage */}
       <main className="relative z-10 mx-auto w-full max-w-5xl flex-1 px-4 py-7 sm:px-6 sm:py-11">
+        {qrToast && (
+          <div className="animate-rise mx-auto mb-5 flex max-w-2xl items-center justify-between gap-3 rounded-2xl border border-emerald-400/40 bg-emerald-500/12 px-4 py-3 text-xs font-medium text-emerald-200 backdrop-blur-md">
+            <span className="inline-flex items-center gap-2">
+              <Fingerprint className="h-4 w-4 shrink-0 text-emerald-300" />
+              {qrToast}
+            </span>
+            <button
+              type="button"
+              onClick={() => setQrToast(null)}
+              className="rounded-lg p-1 text-emerald-200/70 hover:bg-emerald-500/20 hover:text-white"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {errorBanner && (
           <div className="mx-auto mb-5 max-w-2xl rounded-2xl border border-rose-500/35 bg-rose-500/12 px-4 py-3 text-sm text-rose-200 backdrop-blur-md">
             {errorBanner}
@@ -567,6 +597,7 @@ export default function App() {
         ) : screen === 'checkin' ? (
           <CheckInView
             profile={profile}
+            syncCode={syncCode}
             runtimeConfig={runtimeConfig}
             pendingDebrief={pendingDebrief}
             onOpenPendingDebrief={handleOpenPendingDebrief}
@@ -617,14 +648,14 @@ export default function App() {
         )}
       </main>
 
-      {/* Passwordless Neural Identity, Cross-Device Sync & Switch Modal */}
+      {/* Futuristic Neural Fingerprint Pass, Scannable QR & Switch Identity Modal */}
       {showIdentityModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
-          <div className="animate-step glass-stage w-full max-w-md rounded-3xl p-6 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-3xl p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-cyan-300">
-                <KeyRound className="h-5 w-5" />
-                <h3 className="text-base font-semibold text-white">Your Neural Identity</h3>
+                <Fingerprint className="h-5 w-5" />
+                <h3 className="text-base font-semibold text-white">Your Neural Fingerprint &amp; QR Pass</h3>
               </div>
               <button
                 type="button"
@@ -636,72 +667,41 @@ export default function App() {
             </div>
 
             {profile && (
-              <div className="space-y-3 rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.06] p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-bold text-white">
-                      {profile.displayName || 'Anonymous Listener'}
-                    </div>
-                    <div className="font-mono-tech mt-0.5 text-[11px] text-cyan-200">
-                      {formatProfileSummary(profile)}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-slate-400">
-                      {profile.sessionCount ?? 0} sessions tuned · Personal Bandit active
-                    </div>
-                  </div>
+              <div className="space-y-3">
+                <NeuralPassCard profile={profile} syncCode={syncCode} />
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <button
                     type="button"
                     onClick={() => {
                       setShowIdentityModal(false);
                       setScreen('onboarding');
                     }}
-                    className="inline-flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 hover:border-cyan-400/50 hover:text-white"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700/90 bg-slate-900/80 px-3.5 py-2.5 text-xs font-medium text-slate-200 transition hover:border-cyan-400/50 hover:text-white"
                   >
-                    <SlidersHorizontal className="h-3 w-3" />
-                    Edit
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-cyan-300" />
+                    Edit Profile Details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSwitchIdentity}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700/90 bg-slate-900/80 px-3.5 py-2.5 text-xs font-medium text-slate-200 transition hover:border-amber-400/50 hover:text-amber-200"
+                  >
+                    <LogOut className="h-3.5 w-3.5 text-amber-300" />
+                    Switch Person / New Pass
                   </button>
                 </div>
-
-                {syncCode && (
-                  <div className="space-y-1.5 border-t border-cyan-400/15 pt-3">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      Cross-Device Sync Key (Phone &amp; Laptop · No Password Needed)
-                    </div>
-                    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-700/80 bg-slate-950/90 px-3 py-2">
-                      <code className="font-mono-tech text-sm font-bold tracking-widest text-cyan-300">
-                        {syncCode}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => void handleCopySyncCode()}
-                        className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/35 bg-cyan-400/12 px-2.5 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-400/20"
-                      >
-                        {copiedSync ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                        {copiedSync ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleSwitchIdentity}
-                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-700/90 bg-slate-900/80 px-3.5 py-2.5 text-xs font-medium text-slate-200 transition hover:border-amber-400/50 hover:text-amber-200"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  Switch Person / Start Fresh Identity on This Device
-                </button>
               </div>
             )}
 
             {/* Restore Identity via Sync Key */}
-            <div className="space-y-2.5">
+            <div className="space-y-2 border-t border-slate-800/80 pt-3.5">
               <div className="text-xs font-semibold text-white">
-                {profile ? 'Or restore another Identity with a Sync Key:' : 'Restore your Neural Identity on this device:'}
+                {profile ? 'Or restore another Pass with a Sync Key:' : 'Restore your Neural Pass on this device:'}
               </div>
               <p className="text-[11px] leading-relaxed text-slate-400">
-                Enter your <code className="font-mono-tech text-cyan-300">NFM-XXXX-XXXX</code> key to
-                carry your profile and learned audio preferences across devices — no email or password.
+                Scan your QR Pass with your phone camera, or enter your{' '}
+                <code className="font-mono-tech text-cyan-300">NFM-XXXX-XXXX</code> key below.
               </p>
               <div className="flex gap-2">
                 <input
