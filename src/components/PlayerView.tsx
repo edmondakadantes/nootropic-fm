@@ -13,7 +13,7 @@ import {
   Waves,
 } from 'lucide-react';
 import type { LiveAdjustment, ProtocolRecommendation } from '../../shared/types';
-import { DEVICE_LABELS_RO, STATE_LABELS_RO, TARGET_LABELS_RO } from '../../shared/types';
+import { DEVICE_LABELS, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
 import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
 import { api } from '../lib/api';
 import { NeuralVisualizer } from './NeuralVisualizer';
@@ -47,7 +47,7 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
   const [adjustments, setAdjustments] = useState<LiveAdjustment[]>([]);
   const [telemetry, setTelemetry] = useState<EngineTelemetry>({
     phase: 'entry',
-    phaseLabelRo: 'Aliniere & intrare (Principiul Iso)',
+    phaseLabel: 'Entry & Alignment (Iso-Principle)',
     progressRatio: 0,
     currentModHz: recommendation.params.modulationHz,
     currentModDepth: recommendation.params.modulationDepth,
@@ -61,7 +61,6 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
   elapsedRef.current = elapsedSec;
   adjustmentsRef.current = adjustments;
 
-  // Auto-start procedural Web Audio engine on mount (user just clicked Start!)
   useEffect(() => {
     let mounted = true;
     const startAudio = async () => {
@@ -69,14 +68,13 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
         await engineRef.current?.start(
           recommendation.params,
           recommendation.plannedDurationMin,
-          `${recommendation.arm.name} · ${TARGET_LABELS_RO[recommendation.targetState]}`
+          `${recommendation.arm.name} · ${TARGET_LABELS[recommendation.targetState]}`
         );
         if (mounted) {
           setIsPlaying(true);
           setAudioStarted(true);
         }
       } catch {
-        // Browser may require explicit click if autoplay restricted
         if (mounted) {
           setIsPlaying(false);
           setAudioStarted(false);
@@ -91,7 +89,6 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
     };
   }, [recommendation]);
 
-  // 1-second session timer + periodic telemetry sync to Worker D1
   useEffect(() => {
     if (!isPlaying) return;
     const id = window.setInterval(() => {
@@ -100,7 +97,6 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
         const tel = engineRef.current?.updateElapsed(next);
         if (tel) setTelemetry(tel);
 
-        // Sync behavioral telemetry to D1 every 15s (survives browser close!)
         if (next > 0 && next % 15 === 0) {
           void api
             .saveProgress({
@@ -186,16 +182,15 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      {/* Safety banner for Driving */}
       {recommendation.safetyMode && (
         <div className="rounded-2xl border border-amber-400/40 bg-amber-500/12 p-4">
           <div className="flex items-start gap-3">
             <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
             <div className="space-y-1 text-xs text-amber-100">
               <div className="font-semibold uppercase tracking-wide text-amber-300">
-                Driving Safety Mode · Frecvențe de trafic protejate
+                Driving Safety Mode · Ambient Traffic Frequencies Protected
               </div>
-              {recommendation.safetyWarningsRo.map((w, idx) => (
+              {recommendation.safetyWarnings.map((w, idx) => (
                 <p key={idx} className="leading-relaxed text-amber-100/90">
                   {w}
                 </p>
@@ -223,18 +218,18 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
               >
                 <FlaskConical className="h-3 w-3" />
                 {recommendation.isExploration
-                  ? 'Explorare controlată (Bandit)'
-                  : `Exploatare optimă · ${recommendation.confidencePct}% scor`}
+                  ? 'Controlled Exploration (Bandit)'
+                  : `Optimal Fit · ${recommendation.confidencePct}% score`}
               </span>
             </div>
             <h1 className="mt-2.5 text-2xl font-bold text-white">
-              {TARGET_LABELS_RO[recommendation.targetState]}
+              {TARGET_LABELS[recommendation.targetState]}
             </h1>
             <p className="mt-1 text-xs text-slate-400">
-              Cohortă: <span className="text-slate-200">{recommendation.cohortLabelRo}</span> · Ieșire:{' '}
-              <span className="text-slate-200">{DEVICE_LABELS_RO[recommendation.device]}</span> · Start:{' '}
+              Cohort: <span className="text-slate-200">{recommendation.cohortLabel}</span> · Output:{' '}
+              <span className="text-slate-200">{DEVICE_LABELS[recommendation.device]}</span> · Start:{' '}
               <span className="text-slate-200">
-                {STATE_LABELS_RO[recommendation.currentState]} ({recommendation.baselineScore}/5)
+                {STATE_LABELS[recommendation.currentState]} ({recommendation.baselineScore}/5)
               </span>
             </p>
           </div>
@@ -244,12 +239,11 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
               {formatTimer(elapsedSec)}
             </div>
             <div className="font-mono-tech text-xs text-slate-400">
-              din {recommendation.plannedDurationMin}:00 min
+              of {recommendation.plannedDurationMin}:00 min
             </div>
           </div>
         </div>
 
-        {/* Live 60fps Neural Waveform Visualizer */}
         <NeuralVisualizer
           engine={engineRef.current}
           isPlaying={isPlaying}
@@ -262,10 +256,10 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
           <div className="flex items-center justify-between text-xs">
             <span className="inline-flex items-center gap-1.5 font-medium text-cyan-300">
               <Activity className="h-3.5 w-3.5" />
-              Faza activă: {telemetry.phaseLabelRo}
+              Active phase: {telemetry.phaseLabel}
               {telemetry.antiMonotonyActive && (
                 <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] text-amber-200">
-                  Impuls anti-monotonie
+                  Anti-monotony lift
                 </span>
               )}
             </span>
@@ -278,20 +272,20 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
             />
           </div>
           <div className="flex justify-between text-[10px] text-slate-500">
-            <span>0% · Intrare (Iso)</span>
-            <span>15% – 88% · Platou cognitiv</span>
-            <span>100% · Revenire</span>
+            <span>0% · Entry (Iso)</span>
+            <span>15% – 88% · Cognitive Plateau</span>
+            <span>100% · Landing</span>
           </div>
         </div>
 
-        {/* Play/Pause & Live Psychoacoustic Controls */}
+        {/* Play/Pause & Live Controls */}
         <div className="flex flex-col gap-4 rounded-xl border border-slate-800/80 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => void togglePlay()}
               className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/25 transition hover:scale-105 hover:bg-cyan-300"
-              aria-label={isPlaying ? 'Pauză' : 'Redă'}
+              aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
                 <Pause className="h-6 w-6 fill-slate-950" />
@@ -303,7 +297,7 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
             <div className="w-36 space-y-1">
               <div className="flex items-center justify-between text-[11px] text-slate-400">
                 <span className="inline-flex items-center gap-1">
-                  <Volume2 className="h-3.5 w-3.5" /> Volum
+                  <Volume2 className="h-3.5 w-3.5" /> Volume
                 </span>
                 <span className="font-mono-tech">{Math.round(volume * 100)}%</span>
               </div>
@@ -321,21 +315,21 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 mr-1">
-              <Sliders className="h-3.5 w-3.5" /> Ajustare live:
+              <Sliders className="h-3.5 w-3.5" /> Live tune:
             </span>
             <button
               type="button"
               onClick={() => tweakIntensity(-0.15)}
               className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-400/50"
             >
-              Mai calm
+              Calmer
             </button>
             <button
               type="button"
               onClick={() => tweakIntensity(0.15)}
               className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-400/50"
             >
-              Mai energic
+              More drive
             </button>
             <button
               type="button"
@@ -357,41 +351,41 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
         {/* Acoustic DNA Telemetry Grid */}
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Modulație AM</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">AM Modulation</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-cyan-300">
               {telemetry.currentModHz} Hz
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Adâncime AM</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">AM Depth</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-indigo-300">
               {Math.round(telemetry.currentModDepth * 100)}%
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Puls ritmic</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Pulse Tempo</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-white">
               {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Ambient'}
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Zgomot calibrat</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Colored Noise</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-slate-200">
               {recommendation.params.noiseColor} ({Math.round(recommendation.params.noiseLevel * 100)}%)
             </div>
           </div>
           <div className="col-span-2 rounded-xl border border-slate-800 bg-slate-900/60 p-3 sm:col-span-1">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Ajustări live</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Live Tweaks</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-amber-300">
               {adjustments.length}
             </div>
           </div>
         </div>
 
-        {/* Finish Session CTA -> Post-Session Debrief */}
+        {/* Finish Session CTA */}
         <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-800/80 pt-4 sm:flex-row">
           <p className="text-xs text-slate-400">
-            Când termini (sau vrei să evaluezi acum), apasă butonul pentru debrief-ul de 10 secunde ca platforma să învețe.
+            Finished listening (or ready to rate now)? Complete the 10-second debrief so the engine learns what worked.
           </p>
           <button
             type="button"
@@ -399,21 +393,21 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
             className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300"
           >
             <CheckCircle2 className="h-4 w-4" />
-            Încheie și oferă feedback (10s)
+            End Session & Rate (10s)
           </button>
         </div>
       </div>
 
-      {/* Scientific Rationale & Verified Peer-Reviewed Literature */}
+      {/* Scientific Rationale & Verified Studies */}
       <div className="glass-card rounded-2xl p-5 sm:p-6 space-y-4">
         <div className="flex items-center gap-2 text-cyan-300">
           <BookOpen className="h-5 w-5" />
           <h2 className="text-base font-semibold text-white">
-            De ce acest protocol? (Bază științifică verificată)
+            Why this protocol? (Verified Peer-Reviewed Literature)
           </h2>
         </div>
 
-        <p className="text-sm leading-relaxed text-slate-300">{recommendation.rationaleRo}</p>
+        <p className="text-sm leading-relaxed text-slate-300">{recommendation.rationale}</p>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {recommendation.studies.map((study) => (
@@ -430,14 +424,14 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
                   target="_blank"
                   rel="noreferrer"
                   className="shrink-0 text-slate-400 hover:text-cyan-300"
-                  title="Deschide studiul (DOI)"
+                  title="Open paper (DOI)"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               </div>
               <div className="text-xs font-medium text-white">{study.title}</div>
-              <p className="text-xs leading-relaxed text-slate-400">{study.summaryRo}</p>
-              <p className="text-[11px] text-amber-300/80">Limitare / Precauție: {study.caveatRo}</p>
+              <p className="text-xs leading-relaxed text-slate-400">{study.summary}</p>
+              <p className="text-[11px] text-amber-300/80">Caveat: {study.caveat}</p>
             </div>
           ))}
         </div>

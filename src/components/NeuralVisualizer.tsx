@@ -111,7 +111,7 @@ export function NeuralVisualizer({
     <canvas
       ref={canvasRef}
       className="h-36 w-full rounded-xl bg-[#060911]/80 border border-slate-800/80"
-      aria-label="Vizualizare unde psihoacustice live"
+      aria-label="Live psychoacoustic waveform visualizer"
     />
   );
 }

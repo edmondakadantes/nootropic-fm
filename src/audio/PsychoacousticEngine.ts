@@ -4,7 +4,7 @@ export type SessionPhase = 'entry' | 'plateau' | 'landing';
 
 export interface EngineTelemetry {
   phase: SessionPhase;
-  phaseLabelRo: string;
+  phaseLabel: string;
   progressRatio: number;
   currentModHz: number;
   currentModDepth: number;
@@ -501,16 +501,16 @@ export class PsychoacousticEngine {
     this.elapsedSec = elapsedSec;
     const progressRatio = Math.min(1, Math.max(0, elapsedSec / this.plannedSec));
     let phase: SessionPhase = 'plateau';
-    let phaseLabelRo = 'Platou de performanță';
+    let phaseLabel = 'Cognitive Performance Plateau';
     let phaseModFactor = 1.0;
 
     if (progressRatio < 0.15) {
       phase = 'entry';
-      phaseLabelRo = 'Aliniere & intrare (Principiul Iso)';
+      phaseLabel = 'Entry & Alignment (Iso-Principle)';
       phaseModFactor = 0.72 + (progressRatio / 0.15) * 0.28;
     } else if (progressRatio > 0.88) {
       phase = 'landing';
-      phaseLabelRo = 'Revenire lină';
+      phaseLabel = 'Gentle Landing';
       phaseModFactor = 1.0 - ((progressRatio - 0.88) / 0.12) * 0.4;
     }
 
@@ -532,7 +532,7 @@ export class PsychoacousticEngine {
 
     return {
       phase,
-      phaseLabelRo,
+      phaseLabel,
       progressRatio,
       currentModHz: this.params?.modulationHz ?? 16,
       currentModDepth: Number(currentModDepth.toFixed(2)),

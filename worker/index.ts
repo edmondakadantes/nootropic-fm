@@ -3,7 +3,7 @@ import {
   PROTOCOL_ARMS,
   buildCohortKey,
   computeSessionReward,
-  formatCohortLabelRo,
+  formatCohortLabel,
   selectProtocolRecommendation,
   type BanditStatRow,
 } from '../shared/protocols';
@@ -207,7 +207,7 @@ async function enhanceWithGeminiIfConfigured(
   }
 
   try {
-    const prompt = `Extrage structurat contextul sesiunii audio din mesajul utilizatorului. Răspunde STRICT cu un obiect JSON valid, fără markdown, cu cheile:
+    const prompt = `Extract structured audio session context from the user's message. Respond STRICTLY with a valid JSON object (no markdown) with these keys:
 {
   "extractedAge": number | null,
   "currentState": "distracted" | "fatigued" | "stressed" | "anxious" | "calm_neutral" | "restless",
@@ -216,8 +216,8 @@ async function enhanceWithGeminiIfConfigured(
   "device": "headphones" | "speakers" | "car_audio",
   "durationMin": number
 }
-Regulă de siguranță: dacă utilizatorul conduce (șofer, volan, mașină, microbuz, camion), environment="driving", device="car_audio", iar targetState NU poate fi "sleep_winddown" sau "calm_reset" (folosește "alert_focus").
-Mesaj: """${rawText}"""`;
+Safety rule: if the user is driving (driver, car, bus, minibus, truck, road), set environment="driving", device="car_audio", and targetState MUST NOT be "sleep_winddown" or "calm_reset" (use "alert_focus").
+Message: """${rawText}"""`;
 
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
@@ -649,7 +649,7 @@ export default {
             armId: session.armId,
             armName: session.armName,
             cohortKey: session.cohortKey,
-            cohortLabelRo: formatCohortLabelRo(session.cohortKey),
+            cohortLabel: formatCohortLabel(session.cohortKey),
             delta,
             reward,
             cohortSuccessRatePct: cohortUpdated.successRatePct,
@@ -744,7 +744,7 @@ export default {
             );
             return {
               cohortKey,
-              cohortLabelRo: formatCohortLabelRo(cohortKey),
+              cohortLabel: formatCohortLabel(cohortKey),
               totalSessions: list.length,
               completedSessions: comp.length,
               avgDelta:

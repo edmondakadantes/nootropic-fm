@@ -83,7 +83,7 @@ export const api = {
         armId: string;
         armName: string;
         cohortKey: string;
-        cohortLabelRo: string;
+        cohortLabel: string;
         delta: number;
         reward: number;
         cohortSuccessRatePct: number;

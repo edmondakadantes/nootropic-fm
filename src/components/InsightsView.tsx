@@ -8,7 +8,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
-import { STATE_LABELS_RO, TARGET_LABELS_RO, type ResearchInsights } from '../../shared/types';
+import { STATE_LABELS, TARGET_LABELS, type ResearchInsights } from '../../shared/types';
 import { API_BASE, api } from '../lib/api';
 
 interface InsightsViewProps {
@@ -27,7 +27,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
       const res = await api.getInsights(profileId);
       setInsights(res.insights);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Eroare la încărcarea datelor');
+      setError(e instanceof Error ? e.message : 'Failed to load live research data');
     } finally {
       setLoading(false);
     }
@@ -40,7 +40,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
   if (loading && !insights) {
     return (
       <div className="mx-auto max-w-5xl py-16 text-center text-sm text-slate-400">
-        Se încarcă datele live din baza de cercetare D1...
+        Loading live data from Cloudflare D1 research database...
       </div>
     );
   }
@@ -48,7 +48,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
   if (error || !insights) {
     return (
       <div className="mx-auto max-w-2xl rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-center text-sm text-rose-200">
-        {error ?? 'Nu s-au putut încărca statisticile.'}
+        {error ?? 'Unable to load research metrics.'}
       </div>
     );
   }
@@ -60,14 +60,14 @@ export function InsightsView({ profileId }: InsightsViewProps) {
         <div>
           <div className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/30 bg-indigo-500/12 px-3 py-1 text-xs font-medium text-indigo-300">
             <Database className="h-3.5 w-3.5" />
-            Data Flywheel Live · Cloudflare D1 SQLite
+            Live Data Flywheel · Cloudflare D1 SQLite
           </div>
           <h1 className="mt-2.5 text-2xl font-bold text-white sm:text-3xl">
-            Creierul Platformei <span className="text-cyan-400">nootropic.fm</span>
+            Research Brain · <span className="text-cyan-400">nootropic.fm</span>
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Fiecare sesiune completată actualizează scorurile Bayesian (Contextual Bandit) pe profil
-            individual și pe cohorte colective. Zero date inventate — doar sesiuni reale.
+            Every completed session updates Bayesian Contextual Bandit scores across individual
+            profiles and collective cohorts. Zero synthetic data — real outcomes only.
           </p>
         </div>
 
@@ -78,7 +78,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2 text-xs font-medium text-slate-200 hover:border-slate-500"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Actualizează
+            Refresh
           </button>
           <a
             href={`${API_BASE}/api/dataset/export?format=csv`}
@@ -101,33 +101,33 @@ export function InsightsView({ profileId }: InsightsViewProps) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className="glass-card rounded-xl p-4">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-            <Users className="h-3.5 w-3.5 text-cyan-400" /> Profiluri anonime
+            <Users className="h-3.5 w-3.5 text-cyan-400" /> Profiles
           </div>
           <div className="font-mono-tech mt-2 text-2xl font-bold text-white">
             {insights.totalProfiles}
           </div>
         </div>
         <div className="glass-card rounded-xl p-4">
-          <div className="text-[11px] text-slate-400">Sesiuni totale</div>
+          <div className="text-[11px] text-slate-400">Total Sessions</div>
           <div className="font-mono-tech mt-2 text-2xl font-bold text-white">
             {insights.totalSessions}
           </div>
         </div>
         <div className="glass-card rounded-xl p-4">
-          <div className="text-[11px] text-slate-400">Debrief-uri complete</div>
+          <div className="text-[11px] text-slate-400">Rated Debriefs</div>
           <div className="font-mono-tech mt-2 text-2xl font-bold text-emerald-300">
             {insights.completedDebriefs}
           </div>
         </div>
         <div className="glass-card rounded-xl p-4">
-          <div className="text-[11px] text-slate-400">Rată de succes</div>
+          <div className="text-[11px] text-slate-400">Success Rate</div>
           <div className="font-mono-tech mt-2 text-2xl font-bold text-cyan-300">
             {insights.globalSuccessRatePct}%
           </div>
         </div>
         <div className="glass-card rounded-xl p-4">
           <div className="flex items-center gap-1 text-[11px] text-slate-400">
-            <TrendingUp className="h-3.5 w-3.5 text-emerald-400" /> Δ Mediu
+            <TrendingUp className="h-3.5 w-3.5 text-emerald-400" /> Avg Δ Shift
           </div>
           <div className="font-mono-tech mt-2 text-2xl font-bold text-emerald-300">
             {insights.globalAvgDelta >= 0 ? `+${insights.globalAvgDelta}` : insights.globalAvgDelta}
@@ -135,7 +135,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
         </div>
         <div className="glass-card rounded-xl p-4">
           <div className="flex items-center gap-1 text-[11px] text-slate-400">
-            <FlaskConical className="h-3.5 w-3.5 text-purple-400" /> Explorare
+            <FlaskConical className="h-3.5 w-3.5 text-purple-400" /> Exploration
           </div>
           <div className="font-mono-tech mt-2 text-2xl font-bold text-purple-300">
             {insights.explorationSharePct}%
@@ -148,15 +148,14 @@ export function InsightsView({ profileId }: InsightsViewProps) {
         <div className="flex items-center gap-2 text-cyan-300">
           <Brain className="h-5 w-5" />
           <h2 className="text-base font-semibold text-white">
-            Ce a învățat platforma despre TINE personal
+            Your Personal Psychoacoustic Profile
           </h2>
         </div>
 
         {insights.personalArms.length === 0 ? (
           <p className="text-sm text-slate-400">
-            Încă nu ai niciun debrief completat pe profilul tău. Pornește prima sesiune și completează
-            evaluarea de 10 secunde ca să vezi aici exact ce protocoale funcționează cel mai bine pe
-            creierul tău.
+            No completed debriefs on your profile yet. Run your first session and submit the
+            10-second debrief to watch the platform map what works best for your brain.
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -178,9 +177,9 @@ export function InsightsView({ profileId }: InsightsViewProps) {
                   />
                 </div>
                 <div className="flex justify-between font-mono-tech text-[11px] text-slate-400">
-                  <span>{arm.trials} teste</span>
+                  <span>{arm.trials} trials</span>
                   <span>Δ {arm.avgDelta >= 0 ? `+${arm.avgDelta}` : arm.avgDelta}</span>
-                  <span>Ascultat {arm.avgCompletionPct}%</span>
+                  <span>Completed {arm.avgCompletionPct}%</span>
                 </div>
               </div>
             ))}
@@ -192,18 +191,18 @@ export function InsightsView({ profileId }: InsightsViewProps) {
       <div className="glass-card rounded-2xl p-5 sm:p-6 space-y-4">
         <div>
           <h2 className="text-base font-semibold text-white">
-            Inteligență colectivă pe cohorte (Arhetipuri)
+            Collective Cohort Intelligence (Archetypes)
           </h2>
           <p className="text-xs text-slate-400">
-            Când intră un utilizator nou din aceeași cohortă (ex: 35–44 ani · La volan · Focus alert),
-            algoritmul folosește direct protocolul câștigător de aici.
+            When a new user arrives in the same cohort (e.g., Age 35–44 · Driving · Alert Focus),
+            the engine starts immediately with the top-performing protocol proven here.
           </p>
         </div>
 
         {insights.cohorts.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center text-sm text-slate-500">
-            Baza de date este pregătită. Rulează o primă sesiune de test (ex: șofer microbuz, 40 ani,
-            focus 40m) ca să vezi prima cohortă creată în timp real!
+            Database is ready. Complete your first test session (e.g., 40-year-old minibus driver,
+            40m focus) to see the first learned cohort appear in real time.
           </div>
         ) : (
           <div className="space-y-4">
@@ -214,16 +213,16 @@ export function InsightsView({ profileId }: InsightsViewProps) {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-sm font-semibold text-white">{cohort.cohortLabelRo}</div>
+                    <div className="text-sm font-semibold text-white">{cohort.cohortLabel}</div>
                     <div className="font-mono-tech text-[11px] text-slate-500">
-                      {cohort.cohortKey} · {cohort.completedSessions}/{cohort.totalSessions} sesiuni
-                      validate · Protocol lider:{' '}
+                      {cohort.cohortKey} · {cohort.completedSessions}/{cohort.totalSessions} rated
+                      sessions · Leading protocol:{' '}
                       <span className="text-cyan-300">{cohort.topArmName}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 font-mono-tech text-xs">
                     <span className="rounded-lg bg-emerald-500/12 px-2.5 py-1 text-emerald-300">
-                      Succes {cohort.successRatePct}%
+                      Success {cohort.successRatePct}%
                     </span>
                     <span className="rounded-lg bg-indigo-500/12 px-2.5 py-1 text-indigo-300">
                       Δ {cohort.avgDelta >= 0 ? `+${cohort.avgDelta}` : cohort.avgDelta}
@@ -243,7 +242,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
                           <span className="font-mono-tech text-cyan-300">{arm.successRatePct}%</span>
                         </div>
                         <div className="mt-1 font-mono-tech text-[10px] text-slate-400">
-                          {arm.trials} evaluări · Beta({arm.alpha.toFixed(1)}, {arm.beta.toFixed(1)})
+                          {arm.trials} ratings · Beta({arm.alpha.toFixed(1)}, {arm.beta.toFixed(1)})
                           · Δ {arm.avgDelta >= 0 ? `+${arm.avgDelta}` : arm.avgDelta}
                         </div>
                       </div>
@@ -259,15 +258,15 @@ export function InsightsView({ profileId }: InsightsViewProps) {
       {/* Recent Raw Telemetry Log */}
       {insights.recentSessions.length > 0 && (
         <div className="glass-card rounded-2xl p-5 sm:p-6 space-y-3">
-          <h2 className="text-base font-semibold text-white">Ultimele sesiuni înregistrate</h2>
+          <h2 className="text-base font-semibold text-white">Recent Recorded Sessions</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-800 text-slate-400">
                 <tr>
                   <th className="py-2 pr-3">Protocol</th>
-                  <th className="py-2 pr-3">Tranziție</th>
-                  <th className="py-2 pr-3">Parametri</th>
-                  <th className="py-2 pr-3">Rezultat</th>
+                  <th className="py-2 pr-3">Transition</th>
+                  <th className="py-2 pr-3">Parameters</th>
+                  <th className="py-2 pr-3">Outcome</th>
                   <th className="py-2">Status</th>
                 </tr>
               </thead>
@@ -283,7 +282,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
                       )}
                     </td>
                     <td className="py-2.5 pr-3">
-                      {STATE_LABELS_RO[s.currentState]} → {TARGET_LABELS_RO[s.targetState]}
+                      {STATE_LABELS[s.currentState]} → {TARGET_LABELS[s.targetState]}
                     </td>
                     <td className="font-mono-tech py-2.5 pr-3 text-[11px] text-cyan-300">
                       {s.acousticParams.modulationHz}Hz · {s.acousticParams.bpm}BPM
@@ -296,7 +295,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
                           {s.workedRating}
                         </span>
                       ) : (
-                        <span className="text-slate-500">În așteptare debrief</span>
+                        <span className="text-slate-500">Awaiting debrief</span>
                       )}
                     </td>
                     <td className="py-2.5">

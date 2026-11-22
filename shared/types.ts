@@ -61,18 +61,18 @@ export interface UserProfile {
 }
 
 export interface AcousticParams {
-  modulationHz: number;        // e.g. 16 Hz (Beta) for sustained attention, 10 Hz (Alpha) for calm
-  modulationDepth: number;     // 0.0 - 0.55 subtle rhythmic amplitude modulation
-  bpm: number;                 // 0 (no pulse) or 60 - 124 BPM
-  pulseIntensity: number;      // 0.0 - 1.0 percussive groove presence
+  modulationHz: number;
+  modulationDepth: number;
+  bpm: number;
+  pulseIntensity: number;
   noiseColor: NoiseColor;
-  noiseLevel: number;          // 0.0 - 0.45 calibrated broadband masking level
+  noiseLevel: number;
   harmonicMode: HarmonicMode;
-  rootNoteHz: number;          // Musical tonic e.g. 146.83 (D3), 130.81 (C3), 110 (A2)
-  filterCutoffHz: number;      // Low-pass warmth cutoff
-  speakerSafeEQ: boolean;      // Preserves traffic/ambient midrange cues (800-3500 Hz) & disables binaural
-  antiMonotonyCycleMin: number; // Subtle timbral/energy lift interval to prevent highway hypnosis (0 = off)
-  binauralOffsetHz: number;    // 0 when speakers/driving; subtle only when headphones + calm/flow
+  rootNoteHz: number;
+  filterCutoffHz: number;
+  speakerSafeEQ: boolean;
+  antiMonotonyCycleMin: number;
+  binauralOffsetHz: number;
 }
 
 export interface ScientificStudy {
@@ -82,8 +82,8 @@ export interface ScientificStudy {
   journal: string;
   title: string;
   mechanism: string;
-  summaryRo: string;
-  caveatRo: string;
+  summary: string;
+  caveat: string;
   doiOrUrl: string;
   applicableTargets: TargetState[];
   applicableEnvironments?: SessionEnvironment[];
@@ -92,8 +92,8 @@ export interface ScientificStudy {
 export interface ProtocolArm {
   id: string;
   name: string;
-  taglineRo: string;
-  descriptionRo: string;
+  tagline: string;
+  description: string;
   targetStates: TargetState[];
   drivingSafe: boolean;
   priorAlpha: number;
@@ -124,13 +124,13 @@ export interface ParsedCheckIn {
 export interface ProtocolRecommendation {
   sessionId: string;
   cohortKey: string;
-  cohortLabelRo: string;
+  cohortLabel: string;
   arm: ProtocolArm;
   params: AcousticParams;
   isExploration: boolean;
   safetyMode: boolean;
-  safetyWarningsRo: string[];
-  rationaleRo: string;
+  safetyWarnings: string[];
+  rationale: string;
   studies: ScientificStudy[];
   confidencePct: number;
   cohortTrials: number;
@@ -198,7 +198,7 @@ export interface ArmPerformance {
 
 export interface CohortPerformance {
   cohortKey: string;
-  cohortLabelRo: string;
+  cohortLabel: string;
   totalSessions: number;
   completedSessions: number;
   avgDelta: number;
@@ -237,42 +237,42 @@ export function getTimeOfDayBucket(date = new Date()): TimeOfDayBucket {
   return 'night';
 }
 
-export const STATE_LABELS_RO: Record<CurrentState, string> = {
-  distracted: 'Distrat / împrăștiat',
-  fatigued: 'Obosit / fără energie',
-  stressed: 'Stresat / tensionat',
-  anxious: 'Neliniștit / agitat',
-  calm_neutral: 'Neutru / stabil',
-  restless: 'Neliniște fizică / plictisit',
+export const STATE_LABELS: Record<CurrentState, string> = {
+  distracted: 'Distracted / scattered',
+  fatigued: 'Fatigued / low energy',
+  stressed: 'Stressed / tense',
+  anxious: 'Anxious / jittery',
+  calm_neutral: 'Neutral / steady',
+  restless: 'Restless / bored',
 };
 
-export const TARGET_LABELS_RO: Record<TargetState, string> = {
-  alert_focus: 'Focus alert & susținut',
-  deep_flow: 'Concentrare profundă (Flow)',
-  calm_reset: 'Calmare & reducere stres',
-  energy_lift: 'Activare & claritate',
-  sleep_winddown: 'Relaxare spre somn',
+export const TARGET_LABELS: Record<TargetState, string> = {
+  alert_focus: 'Alert & Sustained Focus',
+  deep_flow: 'Deep Flow State',
+  calm_reset: 'Calm & Stress Reset',
+  energy_lift: 'Energy & Clarity Lift',
+  sleep_winddown: 'Sleep Wind-Down',
 };
 
-export const ENV_LABELS_RO: Record<SessionEnvironment, string> = {
-  driving: 'La volan (mașină / microbuz)',
-  office: 'Birou / lucru la calculator',
-  study: 'Studiu / citit',
-  home_relax: 'Acasă / relaxare',
-  transit: 'În mișcare / transport',
+export const ENV_LABELS: Record<SessionEnvironment, string> = {
+  driving: 'Driving (car / bus / truck)',
+  office: 'Office / Desk Work',
+  study: 'Studying / Reading',
+  home_relax: 'Home / Relaxing',
+  transit: 'Commuting / Transit',
 };
 
-export const ROLE_LABELS_RO: Record<UserRole, string> = {
-  driver: 'Șofer profesionist / transport',
-  knowledge_worker: 'Muncă de birou / IT / analiză',
-  student: 'Student / învățare',
-  creative: 'Creativ / design / scris',
-  entrepreneur: 'Antreprenor / management',
-  other: 'Alt domeniu',
+export const ROLE_LABELS: Record<UserRole, string> = {
+  driver: 'Professional Driver / Transport',
+  knowledge_worker: 'Office / Tech / Knowledge Work',
+  student: 'Student / Researcher',
+  creative: 'Creative / Design / Writing',
+  entrepreneur: 'Founder / Management',
+  other: 'Other Field',
 };
 
-export const DEVICE_LABELS_RO: Record<OutputDevice, string> = {
-  headphones: 'Căști',
-  speakers: 'Boxe / difuzor',
-  car_audio: 'Audio mașină (difuzoare)',
+export const DEVICE_LABELS: Record<OutputDevice, string> = {
+  headphones: 'Headphones',
+  speakers: 'Speakers',
+  car_audio: 'Vehicle Speakers',
 };

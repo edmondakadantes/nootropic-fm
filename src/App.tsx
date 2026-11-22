@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BarChart3, Radio, SlidersHorizontal, Sparkles } from 'lucide-react';
-import { formatCohortLabelRo } from '../shared/protocols';
+import { formatCohortLabel } from '../shared/protocols';
 import type {
   CurrentState,
   LiveAdjustment,
@@ -31,7 +31,7 @@ export default function App() {
   const [debriefContext, setDebriefContext] = useState<{
     sessionId: string;
     armName: string;
-    cohortLabelRo: string;
+    cohortLabel: string;
     baselineScore: number;
     plannedDurationMin: number;
     actualDurationSec: number;
@@ -91,7 +91,7 @@ export default function App() {
       setPendingDebrief(null);
       setScreen('player');
     } catch (err) {
-      setErrorBanner(err instanceof Error ? err.message : 'Nu s-a putut porni protocolul');
+      setErrorBanner(err instanceof Error ? err.message : 'Unable to start protocol');
     }
   };
 
@@ -103,7 +103,7 @@ export default function App() {
     setDebriefContext({
       sessionId: activeRec.sessionId,
       armName: activeRec.arm.name,
-      cohortLabelRo: activeRec.cohortLabelRo,
+      cohortLabel: activeRec.cohortLabel,
       baselineScore: activeRec.baselineScore,
       plannedDurationMin: activeRec.plannedDurationMin,
       actualDurationSec: stats.actualDurationSec,
@@ -118,7 +118,7 @@ export default function App() {
     setDebriefContext({
       sessionId: pendingDebrief.id,
       armName: pendingDebrief.armName,
-      cohortLabelRo: formatCohortLabelRo(pendingDebrief.cohortKey),
+      cohortLabel: formatCohortLabel(pendingDebrief.cohortKey),
       baselineScore: pendingDebrief.baselineScore,
       plannedDurationMin: pendingDebrief.plannedDurationMin,
       actualDurationSec: pendingDebrief.actualDurationSec || 600,
@@ -170,7 +170,7 @@ export default function App() {
                 }`}
               >
                 <Sparkles className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Sesiune</span>
+                <span className="hidden sm:inline">Session</span>
               </button>
             )}
 
@@ -184,7 +184,7 @@ export default function App() {
               }`}
             >
               <BarChart3 className="h-3.5 w-3.5" />
-              <span>Creier & Date</span>
+              <span>Research Brain</span>
             </button>
 
             {profile && (
@@ -196,10 +196,10 @@ export default function App() {
                     ? 'bg-slate-800 text-white border border-slate-700'
                     : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
                 }`}
-                title="Editează profilul tău"
+                title="Edit your profile"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{profile.age} ani</span>
+                <span className="hidden sm:inline">Age {profile.age}</span>
               </button>
             )}
           </nav>
@@ -216,7 +216,7 @@ export default function App() {
 
         {booting ? (
           <div className="py-24 text-center text-sm text-slate-400">
-            Inițializare nootropic.fm...
+            Initializing nootropic.fm...
           </div>
         ) : screen === 'onboarding' ? (
           <OnboardingView initialProfile={profile} onComplete={handleSaveProfile} />
@@ -248,8 +248,8 @@ export default function App() {
       </main>
 
       <footer className="border-t border-slate-900 py-5 text-center text-[11px] text-slate-500">
-        nootropic.fm · Open Research Beta (Anul 1 Gratuit) · Wellness cognitiv bazat pe literatură
-        psihoacustică, nu dispozitiv medical.
+        nootropic.fm · Open Research Beta (Year 1 Free) · Psychoacoustic cognitive wellness tool,
+        not a medical device.
       </footer>
     </div>
   );

@@ -14,7 +14,7 @@ import { api } from '../lib/api';
 interface DebriefViewProps {
   sessionId: string;
   armName: string;
-  cohortLabelRo: string;
+  cohortLabel: string;
   baselineScore: number;
   plannedDurationMin: number;
   actualDurationSec: number;
@@ -24,20 +24,20 @@ interface DebriefViewProps {
 }
 
 const FEEDBACK_TAGS = [
-  'M-a ținut atent',
-  'Plăcut muzical',
-  'M-a calmat rapid',
-  'Sigur în trafic',
-  'Prea monoton',
-  'Prea intens',
-  'Modulația m-a deranjat',
-  'Obositor',
+  'Kept me focused',
+  'Pleasant sound',
+  'Calmed me quickly',
+  'Traffic-safe',
+  'Too monotonous',
+  'Too intense',
+  'Modulation felt distracting',
+  'Fatiguing',
 ];
 
 export function DebriefView({
   sessionId,
   armName,
-  cohortLabelRo,
+  cohortLabel,
   baselineScore,
   plannedDurationMin,
   actualDurationSec,
@@ -47,12 +47,12 @@ export function DebriefView({
 }: DebriefViewProps) {
   const [postScore, setPostScore] = useState<number>(Math.min(5, baselineScore + 2));
   const [workedRating, setWorkedRating] = useState<WorkedRating>('yes');
-  const [selectedTags, setSelectedTags] = useState<string[]>(['M-a ținut atent', 'Plăcut muzical']);
+  const [selectedTags, setSelectedTags] = useState<string[]>(['Kept me focused', 'Pleasant sound']);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [learningUpdate, setLearningUpdate] = useState<{
     armName: string;
-    cohortLabelRo: string;
+    cohortLabel: string;
     delta: number;
     reward: number;
     cohortSuccessRatePct: number;
@@ -97,20 +97,20 @@ export function DebriefView({
 
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
-              Auto-educare completă
+              Self-Learning Update Complete
             </div>
             <h2 className="mt-1.5 text-2xl font-bold text-white">
-              nootropic.fm tocmai a învățat din sesiunea ta!
+              nootropic.fm just learned from your session!
             </h2>
             <p className="mt-2 text-sm text-slate-400">
-              Protocolul <strong className="text-white">{learningUpdate.armName}</strong> a fost
-              actualizat în baza de date atât pentru profilul tău, cât și pentru cohorta colectivă.
+              Protocol <strong className="text-white">{learningUpdate.armName}</strong> has been
+              updated across both your personal profile and collective cohort intelligence.
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-3 text-left sm:grid-cols-3">
             <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-              <div className="text-[11px] text-slate-400">Progres măsurat (Δ)</div>
+              <div className="text-[11px] text-slate-400">Measured Shift (Δ)</div>
               <div
                 className={`font-mono-tech mt-1 text-2xl font-bold ${
                   learningUpdate.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'
@@ -119,34 +119,34 @@ export function DebriefView({
                 {learningUpdate.delta >= 0 ? `+${learningUpdate.delta}` : learningUpdate.delta}
               </div>
               <div className="text-[11px] text-slate-500">
-                Reward Bandit: {Math.round(learningUpdate.reward * 100)}/100
+                Bandit Reward: {Math.round(learningUpdate.reward * 100)}/100
               </div>
             </div>
 
             <div className="rounded-xl border border-cyan-400/25 bg-cyan-400/8 p-4">
-              <div className="text-[11px] text-cyan-200/80">Scor profil personal</div>
+              <div className="text-[11px] text-cyan-200/80">Your Personal Score</div>
               <div className="font-mono-tech mt-1 text-2xl font-bold text-cyan-300">
                 {learningUpdate.profileSuccessRatePct}%
               </div>
               <div className="text-[11px] text-slate-400">
-                din {learningUpdate.profileTrials} sesiuni proprii
+                from {learningUpdate.profileTrials} personal trials
               </div>
             </div>
 
             <div className="rounded-xl border border-indigo-400/25 bg-indigo-500/10 p-4">
-              <div className="text-[11px] text-indigo-200/80">Scor cohortă colectivă</div>
+              <div className="text-[11px] text-indigo-200/80">Collective Cohort Score</div>
               <div className="font-mono-tech mt-1 text-2xl font-bold text-indigo-300">
                 {learningUpdate.cohortSuccessRatePct}%
               </div>
               <div className="text-[11px] text-slate-400">
-                din {learningUpdate.cohortTrials} sesiuni reale
+                from {learningUpdate.cohortTrials} real sessions
               </div>
             </div>
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-xs text-slate-300">
-            Cohortă actualizată:{' '}
-            <span className="font-semibold text-white">{learningUpdate.cohortLabelRo}</span>
+            Updated cohort:{' '}
+            <span className="font-semibold text-white">{learningUpdate.cohortLabel}</span>
           </div>
 
           <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
@@ -156,14 +156,14 @@ export function DebriefView({
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-400/40 bg-cyan-400/12 px-5 py-3 text-sm font-semibold text-cyan-200 hover:bg-cyan-400/20"
             >
               <BarChart3 className="h-4 w-4" />
-              Vezi Creierul Platformei (Date live)
+              View Research Brain (Live Data)
             </button>
             <button
               type="button"
               onClick={onStartNew}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-cyan-300"
             >
-              Pornește o sesiune nouă
+              Start a New Session
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
@@ -178,12 +178,12 @@ export function DebriefView({
         <div>
           <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
             <Sparkles className="h-3.5 w-3.5" />
-            Debrief Post-Sesiune · 10 secunde
+            Post-Session Debrief · 10 seconds
           </div>
-          <h1 className="mt-3 text-2xl font-bold text-white">Cum a funcționat sesiunea?</h1>
+          <h1 className="mt-3 text-2xl font-bold text-white">How well did this session work?</h1>
           <p className="mt-1 text-xs text-slate-400">
-            Protocol: <span className="text-slate-200">{armName}</span> · Cohortă:{' '}
-            <span className="text-slate-200">{cohortLabelRo}</span> · Durată ascultată:{' '}
+            Protocol: <span className="text-slate-200">{armName}</span> · Cohort:{' '}
+            <span className="text-slate-200">{cohortLabel}</span> · Listened:{' '}
             <span className="font-mono-tech text-slate-200">
               {Math.max(1, Math.round(actualDurationSec / 60))} / {plannedDurationMin} min
             </span>
@@ -194,7 +194,7 @@ export function DebriefView({
         <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-200">
-              Cum este starea ta <strong>ACUM</strong> (față de {baselineScore}/5 la început)?
+              How is your mental state <strong>NOW</strong> (compared to {baselineScore}/5 before)?
             </span>
             <span
               className={`font-mono-tech rounded-lg px-2.5 py-1 text-sm font-bold ${
@@ -230,7 +230,7 @@ export function DebriefView({
         {/* Worked rating */}
         <div>
           <label className="mb-2.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Te-a ajutat să obții starea dorită?
+            Did this audio help you reach your target state?
           </label>
           <div className="grid grid-cols-3 gap-3">
             <button
@@ -243,7 +243,7 @@ export function DebriefView({
               }`}
             >
               <ThumbsUp className="h-5 w-5" />
-              Da, clar
+              Yes, clearly
             </button>
             <button
               type="button"
@@ -255,7 +255,7 @@ export function DebriefView({
               }`}
             >
               <Sparkles className="h-5 w-5" />
-              Parțial
+              Somewhat
             </button>
             <button
               type="button"
@@ -267,7 +267,7 @@ export function DebriefView({
               }`}
             >
               <ThumbsDown className="h-5 w-5" />
-              Nu a mers
+              Didn’t help
             </button>
           </div>
         </div>
@@ -275,7 +275,7 @@ export function DebriefView({
         {/* Quick diagnostic tags */}
         <div>
           <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Ce ai observat? (opțional)
+            What did you notice? (optional)
           </label>
           <div className="flex flex-wrap gap-2">
             {FEEDBACK_TAGS.map((tag) => (
@@ -300,7 +300,7 @@ export function DebriefView({
             type="text"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Notă scurtă opțională (ex: la minutul 15 mi-am recăpătat claritatea...)"
+            placeholder="Optional short note (e.g., locked into focus around minute 10...)"
             className="w-full rounded-xl border border-slate-800 bg-slate-950/70 px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
           />
         </div>
@@ -312,7 +312,7 @@ export function DebriefView({
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 px-6 py-4 text-sm font-bold text-slate-950 transition hover:brightness-110 disabled:opacity-60"
         >
           <CheckCircle2 className="h-5 w-5" />
-          {submitting ? 'Antrenez modelul...' : 'Salvează feedback-ul și antrenează platforma'}
+          {submitting ? 'Updating learning model...' : 'Save Feedback & Train Platform'}
         </button>
       </div>
     </div>
