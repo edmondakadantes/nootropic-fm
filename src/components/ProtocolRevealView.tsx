@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ArrowDown,
   ArrowLeft,
   BookOpen,
+  Check,
   ChevronDown,
   Cpu,
   ExternalLink,
@@ -11,6 +13,7 @@ import {
   Play,
   Plus,
   Radio,
+  Search,
   ShieldAlert,
   Sparkles,
   Waves,
@@ -66,18 +69,188 @@ export function ProtocolRevealView({
   const [customError, setCustomError] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
 
-  // Zero artificial delay — displays immediately as soon as real API + PubMed/OpenAlex response arrives!
-  if (loading || !recommendation) {
+  // Live conversational "Thinking & Searching Studies" state machine (runs once per unique sessionId)
+  const [revealedSessionId, setRevealedSessionId] = useState<string | null>(null);
+  const [thoughtStep, setThoughtStep] = useState(0);
+
+  // Step 0 -> Step 1 while API is fetching
+  useEffect(() => {
+    if (loading || !recommendation) {
+      setThoughtStep(0);
+      const t = window.setTimeout(() => setThoughtStep(1), 550);
+      return () => window.clearTimeout(t);
+    }
+    return undefined;
+  }, [loading, recommendation === null]);
+
+  // Once real recommendation arrives for a new session, smoothly reveal the real matched studies & fusion
+  const currentSessionId = recommendation?.sessionId ?? null;
+  const isRevealed = Boolean(!loading && currentSessionId && revealedSessionId === currentSessionId);
+
+  useEffect(() => {
+    if (loading || !currentSessionId || revealedSessionId === currentSessionId) return;
+
+    const timers: number[] = [];
+    // Ensure step 1 is visible briefly, then step 2 (real studies discovered), step 3 (fusion), then reveal
+    timers.push(window.setTimeout(() => setThoughtStep((s) => Math.max(s, 1)), 250));
+    timers.push(window.setTimeout(() => setThoughtStep(2), 900));
+    timers.push(window.setTimeout(() => setThoughtStep(3), 1750));
+    timers.push(
+      window.setTimeout(() => {
+        setRevealedSessionId(currentSessionId);
+      }, 2550)
+    );
+
+    return () => {
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [loading, currentSessionId, revealedSessionId]);
+
+  if (loading || !recommendation || !isRevealed) {
+    const coreStudies = recommendation?.studies ?? [];
+    const livePapers = recommendation?.livePubMedPapers ?? [];
+    const totalFound = coreStudies.length + livePapers.length;
+    const readyGenre = recommendation
+      ? getGenreDisplayMeta(
+          recommendation.customGenreSlug ?? recommendation.params.genre,
+          recommendation.customGenreLabel
+        ).label
+      : null;
+
+    const traceSteps = [
+      {
+        idx: 0,
+        title: 'Reading your mental state & profile',
+        detail: recommendation
+          ? `${TARGET_LABELS[recommendation.targetState]} · ${recommendation.cohortLabel}`
+          : 'Mapping your current state, target goal & listening context...',
+      },
+      {
+        idx: 1,
+        title: 'Searching peer-reviewed literature (NIH PubMed & OpenAlex)',
+        detail:
+          recommendation && thoughtStep >= 2
+            ? `Found ${totalFound} verified studies (${coreStudies.length} core DSP DOIs${
+                livePapers.length > 0 ? ` + ${livePapers.length} live PubMed/OpenAlex papers` : ''
+              })`
+            : 'Querying live neuroscience archives for verifiable DOI & PubMed citations...',
+      },
+      {
+        idx: 2,
+        title: 'Extracting acoustic mechanisms from matched studies',
+        detail:
+          recommendation && thoughtStep >= 2
+            ? `Calibrating ${recommendation.arm.name} (${recommendation.params.modulationHz} Hz AM · ${recommendation.params.bpm > 0 ? `${recommendation.params.bpm} BPM` : 'Ambient'})`
+            : 'Aligning cortical modulation depth, crossover & tempo...',
+      },
+      {
+        idx: 3,
+        title: 'Fusing Layer 1 science into your Layer 2 sound',
+        detail:
+          recommendation && readyGenre
+            ? `Blending 3-Band LR4 DSP cleanly into ${readyGenre}...`
+            : 'Preparing your personalized 2-layer audio formula...',
+      },
+    ];
+
     return (
-      <div className="mx-auto flex max-w-xl flex-col items-center py-10 text-center">
-        <SonicOrb mood={mood} size="lg" label="Tune your mind" />
-        <h1 className="animate-rise mt-6 text-2xl font-bold text-white sm:text-3xl">
-          Synthesizing your <span className="text-aurora">2-Layer Audio Formula...</span>
-        </h1>
-        <p className="mt-2 inline-flex items-center gap-2 text-xs text-slate-400 sm:text-sm">
-          <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
-          Querying peer-reviewed literature (NIH PubMed &amp; OpenAlex) &amp; Bandit weights
-        </p>
+      <div className="mx-auto flex max-w-xl flex-col items-center py-6 sm:py-10 space-y-6">
+        <div className="flex flex-col items-center text-center">
+          <SonicOrb mood={mood} size="lg" label="Thinking..." />
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/[0.08] px-3 py-1 text-[11px] font-medium text-cyan-200">
+            <Search className="h-3.5 w-3.5 animate-pulse text-cyan-300" />
+            nootropic.fm · Researching &amp; Calibrating
+          </div>
+          <h1 className="animate-rise mt-3 text-2xl font-bold text-white sm:text-3xl">
+            Give me a second — <span className="text-aurora">searching the science...</span>
+          </h1>
+        </div>
+
+        {/* Live Conversational Research Trace Card */}
+        <div className="animate-step glass-stage w-full rounded-3xl border border-cyan-400/25 p-5 sm:p-6 space-y-3.5">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="font-mono-tech uppercase tracking-[0.16em] text-cyan-300/85">
+              Live Research Trace
+            </span>
+            {recommendation && (
+              <button
+                type="button"
+                onClick={() => setRevealedSessionId(recommendation.sessionId)}
+                className="text-slate-400 transition hover:text-cyan-200"
+              >
+                Skip →
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            {traceSteps.map((st) => {
+              const isDone =
+                thoughtStep > st.idx && (st.idx === 0 || Boolean(recommendation));
+              const isActive = thoughtStep === st.idx;
+              const isWaiting = thoughtStep < st.idx;
+
+              return (
+                <div
+                  key={st.idx}
+                  className={`flex items-start gap-3 rounded-2xl border px-3.5 py-3 transition-all duration-300 ${
+                    isDone
+                      ? 'border-emerald-400/25 bg-emerald-500/[0.05]'
+                      : isActive
+                        ? 'border-cyan-400/45 bg-cyan-400/[0.08] shadow-[0_0_20px_rgba(34,211,238,0.12)]'
+                        : 'border-slate-800/70 bg-slate-950/40 opacity-45'
+                  }`}
+                >
+                  <div className="mt-0.5 shrink-0">
+                    {isDone ? (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-300">
+                        <Check className="h-3.5 w-3.5" />
+                      </span>
+                    ) : isActive ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />
+                    ) : (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-700 text-[10px] text-slate-500">
+                        {st.idx + 1}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div
+                      className={`text-xs font-semibold ${
+                        isWaiting ? 'text-slate-500' : 'text-white'
+                      }`}
+                    >
+                      {st.title}
+                    </div>
+                    <div className="text-[11px] leading-relaxed text-slate-400">{st.detail}</div>
+
+                    {/* Preview real discovered study badges as soon as step 2 lights up */}
+                    {st.idx === 1 && recommendation && thoughtStep >= 2 && (
+                      <div className="animate-step flex flex-wrap gap-1.5 pt-1">
+                        {coreStudies.slice(0, 3).map((s) => (
+                          <span
+                            key={s.id}
+                            className="font-mono-tech rounded-md border border-cyan-400/30 bg-slate-950/80 px-2 py-0.5 text-[10px] text-cyan-200"
+                          >
+                            {s.authors.split(',')[0]} ({s.year})
+                          </span>
+                        ))}
+                        {livePapers.slice(0, 2).map((p) => (
+                          <span
+                            key={p.pmid}
+                            className="font-mono-tech rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-200"
+                          >
+                            {p.source === 'openalex' ? 'OpenAlex' : 'PubMed'} ({p.year})
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     );
   }
@@ -88,6 +261,7 @@ export function ProtocolRevealView({
   );
   const energyInfo = ENERGY_LABELS[recommendation.params.energyTier];
   const livePapers = recommendation.livePubMedPapers ?? [];
+  const totalStudiesCount = recommendation.studies.length + livePapers.length;
   const upperKhz = ((recommendation.params.upperCrossoverHz ?? 4500) / 1000).toFixed(1);
   const sourceBadge = SOURCE_BADGES[recommendation.audioSource] ?? SOURCE_BADGES.studio_library;
 
@@ -104,18 +278,29 @@ export function ProtocolRevealView({
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      {/* Header */}
-      <div className="animate-rise text-center space-y-2">
-        <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/12 px-3 py-1 text-[11px] font-semibold text-emerald-300">
-          <Sparkles className="h-3.5 w-3.5" />
-          2-Layer Formula Ready · {recommendation.cohortLabel}
+      {/* Conversational Header from nootropic.fm */}
+      <div className="animate-rise text-center space-y-2.5">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/12 px-3 py-1 text-[11px] font-semibold text-emerald-300">
+            <Sparkles className="h-3.5 w-3.5" />
+            Research Complete · {recommendation.cohortLabel}
+          </span>
+          <a
+            href="#matched-studies"
+            className="inline-flex items-center gap-1 rounded-full border border-cyan-400/35 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold text-cyan-200 transition hover:bg-cyan-400/20"
+          >
+            <BookOpen className="h-3 w-3" />
+            {totalStudiesCount} Verified Studies Matched
+            <ArrowDown className="h-3 w-3" />
+          </a>
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">
-          Your <span className="text-aurora">Nootropic Audio Formula</span>
+          Here’s what I <span className="text-aurora">found for you.</span>
         </h1>
-        <p className="mx-auto max-w-xl text-xs leading-relaxed text-slate-400 sm:text-sm">
-          Real-time 3-Band LR4 neuro-modulation fused seamlessly inside studio audio — sub-bass
-          (&lt;{recommendation.params.crossoverHz} Hz) and highs (&gt;{upperKhz} kHz) remain 100% untouched.
+        <p className="mx-auto max-w-xl text-xs leading-relaxed text-slate-300 sm:text-sm">
+          I matched <strong>{totalStudiesCount} peer-reviewed studies</strong> to your goal and fused
+          real-time 3-Band LR4 neuro-modulation inside your sound — sub-bass (&lt;
+          {recommendation.params.crossoverHz} Hz) and highs (&gt;{upperKhz} kHz) stay untouched.
         </p>
       </div>
 
@@ -374,8 +559,11 @@ export function ProtocolRevealView({
         </div>
       </div>
 
-      {/* Core DSP Peer-Reviewed Studies (Verified External DOI Links) */}
-      <div className="animate-rise delay-150 glass-card rounded-3xl p-5 sm:p-7 space-y-4">
+      {/* Core DSP Peer-Reviewed Studies (Verified External DOI Links — Staggered Reveal) */}
+      <div
+        id="matched-studies"
+        className="animate-rise delay-150 glass-card scroll-mt-24 rounded-3xl p-5 sm:p-7 space-y-4"
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-cyan-300">
             <BookOpen className="h-5 w-5" />
@@ -389,10 +577,11 @@ export function ProtocolRevealView({
         </div>
 
         <div className="space-y-3">
-          {recommendation.studies.map((study) => (
+          {recommendation.studies.map((study, idx) => (
             <div
               key={study.id}
-              className="rounded-2xl border border-slate-800/90 bg-slate-950/65 p-4 space-y-2 transition hover:border-cyan-400/35"
+              style={{ animationDelay: `${idx * 90}ms` }}
+              className="animate-rise rounded-2xl border border-slate-800/90 bg-slate-950/65 p-4 space-y-2 transition hover:border-cyan-400/35"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -441,13 +630,14 @@ export function ProtocolRevealView({
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {livePapers.map((p) => (
+            {livePapers.map((p, idx) => (
               <a
                 key={p.pmid}
-                href={p.url}
+                href={p.doiUrl || p.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex flex-col justify-between rounded-2xl border border-slate-800/90 bg-slate-950/60 p-4 space-y-2 transition hover:border-indigo-400/45"
+                style={{ animationDelay: `${idx * 90}ms` }}
+                className="animate-rise group flex flex-col justify-between rounded-2xl border border-slate-800/90 bg-slate-950/60 p-4 space-y-2 transition hover:border-indigo-400/45"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 text-[11px] text-indigo-300">

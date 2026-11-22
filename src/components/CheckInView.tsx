@@ -78,18 +78,18 @@ interface QuickStatePreset {
 const QUICK_STATE_PRESETS: QuickStatePreset[] = [
   {
     id: 'distracted_focus',
-    label: 'Distracted · Focus',
-    sub: '35 min · Sharp clarity',
+    label: '“I’m distracted — need 35m focus”',
+    sub: 'Sharp clarity · Desk / Work',
     currentState: 'distracted',
     targetState: 'alert_focus',
     environment: 'office',
     durationMin: 35,
-    promptText: 'Distracted right now — need sharp sustained focus for 35 minutes',
+    promptText: 'I am distracted right now — need sharp sustained focus for 35 minutes',
   },
   {
     id: 'driving_alert',
-    label: 'Driving · Stay Alert',
-    sub: '40 min · Safety Mode',
+    label: '“Driving — keep me alert”',
+    sub: '40 min · Road Safety Mode',
     currentState: 'distracted',
     targetState: 'alert_focus',
     environment: 'driving',
@@ -99,8 +99,8 @@ const QUICK_STATE_PRESETS: QuickStatePreset[] = [
   },
   {
     id: 'deep_flow',
-    label: 'Deep Flow · Work',
-    sub: '50 min · Study / Code',
+    label: '“Need 50m of deep flow”',
+    sub: 'Study / Code / Deep work',
     currentState: 'calm_neutral',
     targetState: 'deep_flow',
     environment: 'study',
@@ -109,8 +109,8 @@ const QUICK_STATE_PRESETS: QuickStatePreset[] = [
   },
   {
     id: 'stressed_calm',
-    label: 'Stressed · Calm Reset',
-    sub: '20 min · Decompress',
+    label: '“Stressed — calm me down”',
+    sub: '20 min · Autonomic reset',
     currentState: 'stressed',
     targetState: 'calm_reset',
     environment: 'home_relax',
@@ -119,7 +119,7 @@ const QUICK_STATE_PRESETS: QuickStatePreset[] = [
   },
   {
     id: 'tired_lift',
-    label: 'Tired · Energy Lift',
+    label: '“Low energy — gentle lift”',
     sub: '25 min · Afternoon boost',
     currentState: 'fatigued',
     targetState: 'energy_lift',
@@ -129,8 +129,8 @@ const QUICK_STATE_PRESETS: QuickStatePreset[] = [
   },
   {
     id: 'sleep_winddown',
-    label: 'Racing Mind · Sleep',
-    sub: '30 min · Wind-down',
+    label: '“Help me unwind for sleep”',
+    sub: '30 min · Quiet racing thoughts',
     currentState: 'anxious',
     targetState: 'sleep_winddown',
     environment: 'home_relax',
@@ -431,25 +431,48 @@ export function CheckInView({
         </div>
       )}
 
-      {/* Centerpiece Sonic Orb + Brand Motto */}
+      {/* Centerpiece Sonic Orb + Conversational Welcome from nootropic.fm */}
       <div className="animate-rise flex flex-col items-center text-center">
-        <SonicOrb mood={activeMood} size={step === 1 ? 'lg' : 'sm'} label="Tune your mind" />
-        <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-4xl leading-[1.1]">
-          {step === 1 ? (
-            <>
-              Where do you want your <span className="text-aurora">mind to go?</span>
-            </>
-          ) : (
-            <>
-              Quick <span className="text-aurora">formula calibration</span>
-            </>
-          )}
-        </h1>
-        <p className="mt-2 max-w-lg text-xs text-slate-400 sm:text-sm">
-          {step === 1
-            ? 'Tap a state or describe how you feel — we fuse peer-reviewed neuroscience (Layer 1) inside any instrumental sound you love (Layer 2).'
-            : '5 seconds so our engine measures your real before → after shift and adapts every session.'}
-        </p>
+        <SonicOrb
+          mood={activeMood}
+          size={step === 1 ? 'lg' : 'sm'}
+          label={step === 1 ? 'Tune your mind' : 'Calibrating'}
+        />
+
+        {step === 1 ? (
+          <>
+            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-400/[0.07] px-3 py-1 text-[11px] font-medium text-cyan-200">
+              <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.9)] animate-pulse" />
+              nootropic.fm · Live Audio Guide
+            </div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-4xl leading-[1.12]">
+              {isFirstVisit ? (
+                <>
+                  Welcome to <span className="text-aurora">nootropic.fm.</span>
+                </>
+              ) : (
+                <>
+                  Welcome back to <span className="text-aurora">nootropic.fm.</span>
+                </>
+              )}
+            </h1>
+            <p className="mt-2.5 max-w-xl text-sm leading-relaxed text-slate-300 sm:text-base">
+              {isFirstVisit
+                ? 'Before we start — how is your mind feeling right now, where would you like to take it, and what kind of sound are you in the mood for?'
+                : 'Good to have you back. Tell me how your mind feels right now and what vibe you want to listen to today.'}
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-3xl leading-[1.12]">
+              Almost ready — <span className="text-aurora">quick calibration.</span>
+            </h1>
+            <p className="mt-2 max-w-lg text-xs leading-relaxed text-slate-300 sm:text-sm">
+              Before I search the neuroscience studies and build your sound, give me a quick baseline
+              and pick your headphones/speakers &amp; music vibe.
+            </p>
+          </>
+        )}
       </div>
 
       {/* Minimal 2-Step Progress Indicator */}
@@ -469,26 +492,104 @@ export function CheckInView({
         ))}
       </div>
 
-      {/* STEP 1: STATE-FIRST HERO */}
+      {/* STEP 1: CONVERSATIONAL CHECK-IN */}
       {step === 1 && (
         <div key="step-1" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
+          {/* Primary Conversational Reply Box */}
           <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="font-mono-tech text-[11px] uppercase tracking-[0.16em] text-cyan-300/85">
-                01 / 02 · Tap a state (instant)
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-mono-tech uppercase tracking-[0.16em] text-cyan-300/85">
+                01 / 02 · Tell nootropic.fm (type or speak)
               </span>
-              <span className="text-[11px] text-slate-500">or describe freely below</span>
+              <span className="text-slate-500">Press Enter to continue</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+
+            <div className="glow-input-wrap">
+              <div className="relative flex items-start rounded-[1rem] bg-[#060a14]/95">
+                <textarea
+                  rows={2}
+                  value={rawText}
+                  onChange={(e) => liveAnalyze(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      setStep(2);
+                    }
+                  }}
+                  placeholder="Reply naturally — e.g. I'm a distracted developer, need 40 min of sharp focus, and feel like listening to chill reggae..."
+                  className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder-slate-500/80 focus:outline-none sm:text-base"
+                />
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all ${
+                    listening
+                      ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
+                      : 'border-slate-700/70 bg-slate-900/80 text-cyan-300 hover:border-cyan-400/50 hover:bg-cyan-400/10'
+                  }`}
+                  title="Speak freely (Voice input)"
+                >
+                  {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Live Conversational Acknowledgement from nootropic.fm */}
+            {(rawText.trim().length > 0 || activePresetId) && (
+              <div className="animate-step flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3.5 py-2.5 text-xs">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-cyan-300">
+                  <Cpu className="h-3.5 w-3.5" />
+                  nootropic.fm:
+                </span>
+                <span className="text-slate-200">
+                  Got it —{' '}
+                  <strong className="text-white">{STATE_LABELS[currentState].split(' ')[0]}</strong>{' '}
+                  → <strong className="text-cyan-200">{TARGET_LABELS[targetState]}</strong> ·{' '}
+                  <span className="font-mono-tech text-cyan-200">{durationMin} min</span>
+                  {showCustomInput && customVibeText.trim() ? (
+                    <>
+                      {' '}
+                      · <strong className="text-fuchsia-200">{customVibeText.trim()}</strong> vibe
+                    </>
+                  ) : genreChoice !== 'auto' ? (
+                    <>
+                      {' '}
+                      · <strong className="text-indigo-200">{GENRE_META[genreChoice].label}</strong>
+                    </>
+                  ) : null}
+                  .
+                </span>
+                {detectedChips.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 pt-0.5 w-full">
+                    {detectedChips.map((chip) => (
+                      <span
+                        key={chip}
+                        className="font-mono-tech rounded-md border border-cyan-400/25 bg-slate-950/70 px-2 py-0.5 text-[10px] text-cyan-200/90"
+                      >
+                        {chip}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 1-Tap Conversational Quick Replies */}
+          <div className="space-y-2">
+            <div className="text-[11px] font-medium text-slate-400">
+              Or tap a quick reply to start in 1 second:
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {QUICK_STATE_PRESETS.map((preset) => (
                 <button
                   key={preset.id}
                   type="button"
                   onClick={() => applyPreset(preset)}
-                  className={`group rounded-2xl border p-3 text-left transition-all ${
+                  className={`group rounded-2xl border px-3.5 py-2.5 text-left transition-all ${
                     activePresetId === preset.id
                       ? 'border-cyan-400 bg-cyan-400/15 shadow-[0_0_20px_rgba(34,211,238,0.2)]'
-                      : 'border-slate-800/90 bg-slate-950/65 hover:border-cyan-400/45 hover:bg-slate-900/80'
+                      : 'border-slate-800/90 bg-slate-950/60 hover:border-cyan-400/45 hover:bg-slate-900/80'
                   }`}
                 >
                   <div className="text-xs font-semibold text-white group-hover:text-cyan-200">
@@ -499,53 +600,6 @@ export function CheckInView({
               ))}
             </div>
           </div>
-
-          <div className="glow-input-wrap">
-            <div className="relative flex items-start rounded-[1rem] bg-[#060a14]/95">
-              <textarea
-                rows={2}
-                value={rawText}
-                onChange={(e) => liveAnalyze(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    setStep(2);
-                  }
-                }}
-                placeholder="Or write/speak freely — e.g. I'm a distracted developer, need 40 min of sharp focus, and feel like chill reggae..."
-                className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder-slate-500/80 focus:outline-none sm:text-base"
-              />
-              <button
-                type="button"
-                onClick={toggleVoiceInput}
-                className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all ${
-                  listening
-                    ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
-                    : 'border-slate-700/70 bg-slate-900/80 text-cyan-300 hover:border-cyan-400/50 hover:bg-cyan-400/10'
-                }`}
-                title="Speak freely (Voice input)"
-              >
-                {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-
-          {detectedChips.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                <Cpu className="h-3 w-3 text-cyan-400" />
-                Understood:
-              </span>
-              {detectedChips.map((chip) => (
-                <span
-                  key={chip}
-                  className="font-mono-tech rounded-md border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[11px] text-cyan-200"
-                >
-                  {chip}
-                </span>
-              ))}
-            </div>
-          )}
 
           <button
             type="button"
@@ -879,8 +933,8 @@ export function CheckInView({
           >
             <Sparkles className="h-5 w-5" />
             {starting
-              ? 'Matching peer-reviewed science...'
-              : `Build My 2-Layer Formula · ${durationMin} min`}
+              ? 'Searching peer-reviewed studies...'
+              : `Search Studies & Build My Sound · ${durationMin} min`}
           </button>
 
           {isDriving && (
