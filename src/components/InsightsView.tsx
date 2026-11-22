@@ -238,6 +238,94 @@ export function InsightsView({ profileId }: InsightsViewProps) {
         </div>
       </div>
 
+      {/* Blind A/B Scientific Validation: Active 3-Band AM vs Pure-Music Control */}
+      {insights.abValidation && (
+        <div className="animate-rise delay-100 glass-card rounded-3xl border border-purple-400/25 p-5 sm:p-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-purple-300">
+              <FlaskConical className="h-5 w-5" />
+              <h2 className="text-base font-semibold text-white">
+                Scientific Validation · Active 3-Band AM vs. Pure-Music Control (Blind A/B)
+              </h2>
+            </div>
+            <span
+              className={`font-mono-tech rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                insights.abValidation.readyForStats
+                  ? 'border-emerald-400/35 bg-emerald-500/12 text-emerald-300'
+                  : 'border-amber-400/30 bg-amber-500/10 text-amber-200'
+              }`}
+            >
+              {insights.abValidation.readyForStats
+                ? 'Live A/B Signal Active'
+                : 'Collecting Baseline (need ≥10 AM & ≥5 Control)'}
+            </span>
+          </div>
+
+          <p className="text-xs leading-relaxed text-slate-400">
+            12% of consented sessions run as blinded Pure-Music Controls (AM = 0%, identical studio
+            audio &amp; EQ) so nootropic.fm can measure real psychoacoustic lift over music alone.
+          </p>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.06] p-4">
+              <div className="text-[11px] font-medium text-cyan-200/80">
+                Active 3-Band LR4 AM (n = {insights.abValidation.activeSessions})
+              </div>
+              <div className="font-mono-tech mt-1 text-2xl font-bold text-cyan-300">
+                Δ{' '}
+                {insights.abValidation.activeAvgDelta >= 0
+                  ? `+${insights.abValidation.activeAvgDelta}`
+                  : insights.abValidation.activeAvgDelta}
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {insights.abValidation.activeSuccessRatePct}% positive outcome
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-700/80 bg-slate-950/70 p-4">
+              <div className="text-[11px] font-medium text-slate-400">
+                Pure-Music Blind Control (n = {insights.abValidation.controlSessions})
+              </div>
+              <div className="font-mono-tech mt-1 text-2xl font-bold text-slate-200">
+                Δ{' '}
+                {insights.abValidation.controlAvgDelta >= 0
+                  ? `+${insights.abValidation.controlAvgDelta}`
+                  : insights.abValidation.controlAvgDelta}
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {insights.abValidation.controlSuccessRatePct}% positive outcome
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-purple-400/30 bg-purple-500/10 p-4">
+              <div className="text-[11px] font-medium text-purple-200/80">
+                Measured AM Lift (Δ AM − Δ Control)
+              </div>
+              <div
+                className={`font-mono-tech mt-1 text-2xl font-bold ${
+                  insights.abValidation.deltaLift > 0
+                    ? 'text-emerald-300'
+                    : insights.abValidation.deltaLift < 0
+                      ? 'text-amber-300'
+                      : 'text-slate-300'
+                }`}
+              >
+                {insights.abValidation.controlSessions === 0
+                  ? 'Pending'
+                  : insights.abValidation.deltaLift >= 0
+                    ? `+${insights.abValidation.deltaLift}`
+                    : insights.abValidation.deltaLift}
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {insights.abValidation.controlSessions === 0
+                  ? 'Awaiting first blind control debrief'
+                  : 'Real human-rated delta difference'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Personal Acoustic Profile */}
       <div className="animate-rise delay-150 glass-card rounded-3xl p-5 sm:p-6 space-y-4">
         <div className="flex items-center gap-2 text-cyan-300">

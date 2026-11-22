@@ -1,6 +1,8 @@
 import type {
+  AcousticParams,
   CurrentState,
   DebriefPayload,
+  EnergyTier,
   LiveAdjustment,
   MusicGenreChoice,
   OutputDevice,
@@ -78,6 +80,16 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  updateSessionGenre: (payload: {
+    sessionId: string;
+    genre: ResolvedGenre;
+    params?: AcousticParams;
+  }) =>
+    apiFetch<{ ok: boolean; genre: ResolvedGenre }>('/api/session/genre', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   submitDebrief: (payload: DebriefPayload) =>
     apiFetch<{
       ok: boolean;
@@ -93,6 +105,8 @@ export const api = {
         cohortTrials: number;
         profileSuccessRatePct: number;
         profileTrials: number;
+        wasControlTrial: boolean;
+        preferredModMult: number;
       };
     }>('/api/session/debrief', {
       method: 'POST',
@@ -114,7 +128,7 @@ export const api = {
     apiFetch<{
       tracksByGenre: Record<
         ResolvedGenre,
-        Array<{ key: string; name: string; url: string; size: number }>
+        Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier }>
       >;
     }>('/api/audio/catalog'),
 };

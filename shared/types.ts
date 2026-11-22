@@ -57,6 +57,8 @@ export type MusicGenreChoice =
 
 export type ResolvedGenre = Exclude<MusicGenreChoice, 'auto'>;
 
+export type EnergyTier = 'calm' | 'focus' | 'drive';
+
 export interface UserProfile {
   id: string;
   age: number;
@@ -67,6 +69,7 @@ export interface UserProfile {
   defaultDevice: OutputDevice;
   primaryChallenge: PrimaryChallenge;
   researchConsent: boolean;
+  preferredModMult?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -74,7 +77,9 @@ export interface UserProfile {
 export interface AcousticParams {
   modulationHz: number;
   modulationDepth: number;
-  crossoverHz: number; // Multiband AM crossover (sub-bass < crossoverHz stays clean & unmodulated)
+  crossoverHz: number; // Lower LR4 crossover (<190 Hz sub-bass stays 100% clean)
+  upperCrossoverHz?: number; // Upper LR4 crossover (>4500 Hz air/sparkle stays 100% clean)
+  stereoAmSpread?: boolean; // Gentle stereo phase-shifted AM shimmer on headphones (off in car/speakers)
   bpm: number;
   pulseIntensity: number;
   noiseColor: NoiseColor;
@@ -87,6 +92,7 @@ export interface AcousticParams {
   binauralOffsetHz: number;
   genre: ResolvedGenre;
   genreSelectionMode: 'auto' | 'user_chosen' | 'iso_adapted';
+  energyTier: EnergyTier;
 }
 
 export interface ScientificStudy {
@@ -129,7 +135,7 @@ export interface ProtocolArm {
   drivingSafe: boolean;
   priorAlpha: number;
   priorBeta: number;
-  baseParams: Omit<AcousticParams, 'genre' | 'genreSelectionMode'>;
+  baseParams: Omit<AcousticParams, 'genre' | 'genreSelectionMode' | 'energyTier' | 'stereoAmSpread'>;
   studyIds: string[];
 }
 
@@ -161,6 +167,7 @@ export interface ProtocolRecommendation {
   arm: ProtocolArm;
   params: AcousticParams;
   isExploration: boolean;
+  isControlTrial: boolean;
   safetyMode: boolean;
   safetyWarnings: string[];
   genreAdaptationNote?: string;
@@ -196,6 +203,9 @@ export interface SessionRecord {
   armId: string;
   armName: string;
   isExploration: boolean;
+  isControlTrial: boolean;
+  energyTier: EnergyTier;
+  musicGenre: ResolvedGenre;
   acousticParams: AcousticParams;
   citedStudyIds: string[];
   liveAdjustments: LiveAdjustment[];
@@ -251,6 +261,17 @@ export interface CohortPerformance {
   arms: ArmPerformance[];
 }
 
+export interface ABValidationStats {
+  activeSessions: number;
+  controlSessions: number;
+  activeAvgDelta: number;
+  controlAvgDelta: number;
+  activeSuccessRatePct: number;
+  controlSuccessRatePct: number;
+  deltaLift: number;
+  readyForStats: boolean;
+}
+
 export interface ResearchInsights {
   totalProfiles: number;
   totalSessions: number;
@@ -259,6 +280,7 @@ export interface ResearchInsights {
   globalSuccessRatePct: number;
   globalAvgDelta: number;
   explorationSharePct: number;
+  abValidation: ABValidationStats;
   cohorts: CohortPerformance[];
   personalArms: ArmPerformance[];
   genreLeaderboard: GenrePerformance[];
@@ -356,4 +378,10 @@ export const DEVICE_LABELS: Record<OutputDevice, string> = {
   headphones: 'Headphones',
   speakers: 'Speakers',
   car_audio: 'Vehicle Speakers',
+};
+
+export const ENERGY_LABELS: Record<EnergyTier, { label: string; bpmRange: string }> = {
+  calm: { label: 'Calm / Slow', bpmRange: 'Beatless · 60–76 BPM' },
+  focus: { label: 'Focus / Steady', bpmRange: '84–102 BPM' },
+  drive: { label: 'Drive / Alert', bpmRange: '104–118 BPM' },
 };

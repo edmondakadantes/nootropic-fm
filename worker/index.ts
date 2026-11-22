@@ -11,11 +11,13 @@ import {
   ageToBand,
   GENRE_META,
   getTimeOfDayBucket,
+  type ABValidationStats,
   type AcousticParams,
   type ArmPerformance,
   type CohortPerformance,
   type CurrentState,
   type DebriefPayload,
+  type EnergyTier,
   type GenrePerformance,
   type LiveAdjustment,
   type LivePubMedPaper,
@@ -105,9 +107,24 @@ const SCHEMA_STATEMENTS = [
   )`,
 ];
 
+const MIGRATION_ALTERS = [
+  `ALTER TABLE profiles ADD COLUMN preferred_mod_mult REAL NOT NULL DEFAULT 1.0`,
+  `ALTER TABLE sessions ADD COLUMN is_control_trial INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE sessions ADD COLUMN energy_tier TEXT NOT NULL DEFAULT 'focus'`,
+  `ALTER TABLE sessions ADD COLUMN music_genre TEXT NOT NULL DEFAULT 'deep_electronic'`,
+  `CREATE INDEX IF NOT EXISTS idx_sessions_control ON sessions(is_control_trial, status)`,
+];
+
 async function ensureSchema(db: D1Database): Promise<void> {
   if (schemaReady) return;
   await db.batch(SCHEMA_STATEMENTS.map((sql) => db.prepare(sql)));
+  for (const sql of MIGRATION_ALTERS) {
+    try {
+      await db.prepare(sql).run();
+    } catch {
+      // Column or index already exists
+    }
+  }
   schemaReady = true;
 }
 
@@ -216,12 +233,17 @@ function mapProfileRow(row: Record<string, unknown>): UserProfile {
     defaultDevice: String(row.default_device) as OutputDevice,
     primaryChallenge: String(row.primary_challenge) as UserProfile['primaryChallenge'],
     researchConsent: Number(row.research_consent) === 1,
+    preferredModMult:
+      row.preferred_mod_mult === null || row.preferred_mod_mult === undefined
+        ? 1.0
+        : Number(row.preferred_mod_mult),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
 }
 
 function mapSessionRow(row: Record<string, unknown>): SessionRecord {
+  const acousticParams = JSON.parse(String(row.acoustic_params_json)) as AcousticParams;
   return {
     id: String(row.id),
     profileId: String(row.profile_id),
@@ -239,7 +261,10 @@ function mapSessionRow(row: Record<string, unknown>): SessionRecord {
     armId: String(row.arm_id),
     armName: String(row.arm_name),
     isExploration: Number(row.is_exploration) === 1,
-    acousticParams: JSON.parse(String(row.acoustic_params_json)) as AcousticParams,
+    isControlTrial: Number(row.is_control_trial ?? 0) === 1,
+    energyTier: (String(row.energy_tier || acousticParams.energyTier || 'focus') as EnergyTier),
+    musicGenre: (String(row.music_genre || acousticParams.genre || 'deep_electronic') as ResolvedGenre),
+    acousticParams,
     citedStudyIds: JSON.parse(String(row.cited_study_ids_json)) as string[],
     liveAdjustments: JSON.parse(String(row.live_adjustments_json ?? '[]')) as LiveAdjustment[],
     timeOfDayBucket: String(row.time_of_day_bucket) as SessionRecord['timeOfDayBucket'],
@@ -441,9 +466,11 @@ async function fetchLivePubMedPapers(
   }
 }
 
+type BanditScopeType = 'cohort' | 'profile' | 'cohort_genre' | 'profile_genre';
+
 async function fetchBanditRows(
   db: D1Database,
-  scopeType: 'cohort' | 'profile',
+  scopeType: BanditScopeType,
   scopeId: string
 ): Promise<BanditStatRow[]> {
   const result = await db
@@ -466,7 +493,7 @@ async function fetchBanditRows(
 
 async function updateBanditScope(
   db: D1Database,
-  scopeType: 'cohort' | 'profile',
+  scopeType: BanditScopeType,
   scopeId: string,
   armId: string,
   reward: number,
@@ -554,11 +581,11 @@ export default {
         );
       }
 
-      // GET /api/audio/catalog — Lists studio audio stems uploaded to Cloudflare R2 per genre
+      // GET /api/audio/catalog — Lists studio audio stems uploaded to Cloudflare R2 per genre x energy tier
       if (url.pathname === '/api/audio/catalog' && request.method === 'GET') {
         const tracksByGenre: Record<
           ResolvedGenre,
-          Array<{ key: string; name: string; url: string; size: number }>
+          Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier }>
         > = {
           lofi_keys: [],
           deep_electronic: [],
@@ -568,22 +595,49 @@ export default {
           nature_rain: [],
         };
 
+        const defaultEnergyForGenre = (g: ResolvedGenre): EnergyTier => {
+          if (g === 'nature_rain') return 'calm';
+          if (g === 'deep_electronic') return 'drive';
+          return 'focus';
+        };
+
         if (env.AUDIO_BUCKET) {
           const listed = await env.AUDIO_BUCKET.list({ limit: 500 });
           for (const obj of listed.objects) {
             if (!/\.(mp3|ogg|opus|m4a|wav)$/i.test(obj.key)) continue;
-            const [folder, ...rest] = obj.key.split('/');
-            const fileName = rest.join('/');
-            if (fileName && folder in tracksByGenre) {
-              const genreKey = folder as ResolvedGenre;
-              const cleanName = fileName.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
-              tracksByGenre[genreKey].push({
-                key: obj.key,
-                name: cleanName,
-                url: `/api/audio/stream/${encodeURIComponent(folder)}/${encodeURIComponent(fileName)}`,
-                size: obj.size,
-              });
+            const segments = obj.key.split('/');
+            const folder = segments[0];
+            if (!(folder in tracksByGenre) || segments.length < 2) continue;
+
+            const genreKey = folder as ResolvedGenre;
+            let energy: EnergyTier = defaultEnergyForGenre(genreKey);
+            let fileName = segments[segments.length - 1];
+
+            // Supports both <genre>/<energy>/<file>.mp3 and flat <genre>/<file>.mp3
+            if (segments.length >= 3 && (segments[1] === 'calm' || segments[1] === 'focus' || segments[1] === 'drive')) {
+              energy = segments[1] as EnergyTier;
+              fileName = segments.slice(2).join('/');
+            } else {
+              const lower = fileName.toLowerCase();
+              if (lower.startsWith('calm_') || lower.startsWith('calm-')) energy = 'calm';
+              else if (lower.startsWith('drive_') || lower.startsWith('drive-')) energy = 'drive';
+              else if (lower.startsWith('focus_') || lower.startsWith('focus-')) energy = 'focus';
             }
+
+            const cleanName = fileName
+              .replace(/\.[^.]+$/, '')
+              .replace(/^(calm|focus|drive)[-_]+/i, '')
+              .replace(/[-_]+/g, ' ')
+              .trim();
+
+            const encodedPath = segments.map((s) => encodeURIComponent(s)).join('/');
+            tracksByGenre[genreKey].push({
+              key: obj.key,
+              name: cleanName || 'Studio Track',
+              url: `/api/audio/stream/${encodedPath}`,
+              size: obj.size,
+              energy,
+            });
           }
         }
 
@@ -745,11 +799,14 @@ export default {
             : body.targetState;
         const cohortKey = buildCohortKey(profile.ageBand, body.environment, effectiveTarget);
 
-        const [cohortStats, profileStats, livePubMedPapers] = await Promise.all([
-          fetchBanditRows(env.DB, 'cohort', cohortKey),
-          fetchBanditRows(env.DB, 'profile', profile.id),
-          fetchLivePubMedPapers(effectiveTarget, body.environment),
-        ]);
+        const [cohortStats, profileStats, cohortGenreStats, profileGenreStats, livePubMedPapers] =
+          await Promise.all([
+            fetchBanditRows(env.DB, 'cohort', cohortKey),
+            fetchBanditRows(env.DB, 'profile', profile.id),
+            fetchBanditRows(env.DB, 'cohort_genre', cohortKey),
+            fetchBanditRows(env.DB, 'profile_genre', profile.id),
+            fetchLivePubMedPapers(effectiveTarget, body.environment),
+          ]);
 
         const sessionId = `ses_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
         const recommendation = {
@@ -765,6 +822,8 @@ export default {
             requestedGenre: body.requestedGenre,
             cohortStats,
             profileStats,
+            cohortGenreStats,
+            profileGenreStats,
           }),
           livePubMedPapers,
         };
@@ -775,9 +834,10 @@ export default {
             id, profile_id, cohort_key, raw_input_text, current_state, baseline_score,
             target_state, environment, device, safety_mode, planned_duration_min,
             actual_duration_sec, completion_ratio, arm_id, arm_name, is_exploration,
+            is_control_trial, energy_tier, music_genre,
             acoustic_params_json, cited_study_ids_json, live_adjustments_json,
             time_of_day_bucket, status, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, '[]', ?, 'pending_debrief', ?)`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, 'pending_debrief', ?)`
         )
           .bind(
             sessionId,
@@ -794,6 +854,9 @@ export default {
             recommendation.arm.id,
             recommendation.arm.name,
             recommendation.isExploration ? 1 : 0,
+            recommendation.isControlTrial ? 1 : 0,
+            recommendation.params.energyTier,
+            recommendation.params.genre,
             JSON.stringify(recommendation.params),
             JSON.stringify(recommendation.arm.studyIds),
             getTimeOfDayBucket(),
@@ -802,6 +865,35 @@ export default {
           .run();
 
         return json({ recommendation });
+      }
+
+      // POST /api/session/genre — Persists 1-tap Reveal or Player Layer 2 Music swaps for accurate Bandit attribution
+      if (url.pathname === '/api/session/genre' && request.method === 'POST') {
+        const body = (await request.json()) as {
+          sessionId: string;
+          genre: ResolvedGenre;
+          params?: AcousticParams;
+        };
+        if (!body.sessionId || !(body.genre in GENRE_META)) {
+          return json({ error: 'Invalid session or genre' }, 400, request);
+        }
+        const row = await env.DB.prepare('SELECT acoustic_params_json FROM sessions WHERE id = ?')
+          .bind(body.sessionId)
+          .first<{ acoustic_params_json: string }>();
+        if (!row) return json({ error: 'Session not found' }, 404, request);
+
+        const prevParams = JSON.parse(String(row.acoustic_params_json)) as AcousticParams;
+        const nextParams: AcousticParams = body.params
+          ? { ...prevParams, ...body.params, genre: body.genre }
+          : { ...prevParams, genre: body.genre, genreSelectionMode: 'user_chosen' };
+
+        await env.DB.prepare(
+          `UPDATE sessions SET music_genre = ?, acoustic_params_json = ? WHERE id = ?`
+        )
+          .bind(body.genre, JSON.stringify(nextParams), body.sessionId)
+          .run();
+
+        return json({ ok: true, genre: body.genre }, 200, request);
       }
 
       // POST /api/session/progress
@@ -901,11 +993,70 @@ export default {
           )
           .run();
 
-        // Update BOTH cohort collective intelligence and individual profile model
-        const [cohortUpdated, profileUpdated] = await Promise.all([
-          updateBanditScope(env.DB, 'cohort', session.cohortKey, session.armId, reward, delta, completionRatio, learningWeight),
-          updateBanditScope(env.DB, 'profile', session.profileId, session.armId, reward, delta, completionRatio, learningWeight),
-        ]);
+        // Update BOTH Layer 1 (protocol arm) AND Layer 2 (music genre) Bandit models —
+        // strictly skipping active-AM Bandit arm updates on Blind Pure-Music Control trials so control
+        // sessions never pollute active protocol scoring (they feed A/B Validation instead!).
+        let cohortUpdated = { successRatePct: 0, trials: 0 };
+        let profileUpdated = { successRatePct: 0, trials: 0 };
+        const finalGenre = session.musicGenre || session.acousticParams?.genre || 'deep_electronic';
+
+        if (!session.isControlTrial) {
+          const [cUp, pUp] = await Promise.all([
+            updateBanditScope(env.DB, 'cohort', session.cohortKey, session.armId, reward, delta, completionRatio, learningWeight),
+            updateBanditScope(env.DB, 'profile', session.profileId, session.armId, reward, delta, completionRatio, learningWeight),
+            updateBanditScope(env.DB, 'cohort_genre', session.cohortKey, finalGenre, reward, delta, completionRatio, learningWeight),
+            updateBanditScope(env.DB, 'profile_genre', session.profileId, finalGenre, reward, delta, completionRatio, learningWeight),
+          ]);
+          cohortUpdated = cUp;
+          profileUpdated = pUp;
+        } else {
+          // Control trial still teaches Layer 2 music preference cleanly
+          await Promise.all([
+            updateBanditScope(env.DB, 'cohort_genre', session.cohortKey, finalGenre, reward, delta, completionRatio, learningWeight * 0.75),
+            updateBanditScope(env.DB, 'profile_genre', session.profileId, finalGenre, reward, delta, completionRatio, learningWeight * 0.75),
+          ]);
+          const [cStats, pStats] = await Promise.all([
+            fetchBanditRows(env.DB, 'cohort', session.cohortKey),
+            fetchBanditRows(env.DB, 'profile', session.profileId),
+          ]);
+          const cRow = cStats.find((r) => r.armId === session.armId);
+          const pRow = pStats.find((r) => r.armId === session.armId);
+          cohortUpdated = {
+            trials: cRow?.trials ?? 0,
+            successRatePct: cRow ? Math.round((cRow.alpha / (cRow.alpha + cRow.beta)) * 100) : 70,
+          };
+          profileUpdated = {
+            trials: pRow?.trials ?? 0,
+            successRatePct: pRow ? Math.round((pRow.alpha / (pRow.alpha + pRow.beta)) * 100) : 70,
+          };
+        }
+
+        // Adapt user's personal AM sensitivity multiplier from debrief tags + live modulation tweaks
+        let updatedModMult = 1.0;
+        const profRow = await env.DB.prepare('SELECT preferred_mod_mult FROM profiles WHERE id = ?')
+          .bind(session.profileId)
+          .first<{ preferred_mod_mult?: number }>();
+        const prevMult = Number(profRow?.preferred_mod_mult ?? 1.0);
+        let multDelta = 0;
+        const tags = body.feedbackTags ?? [];
+        if (tags.includes('A bit too intense') || tags.includes('Modulation felt distracting')) {
+          multDelta -= 0.08;
+        }
+        if (tags.includes('Wanted stronger focus')) {
+          multDelta += 0.06;
+        }
+        const netModTweak = liveAdjustments
+          .filter((a) => a.control === 'modulation')
+          .reduce((acc, a) => acc + a.delta, 0);
+        if (netModTweak !== 0) {
+          multDelta += Math.max(-0.1, Math.min(0.1, netModTweak * 0.35));
+        }
+        updatedModMult = Number(Math.max(0.65, Math.min(1.35, prevMult + multDelta)).toFixed(2));
+        if (multDelta !== 0 && !session.isControlTrial) {
+          await env.DB.prepare('UPDATE profiles SET preferred_mod_mult = ?, updated_at = ? WHERE id = ?')
+            .bind(updatedModMult, now, session.profileId)
+            .run();
+        }
 
         return json({
           ok: true,
@@ -921,6 +1072,8 @@ export default {
             cohortTrials: cohortUpdated.trials,
             profileSuccessRatePct: profileUpdated.successRatePct,
             profileTrials: profileUpdated.trials,
+            wasControlTrial: session.isControlTrial,
+            preferredModMult: updatedModMult,
           },
         });
       }
@@ -968,6 +1121,39 @@ export default {
           sessions.length > 0
             ? Math.round((sessions.filter((s) => s.isExploration).length / sessions.length) * 100)
             : 0;
+
+        // Blind A/B Scientific Validation: Active 3-Band AM vs Pure-Music Control (AM = 0%)
+        const activeCompleted = completed.filter((s) => !s.isControlTrial);
+        const controlCompleted = completed.filter((s) => s.isControlTrial);
+        const avgDeltaOf = (list: SessionRecord[]) =>
+          list.length > 0
+            ? Number((list.reduce((acc, s) => acc + (s.deltaScore ?? 0), 0) / list.length).toFixed(2))
+            : 0;
+        const successPctOf = (list: SessionRecord[]) =>
+          list.length > 0
+            ? Math.round(
+                (list.filter(
+                  (s) => s.workedRating === 'yes' || (s.workedRating === 'partial' && (s.deltaScore ?? 0) > 0)
+                ).length /
+                  list.length) *
+                  100
+              )
+            : 0;
+        const activeAvgDelta = avgDeltaOf(activeCompleted);
+        const controlAvgDelta = avgDeltaOf(controlCompleted);
+        const abValidation: ABValidationStats = {
+          activeSessions: activeCompleted.length,
+          controlSessions: controlCompleted.length,
+          activeAvgDelta,
+          controlAvgDelta,
+          activeSuccessRatePct: successPctOf(activeCompleted),
+          controlSuccessRatePct: successPctOf(controlCompleted),
+          deltaLift:
+            activeCompleted.length > 0 && controlCompleted.length > 0
+              ? Number((activeAvgDelta - controlAvgDelta).toFixed(2))
+              : 0,
+          readyForStats: activeCompleted.length >= 10 && controlCompleted.length >= 5,
+        };
 
         const armNameMap = new Map(PROTOCOL_ARMS.map((a) => [a.id, a.name]));
 
@@ -1071,6 +1257,7 @@ export default {
           globalSuccessRatePct,
           globalAvgDelta,
           explorationSharePct,
+          abValidation,
           cohorts,
           personalArms,
           genreLeaderboard,
@@ -1104,6 +1291,7 @@ export default {
             p.role,
             p.texture_pref,
             p.noise_sensitivity,
+            p.preferred_mod_mult,
             s.cohort_key,
             s.time_of_day_bucket,
             s.current_state,
@@ -1117,6 +1305,9 @@ export default {
             s.completion_ratio,
             s.arm_id,
             s.is_exploration,
+            s.is_control_trial,
+            s.energy_tier,
+            s.music_genre,
             s.acoustic_params_json,
             s.status,
             s.post_score,
@@ -1150,11 +1341,16 @@ export default {
             'completion_ratio',
             'arm_id',
             'is_exploration',
+            'is_control_trial',
+            'energy_tier',
             'music_genre',
             'genre_mode',
             'modulation_hz',
             'modulation_depth',
             'crossover_hz',
+            'upper_crossover_hz',
+            'stereo_am_spread',
+            'preferred_mod_mult',
             'bpm',
             'noise_color',
             'noise_level',
@@ -1185,11 +1381,16 @@ export default {
               r.completion_ratio,
               r.arm_id,
               r.is_exploration,
-              ap.genre ?? 'auto',
+              r.is_control_trial ?? 0,
+              r.energy_tier ?? ap.energyTier ?? 'focus',
+              r.music_genre ?? ap.genre ?? 'auto',
               ap.genreSelectionMode ?? 'auto',
               ap.modulationHz,
               ap.modulationDepth,
               ap.crossoverHz ?? 190,
+              ap.upperCrossoverHz ?? 4500,
+              ap.stereoAmSpread ? 1 : 0,
+              r.preferred_mod_mult ?? 1.0,
               ap.bpm,
               ap.noiseColor,
               ap.noiseLevel,

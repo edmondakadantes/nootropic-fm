@@ -26,8 +26,8 @@ export const SCIENTIFIC_STUDIES: ScientificStudy[] = [
     year: 2024,
     journal: 'Communications Biology (Nature Portfolio)',
     title: 'Rapid modulation in music supports attention in listeners with attentional difficulties',
-    mechanism: 'Rapid amplitude modulation (AM ~16 Hz, Beta band) embedded within instrumental music',
-    soundEffect: 'Embeds rhythmic Beta amplitude modulation (14–18 Hz) into the harmonic layer to sustain executive focus.',
+    mechanism: 'Mid-band cortical amplitude modulation (~16 Hz, Beta band) embedded within instrumental music',
+    soundEffect: 'Embeds 3-Band LR4 Beta amplitude modulation (14–18 Hz) inside the 190 Hz–4.5 kHz cortical band while keeping sub-bass and highs crystal clear.',
     summary:
       'Instrumental music embedded with rapid amplitude modulation (~16 Hz) improved sustained attention and engaged executive-salience networks, particularly in listeners prone to distraction.',
     caveat:
@@ -127,19 +127,19 @@ export const SCIENTIFIC_STUDIES: ScientificStudy[] = [
     applicableTargets: ['energy_lift', 'alert_focus'],
   },
   {
-    id: 'ngo-2013-acoustic-sleep',
-    authors: 'Ngo, H.-V. V., Martinetz, T., Born, J., & Mölle, M.',
-    year: 2013,
-    journal: 'Neuron',
-    title: 'Auditory closed-loop stimulation of the sleep slow oscillation enhances memory',
-    mechanism: 'Warm low-frequency acoustic pacing and deep spectral filtering supporting pre-sleep down-regulation',
-    soundEffect: 'Applies deep low-pass warmth (<680 Hz), velvety brown noise, and ultra-slow 6 Hz modulation to guide down-regulation.',
+    id: 'jespersen-2022-cochrane-sleep',
+    authors: 'Jespersen, K. V., Pando-Naude, V., Koenig, J., Jennum, P., & Vuust, P.',
+    year: 2022,
+    journal: 'Cochrane Database of Systematic Reviews',
+    title: 'Listening to music for insomnia in adults',
+    mechanism: 'Slow, warm, lyric-free pre-sleep music (moderate-certainty RCT evidence for subjective sleep quality)',
+    soundEffect: 'Pairs beatless or ultra-slow calm tracks (<75 BPM) with warm low-pass filtering (<720 Hz) and gentle 6 Hz Iso-Principle wind-down.',
     summary:
-      'Gentle low-frequency rhythmic auditory cues synchronized with slow neural rhythms support calm nocturnal down-regulation and restful sleep transitions.',
+      'Updated Cochrane systematic review of randomized controlled trials found moderate-certainty evidence that listening to calming music before bed improves subjective sleep quality (PSQI) compared to no intervention.',
     caveat:
-      'Strictly disabled when driving or operating machinery.',
-    doiOrUrl: 'https://doi.org/10.1016/j.neuron.2013.03.006',
-    applicableTargets: ['sleep_winddown'],
+      'Strictly disabled when driving or operating machinery; supports pre-sleep wind-down rather than treating clinical sleep disorders.',
+    doiOrUrl: 'https://doi.org/10.1002/14651858.CD010459.pub3',
+    applicableTargets: ['sleep_winddown', 'calm_reset'],
   },
   {
     id: 'garcia-argibay-2019-binaural-meta',

@@ -3,6 +3,7 @@ import {
   ArrowRight,
   BarChart3,
   CheckCircle2,
+  FlaskConical,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
@@ -28,6 +29,7 @@ const FEEDBACK_WHISPERS = [
   'Warm & pleasant',
   'Calmed my mind quickly',
   'Safe & clear in traffic',
+  'Wanted stronger focus',
   'Too monotonous',
   'A bit too intense',
   'Modulation felt distracting',
@@ -58,6 +60,8 @@ export function DebriefView({
     cohortTrials: number;
     profileSuccessRatePct: number;
     profileTrials: number;
+    wasControlTrial: boolean;
+    preferredModMult: number;
   } | null>(null);
 
   const deltaPreview = postScore - baselineScore;
@@ -138,9 +142,30 @@ export function DebriefView({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/50 px-4 py-3 text-xs text-slate-300">
-            Updated cohort:{' '}
-            <span className="font-semibold text-white">{learningUpdate.cohortLabel}</span>
+          {learningUpdate.wasControlTrial && (
+            <div className="rounded-2xl border border-purple-400/35 bg-purple-500/12 p-4 text-left text-xs text-purple-100 space-y-1">
+              <div className="inline-flex items-center gap-1.5 font-semibold text-purple-200">
+                <FlaskConical className="h-4 w-4 text-purple-300" />
+                Scientific Calibration Bonus · Blind Pure-Music Control Trial
+              </div>
+              <p className="leading-relaxed text-purple-100/85">
+                This session played pure 3-Band studio audio (0% AM modulation) as part of our
+                transparent Open Research Beta. Your honest rating directly powers our live{' '}
+                <strong>Active AM vs. Pure-Music Control</strong> benchmark in Research Brain!
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl border border-slate-800/80 bg-slate-900/50 px-4 py-3 text-xs text-slate-300">
+            <span>
+              Updated cohort:{' '}
+              <span className="font-semibold text-white">{learningUpdate.cohortLabel}</span>
+            </span>
+            {learningUpdate.preferredModMult !== 1.0 && (
+              <span className="font-mono-tech rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[11px] text-cyan-200">
+                Personal AM Depth: {Math.round(learningUpdate.preferredModMult * 100)}%
+              </span>
+            )}
           </div>
 
           <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">

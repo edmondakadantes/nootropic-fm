@@ -15,7 +15,7 @@ import {
   Waves,
 } from 'lucide-react';
 import type { LiveAdjustment, ProtocolRecommendation, ResolvedGenre } from '../../shared/types';
-import { DEVICE_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
+import { DEVICE_LABELS, ENERGY_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
 import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
 import { API_BASE, api } from '../lib/api';
 import { NeuralVisualizer } from './NeuralVisualizer';
@@ -57,11 +57,14 @@ export function PlayerView({
   );
   const [telemetry, setTelemetry] = useState<EngineTelemetry>({
     phase: 'entry',
-    phaseLabel: 'Entry & Alignment (Iso-Principle)',
+    phaseLabel: 'Entry & Alignment (Iso-Adaptive)',
     progressRatio: 0,
     currentModHz: recommendation.params.modulationHz,
-    currentModDepth: recommendation.params.modulationDepth,
+    currentModDepth: Number((recommendation.params.modulationDepth * 0.48).toFixed(2)),
     crossoverHz: recommendation.params.crossoverHz ?? 190,
+    upperCrossoverHz: recommendation.params.upperCrossoverHz ?? 4500,
+    stereoAmActive: Boolean(recommendation.params.stereoAmSpread && !recommendation.params.speakerSafeEQ),
+    energyTier: recommendation.params.energyTier ?? 'focus',
     currentBpm: recommendation.params.bpm,
     antiMonotonyActive: false,
     genre: recommendation.params.genre ?? 'deep_electronic',
@@ -110,7 +113,8 @@ export function PlayerView({
         await engineRef.current?.start(
           recommendation.params,
           recommendation.plannedDurationMin,
-          `${recommendation.arm.name} · ${GENRE_META[recommendation.params.genre].label}`
+          `${recommendation.arm.name} · ${GENRE_META[recommendation.params.genre].label}`,
+          recommendation.isControlTrial
         );
         if (mounted) {
           setIsPlaying(true);
@@ -174,7 +178,8 @@ export function PlayerView({
       await engineRef.current?.start(
         recommendation.params,
         recommendation.plannedDurationMin,
-        recommendation.arm.name
+        recommendation.arm.name,
+        recommendation.isControlTrial
       );
       setAudioStarted(true);
       setIsPlaying(true);
@@ -215,6 +220,12 @@ export function PlayerView({
       ...prev,
       { atSec: elapsedRef.current, control: 'genre', delta: 0, note: style },
     ]);
+    void api
+      .updateSessionGenre({
+        sessionId: recommendation.sessionId,
+        genre: style,
+      })
+      .catch(() => {});
   };
 
   const handleEndSession = () => {
@@ -262,7 +273,10 @@ export function PlayerView({
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/35 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold text-cyan-200">
                 <Waves className="h-3.5 w-3.5" />
-                {recommendation.arm.name}
+                {recommendation.arm.name} · 3-Band LR4
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-indigo-400/35 bg-indigo-500/12 px-2.5 py-1 text-[11px] font-medium text-indigo-200">
+                {ENERGY_LABELS[telemetry.energyTier].label}
               </span>
               {telemetry.usingStudioAudio && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/14 px-2.5 py-1 text-[11px] font-semibold text-amber-200">

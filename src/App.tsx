@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BarChart3, Download, Radio, SlidersHorizontal, Sparkles } from 'lucide-react';
-import { formatCohortLabel } from '../shared/protocols';
+import { formatCohortLabel, swapRecommendationGenre } from '../shared/protocols';
 import type {
   CurrentState,
   LiveAdjustment,
   MusicGenreChoice,
   OutputDevice,
   ProtocolRecommendation,
+  ResolvedGenre,
   SessionEnvironment,
   SessionRecord,
   TargetState,
@@ -26,7 +27,7 @@ type Screen = 'onboarding' | 'checkin' | 'reveal' | 'player' | 'debrief' | 'insi
 const PROFILE_STORAGE_KEY = 'nootropic_fm_profile_id_v1';
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('onboarding');
+  const [screen, setScreen] = useState<Screen>('checkin');
   const [booting, setBooting] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pendingDebrief, setPendingDebrief] = useState<SessionRecord | null>(null);
@@ -68,7 +69,7 @@ export default function App() {
       const savedId = localStorage.getItem(PROFILE_STORAGE_KEY);
       if (!savedId) {
         setBooting(false);
-        setScreen('onboarding');
+        setScreen('checkin');
         return;
       }
       try {
@@ -78,7 +79,7 @@ export default function App() {
         setScreen('checkin');
       } catch {
         localStorage.removeItem(PROFILE_STORAGE_KEY);
-        setScreen('onboarding');
+        setScreen('checkin');
       } finally {
         setBooting(false);
       }
@@ -157,7 +158,8 @@ export default function App() {
     }
   };
 
-  const handleStartSession = async (payload: {
+  const handleLaunchUnifiedSession = async (payload: {
+    profileUpdate?: Partial<UserProfile>;
     rawInputText: string;
     currentState: CurrentState;
     baselineScore: number;
@@ -168,9 +170,38 @@ export default function App() {
     ageOverride?: number;
     requestedGenre?: MusicGenreChoice;
   }) => {
-    if (!profile) return;
-    await startSessionWithProfile(profile, payload);
+    setErrorBanner(null);
+    let activeProfile = profile;
+    if (!activeProfile) {
+      const { profile: saved } = await api.saveProfile(
+        payload.profileUpdate ?? {
+          age: payload.ageOverride ?? 32,
+          defaultDevice: payload.device,
+          researchConsent: true,
+        }
+      );
+      localStorage.setItem(PROFILE_STORAGE_KEY, saved.id);
+      setProfile(saved);
+      activeProfile = saved;
+    }
+    const { profileUpdate: _ignored, ...sessionPayload } = payload;
+    await startSessionWithProfile(activeProfile, sessionPayload);
   };
+
+  const handleSwapRevealGenre = useCallback((newGenre: ResolvedGenre) => {
+    setActiveRec((prev) => {
+      if (!prev) return prev;
+      const updated = swapRecommendationGenre(prev, newGenre);
+      void api
+        .updateSessionGenre({
+          sessionId: updated.sessionId,
+          genre: newGenre,
+          params: updated.params,
+        })
+        .catch(() => {});
+      return updated;
+    });
+  }, []);
 
   const handleFinishToDebrief = useCallback(
     (stats: { actualDurationSec: number; liveAdjustments: LiveAdjustment[] }) => {
@@ -225,7 +256,7 @@ export default function App() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5 sm:px-6">
           <button
             type="button"
-            onClick={() => setScreen(profile ? 'checkin' : 'onboarding')}
+            onClick={() => setScreen('checkin')}
             className="group flex items-center gap-2.5 text-left"
           >
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-400/10 text-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.18)] transition group-hover:scale-105 group-hover:border-cyan-300/60">
@@ -326,20 +357,21 @@ export default function App() {
             onComplete={handleSaveProfile}
             onMoodChange={setFieldMood}
           />
-        ) : screen === 'checkin' && profile ? (
+        ) : screen === 'checkin' ? (
           <CheckInView
             profile={profile}
             pendingDebrief={pendingDebrief}
             onOpenPendingDebrief={handleOpenPendingDebrief}
             onDismissPending={() => void handleDismissPending()}
             onMoodChange={setFieldMood}
-            onStartSession={handleStartSession}
+            onLaunchUnifiedSession={handleLaunchUnifiedSession}
           />
         ) : screen === 'reveal' ? (
           <ProtocolRevealView
             loading={researching}
             recommendation={activeRec}
             mood={fieldMood}
+            onSwapGenre={handleSwapRevealGenre}
             onLaunchAudio={() => setScreen('player')}
             onBack={() => {
               setActiveRec(null);

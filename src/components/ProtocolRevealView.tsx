@@ -1,20 +1,19 @@
-import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   BookOpen,
-  CheckCircle2,
   Cpu,
   ExternalLink,
   FlaskConical,
   Loader2,
   Music2,
   Play,
+  Plus,
   ShieldAlert,
   Sparkles,
   Waves,
 } from 'lucide-react';
-import type { ProtocolRecommendation } from '../../shared/types';
-import { DEVICE_LABELS, GENRE_META, TARGET_LABELS } from '../../shared/types';
+import type { ProtocolRecommendation, ResolvedGenre } from '../../shared/types';
+import { DEVICE_LABELS, ENERGY_LABELS, GENRE_META, TARGET_LABELS } from '../../shared/types';
 import type { FieldMood } from './AmbientField';
 import { SonicOrb } from './SonicOrb';
 
@@ -22,137 +21,174 @@ interface ProtocolRevealViewProps {
   loading: boolean;
   recommendation: ProtocolRecommendation | null;
   mood: FieldMood;
+  onSwapGenre: (genre: ResolvedGenre) => void;
   onLaunchAudio: () => void;
   onBack: () => void;
 }
-
-const RESEARCH_STEPS = [
-  'Analyzing listener profile, baseline & safety guardrails',
-  'Searching peer-reviewed psychoacoustics & live PubMed (NIH)',
-  'Fusing Taste Carrier genre with Multiband AM (>190 Hz) crossover',
-  'Weighing collective cohort outcomes in Research Brain',
-];
 
 export function ProtocolRevealView({
   loading,
   recommendation,
   mood,
+  onSwapGenre,
   onLaunchAudio,
   onBack,
 }: ProtocolRevealViewProps) {
-  const [animStep, setAnimStep] = useState(0);
-  const [revealReady, setRevealReady] = useState(false);
-
-  useEffect(() => {
-    setAnimStep(0);
-    setRevealReady(false);
-    const t1 = window.setTimeout(() => setAnimStep(1), 450);
-    const t2 = window.setTimeout(() => setAnimStep(2), 1050);
-    const t3 = window.setTimeout(() => setAnimStep(3), 1650);
-    const t4 = window.setTimeout(() => setRevealReady(true), 2250);
-    return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
-      window.clearTimeout(t3);
-      window.clearTimeout(t4);
-    };
-  }, [loading]);
-
-  const isScanning = loading || !recommendation || !revealReady;
-
-  if (isScanning) {
+  // Zero artificial delay — displays immediately as soon as real API + PubMed response arrives!
+  if (loading || !recommendation) {
     return (
-      <div className="mx-auto flex max-w-xl flex-col items-center py-6 text-center">
-        <SonicOrb mood={mood} size="lg" label="Compounding Audio Formula" />
-
+      <div className="mx-auto flex max-w-xl flex-col items-center py-10 text-center">
+        <SonicOrb mood={mood} size="lg" label="Tune your mind" />
         <h1 className="animate-rise mt-6 text-2xl font-bold text-white sm:text-3xl">
-          Compounding your <span className="text-aurora">nootropic audio formula...</span>
+          Synthesizing your <span className="text-aurora">2-Layer Audio Formula...</span>
         </h1>
-        <p className="mt-2 text-xs text-slate-400 sm:text-sm">
-          Matching peer-reviewed neuroscience with your musical carrier and safety constraints.
+        <p className="mt-2 inline-flex items-center gap-2 text-xs text-slate-400 sm:text-sm">
+          <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
+          Querying peer-reviewed studies, NIH PubMed &amp; Contextual Bandit weights
         </p>
-
-        <div className="glass-stage mt-7 w-full rounded-3xl p-5 sm:p-6 space-y-3 text-left">
-          {RESEARCH_STEPS.map((label, idx) => {
-            const done = idx < animStep || (!loading && Boolean(recommendation) && idx <= animStep);
-            const active = idx === animStep && !done;
-            return (
-              <div
-                key={label}
-                className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 text-xs transition-all duration-500 ${
-                  done
-                    ? 'border-emerald-400/25 bg-emerald-500/8 text-emerald-200'
-                    : active
-                      ? 'border-cyan-400/40 bg-cyan-400/10 text-white'
-                      : 'border-slate-800/70 bg-slate-900/40 text-slate-500'
-                }`}
-              >
-                {done ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-                ) : active ? (
-                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan-300" />
-                ) : (
-                  <span className="h-2 w-2 shrink-0 rounded-full bg-slate-700 ml-1 mr-1" />
-                )}
-                <span>{label}</span>
-              </div>
-            );
-          })}
-        </div>
       </div>
     );
   }
 
   const genreMeta = GENRE_META[recommendation.params.genre];
+  const energyInfo = ENERGY_LABELS[recommendation.params.energyTier];
   const livePapers = recommendation.livePubMedPapers ?? [];
+  const upperKhz = ((recommendation.params.upperCrossoverHz ?? 4500) / 1000).toFixed(1);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      {/* Iconic "NOOTROPIC AUDIO FORMULA" Supplement-Facts Prescription Card */}
-      <div className="animate-rise glass-stage rounded-3xl p-6 sm:p-8 space-y-6">
-        <div className="flex flex-col items-center text-center">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/12 px-3 py-1 text-[11px] font-semibold text-emerald-300">
-            <Sparkles className="h-3.5 w-3.5" />
-            Custom Formula Synthesized · {recommendation.arm.name}
+      {/* Header + Top Play Action */}
+      <div className="animate-rise text-center space-y-2">
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/12 px-3 py-1 text-[11px] font-semibold text-emerald-300">
+          <Sparkles className="h-3.5 w-3.5" />
+          2-Layer Formula Ready · {recommendation.cohortLabel}
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">
+          Your <span className="text-aurora">Nootropic Audio Formula</span>
+        </h1>
+        <p className="mx-auto max-w-xl text-xs leading-relaxed text-slate-400 sm:text-sm">
+          Real-time 3-Band LR4 neuro-modulation fused seamlessly inside studio music — sub-bass
+          (&lt;{recommendation.params.crossoverHz} Hz) and highs (&gt;{upperKhz} kHz) remain 100% untouched.
+        </p>
+      </div>
+
+      {/* Driving Safety Notice */}
+      {recommendation.safetyMode && (
+        <div className="animate-rise rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+            <div className="space-y-1 text-xs text-amber-100">
+              <div className="font-semibold uppercase tracking-wide text-amber-300">
+                Driving Safety Mode Applied Automatically
+              </div>
+              <p className="text-amber-100/90">{recommendation.safetyWarnings[0]}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VISUAL 2-LAYER ARCHITECTURE: LAYER 1 (+) LAYER 2 */}
+      <div className="animate-rise space-y-2">
+        {/* LAYER 1: SCIENTIFIC SIGNAL */}
+        <div className="glass-stage rounded-3xl border border-cyan-400/30 p-5 sm:p-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-mono-tech rounded-lg border border-cyan-400/40 bg-cyan-400/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200">
+                Layer 1 · Scientific Signal
+              </span>
+              <span className="text-sm font-bold text-white">{recommendation.arm.name}</span>
+            </div>
+            <span className="font-mono-tech text-[11px] text-cyan-300">
+              {recommendation.params.modulationHz} Hz · {recommendation.params.crossoverHz}Hz–{upperKhz}kHz
+            </span>
           </div>
 
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-4xl">
-            Your <span className="text-aurora">Nootropic Audio Formula</span>
-          </h1>
-          <p className="mt-2 max-w-xl text-xs leading-relaxed text-slate-400 sm:text-sm">
-            Active neuroacoustic modulation fused directly inside{' '}
-            <strong className="text-cyan-200">{genreMeta.label}</strong> (100% lyric-free) for{' '}
-            <span className="text-slate-200">{recommendation.cohortLabel}</span>.
-          </p>
+          <p className="text-xs leading-relaxed text-slate-300">{recommendation.rationale}</p>
+
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <span className="rounded-lg border border-slate-800 bg-slate-950/75 px-2.5 py-1 text-slate-200">
+              <strong className="text-cyan-300">3-Band LR4:</strong> Clean sub &amp; air, organic mid-band AM
+            </span>
+            <span className="rounded-lg border border-slate-800 bg-slate-950/75 px-2.5 py-1 text-slate-200">
+              <strong className="text-emerald-300">Iso-Adaptive:</strong>{' '}
+              {Math.round(recommendation.params.modulationDepth * 48)}% entry →{' '}
+              {Math.round(recommendation.params.modulationDepth * 100)}% peak
+            </span>
+            {recommendation.params.stereoAmSpread && (
+              <span className="rounded-lg border border-slate-800 bg-slate-950/75 px-2.5 py-1 text-slate-200">
+                <strong className="text-indigo-300">Stereo Shimmer:</strong> +32° phase spread (headphones)
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Driving Safety Notice */}
-        {recommendation.safetyMode && (
-          <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4">
-            <div className="flex items-start gap-3">
-              <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
-              <div className="space-y-1 text-xs text-amber-100">
-                <div className="font-semibold uppercase tracking-wide text-amber-300">
-                  Driving Safety Mode Applied Automatically
-                </div>
-                <p className="text-amber-100/90">{recommendation.safetyWarnings[0]}</p>
-              </div>
+        {/* Glowing "+" Fusion Connector */}
+        <div className="relative flex items-center justify-center py-0.5">
+          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 bg-[#070b15] px-4 py-1 text-[11px] font-semibold text-cyan-200 shadow-[0_0_24px_rgba(34,211,238,0.22)]">
+            <Plus className="h-3.5 w-3.5 text-cyan-300" />
+            Fused in real time with
+          </div>
+        </div>
+
+        {/* LAYER 2: MUSIC CARRIER (with Instant 1-Tap Swap!) */}
+        <div className="glass-stage rounded-3xl border border-indigo-400/30 p-5 sm:p-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-mono-tech rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-200">
+                Layer 2 · Music Carrier
+              </span>
+              <span className="text-sm font-bold text-white">{genreMeta.label}</span>
+            </div>
+            <span className="font-mono-tech rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-indigo-200">
+              {energyInfo.label} · {energyInfo.bpmRange}
+            </span>
+          </div>
+
+          <p className="text-xs leading-relaxed text-slate-300">
+            Preferred lyric-free aesthetics trigger striatal dopamine release (<em>Salimpoor et al. 2011</em>),
+            keeping you locked in longer while verbal working memory stays clear (<em>Perham &amp; Currie 2014</em>).
+          </p>
+
+          {recommendation.genreAdaptationNote && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-indigo-400/35 bg-indigo-500/10 p-3 text-xs text-indigo-100">
+              <Music2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-300" />
+              <span>
+                <strong className="text-indigo-200">Iso-Adaptation:</strong>{' '}
+                {recommendation.genreAdaptationNote}
+              </span>
+            </div>
+          )}
+
+          {/* 1-Tap Layer 2 Swap right on the Reveal card */}
+          <div className="space-y-2 pt-1">
+            <div className="text-[11px] font-medium text-slate-400">
+              Prefer a different soundscape? Swap Layer 2 in 1 tap before playing:
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
+                const active = recommendation.params.genre === g;
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => onSwapGenre(g)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                      active
+                        ? 'border-indigo-400 bg-indigo-500/25 text-white shadow-[0_0_16px_rgba(129,140,248,0.28)]'
+                        : 'subtle-chip'
+                    }`}
+                  >
+                    {GENRE_META[g].label}
+                  </button>
+                );
+              })}
             </div>
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* Smart Iso-Adaptation Note if user's chosen genre was adapted for goal/safety */}
-        {recommendation.genreAdaptationNote && (
-          <div className="flex items-start gap-3 rounded-2xl border border-indigo-400/35 bg-indigo-500/10 p-3.5 text-xs text-indigo-100">
-            <Music2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-300" />
-            <div>
-              <strong className="text-indigo-200">Iso-Principle Genre Adaptation:</strong>{' '}
-              {recommendation.genreAdaptationNote}
-            </div>
-          </div>
-        )}
-
-        {/* Supplement-Facts Style Formula Table (Built to be iconic & shareable!) */}
+      {/* Shareable "NOOTROPIC AUDIO FORMULA FACTS" Prescription Card + Play CTA */}
+      <div className="animate-rise delay-75 glass-stage rounded-3xl p-5 sm:p-7 space-y-5">
         <div className="overflow-hidden rounded-2xl border border-cyan-400/25 bg-[#050812]/90">
           <div className="flex items-center justify-between border-b-2 border-cyan-400/35 bg-cyan-400/[0.07] px-4 py-3">
             <div>
@@ -166,7 +202,7 @@ export function ProtocolRevealView({
               </div>
             </div>
             <span className="font-mono-tech rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-200">
-              {recommendation.params.bpm > 0 ? `${recommendation.params.bpm} BPM` : 'Beatless'}
+              {energyInfo.label}
             </span>
           </div>
 
@@ -174,7 +210,7 @@ export function ProtocolRevealView({
             {recommendation.formulaIngredients.map((ing) => (
               <div
                 key={ing.role}
-                className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-12 sm:items-center sm:gap-2"
+                className="grid grid-cols-1 gap-1 px-4 py-2.5 sm:grid-cols-12 sm:items-center sm:gap-2"
               >
                 <div className="font-mono-tech text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:col-span-3">
                   {ing.role}
@@ -196,7 +232,7 @@ export function ProtocolRevealView({
                 : `Bandit Mode: Optimal Fit (${recommendation.cohortTrials} cohort trials)`}
             </span>
             <span className="font-mono-tech text-[10px] text-cyan-300/80">
-              Sub-bass &lt;{recommendation.params.crossoverHz}Hz Clean · Mid-High AM Active
+              3-Band LR4 · &lt;{recommendation.params.crossoverHz}Hz &amp; &gt;{upperKhz}kHz Pure
             </span>
           </div>
         </div>
@@ -217,13 +253,13 @@ export function ProtocolRevealView({
             className="btn-aurora flex flex-1 w-full items-center justify-center gap-2.5 rounded-2xl px-6 py-4 text-base font-bold text-slate-950"
           >
             <Play className="h-5 w-5 fill-slate-950" />
-            Play My Audio Formula ({recommendation.plannedDurationMin} min ·{' '}
+            Tune My Mind ({recommendation.plannedDurationMin} min · {genreMeta.label} ·{' '}
             {TARGET_LABELS[recommendation.targetState]})
           </button>
         </div>
       </div>
 
-      {/* How Each Peer-Reviewed Study Shapes Your Music */}
+      {/* Peer-Reviewed Evidence Powering Layer 1 & Layer 2 */}
       <div className="animate-rise delay-150 glass-card rounded-3xl p-5 sm:p-7 space-y-4">
         <div className="flex items-center gap-2 text-cyan-300">
           <BookOpen className="h-5 w-5" />
