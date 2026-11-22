@@ -20,6 +20,7 @@ import { NeuralVisualizer } from './NeuralVisualizer';
 
 interface PlayerViewProps {
   recommendation: ProtocolRecommendation;
+  onPlayingChange?: (playing: boolean) => void;
   onFinishToDebrief: (stats: {
     actualDurationSec: number;
     liveAdjustments: LiveAdjustment[];
@@ -32,7 +33,11 @@ function formatTimer(sec: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProps) {
+export function PlayerView({
+  recommendation,
+  onPlayingChange,
+  onFinishToDebrief,
+}: PlayerViewProps) {
   const engineRef = useRef<PsychoacousticEngine | null>(null);
   if (!engineRef.current) {
     engineRef.current = new PsychoacousticEngine();
@@ -62,6 +67,10 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
   adjustmentsRef.current = adjustments;
 
   useEffect(() => {
+    onPlayingChange?.(isPlaying);
+  }, [isPlaying, onPlayingChange]);
+
+  useEffect(() => {
     let mounted = true;
     const startAudio = async () => {
       try {
@@ -85,9 +94,10 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
 
     return () => {
       mounted = false;
+      onPlayingChange?.(false);
       engineRef.current?.stop();
     };
-  }, [recommendation]);
+  }, [recommendation, onPlayingChange]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -183,7 +193,7 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       {recommendation.safetyMode && (
-        <div className="rounded-2xl border border-amber-400/40 bg-amber-500/12 p-4">
+        <div className="animate-rise rounded-2xl border border-amber-400/40 bg-amber-500/12 p-4 backdrop-blur-md">
           <div className="flex items-start gap-3">
             <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
             <div className="space-y-1 text-xs text-amber-100">
@@ -200,17 +210,17 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
         </div>
       )}
 
-      {/* Main Live Studio Card */}
-      <div className="glass-card rounded-2xl p-5 sm:p-7 space-y-5">
+      {/* Main Live Studio Stage */}
+      <div className="animate-rise glass-stage rounded-3xl p-5 sm:p-8 space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-0.5 text-[11px] font-medium text-cyan-300">
-                <Waves className="h-3 w-3" />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/35 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold text-cyan-200">
+                <Waves className="h-3.5 w-3.5" />
                 {recommendation.arm.name}
               </span>
               <span
-                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
                   recommendation.isExploration
                     ? 'border-purple-400/35 bg-purple-500/15 text-purple-200'
                     : 'border-emerald-400/35 bg-emerald-500/12 text-emerald-300'
@@ -219,11 +229,11 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
                 <FlaskConical className="h-3 w-3" />
                 {recommendation.isExploration
                   ? 'Controlled Exploration (Bandit)'
-                  : `Optimal Fit · ${recommendation.confidencePct}% score`}
+                  : `Optimal Fit · ${recommendation.confidencePct}% confidence`}
               </span>
             </div>
-            <h1 className="mt-2.5 text-2xl font-bold text-white">
-              {TARGET_LABELS[recommendation.targetState]}
+            <h1 className="mt-3 text-2xl font-bold text-white sm:text-3xl">
+              <span className="text-aurora">{TARGET_LABELS[recommendation.targetState]}</span>
             </h1>
             <p className="mt-1 text-xs text-slate-400">
               Cohort: <span className="text-slate-200">{recommendation.cohortLabel}</span> · Output:{' '}
@@ -235,7 +245,7 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
           </div>
 
           <div className="text-right">
-            <div className="font-mono-tech text-3xl font-bold tracking-tight text-white">
+            <div className="font-mono-tech text-3xl font-bold tracking-tight text-white sm:text-4xl">
               {formatTimer(elapsedSec)}
             </div>
             <div className="font-mono-tech text-xs text-slate-400">
@@ -244,6 +254,7 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
           </div>
         </div>
 
+        {/* Upgraded Dual-Layer Radial + Ribbon Neural Visualizer */}
         <NeuralVisualizer
           engine={engineRef.current}
           isPlaying={isPlaying}
@@ -258,16 +269,16 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
               <Activity className="h-3.5 w-3.5" />
               Active phase: {telemetry.phaseLabel}
               {telemetry.antiMonotonyActive && (
-                <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] text-amber-200">
+                <span className="rounded-md bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
                   Anti-monotony lift
                 </span>
               )}
             </span>
             <span className="font-mono-tech text-slate-400">{Math.round(progressPct)}%</span>
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800/90">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-indigo-400 to-amber-300 transition-all duration-500"
+              className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-indigo-400 to-amber-300 shadow-[0_0_16px_rgba(34,211,238,0.55)] transition-all duration-500"
               style={{ width: `${Math.max(2, progressPct)}%` }}
             />
           </div>
@@ -278,13 +289,13 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
           </div>
         </div>
 
-        {/* Play/Pause & Live Controls */}
-        <div className="flex flex-col gap-4 rounded-xl border border-slate-800/80 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
+        {/* Play/Pause & Tactile Live Controls */}
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-800/80 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={() => void togglePlay()}
-              className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/25 transition hover:scale-105 hover:bg-cyan-300"
+              className="btn-aurora inline-flex h-14 w-14 items-center justify-center rounded-full text-slate-950"
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
@@ -320,28 +331,28 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
             <button
               type="button"
               onClick={() => tweakIntensity(-0.15)}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-400/50"
+              className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
             >
               Calmer
             </button>
             <button
               type="button"
               onClick={() => tweakIntensity(0.15)}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-cyan-400/50"
+              className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
             >
               More drive
             </button>
             <button
               type="button"
               onClick={() => tweakModulation(-0.2)}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-indigo-400/50"
+              className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
             >
               AM −
             </button>
             <button
               type="button"
               onClick={() => tweakModulation(0.2)}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:border-indigo-400/50"
+              className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
             >
               AM +
             </button>
@@ -350,31 +361,31 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
 
         {/* Acoustic DNA Telemetry Grid */}
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
             <div className="text-[10px] uppercase tracking-wider text-slate-500">AM Modulation</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-cyan-300">
               {telemetry.currentModHz} Hz
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
             <div className="text-[10px] uppercase tracking-wider text-slate-500">AM Depth</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-indigo-300">
               {Math.round(telemetry.currentModDepth * 100)}%
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
             <div className="text-[10px] uppercase tracking-wider text-slate-500">Pulse Tempo</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-white">
               {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Ambient'}
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
             <div className="text-[10px] uppercase tracking-wider text-slate-500">Colored Noise</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-slate-200">
               {recommendation.params.noiseColor} ({Math.round(recommendation.params.noiseLevel * 100)}%)
             </div>
           </div>
-          <div className="col-span-2 rounded-xl border border-slate-800 bg-slate-900/60 p-3 sm:col-span-1">
+          <div className="col-span-2 rounded-xl border border-slate-800/80 bg-slate-900/55 p-3 sm:col-span-1">
             <div className="text-[10px] uppercase tracking-wider text-slate-500">Live Tweaks</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-amber-300">
               {adjustments.length}
@@ -390,7 +401,7 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
           <button
             type="button"
             onClick={handleEndSession}
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300"
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:-translate-y-0.5 hover:bg-emerald-300"
           >
             <CheckCircle2 className="h-4 w-4" />
             End Session & Rate (10s)
@@ -399,7 +410,7 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
       </div>
 
       {/* Scientific Rationale & Verified Studies */}
-      <div className="glass-card rounded-2xl p-5 sm:p-6 space-y-4">
+      <div className="animate-rise delay-150 glass-card rounded-3xl p-5 sm:p-7 space-y-4">
         <div className="flex items-center gap-2 text-cyan-300">
           <BookOpen className="h-5 w-5" />
           <h2 className="text-base font-semibold text-white">
@@ -413,7 +424,7 @@ export function PlayerView({ recommendation, onFinishToDebrief }: PlayerViewProp
           {recommendation.studies.map((study) => (
             <div
               key={study.id}
-              className="rounded-xl border border-slate-800/90 bg-slate-950/60 p-4 space-y-1.5"
+              className="rounded-2xl border border-slate-800/90 bg-slate-950/60 p-4 space-y-1.5 transition hover:border-cyan-400/35"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="text-xs font-semibold text-cyan-300">

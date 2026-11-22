@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BarChart3, Radio, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { formatCohortLabel } from '../shared/protocols';
 import type {
@@ -11,6 +11,7 @@ import type {
   TargetState,
   UserProfile,
 } from '../shared/types';
+import { AmbientField, type FieldMood } from './components/AmbientField';
 import { CheckInView } from './components/CheckInView';
 import { DebriefView } from './components/DebriefView';
 import { InsightsView } from './components/InsightsView';
@@ -28,6 +29,8 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pendingDebrief, setPendingDebrief] = useState<SessionRecord | null>(null);
   const [activeRec, setActiveRec] = useState<ProtocolRecommendation | null>(null);
+  const [fieldMood, setFieldMood] = useState<FieldMood>('default');
+  const [audioActive, setAudioActive] = useState(false);
   const [debriefContext, setDebriefContext] = useState<{
     sessionId: string;
     armName: string;
@@ -62,12 +65,67 @@ export default function App() {
     void restore();
   }, []);
 
-  const handleSaveProfile = async (data: Partial<UserProfile>) => {
+  const moodFromTarget = useCallback((env: SessionEnvironment, target: TargetState): FieldMood => {
+    if (env === 'driving') return 'driving';
+    if (target === 'calm_reset') return 'calm';
+    if (target === 'deep_flow') return 'flow';
+    if (target === 'sleep_winddown') return 'sleep';
+    return 'focus';
+  }, []);
+
+  const startSessionWithProfile = useCallback(
+    async (
+      activeProfile: UserProfile,
+      payload: {
+        rawInputText: string;
+        currentState: CurrentState;
+        baselineScore: number;
+        targetState: TargetState;
+        environment: SessionEnvironment;
+        device: OutputDevice;
+        durationMin: number;
+        ageOverride?: number;
+      }
+    ) => {
+      setErrorBanner(null);
+      try {
+        const { recommendation } = await api.startProtocol({
+          profileId: activeProfile.id,
+          ...payload,
+        });
+        setActiveRec(recommendation);
+        setPendingDebrief(null);
+        setFieldMood(moodFromTarget(recommendation.environment, recommendation.targetState));
+        setScreen('player');
+      } catch (err) {
+        setErrorBanner(err instanceof Error ? err.message : 'Unable to start protocol');
+      }
+    },
+    [moodFromTarget]
+  );
+
+  const handleSaveProfile = async (
+    data: Partial<UserProfile>,
+    firstSession?: {
+      rawInputText: string;
+      currentState: CurrentState;
+      baselineScore: number;
+      targetState: TargetState;
+      environment: SessionEnvironment;
+      device: OutputDevice;
+      durationMin: number;
+      ageOverride?: number;
+    }
+  ) => {
     setErrorBanner(null);
     const { profile: saved } = await api.saveProfile(data);
     localStorage.setItem(PROFILE_STORAGE_KEY, saved.id);
     setProfile(saved);
-    setScreen('checkin');
+    if (firstSession) {
+      await startSessionWithProfile(saved, firstSession);
+    } else {
+      setScreen('checkin');
+    }
   };
 
   const handleStartSession = async (payload: {
@@ -81,37 +139,28 @@ export default function App() {
     ageOverride?: number;
   }) => {
     if (!profile) return;
-    setErrorBanner(null);
-    try {
-      const { recommendation } = await api.startProtocol({
-        profileId: profile.id,
-        ...payload,
-      });
-      setActiveRec(recommendation);
-      setPendingDebrief(null);
-      setScreen('player');
-    } catch (err) {
-      setErrorBanner(err instanceof Error ? err.message : 'Unable to start protocol');
-    }
+    await startSessionWithProfile(profile, payload);
   };
 
-  const handleFinishToDebrief = (stats: {
-    actualDurationSec: number;
-    liveAdjustments: LiveAdjustment[];
-  }) => {
-    if (!activeRec) return;
-    setDebriefContext({
-      sessionId: activeRec.sessionId,
-      armName: activeRec.arm.name,
-      cohortLabel: activeRec.cohortLabel,
-      baselineScore: activeRec.baselineScore,
-      plannedDurationMin: activeRec.plannedDurationMin,
-      actualDurationSec: stats.actualDurationSec,
-      liveAdjustments: stats.liveAdjustments,
-    });
-    setActiveRec(null);
-    setScreen('debrief');
-  };
+  const handleFinishToDebrief = useCallback(
+    (stats: { actualDurationSec: number; liveAdjustments: LiveAdjustment[] }) => {
+      if (!activeRec) return;
+      setDebriefContext({
+        sessionId: activeRec.sessionId,
+        armName: activeRec.arm.name,
+        cohortLabel: activeRec.cohortLabel,
+        baselineScore: activeRec.baselineScore,
+        plannedDurationMin: activeRec.plannedDurationMin,
+        actualDurationSec: stats.actualDurationSec,
+        liveAdjustments: stats.liveAdjustments,
+      });
+      setActiveRec(null);
+      setAudioActive(false);
+      setFieldMood('calm');
+      setScreen('debrief');
+    },
+    [activeRec]
+  );
 
   const handleOpenPendingDebrief = () => {
     if (!pendingDebrief) return;
@@ -125,6 +174,7 @@ export default function App() {
       liveAdjustments: pendingDebrief.liveAdjustments,
     });
     setPendingDebrief(null);
+    setFieldMood('calm');
     setScreen('debrief');
   };
 
@@ -136,23 +186,26 @@ export default function App() {
   };
 
   return (
-    <div className="bg-neural-grid min-h-dvh flex flex-col">
-      {/* Top Navigation */}
-      <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-[#07090e]/85 backdrop-blur-xl">
+    <div className="relative min-h-dvh flex flex-col bg-[#05070d]">
+      {/* Full-bleed 60fps interactive bioluminescent soundwave & neural particle canvas */}
+      <AmbientField mood={fieldMood} activePulse={audioActive} />
+
+      {/* Floating Glass Header */}
+      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#05070d]/65 backdrop-blur-2xl">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5 sm:px-6">
           <button
             type="button"
             onClick={() => setScreen(profile ? 'checkin' : 'onboarding')}
-            className="flex items-center gap-2.5 text-left"
+            className="group flex items-center gap-2.5 text-left"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-400/10 text-cyan-300">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-400/10 text-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.18)] transition group-hover:scale-105 group-hover:border-cyan-300/60">
               <Radio className="h-5 w-5" />
             </div>
             <div>
               <div className="font-display text-base font-bold tracking-tight text-white leading-none">
                 nootropic<span className="text-cyan-400">.fm</span>
               </div>
-              <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">
+              <div className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
                 Open Research Beta
               </div>
             </div>
@@ -165,8 +218,8 @@ export default function App() {
                 onClick={() => setScreen(activeRec ? 'player' : 'checkin')}
                 className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
                   screen === 'checkin' || screen === 'player' || screen === 'debrief'
-                    ? 'bg-cyan-400/15 text-cyan-200 border border-cyan-400/30'
-                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
+                    ? 'bg-cyan-400/15 text-cyan-200 border border-cyan-400/35'
+                    : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
                 }`}
               >
                 <Sparkles className="h-3.5 w-3.5" />
@@ -176,11 +229,14 @@ export default function App() {
 
             <button
               type="button"
-              onClick={() => setScreen('insights')}
+              onClick={() => {
+                setFieldMood('flow');
+                setScreen('insights');
+              }}
               className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
                 screen === 'insights'
                   ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/35'
-                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
+                  : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
               }`}
             >
               <BarChart3 className="h-3.5 w-3.5" />
@@ -193,8 +249,8 @@ export default function App() {
                 onClick={() => setScreen('onboarding')}
                 className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
                   screen === 'onboarding'
-                    ? 'bg-slate-800 text-white border border-slate-700'
-                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
+                    ? 'bg-slate-800/90 text-white border border-slate-700'
+                    : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
                 }`}
                 title="Edit your profile"
               >
@@ -206,30 +262,39 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
+      {/* Main Content Stage */}
+      <main className="relative z-10 mx-auto w-full max-w-5xl flex-1 px-4 py-7 sm:px-6 sm:py-11">
         {errorBanner && (
-          <div className="mx-auto mb-5 max-w-3xl rounded-xl border border-rose-500/35 bg-rose-500/12 px-4 py-3 text-sm text-rose-200">
+          <div className="mx-auto mb-5 max-w-2xl rounded-2xl border border-rose-500/35 bg-rose-500/12 px-4 py-3 text-sm text-rose-200 backdrop-blur-md">
             {errorBanner}
           </div>
         )}
 
         {booting ? (
-          <div className="py-24 text-center text-sm text-slate-400">
-            Initializing nootropic.fm...
+          <div className="py-28 text-center font-mono-tech text-xs uppercase tracking-[0.25em] text-cyan-300/70">
+            Calibrating neural audio field...
           </div>
         ) : screen === 'onboarding' ? (
-          <OnboardingView initialProfile={profile} onComplete={handleSaveProfile} />
+          <OnboardingView
+            initialProfile={profile}
+            onComplete={handleSaveProfile}
+            onMoodChange={setFieldMood}
+          />
         ) : screen === 'checkin' && profile ? (
           <CheckInView
             profile={profile}
             pendingDebrief={pendingDebrief}
             onOpenPendingDebrief={handleOpenPendingDebrief}
             onDismissPending={() => void handleDismissPending()}
+            onMoodChange={setFieldMood}
             onStartSession={handleStartSession}
           />
         ) : screen === 'player' && activeRec ? (
-          <PlayerView recommendation={activeRec} onFinishToDebrief={handleFinishToDebrief} />
+          <PlayerView
+            recommendation={activeRec}
+            onPlayingChange={setAudioActive}
+            onFinishToDebrief={handleFinishToDebrief}
+          />
         ) : screen === 'debrief' && debriefContext ? (
           <DebriefView
             {...debriefContext}
@@ -239,6 +304,7 @@ export default function App() {
             }}
             onViewInsights={() => {
               setDebriefContext(null);
+              setFieldMood('flow');
               setScreen('insights');
             }}
           />
@@ -247,8 +313,8 @@ export default function App() {
         )}
       </main>
 
-      <footer className="border-t border-slate-900 py-5 text-center text-[11px] text-slate-500">
-        nootropic.fm · Open Research Beta (Year 1 Free) · Psychoacoustic cognitive wellness tool,
+      <footer className="relative z-10 border-t border-white/[0.05] py-5 text-center text-[11px] text-slate-500">
+        nootropic.fm · Open Research Beta (Year 1 Free) · Psychoacoustic cognitive wellness audio,
         not a medical device.
       </footer>
     </div>

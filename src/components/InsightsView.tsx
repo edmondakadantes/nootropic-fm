@@ -56,7 +56,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       {/* Header & Dataset Export */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      <div className="animate-rise flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <div className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/30 bg-indigo-500/12 px-3 py-1 text-xs font-medium text-indigo-300">
             <Database className="h-3.5 w-3.5" />
@@ -98,7 +98,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
       </div>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="animate-rise delay-75 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className="glass-card rounded-xl p-4">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
             <Users className="h-3.5 w-3.5 text-cyan-400" /> Profiles
@@ -144,7 +144,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
       </div>
 
       {/* Personal Acoustic Profile */}
-      <div className="glass-card rounded-2xl p-5 sm:p-6 space-y-4">
+      <div className="animate-rise delay-150 glass-card rounded-3xl p-5 sm:p-6 space-y-4">
         <div className="flex items-center gap-2 text-cyan-300">
           <Brain className="h-5 w-5" />
           <h2 className="text-base font-semibold text-white">
@@ -188,7 +188,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
       </div>
 
       {/* Collective Cohort Intelligence */}
-      <div className="glass-card rounded-2xl p-5 sm:p-6 space-y-4">
+      <div className="animate-rise delay-225 glass-card rounded-3xl p-5 sm:p-6 space-y-4">
         <div>
           <h2 className="text-base font-semibold text-white">
             Collective Cohort Intelligence (Archetypes)

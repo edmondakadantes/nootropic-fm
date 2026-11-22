@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Car,
+  ChevronDown,
   Clock,
   Cpu,
   Mic,
   MicOff,
   Play,
+  SlidersHorizontal,
   Sparkles,
-  Wand2,
   X,
 } from 'lucide-react';
 import { parseNaturalCheckIn } from '../../shared/parser';
@@ -25,12 +26,15 @@ import {
   type UserProfile,
 } from '../../shared/types';
 import { api } from '../lib/api';
+import type { FieldMood } from './AmbientField';
+import { SonicOrb } from './SonicOrb';
 
 interface CheckInViewProps {
   profile: UserProfile;
   pendingDebrief: SessionRecord | null;
   onOpenPendingDebrief: () => void;
   onDismissPending: () => void;
+  onMoodChange?: (mood: FieldMood) => void;
   onStartSession: (payload: {
     rawInputText: string;
     currentState: CurrentState;
@@ -43,19 +47,12 @@ interface CheckInViewProps {
   }) => Promise<void>;
 }
 
-const EXAMPLE_PROMPTS = [
-  {
-    label: 'Minibus Driver · Age 40 · Focus 40m',
-    text: "I'm a 40-year-old minibus driver, feeling distracted right now and want to stay focused for the next 40 minutes",
-  },
-  {
-    label: 'Office · Tired · Deep Flow 50m',
-    text: 'Working at my desk with headphones, feeling fatigued this afternoon and need deep flow for 50 minutes',
-  },
-  {
-    label: 'Home · Stressed · Calm Reset 20m',
-    text: 'Feeling stressed and anxious at home, I want to calm down over the next 20 minutes',
-  },
+const SUBTLE_WHISPERS = [
+  "I'm a 40yo minibus driver, distracted right now — need 40 min of focus",
+  'Tired at my desk — need 50 min of deep flow on headphones',
+  'Stressed & racing thoughts — help me calm down in 20 min',
+  'Low energy afternoon — give me a 25 min clarity lift',
+  'Ready for bed — gentle 30 min wind-down to sleep',
 ];
 
 interface SpeechRecognitionInstance {
@@ -74,6 +71,7 @@ export function CheckInView({
   pendingDebrief,
   onOpenPendingDebrief,
   onDismissPending,
+  onMoodChange,
   onStartSession,
 }: CheckInViewProps) {
   const [rawText, setRawText] = useState('');
@@ -90,19 +88,32 @@ export function CheckInView({
   const [ageOverride, setAgeOverride] = useState<number | undefined>(undefined);
   const [detectedChips, setDetectedChips] = useState<string[]>([]);
   const [usedGemini, setUsedGemini] = useState(false);
-  const [parsing, setParsing] = useState(false);
+  const [showFineTune, setShowFineTune] = useState(false);
   const [listening, setListening] = useState(false);
   const [starting, setStarting] = useState(false);
 
   const isDriving = environment === 'driving';
 
-  const applyParsed = async (text: string) => {
+  const activeMood: FieldMood = isDriving
+    ? 'driving'
+    : targetState === 'calm_reset'
+      ? 'calm'
+      : targetState === 'deep_flow'
+        ? 'flow'
+        : targetState === 'sleep_winddown'
+          ? 'sleep'
+          : 'focus';
+
+  useEffect(() => {
+    onMoodChange?.(activeMood);
+  }, [activeMood, onMoodChange]);
+
+  const liveAnalyze = (text: string) => {
     setRawText(text);
     if (!text.trim()) {
       setDetectedChips([]);
       return;
     }
-
     const instant = parseNaturalCheckIn(text, profile);
     setCurrentState(instant.currentState);
     setTargetState(instant.targetState);
@@ -111,8 +122,10 @@ export function CheckInView({
     setDurationMin(instant.durationMin);
     setAgeOverride(instant.extractedAge);
     setDetectedChips(instant.detectedKeywords);
+  };
 
-    setParsing(true);
+  const serverEnhance = async (text: string) => {
+    if (!text.trim()) return;
     try {
       const { parsed } = await api.parseCheckIn(text, profile);
       setCurrentState(parsed.currentState);
@@ -124,9 +137,7 @@ export function CheckInView({
       setDetectedChips(parsed.detectedKeywords);
       setUsedGemini(parsed.usedGemini);
     } catch {
-      // Keep local parse result cleanly
-    } finally {
-      setParsing(false);
+      // Deterministic local parse already applied
     }
   };
 
@@ -136,10 +147,7 @@ export function CheckInView({
       webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
     };
     const Rec = Win.SpeechRecognition || Win.webkitSpeechRecognition;
-    if (!Rec) {
-      alert('Voice dictation is not supported in this browser. Type below or use the quick presets.');
-      return;
-    }
+    if (!Rec) return;
     if (listening) {
       setListening(false);
       return;
@@ -153,7 +161,8 @@ export function CheckInView({
     recognition.onresult = (event) => {
       const transcript = event.results[0]?.[0]?.transcript ?? '';
       if (transcript) {
-        void applyParsed(transcript);
+        liveAnalyze(transcript);
+        void serverEnhance(transcript);
       }
     };
     recognition.onerror = () => setListening(false);
@@ -183,9 +192,10 @@ export function CheckInView({
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="mx-auto flex max-w-2xl flex-col items-center space-y-6">
+      {/* Deferred Debrief Banner */}
       {pendingDebrief && (
-        <div className="flex flex-col justify-between gap-3 rounded-2xl border border-amber-400/35 bg-amber-500/10 p-4 sm:flex-row sm:items-center">
+        <div className="animate-rise w-full flex flex-col justify-between gap-3 rounded-2xl border border-amber-400/35 bg-amber-500/10 p-4 backdrop-blur-md sm:flex-row sm:items-center">
           <div className="flex items-start gap-3">
             <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
             <div>
@@ -193,8 +203,8 @@ export function CheckInView({
                 Unrated previous session ({pendingDebrief.armName})
               </div>
               <p className="text-xs text-amber-200/80">
-                Take 10 seconds to rate how your {pendingDebrief.plannedDurationMin}-min session
-                worked so the engine learns from it.
+                10 seconds: tell us how your {pendingDebrief.plannedDurationMin}-min session worked
+                so the engine keeps getting smarter.
               </p>
             </div>
           </div>
@@ -202,9 +212,9 @@ export function CheckInView({
             <button
               type="button"
               onClick={onOpenPendingDebrief}
-              className="rounded-lg bg-amber-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-amber-300"
+              className="rounded-xl bg-amber-400 px-3.5 py-2 text-xs font-bold text-slate-950 transition hover:bg-amber-300"
             >
-              Rate now (10s)
+              Rate now
             </button>
             <button
               type="button"
@@ -218,254 +228,236 @@ export function CheckInView({
         </div>
       )}
 
-      {/* Natural Language + Voice Input Card */}
-      <div className="glass-card rounded-2xl p-5 sm:p-7">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-white sm:text-2xl">
-              How do you feel right now, and what state do you want?
-            </h1>
-            <p className="mt-1 text-xs text-slate-400 sm:text-sm">
-              Speak or type naturally — the platform extracts your context, applies safety rules, and
-              builds a science-backed audio protocol.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={toggleVoiceInput}
-            className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border transition-all ${
-              listening
-                ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
-                : 'border-cyan-400/40 bg-cyan-400/12 text-cyan-300 hover:bg-cyan-400/20'
-            }`}
-            title="Voice input (Web Speech API)"
-          >
-            {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-          </button>
-        </div>
+      {/* Centerpiece Sonic Orb + Conversational Hero */}
+      <div className="animate-rise flex flex-col items-center text-center">
+        <SonicOrb
+          mood={activeMood}
+          size="md"
+          label={
+            isDriving
+              ? 'Driving Safety Mode'
+              : `${TARGET_LABELS[targetState]} · ${durationMin} min`
+          }
+        />
+        <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-4xl">
+          Where do you want your <span className="text-aurora">mind to go?</span>
+        </h1>
+        <p className="mt-2 max-w-md text-xs text-slate-400 sm:text-sm">
+          Describe how you feel and what you’re about to do — in your own words.
+        </p>
+      </div>
 
-        <div className="mt-4">
-          <textarea
-            rows={2}
-            value={rawText}
-            onChange={(e) => setRawText(e.target.value)}
-            onBlur={() => {
-              if (rawText.trim()) void applyParsed(rawText);
-            }}
-            placeholder="e.g., I'm a 40-year-old minibus driver, feeling distracted right now and need to stay focused for 40 minutes..."
-            className="w-full resize-none rounded-xl border border-slate-700/80 bg-slate-950/70 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-cyan-400/70 focus:outline-none"
-          />
-
-          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+      {/* Main Conversational Stage */}
+      <div className="animate-rise delay-150 glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
+        <div className="glow-input-wrap">
+          <div className="relative flex items-start rounded-[1rem] bg-[#060a14]/95">
+            <textarea
+              rows={2}
+              value={rawText}
+              onChange={(e) => liveAnalyze(e.target.value)}
+              onBlur={() => void serverEnhance(rawText)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleLaunch();
+                }
+              }}
+              placeholder="Write or speak freely — e.g. I feel distracted driving right now, need 40 min of calm focus..."
+              className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder-slate-500/80 focus:outline-none sm:text-base"
+            />
             <button
               type="button"
-              onClick={() => void applyParsed(rawText)}
-              disabled={!rawText.trim() || parsing}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/40 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-300 hover:bg-cyan-400/20 disabled:opacity-40"
+              onClick={toggleVoiceInput}
+              className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all ${
+                listening
+                  ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
+                  : 'border-slate-700/70 bg-slate-900/80 text-cyan-300 hover:border-cyan-400/50 hover:bg-cyan-400/10'
+              }`}
+              title="Speak freely (Voice input)"
             >
-              <Wand2 className="h-3.5 w-3.5" />
-              {parsing ? 'Analyzing...' : 'Analyze context'}
+              {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </button>
+          </div>
+        </div>
 
-            {EXAMPLE_PROMPTS.map((ex) => (
+        {/* Subtle whisper suggestions */}
+        <div className="space-y-2">
+          <div className="text-[11px] font-medium text-slate-500">Subtle prompts (optional):</div>
+          <div className="flex flex-wrap gap-2">
+            {SUBTLE_WHISPERS.map((w) => (
               <button
-                key={ex.label}
+                key={w}
                 type="button"
-                onClick={() => void applyParsed(ex.text)}
-                className="rounded-lg border border-slate-800 bg-slate-900/70 px-2.5 py-1.5 text-xs text-slate-300 transition hover:border-slate-600 hover:text-white"
+                onClick={() => {
+                  liveAnalyze(w);
+                  void serverEnhance(w);
+                }}
+                className="subtle-chip rounded-full px-3 py-1.5 text-xs text-left"
               >
-                {ex.label}
+                {w}
               </button>
             ))}
           </div>
+        </div>
 
-          {detectedChips.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
-                <Cpu className="h-3 w-3 text-cyan-400" />
-                {usedGemini ? 'Gemini NLU:' : 'Detected context:'}
+        {/* Live extracted telemetry chips */}
+        {detectedChips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+              <Cpu className="h-3 w-3 text-cyan-400" />
+              {usedGemini ? 'AI Context:' : 'Understood:'}
+            </span>
+            {detectedChips.map((chip) => (
+              <span
+                key={chip}
+                className="font-mono-tech rounded-md border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[11px] text-cyan-200"
+              >
+                {chip}
               </span>
-              {detectedChips.map((chip) => (
-                <span
-                  key={chip}
-                  className="font-mono-tech rounded-md border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[11px] text-cyan-200"
+            ))}
+          </div>
+        )}
+
+        {/* Compact tactile Baseline 1–5 selector */}
+        <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/55 px-4 py-3 sm:flex-row sm:items-center">
+          <div>
+            <div className="text-xs font-medium text-slate-200">How sharp / steady right now?</div>
+            <div className="text-[11px] text-slate-500">Baseline 1–5 · lets us track your Δ shift</div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setBaselineScore(n)}
+                className={`h-9 w-9 rounded-xl border font-mono-tech text-xs font-bold transition-all ${
+                  baselineScore === n
+                    ? 'scale-105 border-cyan-400 bg-cyan-400/20 text-white shadow-[0_0_18px_rgba(34,211,238,0.35)]'
+                    : 'border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-600'
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Optional collapsible Fine-Tune Drawer (keeps hero clean & cinematic!) */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowFineTune((v) => !v)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 transition hover:text-cyan-300"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            <span>
+              Fine-tune manually ({ENV_LABELS[environment].split(' ')[0]} · {DEVICE_LABELS[isDriving ? 'car_audio' : device]} · {durationMin}m)
+            </span>
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform duration-300 ${showFineTune ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {showFineTune && (
+            <div className="animate-step mt-4 grid grid-cols-1 gap-4 rounded-2xl border border-slate-800/80 bg-slate-950/60 p-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Current State
+                </label>
+                <select
+                  value={currentState}
+                  onChange={(e) => setCurrentState(e.target.value as CurrentState)}
+                  className="w-full rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
                 >
-                  {chip}
-                </span>
-              ))}
+                  {(Object.keys(STATE_LABELS) as CurrentState[]).map((st) => (
+                    <option key={st} value={st}>
+                      {STATE_LABELS[st]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Target State
+                </label>
+                <select
+                  value={targetState}
+                  onChange={(e) => setTargetState(e.target.value as TargetState)}
+                  className="w-full rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                >
+                  {(Object.keys(TARGET_LABELS) as TargetState[]).map((tg) => {
+                    const blocked = isDriving && (tg === 'sleep_winddown' || tg === 'calm_reset');
+                    return (
+                      <option key={tg} value={tg} disabled={blocked}>
+                        {TARGET_LABELS[tg]} {blocked ? '(blocked while driving)' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Environment
+                </label>
+                <select
+                  value={environment}
+                  onChange={(e) => {
+                    const env = e.target.value as SessionEnvironment;
+                    setEnvironment(env);
+                    if (env === 'driving') {
+                      setDevice('car_audio');
+                      if (targetState === 'sleep_winddown' || targetState === 'calm_reset') {
+                        setTargetState('alert_focus');
+                      }
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                >
+                  {(Object.keys(ENV_LABELS) as SessionEnvironment[]).map((env) => (
+                    <option key={env} value={env}>
+                      {ENV_LABELS[env]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> Duration
+                  </span>
+                  <span className="font-mono-tech text-cyan-300">{durationMin} min</span>
+                </label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[15, 25, 40, 60].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setDurationMin(m)}
+                      className={`rounded-lg border py-1.5 text-xs font-mono-tech transition ${
+                        durationMin === m
+                          ? 'border-cyan-400 bg-cyan-400/20 text-white'
+                          : 'border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      {m}m
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
-      </div>
-
-      {/* Structured Calibration Card */}
-      <div className="glass-card rounded-2xl p-5 sm:p-7 space-y-5">
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Current state
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(Object.keys(STATE_LABELS) as CurrentState[]).map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setCurrentState(st)}
-                  className={`rounded-xl border px-3 py-2 text-left text-xs font-medium transition ${
-                    currentState === st
-                      ? 'border-cyan-400/70 bg-cyan-400/12 text-white'
-                      : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  {STATE_LABELS[st]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Target state
-            </label>
-            <div className="grid grid-cols-1 gap-2">
-              {(Object.keys(TARGET_LABELS) as TargetState[]).map((tg) => {
-                const blockedForDriving =
-                  isDriving && (tg === 'sleep_winddown' || tg === 'calm_reset');
-                return (
-                  <button
-                    key={tg}
-                    type="button"
-                    disabled={blockedForDriving}
-                    onClick={() => setTargetState(tg)}
-                    className={`flex items-center justify-between rounded-xl border px-3 py-2 text-left text-xs font-medium transition ${
-                      targetState === tg
-                        ? 'border-indigo-400/80 bg-indigo-500/18 text-white'
-                        : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700'
-                    } ${blockedForDriving ? 'cursor-not-allowed opacity-35' : ''}`}
-                  >
-                    <span>{TARGET_LABELS[tg]}</span>
-                    {blockedForDriving && (
-                      <span className="text-[10px] text-amber-300">Blocked while driving</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Baseline 1-5 measurement */}
-        <div className="rounded-xl border border-slate-800/90 bg-slate-950/60 p-4">
-          <div className="mb-2.5 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-              Baseline rating before listening (so we measure true Δ improvement)
-            </span>
-            <span className="font-mono-tech text-sm font-bold text-cyan-300">{baselineScore} / 5</span>
-          </div>
-          <div className="grid grid-cols-5 gap-2">
-            {[
-              [1, '1 · Very low'],
-              [2, '2 · Low'],
-              [3, '3 · Moderate'],
-              [4, '4 · Good'],
-              [5, '5 · Peak'],
-            ].map(([val, label]) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => setBaselineScore(Number(val))}
-                className={`rounded-lg border py-2 text-center text-xs font-medium transition ${
-                  baselineScore === val
-                    ? 'border-cyan-400 bg-cyan-400/20 text-white'
-                    : 'border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Environment, Device, Duration */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Environment
-            </label>
-            <select
-              value={environment}
-              onChange={(e) => {
-                const env = e.target.value as SessionEnvironment;
-                setEnvironment(env);
-                if (env === 'driving') {
-                  setDevice('car_audio');
-                  if (targetState === 'sleep_winddown' || targetState === 'calm_reset') {
-                    setTargetState('alert_focus');
-                  }
-                }
-              }}
-              className="w-full rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-cyan-400 focus:outline-none"
-            >
-              {(Object.keys(ENV_LABELS) as SessionEnvironment[]).map((env) => (
-                <option key={env} value={env}>
-                  {ENV_LABELS[env]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Audio output
-            </label>
-            <select
-              value={isDriving ? 'car_audio' : device}
-              disabled={isDriving}
-              onChange={(e) => setDevice(e.target.value as OutputDevice)}
-              className="w-full rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-cyan-400 focus:outline-none disabled:opacity-70"
-            >
-              {(Object.keys(DEVICE_LABELS) as OutputDevice[]).map((d) => (
-                <option key={d} value={d}>
-                  {DEVICE_LABELS[d]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1.5 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400">
-              <span className="inline-flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" /> Duration
-              </span>
-              <span className="font-mono-tech text-cyan-300">{durationMin} min</span>
-            </label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {[15, 25, 40, 60].map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setDurationMin(m)}
-                  className={`rounded-lg border py-2 text-xs font-mono-tech transition ${
-                    durationMin === m
-                      ? 'border-cyan-400 bg-cyan-400/18 text-white'
-                      : 'border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  {m}m
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
 
         {isDriving && (
-          <div className="flex items-start gap-3 rounded-xl border border-amber-400/35 bg-amber-500/10 p-3.5 text-xs text-amber-100">
+          <div className="flex items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-500/8 p-3 text-xs text-amber-100/90">
             <Car className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-            <div>
-              <strong className="font-semibold text-amber-200">Driving Safety Mode auto-enabled:</strong>{' '}
-              vehicle speakers only (never wear headphones, binaural disabled), traffic siren/horn
-              frequencies stay unobstructed, and anti-monotony variations are active.
-            </div>
+            <span>
+              <strong className="text-amber-200">Driving Safety Mode active:</strong> vehicle
+              speakers only, traffic sirens/horns stay unobstructed, anti-monotony pulse enabled.
+            </span>
           </div>
         )}
 
@@ -473,18 +465,16 @@ export function CheckInView({
           type="button"
           disabled={starting}
           onClick={handleLaunch}
-          className="flex w-full items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-400 px-6 py-4 text-base font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:brightness-110 disabled:opacity-60"
+          className="btn-aurora flex w-full items-center justify-center gap-2.5 rounded-2xl px-6 py-4 text-base font-bold text-slate-950 disabled:opacity-60"
         >
           <Play className="h-5 w-5 fill-slate-950" />
-          {starting
-            ? 'Generating scientific protocol...'
-            : `Generate Protocol & Start (${durationMin} min)`}
+          {starting ? 'Synthesizing your protocol...' : `Start Session · ${durationMin} min`}
         </button>
 
         {isDriving && (
           <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-500">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-400/70" />
-            Start your session before driving. Audio never replaces proper sleep or rest stops.
+            Start before driving. Audio supports focus but never replaces rest.
           </p>
         )}
       </div>
