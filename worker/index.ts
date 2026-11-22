@@ -93,6 +93,11 @@ const SCHEMA_STATEMENTS = [
     day TEXT PRIMARY KEY,
     gemini_calls INTEGER NOT NULL DEFAULT 0
   )`,
+  `CREATE TABLE IF NOT EXISTS rate_limits (
+    bucket_key TEXT PRIMARY KEY,
+    hits INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+  )`,
 ];
 
 async function ensureSchema(db: D1Database): Promise<void> {
@@ -112,14 +117,76 @@ const ALLOWED_ORIGINS = new Set([
 function corsHeaders(request?: Request): Record<string, string> {
   const origin = request?.headers.get('origin') ?? '';
   const allowOrigin =
-    ALLOWED_ORIGINS.has(origin) || origin.endsWith('.workers.dev') || origin.endsWith('.web.app') || origin.endsWith('.firebaseapp.com') || origin.endsWith('.vercel.app')
+    ALLOWED_ORIGINS.has(origin) ||
+    origin.endsWith('.workers.dev') ||
+    origin.endsWith('.web.app') ||
+    origin.endsWith('.firebaseapp.com') ||
+    origin.endsWith('.vercel.app')
       ? origin
       : '*';
   return {
     'access-control-allow-origin': allowOrigin,
     'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type, x-admin-key, authorization',
   };
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length || a.length === 0) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+function isAuthorizedAdmin(request: Request, env: Env): boolean {
+  const expected = env.ADMIN_EXPORT_KEY?.trim();
+  if (!expected) return false;
+  const headerKey = request.headers.get('x-admin-key')?.trim() ?? '';
+  const authHeader = request.headers.get('authorization')?.trim() ?? '';
+  const bearerKey = authHeader.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice(7).trim()
+    : '';
+  return constantTimeEqual(headerKey, expected) || constantTimeEqual(bearerKey, expected);
+}
+
+async function checkDailyRateLimit(
+  db: D1Database,
+  request: Request,
+  action: string,
+  maxPerDay: number
+): Promise<boolean> {
+  const ip = request.headers.get('cf-connecting-ip') ?? 'local';
+  const day = new Date().toISOString().slice(0, 10);
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`nootropic-fm:${day}:${action}:${ip}`)
+  );
+  const hashHex = Array.from(new Uint8Array(digest))
+    .slice(0, 12)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const bucketKey = `${day}:${action}:${hashHex}`;
+
+  const existing = await db
+    .prepare('SELECT hits FROM rate_limits WHERE bucket_key = ?')
+    .bind(bucketKey)
+    .first<{ hits: number }>();
+
+  if ((existing?.hits ?? 0) >= maxPerDay) {
+    return false;
+  }
+
+  await db
+    .prepare(
+      `INSERT INTO rate_limits (bucket_key, hits, updated_at) VALUES (?, 1, ?)
+       ON CONFLICT(bucket_key) DO UPDATE SET hits = hits + 1, updated_at = excluded.updated_at`
+    )
+    .bind(bucketKey, new Date().toISOString())
+    .run();
+
+  return true;
 }
 
 function json(data: unknown, status = 200, request?: Request): Response {
@@ -305,7 +372,8 @@ async function updateBanditScope(
   armId: string,
   reward: number,
   delta: number,
-  completionRatio: number
+  completionRatio: number,
+  weight = 1.0
 ): Promise<{ alpha: number; beta: number; trials: number; successRatePct: number }> {
   const arm = PROTOCOL_ARMS.find((a) => a.id === armId);
   const priorAlpha = arm?.priorAlpha ?? 2.5;
@@ -327,8 +395,8 @@ async function updateBanditScope(
   const prevAvgReward = existing ? Number(existing.avg_reward) : 0;
 
   const newTrials = prevTrials + 1;
-  const newAlpha = Number((prevAlpha + reward).toFixed(3));
-  const newBeta = Number((prevBeta + (1 - reward)).toFixed(3));
+  const newAlpha = Number((prevAlpha + reward * weight).toFixed(3));
+  const newBeta = Number((prevBeta + (1 - reward) * weight).toFixed(3));
   const newAvgDelta = Number(((prevAvgDelta * prevTrials + delta) / newTrials).toFixed(3));
   const newAvgComp = Number(((prevAvgComp * prevTrials + completionRatio) / newTrials).toFixed(3));
   const newAvgReward = Number(((prevAvgReward * prevTrials + reward) / newTrials).toFixed(3));
@@ -374,15 +442,24 @@ export default {
 
       // GET /api/health
       if (url.pathname === '/api/health' && request.method === 'GET') {
-        return json({
-          ok: true,
-          mode: env.APP_ENV ?? 'open-research-beta',
-          hasGemini: Boolean(env.GEMINI_API_KEY),
-        });
+        return json(
+          {
+            ok: true,
+            mode: env.APP_ENV ?? 'open-research-beta',
+            hasGemini: Boolean(env.GEMINI_API_KEY),
+            exportProtected: Boolean(env.ADMIN_EXPORT_KEY),
+          },
+          200,
+          request
+        );
       }
 
       // POST /api/profile
       if (url.pathname === '/api/profile' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'profile', 60);
+        if (!allowed) {
+          return json({ error: 'Daily profile rate limit reached. Please try again tomorrow.' }, 429, request);
+        }
         const body = (await request.json()) as Partial<UserProfile>;
         const id = body.id && body.id.length >= 8 ? body.id : `anon_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
         const age = Math.max(16, Math.min(95, Number(body.age ?? 32)));
@@ -464,6 +541,10 @@ export default {
 
       // POST /api/protocol/start
       if (url.pathname === '/api/protocol/start' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'session_start', 35);
+        if (!allowed) {
+          return json({ error: 'Daily session rate limit reached. Please try again tomorrow.' }, 429, request);
+        }
         const body = (await request.json()) as {
           profileId: string;
           rawInputText?: string;
@@ -581,13 +662,21 @@ export default {
 
       // POST /api/session/debrief
       if (url.pathname === '/api/session/debrief' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'debrief', 45);
+        if (!allowed) {
+          return json({ error: 'Daily debrief limit reached. Please try again tomorrow.' }, 429, request);
+        }
         const body = (await request.json()) as DebriefPayload;
         const row = await env.DB.prepare('SELECT * FROM sessions WHERE id = ?')
           .bind(body.sessionId)
           .first();
-        if (!row) return json({ error: 'Session not found' }, 404);
+        if (!row) return json({ error: 'Session not found' }, 404, request);
 
         const session = mapSessionRow(row);
+        if (session.status === 'completed') {
+          return json({ error: 'This session has already been rated.' }, 409, request);
+        }
+
         const actualSec = Math.max(session.actualDurationSec, Math.round(body.actualDurationSec ?? 0));
         const plannedSec = Math.max(60, session.plannedDurationMin * 60);
         const completionRatio = Number(Math.min(1, Math.max(0.05, actualSec / plannedSec)).toFixed(3));
@@ -604,6 +693,9 @@ export default {
           completionRatio,
           liveAdjustments,
         });
+
+        // Scientific data hygiene: full Bandit weight for >=60s listening; softer weight for brief previews
+        const learningWeight = actualSec >= 60 ? 1.0 : 0.35;
 
         const now = new Date().toISOString();
         await env.DB.prepare(
@@ -638,8 +730,8 @@ export default {
 
         // Update BOTH cohort collective intelligence and individual profile model
         const [cohortUpdated, profileUpdated] = await Promise.all([
-          updateBanditScope(env.DB, 'cohort', session.cohortKey, session.armId, reward, delta, completionRatio),
-          updateBanditScope(env.DB, 'profile', session.profileId, session.armId, reward, delta, completionRatio),
+          updateBanditScope(env.DB, 'cohort', session.cohortKey, session.armId, reward, delta, completionRatio, learningWeight),
+          updateBanditScope(env.DB, 'profile', session.profileId, session.armId, reward, delta, completionRatio, learningWeight),
         ]);
 
         return json({
@@ -785,14 +877,28 @@ export default {
           explorationSharePct,
           cohorts,
           personalArms,
-          recentSessions: sessions.slice(0, 20),
+          recentSessions: sessions.slice(0, 20).map((s) => ({
+            ...s,
+            rawInputText: '',
+            notes: '',
+          })),
         };
 
-        return json({ insights });
+        return json({ insights }, 200, request);
       }
 
-      // GET /api/dataset/export — Anonymized Open Research Dataset (JSON or CSV)
+      // GET /api/dataset/export — Admin-Protected Anonymized Research Dataset (JSON or CSV)
       if (url.pathname === '/api/dataset/export' && request.method === 'GET') {
+        if (!isAuthorizedAdmin(request, env)) {
+          return json(
+            {
+              error:
+                'Unauthorized. Dataset export is restricted to nootropic.fm researchers (provide X-Admin-Key header).',
+            },
+            401,
+            request
+          );
+        }
         const format = url.searchParams.get('format') ?? 'json';
         const rows = await env.DB.prepare(
           `SELECT

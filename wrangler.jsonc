@@ -6,7 +6,8 @@
   "workers_dev": true,
   "routes": [
     { "pattern": "nootropic.fm", "custom_domain": true },
-    { "pattern": "www.nootropic.fm", "custom_domain": true }
+    { "pattern": "www.nootropic.fm", "custom_domain": true },
+    { "pattern": "app.nootropic.fm", "custom_domain": true }
   ],
   "assets": {
     "not_found_handling": "single-page-application",

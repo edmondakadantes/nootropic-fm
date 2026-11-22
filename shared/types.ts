@@ -102,10 +102,13 @@ export interface ProtocolArm {
   studyIds: string[];
 }
 
+export type AtmosphereStyle = 'warm_horizon' | 'kinetic_drive' | 'rain_sanctuary' | 'deep_cosmos';
+
 export interface LiveAdjustment {
   atSec: number;
-  control: 'intensity' | 'modulation' | 'pulse' | 'noise';
+  control: 'intensity' | 'modulation' | 'pulse' | 'noise' | 'atmosphere';
   delta: number;
+  note?: string;
 }
 
 export interface ParsedCheckIn {

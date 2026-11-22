@@ -4,9 +4,11 @@ import {
   Database,
   Download,
   FlaskConical,
+  Lock,
   RefreshCw,
   TrendingUp,
   Users,
+  X,
 } from 'lucide-react';
 import { STATE_LABELS, TARGET_LABELS, type ResearchInsights } from '../../shared/types';
 import { API_BASE, api } from '../lib/api';
@@ -19,6 +21,43 @@ export function InsightsView({ profileId }: InsightsViewProps) {
   const [insights, setInsights] = useState<ResearchInsights | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [adminKey, setAdminKey] = useState('');
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const handleAdminExport = async (format: 'csv' | 'json') => {
+    if (!adminKey.trim()) {
+      setExportStatus('Please enter your Researcher Admin Key.');
+      return;
+    }
+    setExporting(true);
+    setExportStatus(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/dataset/export?format=${format}`, {
+        headers: { 'X-Admin-Key': adminKey.trim() },
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({ error: 'Unauthorized' }))) as { error?: string };
+        setExportStatus(err.error ?? `Export failed (${res.status})`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nootropic-fm-research-dataset.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setExportStatus(`Downloaded ${format.toUpperCase()} dataset securely.`);
+    } catch {
+      setExportStatus('Network error while exporting dataset.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -80,22 +119,77 @@ export function InsightsView({ profileId }: InsightsViewProps) {
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <a
-            href={`${API_BASE}/api/dataset/export?format=csv`}
+          <button
+            type="button"
+            onClick={() => {
+              setExportStatus(null);
+              setShowExportModal(true);
+            }}
             className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/35 bg-cyan-400/10 px-3.5 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-400/20"
           >
-            <Download className="h-3.5 w-3.5" />
-            Export CSV
-          </a>
-          <a
-            href={`${API_BASE}/api/dataset/export?format=json`}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-400/35 bg-indigo-500/12 px-3.5 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/20"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Export JSON
-          </a>
+            <Lock className="h-3.5 w-3.5" />
+            Admin Dataset Export
+          </button>
         </div>
       </div>
+
+      {/* Admin-Protected Dataset Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage w-full max-w-md rounded-3xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-cyan-300">
+                <Lock className="h-4 w-4" />
+                <h3 className="text-base font-semibold text-white">Protected Research Export</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExportModal(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-xs leading-relaxed text-slate-400">
+              Raw session datasets are protected with your Cloudflare Worker secret{' '}
+              <code className="font-mono-tech text-cyan-300">ADMIN_EXPORT_KEY</code> so only you can
+              download the collected training data.
+            </p>
+            <div className="glow-input-wrap">
+              <input
+                type="password"
+                value={adminKey}
+                onChange={(e) => setAdminKey(e.target.value)}
+                placeholder="Enter your Researcher Admin Key..."
+                className="w-full rounded-[1rem] bg-[#060a14]/95 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none"
+              />
+            </div>
+            {exportStatus && (
+              <p className="text-xs text-amber-300">{exportStatus}</p>
+            )}
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void handleAdminExport('csv')}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/12 px-4 py-2.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-400/20 disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download CSV
+              </button>
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void handleAdminExport('json')}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-indigo-400/40 bg-indigo-500/15 px-4 py-2.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25 disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download JSON
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* KPI Row */}
       <div className="animate-rise delay-75 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

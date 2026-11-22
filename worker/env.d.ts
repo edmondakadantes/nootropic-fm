@@ -28,4 +28,5 @@ export interface Env {
   APP_ENV?: string;
   GEMINI_API_KEY?: string;
   GEMINI_DAILY_CAP?: string;
+  ADMIN_EXPORT_KEY?: string;
 }

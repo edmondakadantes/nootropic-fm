@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BarChart3, Radio, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { BarChart3, Download, Radio, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { formatCohortLabel } from '../shared/protocols';
 import type {
   CurrentState,
@@ -31,6 +31,24 @@ export default function App() {
   const [activeRec, setActiveRec] = useState<ProtocolRecommendation | null>(null);
   const [fieldMood, setFieldMood] = useState<FieldMood>('default');
   const [audioActive, setAudioActive] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<{
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: string }>;
+  } | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(
+        e as unknown as {
+          prompt: () => Promise<void>;
+          userChoice: Promise<{ outcome: string }>;
+        }
+      );
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
   const [debriefContext, setDebriefContext] = useState<{
     sessionId: string;
     armName: string;
@@ -212,6 +230,22 @@ export default function App() {
           </button>
 
           <nav className="flex items-center gap-1.5">
+            {installPrompt && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await installPrompt.prompt();
+                  await installPrompt.userChoice;
+                  setInstallPrompt(null);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/35 bg-emerald-500/12 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
+                title="Install nootropic.fm as an app"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Install App</span>
+              </button>
+            )}
+
             {profile && (
               <button
                 type="button"

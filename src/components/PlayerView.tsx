@@ -7,14 +7,20 @@ import {
   FlaskConical,
   Pause,
   Play,
+  Radio,
   ShieldAlert,
   Sliders,
+  Sparkles,
   Volume2,
   Waves,
 } from 'lucide-react';
-import type { LiveAdjustment, ProtocolRecommendation } from '../../shared/types';
+import type { AtmosphereStyle, LiveAdjustment, ProtocolRecommendation } from '../../shared/types';
 import { DEVICE_LABELS, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
-import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
+import {
+  ATMOSPHERE_META,
+  PsychoacousticEngine,
+  type EngineTelemetry,
+} from '../audio/PsychoacousticEngine';
 import { api } from '../lib/api';
 import { NeuralVisualizer } from './NeuralVisualizer';
 
@@ -50,6 +56,7 @@ export function PlayerView({
   const [intensityMult, setIntensityMult] = useState(1.0);
   const [modMult, setModMult] = useState(1.0);
   const [adjustments, setAdjustments] = useState<LiveAdjustment[]>([]);
+  const [atmosphere, setAtmosphere] = useState<AtmosphereStyle>('warm_horizon');
   const [telemetry, setTelemetry] = useState<EngineTelemetry>({
     phase: 'entry',
     phaseLabel: 'Entry & Alignment (Iso-Principle)',
@@ -58,6 +65,8 @@ export function PlayerView({
     currentModDepth: recommendation.params.modulationDepth,
     currentBpm: recommendation.params.bpm,
     antiMonotonyActive: false,
+    atmosphere: 'warm_horizon',
+    backgroundAudioActive: false,
   });
 
   const plannedSec = recommendation.plannedDurationMin * 60;
@@ -82,6 +91,9 @@ export function PlayerView({
         if (mounted) {
           setIsPlaying(true);
           setAudioStarted(true);
+          if (engineRef.current) {
+            setAtmosphere(engineRef.current.getAtmosphere());
+          }
         }
       } catch {
         if (mounted) {
@@ -170,6 +182,15 @@ export function PlayerView({
     setModMult(next);
     engineRef.current?.adjustModDepth(next);
     setAdjustments((prev) => [...prev, { atSec: elapsedRef.current, control: 'modulation', delta }]);
+  };
+
+  const switchAtmosphere = (style: AtmosphereStyle) => {
+    setAtmosphere(style);
+    engineRef.current?.setAtmosphere(style);
+    setAdjustments((prev) => [
+      ...prev,
+      { atSec: elapsedRef.current, control: 'atmosphere', delta: 0, note: style },
+    ]);
   };
 
   const handleEndSession = () => {
@@ -356,6 +377,43 @@ export function PlayerView({
             >
               AM +
             </button>
+          </div>
+        </div>
+
+        {/* Live Atmosphere Switcher (seamless crossfade, zero dropout) */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="inline-flex items-center gap-1.5 font-medium text-slate-300">
+              <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
+              Soundscape Atmosphere (switch live — preserves exact {telemetry.currentModHz} Hz AM)
+            </span>
+            {telemetry.backgroundAudioActive && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-300">
+                <Radio className="h-3 w-3" />
+                Lock-Screen & Bluetooth Ready
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {(Object.keys(ATMOSPHERE_META) as AtmosphereStyle[]).map((style) => {
+              const meta = ATMOSPHERE_META[style];
+              const active = atmosphere === style;
+              return (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => switchAtmosphere(style)}
+                  className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
+                    active
+                      ? 'border-cyan-400/70 bg-cyan-400/14 text-white shadow-[0_0_22px_rgba(34,211,238,0.18)]'
+                      : 'border-slate-800/80 bg-slate-900/50 text-slate-300 hover:border-slate-700 hover:text-white'
+                  }`}
+                >
+                  <div className="text-xs font-semibold">{meta.label}</div>
+                  <div className="mt-0.5 text-[10px] text-slate-400">{meta.shortDesc}</div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
