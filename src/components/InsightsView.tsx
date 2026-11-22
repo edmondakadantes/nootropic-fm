@@ -5,6 +5,7 @@ import {
   Download,
   FlaskConical,
   Lock,
+  Music2,
   RefreshCw,
   TrendingUp,
   Users,
@@ -280,6 +281,43 @@ export function InsightsView({ profileId }: InsightsViewProps) {
           </div>
         )}
       </div>
+
+      {/* Music Layer (Genre Carrier) Performance */}
+      {insights.genreLeaderboard && insights.genreLeaderboard.length > 0 && (
+        <div className="animate-rise delay-225 glass-card rounded-3xl p-5 sm:p-6 space-y-4">
+          <div className="flex items-center gap-2 text-indigo-300">
+            <Music2 className="h-5 w-5" />
+            <h2 className="text-base font-semibold text-white">
+              Music Layer Performance (Genre Carrier × Outcomes)
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {insights.genreLeaderboard.map((g) => (
+              <div
+                key={g.genre}
+                className="rounded-xl border border-slate-800 bg-slate-950/70 p-4 space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-white">{g.label}</span>
+                  <span className="font-mono-tech text-sm font-bold text-indigo-300">
+                    {g.successRatePct}%
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-cyan-400"
+                    style={{ width: `${g.successRatePct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between font-mono-tech text-[11px] text-slate-400">
+                  <span>{g.sessions} rated sessions</span>
+                  <span>Avg Δ {g.avgDelta >= 0 ? `+${g.avgDelta}` : g.avgDelta}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Collective Cohort Intelligence */}
       <div className="animate-rise delay-225 glass-card rounded-3xl p-5 sm:p-6 space-y-4">

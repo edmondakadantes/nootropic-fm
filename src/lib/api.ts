@@ -2,6 +2,7 @@ import type {
   CurrentState,
   DebriefPayload,
   LiveAdjustment,
+  MusicGenreChoice,
   OutputDevice,
   ParsedCheckIn,
   ProtocolRecommendation,
@@ -59,6 +60,7 @@ export const api = {
     device: OutputDevice;
     durationMin: number;
     ageOverride?: number;
+    requestedGenre?: MusicGenreChoice;
   }) =>
     apiFetch<{ recommendation: ProtocolRecommendation }>('/api/protocol/start', {
       method: 'POST',

@@ -6,6 +6,21 @@ import type { ScientificStudy } from './types';
  */
 export const SCIENTIFIC_STUDIES: ScientificStudy[] = [
   {
+    id: 'salimpoor-2011-dopamine-preference',
+    authors: 'Salimpoor, V. N., Benovoy, M., Larcher, K., Dagher, A., & Zatorre, R. J.',
+    year: 2011,
+    journal: 'Nature Neuroscience',
+    title: 'Anatomically distinct dopamine release during anticipation and experience of peak emotion to music',
+    mechanism: 'Preferred musical aesthetics trigger striatal dopamine release, sustaining motivation and session adherence',
+    soundEffect: 'Wraps the active neuroacoustic signal inside a pleasant, lyric-free genre carrier your brain naturally enjoys.',
+    summary:
+      'PET and fMRI imaging showed that preferred, pleasurable musical structures trigger endogenous dopamine release in the striatum, boosting engagement and sustained listening compared to clinical tones.',
+    caveat:
+      'When a chosen genre conflicts with the target state (e.g., energetic beats before sleep), nootropic.fm adapts tempo and filtering via the Iso-Principle.',
+    doiOrUrl: 'https://doi.org/10.1038/nn.2726',
+    applicableTargets: ['alert_focus', 'deep_flow', 'calm_reset', 'energy_lift', 'sleep_winddown'],
+  },
+  {
     id: 'woods-2024-am-attention',
     authors: 'Woods, K. J. P., Sampaio, G., James, T., Przysinda, E., Spencer, A., Morillon, B., & Loui, P.',
     year: 2024,

@@ -2,30 +2,32 @@ import { getStudiesByIds } from './studies';
 import type {
   AcousticParams,
   AgeBand,
-  AtmosphereStyle,
   CurrentState,
+  FormulaIngredient,
   LiveAdjustment,
+  MusicGenreChoice,
   OutputDevice,
   ProtocolArm,
   ProtocolRecommendation,
+  ResolvedGenre,
   SessionEnvironment,
   TargetState,
   UserProfile,
   WorkedRating,
 } from './types';
-import { ENV_LABELS, TARGET_LABELS } from './types';
+import { ENV_LABELS, GENRE_META, TARGET_LABELS } from './types';
 
 /**
  * Candidate acoustic arms (protocols) explored & optimized by the Contextual Bandit.
- * Each arm defines an explicit, auditable psychoacoustic parameter vector.
+ * Multiband AM crossover keeps sub-bass (<190 Hz) clean while modulating mid-high music layers.
  */
 export const PROTOCOL_ARMS: ProtocolArm[] = [
   {
     id: 'beta-drive-16hz',
     name: 'Beta-Drive 16 Hz',
-    tagline: '16 Hz Beta amplitude modulation + warm anti-monotony pulse',
+    tagline: '16 Hz Beta multiband AM + warm anti-monotony pulse',
     description:
-      'Engineered for sustained real-world attention: 16 Hz amplitude modulation (Woods et al. 2024), gentle 106 BPM rhythmic anchor, and traffic-safe frequency shaping.',
+      'Engineered for sustained real-world attention: 16 Hz multiband amplitude modulation (Woods et al. 2024), gentle 106 BPM rhythmic anchor, and traffic-safe frequency shaping.',
     targetStates: ['alert_focus', 'energy_lift'],
     drivingSafe: true,
     priorAlpha: 3.4,
@@ -33,23 +35,30 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     baseParams: {
       modulationHz: 16,
       modulationDepth: 0.28,
+      crossoverHz: 190,
       bpm: 106,
-      pulseIntensity: 0.52,
+      pulseIntensity: 0.54,
       noiseColor: 'pink',
       noiseLevel: 0.08,
       harmonicMode: 'bright_maj9',
       rootNoteHz: 146.83, // D3
-      filterCutoffHz: 1650,
+      filterCutoffHz: 1700,
       speakerSafeEQ: true,
       antiMonotonyCycleMin: 5,
       binauralOffsetHz: 0,
     },
-    studyIds: ['woods-2024-am-attention', 'unal-2013-driving-audio', 'perham-2014-lyric-interference', 'heiderscheit-2015-iso-principle'],
+    studyIds: [
+      'woods-2024-am-attention',
+      'salimpoor-2011-dopamine-preference',
+      'unal-2013-driving-audio',
+      'perham-2014-lyric-interference',
+      'heiderscheit-2015-iso-principle',
+    ],
   },
   {
     id: 'crisp-vigilance-18hz',
     name: 'Crisp Vigilance 18 Hz',
-    tagline: '18 Hz high-beta modulation + uplifting alertness dynamics',
+    tagline: '18 Hz high-beta multiband AM + uplifting alertness dynamics',
     description:
       'Slightly brighter vigilance profile (18 Hz AM, 114 BPM) with subtle 4-minute anti-monotony lifts to counter afternoon fatigue and road distraction.',
     targetStates: ['alert_focus', 'energy_lift'],
@@ -59,8 +68,9 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     baseParams: {
       modulationHz: 18,
       modulationDepth: 0.34,
+      crossoverHz: 190,
       bpm: 114,
-      pulseIntensity: 0.65,
+      pulseIntensity: 0.66,
       noiseColor: 'pink',
       noiseLevel: 0.06,
       harmonicMode: 'suspended_open',
@@ -70,7 +80,13 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
       antiMonotonyCycleMin: 4,
       binauralOffsetHz: 0,
     },
-    studyIds: ['woods-2024-am-attention', 'unal-2013-driving-audio', 'husain-2002-tempo-arousal', 'heiderscheit-2015-iso-principle'],
+    studyIds: [
+      'woods-2024-am-attention',
+      'salimpoor-2011-dopamine-preference',
+      'unal-2013-driving-audio',
+      'husain-2002-tempo-arousal',
+      'heiderscheit-2015-iso-principle',
+    ],
   },
   {
     id: 'steady-horizon-14hz',
@@ -85,25 +101,31 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     baseParams: {
       modulationHz: 14,
       modulationDepth: 0.22,
+      crossoverHz: 190,
       bpm: 96,
-      pulseIntensity: 0.36,
+      pulseIntensity: 0.38,
       noiseColor: 'brown',
       noiseLevel: 0.1,
       harmonicMode: 'warm_min9',
       rootNoteHz: 130.81, // C3
-      filterCutoffHz: 1350,
+      filterCutoffHz: 1400,
       speakerSafeEQ: true,
       antiMonotonyCycleMin: 6,
       binauralOffsetHz: 0,
     },
-    studyIds: ['woods-2024-am-attention', 'soderlund-2010-stochastic-noise', 'perham-2014-lyric-interference'],
+    studyIds: [
+      'woods-2024-am-attention',
+      'salimpoor-2011-dopamine-preference',
+      'soderlund-2010-stochastic-noise',
+      'perham-2014-lyric-interference',
+    ],
   },
   {
     id: 'deep-stochastic-flow',
     name: 'Deep Stochastic Flow 15 Hz',
     tagline: 'Stochastic pink-noise masking + 15 Hz AM for Deep Work',
     description:
-      'Built for uninterrupted desk work and study: pairs calibrated pink noise (Söderlund et al.) with minimal warm chord voicings and 15 Hz amplitude modulation.',
+      'Built for uninterrupted desk work and study: pairs calibrated pink noise (Söderlund et al.) with rich instrumental voicings and 15 Hz multiband AM.',
     targetStates: ['deep_flow', 'alert_focus'],
     drivingSafe: false,
     priorAlpha: 3.2,
@@ -111,25 +133,32 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     baseParams: {
       modulationHz: 15,
       modulationDepth: 0.26,
+      crossoverHz: 190,
       bpm: 90,
-      pulseIntensity: 0.28,
+      pulseIntensity: 0.3,
       noiseColor: 'pink',
-      noiseLevel: 0.22,
+      noiseLevel: 0.2,
       harmonicMode: 'warm_min9',
       rootNoteHz: 110.0, // A2
-      filterCutoffHz: 1200,
+      filterCutoffHz: 1250,
       speakerSafeEQ: false,
       antiMonotonyCycleMin: 0,
       binauralOffsetHz: 4,
     },
-    studyIds: ['woods-2024-am-attention', 'soderlund-2010-stochastic-noise', 'perham-2014-lyric-interference', 'garcia-argibay-2019-binaural-meta'],
+    studyIds: [
+      'woods-2024-am-attention',
+      'salimpoor-2011-dopamine-preference',
+      'soderlund-2010-stochastic-noise',
+      'perham-2014-lyric-interference',
+      'garcia-argibay-2019-binaural-meta',
+    ],
   },
   {
     id: 'alpha-parasympathetic-10hz',
     name: 'Alpha Reset 10 Hz',
     tagline: 'Slow harmonies + 10 Hz Alpha cadence for autonomic calm',
     description:
-      'Zero harsh percussion: warm organic voicings, subtle 10 Hz Alpha modulation, and soft rain-filtered texture to transition smoothly from tension into calm clarity.',
+      'Zero harsh percussion: warm organic voicings, subtle 10 Hz Alpha modulation, and soft filtered texture to transition smoothly from tension into calm clarity.',
     targetStates: ['calm_reset', 'deep_flow'],
     drivingSafe: false,
     priorAlpha: 3.3,
@@ -137,8 +166,9 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     baseParams: {
       modulationHz: 10,
       modulationDepth: 0.18,
-      bpm: 64,
-      pulseIntensity: 0.12,
+      crossoverHz: 190,
+      bpm: 66,
+      pulseIntensity: 0.14,
       noiseColor: 'soft_rain',
       noiseLevel: 0.16,
       harmonicMode: 'suspended_open',
@@ -148,7 +178,12 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
       antiMonotonyCycleMin: 0,
       binauralOffsetHz: 3,
     },
-    studyIds: ['thoma-2013-music-stress-hpa', 'heiderscheit-2015-iso-principle', 'garcia-argibay-2019-binaural-meta'],
+    studyIds: [
+      'thoma-2013-music-stress-hpa',
+      'salimpoor-2011-dopamine-preference',
+      'heiderscheit-2015-iso-principle',
+      'garcia-argibay-2019-binaural-meta',
+    ],
   },
   {
     id: 'theta-drift-6hz',
@@ -163,6 +198,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     baseParams: {
       modulationHz: 6,
       modulationDepth: 0.14,
+      crossoverHz: 190,
       bpm: 0,
       pulseIntensity: 0,
       noiseColor: 'brown',
@@ -174,7 +210,12 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
       antiMonotonyCycleMin: 0,
       binauralOffsetHz: 2.5,
     },
-    studyIds: ['ngo-2013-acoustic-sleep', 'thoma-2013-music-stress-hpa', 'heiderscheit-2015-iso-principle', 'garcia-argibay-2019-binaural-meta'],
+    studyIds: [
+      'ngo-2013-acoustic-sleep',
+      'thoma-2013-music-stress-hpa',
+      'salimpoor-2011-dopamine-preference',
+      'heiderscheit-2015-iso-principle',
+    ],
   },
 ];
 
@@ -251,6 +292,71 @@ export function computeSessionReward(input: {
   return { reward: Number(reward.toFixed(3)), delta };
 }
 
+/**
+ * Selects optimal Musical Genre Carrier (or smartly Iso-adapts user's preferred genre so it
+ * honors their taste without sabotaging their cognitive goal or road safety).
+ */
+function resolveGenreLayer(input: {
+  requestedGenre?: MusicGenreChoice;
+  targetState: TargetState;
+  environment: SessionEnvironment;
+  currentState: CurrentState;
+  profile: UserProfile;
+}): {
+  genre: ResolvedGenre;
+  mode: 'auto' | 'user_chosen' | 'iso_adapted';
+  adaptationNote?: string;
+} {
+  const req = input.requestedGenre ?? 'auto';
+  const isDriving = input.environment === 'driving';
+
+  if (req === 'auto') {
+    if (input.targetState === 'sleep_winddown') {
+      return { genre: 'nature_rain', mode: 'auto' };
+    }
+    if (input.targetState === 'calm_reset') {
+      return { genre: input.profile.texturePref === 'warm_organic' ? 'acoustic_pluck' : 'nature_rain', mode: 'auto' };
+    }
+    if (isDriving || input.targetState === 'energy_lift') {
+      return { genre: 'deep_electronic', mode: 'auto' };
+    }
+    if (input.targetState === 'deep_flow') {
+      return {
+        genre: input.profile.role === 'creative' ? 'cinematic_strings' : 'lofi_keys',
+        mode: 'auto',
+      };
+    }
+    if (input.environment === 'study') {
+      return { genre: 'lofi_keys', mode: 'auto' };
+    }
+    return {
+      genre: input.currentState === 'fatigued' ? 'deep_electronic' : 'jazz_rhodes',
+      mode: 'auto',
+    };
+  }
+
+  // Smart Iso-Safety adaptation when user chooses a genre that could clash with goal/safety
+  if ((input.targetState === 'sleep_winddown' || input.targetState === 'calm_reset') && req === 'deep_electronic') {
+    return {
+      genre: 'deep_electronic',
+      mode: 'iso_adapted',
+      adaptationNote:
+        'Kept your preferred Deep Electronic timbre, automatically slowed and low-pass softened for calm autonomic down-regulation (Iso-Principle).',
+    };
+  }
+
+  if (isDriving && req === 'nature_rain') {
+    return {
+      genre: 'nature_rain',
+      mode: 'iso_adapted',
+      adaptationNote:
+        'Kept your Nature & Rain aesthetic while strictly capping rain density and adding subtle alertness chimes so road vigilance stays high.',
+    };
+  }
+
+  return { genre: req, mode: 'user_chosen' };
+}
+
 export function selectProtocolRecommendation(input: {
   sessionId: string;
   profile: UserProfile;
@@ -260,6 +366,7 @@ export function selectProtocolRecommendation(input: {
   environment: SessionEnvironment;
   device: OutputDevice;
   durationMin: number;
+  requestedGenre?: MusicGenreChoice;
   cohortStats: BanditStatRow[];
   profileStats: BanditStatRow[];
 }): ProtocolRecommendation {
@@ -313,19 +420,25 @@ export function selectProtocolRecommendation(input: {
   const isExploration = thompsonWinner.arm.id !== bestExploit.arm.id;
   const chosen = thompsonWinner;
 
-  const params: AcousticParams = { ...chosen.arm.baseParams };
+  const genreResolution = resolveGenreLayer({
+    requestedGenre: input.requestedGenre,
+    targetState: effectiveTarget,
+    environment: input.environment,
+    currentState: input.currentState,
+    profile: input.profile,
+  });
+
+  const params: AcousticParams = {
+    ...chosen.arm.baseParams,
+    genre: genreResolution.genre,
+    genreSelectionMode: genreResolution.mode,
+  };
 
   if (input.profile.noiseSensitivity === 'high') {
     params.noiseLevel = Number((params.noiseLevel * 0.45).toFixed(2));
     params.filterCutoffHz = Math.round(params.filterCutoffHz * 0.85);
   } else if (input.profile.noiseSensitivity === 'low') {
     params.noiseLevel = Number(Math.min(0.32, params.noiseLevel * 1.25).toFixed(2));
-  }
-
-  if (input.profile.texturePref === 'rhythmic_pulse' && params.bpm > 0) {
-    params.pulseIntensity = Number(Math.min(0.8, params.pulseIntensity + 0.14).toFixed(2));
-  } else if (input.profile.texturePref === 'warm_organic') {
-    params.filterCutoffHz = Math.round(params.filterCutoffHz * 0.9);
   }
 
   if (input.currentState === 'fatigued' && params.bpm > 0) {
@@ -338,6 +451,13 @@ export function selectProtocolRecommendation(input: {
 
   if (input.profile.age >= 40) {
     params.filterCutoffHz = Math.min(params.filterCutoffHz, 1850);
+  }
+
+  // Iso-adapt genre tempo if deep_electronic chosen for calm/sleep
+  if (genreResolution.mode === 'iso_adapted' && params.genre === 'deep_electronic') {
+    params.bpm = effectiveTarget === 'sleep_winddown' ? 0 : 68;
+    params.pulseIntensity = effectiveTarget === 'sleep_winddown' ? 0 : 0.16;
+    params.filterCutoffHz = Math.min(params.filterCutoffHz, 860);
   }
 
   const safetyWarnings: string[] = [];
@@ -360,6 +480,59 @@ export function selectProtocolRecommendation(input: {
   const cohortKey = buildCohortKey(input.profile.ageBand, input.environment, effectiveTarget);
   const confidencePct = Math.round(chosen.expectedMean * 100);
 
+  // Build signature "NOOTROPIC AUDIO FORMULA" Supplement-Facts ingredients
+  const genreLabel = GENRE_META[params.genre].label;
+  const bandName =
+    params.modulationHz >= 14
+      ? 'Beta'
+      : params.modulationHz >= 8
+        ? 'Alpha'
+        : 'Theta';
+
+  const formulaIngredients: FormulaIngredient[] = [
+    {
+      role: 'Taste Carrier',
+      compound: `${genreLabel} (Lyric-Free)`,
+      dose:
+        genreResolution.mode === 'auto'
+          ? 'Auto by Science'
+          : genreResolution.mode === 'iso_adapted'
+            ? 'Iso-Adapted'
+            : 'Your Taste',
+      evidenceTag: 'Salimpoor 2011 · Perham 2014',
+    },
+    {
+      role: 'Active Compound',
+      compound: `${params.modulationHz} Hz ${bandName} Multiband AM`,
+      dose: `${Math.round(params.modulationDepth * 100)}% (> ${params.crossoverHz} Hz)`,
+      evidenceTag: params.modulationHz >= 14 ? 'Woods et al. 2024' : 'Neural Entrainment',
+    },
+    {
+      role: 'Stochastic Floor',
+      compound:
+        params.noiseColor === 'none'
+          ? 'Clean Spectral Floor'
+          : `${params.noiseColor.replace('_', ' ')} noise`,
+      dose: `${Math.round(params.noiseLevel * 100)}% calibrated`,
+      evidenceTag: 'Söderlund et al. 2010',
+    },
+    {
+      role: 'Temporal Curve',
+      compound: 'Iso-Principle Trajectory',
+      dose: `${input.durationMin}m (Align→Peak→Land)`,
+      evidenceTag: 'Heiderscheit 2015',
+    },
+  ];
+
+  if (isDriving) {
+    formulaIngredients.push({
+      role: 'Safety Shield',
+      compound: 'Traffic-Safe EQ + Anti-Monotony',
+      dose: `800–3500 Hz open · ${params.antiMonotonyCycleMin}m lift`,
+      evidenceTag: 'Ünal et al. 2013',
+    });
+  }
+
   const evidenceNote =
     chosen.profileTrials > 0
       ? `Calibrated from ${chosen.profileTrials} of your past sessions and ${chosen.cohortTrials} cohort sessions.`
@@ -371,21 +544,6 @@ export function selectProtocolRecommendation(input: {
     ? ' (Includes a controlled exploration trial so the engine can test whether a slightly different acoustic profile works even better for you.)'
     : '';
 
-  // Science-driven automatic atmosphere selection (no guesswork required from user)
-  let autoSelectedAtmosphere: AtmosphereStyle = 'warm_horizon';
-  if (effectiveTarget === 'sleep_winddown') {
-    autoSelectedAtmosphere = 'deep_cosmos';
-  } else if (effectiveTarget === 'calm_reset') {
-    autoSelectedAtmosphere = 'rain_sanctuary';
-  } else if (isDriving || effectiveTarget === 'energy_lift' || input.currentState === 'fatigued') {
-    autoSelectedAtmosphere = params.pulseIntensity >= 0.48 ? 'kinetic_drive' : 'warm_horizon';
-  } else if (effectiveTarget === 'deep_flow') {
-    autoSelectedAtmosphere =
-      input.profile.texturePref === 'nature_drift' ? 'rain_sanctuary' : 'deep_cosmos';
-  } else if (input.profile.texturePref === 'rhythmic_pulse') {
-    autoSelectedAtmosphere = 'kinetic_drive';
-  }
-
   return {
     sessionId: input.sessionId,
     cohortKey,
@@ -395,9 +553,10 @@ export function selectProtocolRecommendation(input: {
     isExploration,
     safetyMode: isDriving,
     safetyWarnings,
+    genreAdaptationNote: genreResolution.adaptationNote,
+    formulaIngredients,
     rationale: `${chosen.arm.description} ${evidenceNote}${explorationNote}`,
     studies: getStudiesByIds(chosen.arm.studyIds),
-    autoSelectedAtmosphere,
     confidencePct,
     cohortTrials: chosen.cohortTrials,
     profileTrials: chosen.profileTrials,

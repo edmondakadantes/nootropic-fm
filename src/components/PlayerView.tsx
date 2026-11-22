@@ -5,22 +5,18 @@ import {
   CheckCircle2,
   ExternalLink,
   FlaskConical,
+  Music2,
   Pause,
   Play,
   Radio,
   ShieldAlert,
   Sliders,
-  Sparkles,
   Volume2,
   Waves,
 } from 'lucide-react';
-import type { AtmosphereStyle, LiveAdjustment, ProtocolRecommendation } from '../../shared/types';
-import { DEVICE_LABELS, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
-import {
-  ATMOSPHERE_META,
-  PsychoacousticEngine,
-  type EngineTelemetry,
-} from '../audio/PsychoacousticEngine';
+import type { LiveAdjustment, ProtocolRecommendation, ResolvedGenre } from '../../shared/types';
+import { DEVICE_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
+import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
 import { api } from '../lib/api';
 import { NeuralVisualizer } from './NeuralVisualizer';
 
@@ -56,8 +52,8 @@ export function PlayerView({
   const [intensityMult, setIntensityMult] = useState(1.0);
   const [modMult, setModMult] = useState(1.0);
   const [adjustments, setAdjustments] = useState<LiveAdjustment[]>([]);
-  const [atmosphere, setAtmosphere] = useState<AtmosphereStyle>(
-    recommendation.autoSelectedAtmosphere ?? 'warm_horizon'
+  const [genre, setGenre] = useState<ResolvedGenre>(
+    recommendation.params.genre ?? 'deep_electronic'
   );
   const [telemetry, setTelemetry] = useState<EngineTelemetry>({
     phase: 'entry',
@@ -65,9 +61,10 @@ export function PlayerView({
     progressRatio: 0,
     currentModHz: recommendation.params.modulationHz,
     currentModDepth: recommendation.params.modulationDepth,
+    crossoverHz: recommendation.params.crossoverHz ?? 190,
     currentBpm: recommendation.params.bpm,
     antiMonotonyActive: false,
-    atmosphere: recommendation.autoSelectedAtmosphere ?? 'warm_horizon',
+    genre: recommendation.params.genre ?? 'deep_electronic',
     backgroundAudioActive: false,
   });
 
@@ -88,14 +85,13 @@ export function PlayerView({
         await engineRef.current?.start(
           recommendation.params,
           recommendation.plannedDurationMin,
-          `${recommendation.arm.name} · ${TARGET_LABELS[recommendation.targetState]}`,
-          recommendation.autoSelectedAtmosphere
+          `${recommendation.arm.name} · ${GENRE_META[recommendation.params.genre].label}`
         );
         if (mounted) {
           setIsPlaying(true);
           setAudioStarted(true);
           if (engineRef.current) {
-            setAtmosphere(engineRef.current.getAtmosphere());
+            setGenre(engineRef.current.getGenre());
           }
         }
       } catch {
@@ -187,12 +183,12 @@ export function PlayerView({
     setAdjustments((prev) => [...prev, { atSec: elapsedRef.current, control: 'modulation', delta }]);
   };
 
-  const switchAtmosphere = (style: AtmosphereStyle) => {
-    setAtmosphere(style);
-    engineRef.current?.setAtmosphere(style);
+  const switchGenre = (style: ResolvedGenre) => {
+    setGenre(style);
+    engineRef.current?.setGenre(style);
     setAdjustments((prev) => [
       ...prev,
-      { atSec: elapsedRef.current, control: 'atmosphere', delta: 0, note: style },
+      { atSec: elapsedRef.current, control: 'genre', delta: 0, note: style },
     ]);
   };
 
@@ -383,12 +379,12 @@ export function PlayerView({
           </div>
         </div>
 
-        {/* Live Atmosphere Switcher (seamless crossfade, zero dropout) */}
+        {/* Live Music Layer (Genre Carrier) Switcher — zero dropout, keeps Multiband AM active */}
         <div className="space-y-2.5">
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="inline-flex items-center gap-1.5 font-medium text-slate-300">
-              <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-              Soundscape Atmosphere (switch live — preserves exact {telemetry.currentModHz} Hz AM)
+              <Music2 className="h-3.5 w-3.5 text-cyan-400" />
+              Music Layer (switch live — {telemetry.currentModHz} Hz Multiband AM &gt;{telemetry.crossoverHz} Hz stays locked)
             </span>
             {telemetry.backgroundAudioActive && (
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-300">
@@ -397,22 +393,24 @@ export function PlayerView({
               </span>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {(Object.keys(ATMOSPHERE_META) as AtmosphereStyle[]).map((style) => {
-              const meta = ATMOSPHERE_META[style];
-              const active = atmosphere === style;
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {(Object.keys(GENRE_META) as ResolvedGenre[]).map((style) => {
+              const meta = GENRE_META[style];
+              const active = genre === style;
               return (
                 <button
                   key={style}
                   type="button"
-                  onClick={() => switchAtmosphere(style)}
+                  onClick={() => switchGenre(style)}
                   className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
                     active
                       ? 'border-cyan-400/70 bg-cyan-400/14 text-white shadow-[0_0_22px_rgba(34,211,238,0.18)]'
                       : 'border-slate-800/80 bg-slate-900/50 text-slate-300 hover:border-slate-700 hover:text-white'
                   }`}
                 >
-                  <div className="text-xs font-semibold">{meta.label}</div>
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-xs font-semibold">{meta.label}</span>
+                  </div>
                   <div className="mt-0.5 text-[10px] text-slate-400">{meta.shortDesc}</div>
                 </button>
               );
@@ -423,9 +421,12 @@ export function PlayerView({
         {/* Acoustic DNA Telemetry Grid */}
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
           <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">AM Modulation</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Multiband AM</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-cyan-300">
               {telemetry.currentModHz} Hz
+            </div>
+            <div className="font-mono-tech text-[10px] text-slate-500">
+              &gt;{telemetry.crossoverHz}Hz · sub clean
             </div>
           </div>
           <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">

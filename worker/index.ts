@@ -9,17 +9,21 @@ import {
 } from '../shared/protocols';
 import {
   ageToBand,
+  GENRE_META,
   getTimeOfDayBucket,
   type AcousticParams,
   type ArmPerformance,
   type CohortPerformance,
   type CurrentState,
   type DebriefPayload,
+  type GenrePerformance,
   type LiveAdjustment,
   type LivePubMedPaper,
+  type MusicGenreChoice,
   type OutputDevice,
   type ParsedCheckIn,
   type ResearchInsights,
+  type ResolvedGenre,
   type SessionEnvironment,
   type SessionRecord,
   type TargetState,
@@ -650,6 +654,7 @@ export default {
           device: OutputDevice;
           durationMin: number;
           ageOverride?: number;
+          requestedGenre?: MusicGenreChoice;
         };
 
         const profileRow = await env.DB.prepare('SELECT * FROM profiles WHERE id = ?')
@@ -689,6 +694,7 @@ export default {
             environment: body.environment,
             device: body.device,
             durationMin: Math.max(5, Math.min(120, Number(body.durationMin ?? 30))),
+            requestedGenre: body.requestedGenre,
             cohortStats,
             profileStats,
           }),
@@ -966,6 +972,29 @@ export default {
           })
           .sort((a, b) => b.successRatePct - a.successRatePct);
 
+        // Aggregate Music Genre Layer performance across real completed sessions
+        const genreBuckets = new Map<ResolvedGenre, { total: number; positive: number; deltaSum: number }>();
+        for (const s of completed) {
+          const g = (s.acousticParams?.genre as ResolvedGenre | undefined) ?? 'deep_electronic';
+          if (!GENRE_META[g]) continue;
+          const b = genreBuckets.get(g) ?? { total: 0, positive: 0, deltaSum: 0 };
+          b.total += 1;
+          if (s.workedRating === 'yes' || (s.workedRating === 'partial' && (s.deltaScore ?? 0) > 0)) {
+            b.positive += 1;
+          }
+          b.deltaSum += s.deltaScore ?? 0;
+          genreBuckets.set(g, b);
+        }
+        const genreLeaderboard: GenrePerformance[] = Array.from(genreBuckets.entries())
+          .map(([genre, b]) => ({
+            genre,
+            label: GENRE_META[genre].label,
+            sessions: b.total,
+            successRatePct: Math.round((b.positive / b.total) * 100),
+            avgDelta: Number((b.deltaSum / b.total).toFixed(2)),
+          }))
+          .sort((a, b) => b.successRatePct - a.successRatePct || b.sessions - a.sessions);
+
         const insights: ResearchInsights = {
           totalProfiles: Number(profilesCountRow?.c ?? 0),
           totalSessions: sessions.length,
@@ -976,6 +1005,7 @@ export default {
           explorationSharePct,
           cohorts,
           personalArms,
+          genreLeaderboard,
           recentSessions: sessions.slice(0, 20).map((s) => ({
             ...s,
             rawInputText: '',
@@ -1052,8 +1082,11 @@ export default {
             'completion_ratio',
             'arm_id',
             'is_exploration',
+            'music_genre',
+            'genre_mode',
             'modulation_hz',
             'modulation_depth',
+            'crossover_hz',
             'bpm',
             'noise_color',
             'noise_level',
@@ -1084,8 +1117,11 @@ export default {
               r.completion_ratio,
               r.arm_id,
               r.is_exploration,
+              ap.genre ?? 'auto',
+              ap.genreSelectionMode ?? 'auto',
               ap.modulationHz,
               ap.modulationDepth,
+              ap.crossoverHz ?? 190,
               ap.bpm,
               ap.noiseColor,
               ap.noiseLevel,

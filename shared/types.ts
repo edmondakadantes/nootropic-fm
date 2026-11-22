@@ -46,6 +46,17 @@ export type NoiseColor = 'pink' | 'brown' | 'soft_rain' | 'none';
 
 export type HarmonicMode = 'bright_maj9' | 'warm_min9' | 'suspended_open' | 'deep_drone';
 
+export type MusicGenreChoice =
+  | 'auto'
+  | 'lofi_keys'
+  | 'deep_electronic'
+  | 'cinematic_strings'
+  | 'jazz_rhodes'
+  | 'acoustic_pluck'
+  | 'nature_rain';
+
+export type ResolvedGenre = Exclude<MusicGenreChoice, 'auto'>;
+
 export interface UserProfile {
   id: string;
   age: number;
@@ -63,6 +74,7 @@ export interface UserProfile {
 export interface AcousticParams {
   modulationHz: number;
   modulationDepth: number;
+  crossoverHz: number; // Multiband AM crossover (sub-bass < crossoverHz stays clean & unmodulated)
   bpm: number;
   pulseIntensity: number;
   noiseColor: NoiseColor;
@@ -73,6 +85,8 @@ export interface AcousticParams {
   speakerSafeEQ: boolean;
   antiMonotonyCycleMin: number;
   binauralOffsetHz: number;
+  genre: ResolvedGenre;
+  genreSelectionMode: 'auto' | 'user_chosen' | 'iso_adapted';
 }
 
 export interface ScientificStudy {
@@ -99,6 +113,13 @@ export interface LivePubMedPaper {
   url: string;
 }
 
+export interface FormulaIngredient {
+  role: string;
+  compound: string;
+  dose: string;
+  evidenceTag: string;
+}
+
 export interface ProtocolArm {
   id: string;
   name: string;
@@ -108,15 +129,13 @@ export interface ProtocolArm {
   drivingSafe: boolean;
   priorAlpha: number;
   priorBeta: number;
-  baseParams: AcousticParams;
+  baseParams: Omit<AcousticParams, 'genre' | 'genreSelectionMode'>;
   studyIds: string[];
 }
 
-export type AtmosphereStyle = 'warm_horizon' | 'kinetic_drive' | 'rain_sanctuary' | 'deep_cosmos';
-
 export interface LiveAdjustment {
   atSec: number;
-  control: 'intensity' | 'modulation' | 'pulse' | 'noise' | 'atmosphere';
+  control: 'intensity' | 'modulation' | 'pulse' | 'noise' | 'genre';
   delta: number;
   note?: string;
 }
@@ -125,6 +144,7 @@ export interface ParsedCheckIn {
   rawText: string;
   extractedAge?: number;
   extractedRole?: UserRole;
+  extractedGenre?: ResolvedGenre;
   currentState: CurrentState;
   targetState: TargetState;
   environment: SessionEnvironment;
@@ -143,10 +163,11 @@ export interface ProtocolRecommendation {
   isExploration: boolean;
   safetyMode: boolean;
   safetyWarnings: string[];
+  genreAdaptationNote?: string;
+  formulaIngredients: FormulaIngredient[];
   rationale: string;
   studies: ScientificStudy[];
   livePubMedPapers?: LivePubMedPaper[];
-  autoSelectedAtmosphere: AtmosphereStyle;
   confidencePct: number;
   cohortTrials: number;
   profileTrials: number;
@@ -211,6 +232,14 @@ export interface ArmPerformance {
   beta: number;
 }
 
+export interface GenrePerformance {
+  genre: ResolvedGenre;
+  label: string;
+  sessions: number;
+  successRatePct: number;
+  avgDelta: number;
+}
+
 export interface CohortPerformance {
   cohortKey: string;
   cohortLabel: string;
@@ -232,6 +261,7 @@ export interface ResearchInsights {
   explorationSharePct: number;
   cohorts: CohortPerformance[];
   personalArms: ArmPerformance[];
+  genreLeaderboard: GenrePerformance[];
   recentSessions: SessionRecord[];
 }
 
@@ -251,6 +281,42 @@ export function getTimeOfDayBucket(date = new Date()): TimeOfDayBucket {
   if (hour >= 18 && hour < 22) return 'evening';
   return 'night';
 }
+
+export const GENRE_META: Record<
+  ResolvedGenre,
+  { label: string; shortDesc: string; vibeTag: string }
+> = {
+  lofi_keys: {
+    label: 'Lo-Fi Warm Keys',
+    shortDesc: 'Dusty Rhodes chords & laid-back beat',
+    vibeTag: 'Warm · Study · ADHD',
+  },
+  deep_electronic: {
+    label: 'Deep Electronic',
+    shortDesc: 'Clean sub-bass & hypnotic steady pulse',
+    vibeTag: 'Driving · Energy · Code',
+  },
+  cinematic_strings: {
+    label: 'Cinematic Strings',
+    shortDesc: 'Sweeping wide harmonies & deep resonance',
+    vibeTag: 'Deep Flow · Creative',
+  },
+  jazz_rhodes: {
+    label: 'Jazz Rhodes',
+    shortDesc: 'Warm 9th/11th keys & soft brush groove',
+    vibeTag: 'Long Focus · Smooth',
+  },
+  acoustic_pluck: {
+    label: 'Acoustic Pluck',
+    shortDesc: 'Organic guitar/harp arpeggios & warmth',
+    vibeTag: 'Reading · Grounded',
+  },
+  nature_rain: {
+    label: 'Nature & Rain',
+    shortDesc: 'Soft stereo rainfall & glass chimes',
+    vibeTag: 'Calm · Reset · Sleep',
+  },
+};
 
 export const STATE_LABELS: Record<CurrentState, string> = {
   distracted: 'Distracted / scattered',

@@ -7,6 +7,7 @@ import {
   Cpu,
   Mic,
   MicOff,
+  Music2,
   SlidersHorizontal,
   Sparkles,
   X,
@@ -15,10 +16,13 @@ import { parseNaturalCheckIn } from '../../shared/parser';
 import {
   DEVICE_LABELS,
   ENV_LABELS,
+  GENRE_META,
   STATE_LABELS,
   TARGET_LABELS,
   type CurrentState,
+  type MusicGenreChoice,
   type OutputDevice,
+  type ResolvedGenre,
   type SessionEnvironment,
   type SessionRecord,
   type TargetState,
@@ -43,6 +47,7 @@ interface CheckInViewProps {
     device: OutputDevice;
     durationMin: number;
     ageOverride?: number;
+    requestedGenre?: MusicGenreChoice;
   }) => Promise<void>;
 }
 
@@ -84,6 +89,7 @@ export function CheckInView({
     profile.role === 'driver' ? 'car_audio' : profile.defaultDevice
   );
   const [durationMin, setDurationMin] = useState<number>(40);
+  const [genreChoice, setGenreChoice] = useState<MusicGenreChoice>('auto');
   const [ageOverride, setAgeOverride] = useState<number | undefined>(undefined);
   const [detectedChips, setDetectedChips] = useState<string[]>([]);
   const [usedGemini, setUsedGemini] = useState(false);
@@ -120,6 +126,7 @@ export function CheckInView({
     setDevice(instant.device);
     setDurationMin(instant.durationMin);
     setAgeOverride(instant.extractedAge);
+    if (instant.extractedGenre) setGenreChoice(instant.extractedGenre);
     setDetectedChips(instant.detectedKeywords);
   };
 
@@ -184,6 +191,7 @@ export function CheckInView({
         device: isDriving ? 'car_audio' : device,
         durationMin,
         ageOverride,
+        requestedGenre: genreChoice,
       });
     } finally {
       setStarting(false);
@@ -316,6 +324,42 @@ export function CheckInView({
             ))}
           </div>
         )}
+
+        {/* Optional Music Layer (Taste Carrier) selector */}
+        <div className="space-y-2 rounded-2xl border border-slate-800/80 bg-slate-950/50 p-3.5">
+          <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
+            <Music2 className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Music Layer (leave on Auto or pick the vibe that pulls you in):</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setGenreChoice('auto')}
+              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition ${
+                genreChoice === 'auto'
+                  ? 'border-cyan-400/80 bg-cyan-400/20 text-white'
+                  : 'subtle-chip'
+              }`}
+            >
+              <Sparkles className="h-3 w-3 text-cyan-300" />
+              Auto (Science)
+            </button>
+            {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGenreChoice(g)}
+                className={`rounded-full border px-3 py-1 text-xs transition ${
+                  genreChoice === g
+                    ? 'border-indigo-400/80 bg-indigo-500/22 text-white'
+                    : 'subtle-chip'
+                }`}
+              >
+                {GENRE_META[g].label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Compact tactile Baseline 1–5 selector */}
         <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/55 px-4 py-3 sm:flex-row sm:items-center">

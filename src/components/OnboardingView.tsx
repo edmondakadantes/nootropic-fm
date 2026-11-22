@@ -8,18 +8,21 @@ import {
   Headphones,
   Mic,
   MicOff,
+  Music2,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
 import { parseNaturalCheckIn, parseOnboardingAnswers } from '../../shared/parser';
 import type {
   CurrentState,
+  MusicGenreChoice,
   OutputDevice,
+  ResolvedGenre,
   SessionEnvironment,
   TargetState,
   UserProfile,
 } from '../../shared/types';
-import { DEVICE_LABELS } from '../../shared/types';
+import { DEVICE_LABELS, GENRE_META } from '../../shared/types';
 import type { FieldMood } from './AmbientField';
 import { SonicOrb } from './SonicOrb';
 
@@ -36,6 +39,7 @@ interface OnboardingViewProps {
       device: OutputDevice;
       durationMin: number;
       ageOverride?: number;
+      requestedGenre?: MusicGenreChoice;
     }
   ) => Promise<void>;
   onMoodChange?: (mood: FieldMood) => void;
@@ -78,6 +82,7 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
   const [intentText, setIntentText] = useState('');
   const [soundNote, setSoundNote] = useState('');
   const [showSoundNote, setShowSoundNote] = useState(false);
+  const [genreChoice, setGenreChoice] = useState<MusicGenreChoice>('auto');
   const [deviceOverride, setDeviceOverride] = useState<OutputDevice | null>(
     initialProfile?.defaultDevice ?? null
   );
@@ -169,6 +174,7 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
           device: effectiveDevice,
           durationMin: parsedIntent.durationMin,
           ageOverride: parsedIntent.extractedAge ?? parsedProfile.age,
+          requestedGenre: genreChoice === 'auto' ? (parsedIntent.extractedGenre ?? 'auto') : genreChoice,
         });
       } else {
         await onComplete(profilePayload);
@@ -402,12 +408,12 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
               </div>
             </div>
 
-            {/* Platform auto-selects soundscape + quick 3-pill audio output */}
-            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.06] p-4 space-y-3">
+            {/* Music Layer (Taste Carrier) + Output Device */}
+            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.05] p-4 space-y-3.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-xs font-medium text-cyan-200">
-                  <Sparkles className="h-4 w-4 text-cyan-300" />
-                  <span>Soundscape chosen automatically by nootropic.fm from science</span>
+                  <Music2 className="h-4 w-4 text-cyan-300" />
+                  <span>Music layer wrapped around the science (optional)</span>
                 </div>
                 <button
                   type="button"
@@ -421,7 +427,36 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setGenreChoice('auto')}
+                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    genreChoice === 'auto'
+                      ? 'border-cyan-400/80 bg-cyan-400/20 text-white shadow-[0_0_16px_rgba(34,211,238,0.25)]'
+                      : 'subtle-chip'
+                  }`}
+                >
+                  <Sparkles className="h-3 w-3 text-cyan-300" />
+                  Auto (Science picks)
+                </button>
+                {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setGenreChoice(g)}
+                    className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                      genreChoice === g
+                        ? 'border-indigo-400/80 bg-indigo-500/22 text-white shadow-[0_0_16px_rgba(129,140,248,0.28)]'
+                        : 'subtle-chip'
+                    }`}
+                  >
+                    {GENRE_META[g].label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-3">
                 <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 mr-1">
                   <Headphones className="h-3.5 w-3.5" /> Listening on:
                 </span>
@@ -450,7 +485,7 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
                   type="text"
                   value={soundNote}
                   onChange={(e) => setSoundNote(e.target.value)}
-                  placeholder="Optional — e.g. sensitive to high pitch, no rain, prefer rhythmic beat..."
+                  placeholder="Optional — e.g. sensitive to high pitch, no rain, prefer deep bass..."
                   className="w-full rounded-xl border border-slate-800 bg-slate-950/80 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400/60 focus:outline-none"
                 />
               )}

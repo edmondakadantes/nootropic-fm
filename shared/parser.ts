@@ -4,6 +4,7 @@ import type {
   OutputDevice,
   ParsedCheckIn,
   PrimaryChallenge,
+  ResolvedGenre,
   SessionEnvironment,
   TargetState,
   TexturePreference,
@@ -265,10 +266,33 @@ export function parseNaturalCheckIn(
     detectedKeywords.push('→ Alert Focus');
   }
 
+  // 6. Optional Musical Genre Carrier detection from free text
+  let extractedGenre: ResolvedGenre | undefined;
+  if (/\b(lofi|lo-fi|lo fi|chillhop|dusty|beats to study)\b/.test(norm)) {
+    extractedGenre = 'lofi_keys';
+    detectedKeywords.push('Genre: Lo-Fi Keys');
+  } else if (/\b(electronic|techno|house|deep house|synthwave|trance|edm|club|groove)\b/.test(norm)) {
+    extractedGenre = 'deep_electronic';
+    detectedKeywords.push('Genre: Deep Electronic');
+  } else if (/\b(cinematic|orchestra|orchestral|interstellar|hans zimmer|strings|movie|epic|soundtrack)\b/.test(norm)) {
+    extractedGenre = 'cinematic_strings';
+    detectedKeywords.push('Genre: Cinematic Strings');
+  } else if (/\b(jazz|rhodes|soul|lounge|blues|piano)\b/.test(norm)) {
+    extractedGenre = 'jazz_rhodes';
+    detectedKeywords.push('Genre: Jazz Rhodes');
+  } else if (/\b(acoustic|guitar|harp|folk|indie|rock|instrumental rock|chitara)\b/.test(norm)) {
+    extractedGenre = 'acoustic_pluck';
+    detectedKeywords.push('Genre: Acoustic Pluck');
+  } else if (/\b(rain|nature|ocean|forest|wind|storm|water|ploaie|natura)\b/.test(norm)) {
+    extractedGenre = 'nature_rain';
+    detectedKeywords.push('Genre: Nature & Rain');
+  }
+
   return {
     rawText,
     extractedAge,
     extractedRole,
+    extractedGenre,
     currentState,
     targetState,
     environment,

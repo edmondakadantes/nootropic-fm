@@ -4,6 +4,7 @@ import { formatCohortLabel } from '../shared/protocols';
 import type {
   CurrentState,
   LiveAdjustment,
+  MusicGenreChoice,
   OutputDevice,
   ProtocolRecommendation,
   SessionEnvironment,
@@ -105,6 +106,7 @@ export default function App() {
         device: OutputDevice;
         durationMin: number;
         ageOverride?: number;
+        requestedGenre?: MusicGenreChoice;
       }
     ) => {
       setErrorBanner(null);
@@ -141,6 +143,7 @@ export default function App() {
       device: OutputDevice;
       durationMin: number;
       ageOverride?: number;
+      requestedGenre?: MusicGenreChoice;
     }
   ) => {
     setErrorBanner(null);
@@ -163,6 +166,7 @@ export default function App() {
     device: OutputDevice;
     durationMin: number;
     ageOverride?: number;
+    requestedGenre?: MusicGenreChoice;
   }) => {
     if (!profile) return;
     await startSessionWithProfile(profile, payload);
