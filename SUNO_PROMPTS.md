@@ -1,9 +1,9 @@
-# nootropic.fm — Suno Pro Studio Audio Prompt Pack (`Gen × Energie`)
+# nootropic.fm — Suno Pro Studio Audio Prompt Pack (`Genre × Energy`)
 
 > **CRITICAL RULES IN SUNO PRO (1-Month Plan · \$10 · Commercial Rights):**
-> 1. Toggle **Instrumental = ON** on EVERY single generation (strictly zero lyrics, zero vocals, zero spoken chops — Perham & Currie 2014).
+> 1. Keep **Lyrics completely empty** (or Instrumental = ON) + add `vocals, singing, speech, lyrics, voice, choir` to **Exclude styles** on EVERY generation (strictly zero lyrics/vocals — Perham & Currie 2014).
 > 2. Avoid sudden drops, loud snare hits, sirens, or dramatic volume jumps. We want **hypnotic, continuous studio flow** so our **3-Band Linkwitz-Riley (`LR4`) Neuro-DSP** (`<190 Hz` clean sub-bass · `190 Hz–4.5 kHz` cortical AM · `>4.5 kHz` crystal-clear air) sounds like an expensive studio master.
-> 3. Save `.mp3` files into `audio-stems/<genre>/<calm|focus|drive>/`, then run **`npm run upload:stems`** (or tell your assistant *"le-am pus în folder"*). Our script automatically normalizes every track to **`-14 LUFS`** via `ffmpeg` and uploads it straight to Cloudflare R2 (\$0/month egress!).
+> 3. Save `.mp3` files into `audio-stems/<genre>/<calm|focus|drive>/`, then run **`npm run upload:stems`**. Our script automatically normalizes every track to **`-14 LUFS`** via `ffmpeg` and uploads it straight to Cloudflare R2 (\$0/month egress!).
 
 ---
 

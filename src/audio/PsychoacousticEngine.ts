@@ -30,6 +30,7 @@ export interface EngineTelemetry {
   genre: ResolvedGenre;
   backgroundAudioActive: boolean;
   usingStudioAudio: boolean;
+  usingCustomTrack?: boolean;
   activeTrackName: string | null;
 }
 
@@ -238,12 +239,19 @@ export class PsychoacousticEngine {
   // Dual-Deck Gapless Studio Stem Engine (Cloudflare R2 -> 3-Band LR4 AM)
   private studioCatalog: Partial<Record<ResolvedGenre, StudioTrackRef[]>> = {};
   private bufferCache = new Map<string, AudioBuffer>();
+  private readonly maxCachedBuffers = 3; // Protects iOS Safari PCM RAM ceiling
   private activeStudioSource: AudioBufferSourceNode | null = null;
   private activeStudioGain: GainNode | null = null;
   private studioCrossfadeTimer: number | null = null;
+  private studioDeckStartedAtCtx = 0;
+  private studioDeckCrossfadeDelaySec = 0;
+  private studioDeckPausedRemainingSec: number | null = null;
+  private studioDeckOnCrossfade: (() => void) | null = null;
   private studioTrackIdx = 0;
   private studioLoadToken = 0;
   private usingStudioAudio = false;
+  private usingCustomTrack = false;
+  private activeCustomTrack: { url: string; label: string } | null = null;
   private activeTrackName: string | null = null;
 
   private params: AcousticParams | null = null;
@@ -714,21 +722,86 @@ export class PsychoacousticEngine {
     }
   }
 
+  /**
+   * Client-side RMS loudness matcher targeting our -14 LUFS (~0.19 RMS) studio stem baseline
+   * so freshly generated AI tracks crossfade with zero volume jump (Workers have no ffmpeg).
+   */
+  private computeRmsGain(buffer: AudioBuffer): number {
+    const chCount = Math.min(2, buffer.numberOfChannels);
+    const len = buffer.length;
+    if (chCount === 0 || len === 0) return 0.96;
+    const stride = Math.max(1, Math.floor(len / 48000));
+    let sumSq = 0;
+    let count = 0;
+    for (let c = 0; c < chCount; c++) {
+      const data = buffer.getChannelData(c);
+      for (let i = 0; i < len; i += stride) {
+        const s = data[i];
+        sumSq += s * s;
+        count++;
+      }
+    }
+    const rms = Math.sqrt(sumSq / Math.max(1, count));
+    if (rms < 0.005) return 0.96;
+    const targetRms = 0.19;
+    return Number(Math.max(0.45, Math.min(1.55, (targetRms / rms) * 0.96)).toFixed(3));
+  }
+
   private async loadAudioBuffer(url: string): Promise<AudioBuffer | null> {
     if (!this.ctx) return null;
     const cached = this.bufferCache.get(url);
-    if (cached) return cached;
+    if (cached) {
+      // Refresh LRU recency
+      this.bufferCache.delete(url);
+      this.bufferCache.set(url, cached);
+      return cached;
+    }
     try {
       const res = await fetch(url);
       if (!res.ok) return null;
       const arr = await res.arrayBuffer();
       if (!this.ctx) return null;
       const decoded = await this.ctx.decodeAudioData(arr);
+
+      // Strict LRU eviction to cap decoded PCM memory on mobile Safari
+      while (this.bufferCache.size >= this.maxCachedBuffers) {
+        const oldestKey = this.bufferCache.keys().next().value;
+        if (oldestKey) this.bufferCache.delete(oldestKey);
+        else break;
+      }
       this.bufferCache.set(url, decoded);
       return decoded;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 2-Speed Seamless Crossfade into a freshly generated or Community R2 Cached Custom Vibe MP3
+   * while keeping 3-Band LR4 AM (190 Hz–4.5 kHz) and Driving Safety EQ 100% locked!
+   */
+  public async crossfadeToCustomTrack(url: string, label: string): Promise<boolean> {
+    if (!this.ctx || !this.studioBus || !this.isPlaying) return false;
+    const token = ++this.studioLoadToken;
+    this.activeCustomTrack = { url, label };
+    const buffer = await this.loadAudioBuffer(url);
+    if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !buffer) {
+      return false;
+    }
+    const rmsGain = this.computeRmsGain(buffer);
+    this.usingCustomTrack = true;
+    this.playStudioBuffer(
+      buffer,
+      label,
+      token,
+      rmsGain,
+      () => {
+        if (!this.isPlaying || token !== this.studioLoadToken) return;
+        // Seamless single-track overlap loop back into the same custom buffer
+        void this.crossfadeToCustomTrack(url, label);
+      }
+    );
+    return true;
   }
 
   private selectTracksForGenreAndEnergy(genre: ResolvedGenre): StudioTrackRef[] {
@@ -754,6 +827,8 @@ export class PsychoacousticEngine {
 
   private async activateStudioForGenre(genre: ResolvedGenre): Promise<void> {
     const token = ++this.studioLoadToken;
+    this.usingCustomTrack = false;
+    this.activeCustomTrack = null;
     const tracks = this.selectTracksForGenreAndEnergy(genre);
 
     if (tracks.length === 0 || !this.ctx || !this.studioBus) {
@@ -775,21 +850,40 @@ export class PsychoacousticEngine {
       return;
     }
 
-    this.playStudioBuffer(buffer, track.name, genre, chosenIdx, token);
+    this.playStudioBuffer(buffer, track.name, token, 0.96, () => {
+      if (!this.isPlaying || token !== this.studioLoadToken) return;
+      this.studioTrackIdx = tracks.length > 1 ? chosenIdx + 1 : 0;
+      void this.activateStudioForGenre(genre);
+    });
 
-    // Pre-fetch next track silently in background for seamless zero-gap crossfade
-    if (tracks.length > 1) {
+    // Lazy pre-fetch next track only when <= 2 buffers cached (keeps mobile RAM lean!)
+    if (tracks.length > 1 && this.bufferCache.size < this.maxCachedBuffers) {
       const nextTrack = tracks[(chosenIdx + 1) % tracks.length];
       void this.loadAudioBuffer(nextTrack.url);
     }
   }
 
+  private scheduleDeckCrossfade(delaySec: number, onCrossfade: () => void): void {
+    if (this.studioCrossfadeTimer !== null) {
+      window.clearTimeout(this.studioCrossfadeTimer);
+      this.studioCrossfadeTimer = null;
+    }
+    this.studioDeckStartedAtCtx = this.ctx?.currentTime ?? 0;
+    this.studioDeckCrossfadeDelaySec = Math.max(1.5, delaySec);
+    this.studioDeckPausedRemainingSec = null;
+    this.studioDeckOnCrossfade = onCrossfade;
+    this.studioCrossfadeTimer = window.setTimeout(() => {
+      this.studioCrossfadeTimer = null;
+      onCrossfade();
+    }, this.studioDeckCrossfadeDelaySec * 1000);
+  }
+
   private playStudioBuffer(
     buffer: AudioBuffer,
     trackName: string,
-    genre: ResolvedGenre,
-    idx: number,
-    token: number
+    token: number,
+    targetGain: number,
+    onCrossfade: () => void
   ): void {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return;
     const ctx = this.ctx;
@@ -807,7 +901,7 @@ export class PsychoacousticEngine {
     src.buffer = buffer;
     const deckGain = ctx.createGain();
     deckGain.gain.setValueAtTime(0.0001, now);
-    deckGain.gain.exponentialRampToValueAtTime(0.96, now + fadeInSec);
+    deckGain.gain.exponentialRampToValueAtTime(Math.max(0.1, targetGain), now + fadeInSec);
 
     src.connect(deckGain);
     deckGain.connect(this.studioBus);
@@ -818,14 +912,10 @@ export class PsychoacousticEngine {
     this.usingStudioAudio = true;
     this.activeTrackName = trackName;
 
-    // Schedule seamless equal-power crossfade 7 seconds before track ends
-    const crossfadeLeadSec = Math.min(7, Math.max(2, buffer.duration * 0.18));
-    const waitMs = Math.max(1500, (buffer.duration - crossfadeLeadSec) * 1000);
-    this.studioCrossfadeTimer = window.setTimeout(() => {
-      if (!this.isPlaying || token !== this.studioLoadToken) return;
-      this.studioTrackIdx = idx + 1;
-      void this.activateStudioForGenre(genre);
-    }, waitMs);
+    // Pause-aware seamless equal-power crossfade ~6-7s before track ends
+    const crossfadeLeadSec = Math.min(7, Math.max(2.5, buffer.duration * 0.16));
+    const delaySec = Math.max(1.5, buffer.duration - crossfadeLeadSec);
+    this.scheduleDeckCrossfade(delaySec, onCrossfade);
   }
 
   private getGenreReverbLevel(g: ResolvedGenre): number {
@@ -895,6 +985,10 @@ export class PsychoacousticEngine {
 
   public getGenre(): ResolvedGenre {
     return this.genre;
+  }
+
+  public getActiveCustomTrack(): { url: string; label: string } | null {
+    return this.activeCustomTrack;
   }
 
   private getActiveChord(): number[] {
@@ -1370,6 +1464,7 @@ export class PsychoacousticEngine {
       genre: this.genre,
       backgroundAudioActive: this.backgroundAudioActive,
       usingStudioAudio: this.usingStudioAudio,
+      usingCustomTrack: this.usingCustomTrack,
       activeTrackName: this.activeTrackName,
     };
   }
@@ -1405,6 +1500,16 @@ export class PsychoacousticEngine {
   public async pause(): Promise<void> {
     if (!this.ctx || !this.isPlaying) return;
     this.isPlaying = false;
+    // Pause-aware crossfade timer preservation (fixes post-resume silence!)
+    if (this.studioCrossfadeTimer !== null) {
+      window.clearTimeout(this.studioCrossfadeTimer);
+      this.studioCrossfadeTimer = null;
+      const elapsedInDeck = Math.max(0, this.ctx.currentTime - this.studioDeckStartedAtCtx);
+      this.studioDeckPausedRemainingSec = Math.max(
+        1.0,
+        this.studioDeckCrossfadeDelaySec - elapsedInDeck
+      );
+    }
     this.audioEl?.pause();
     await this.ctx.suspend();
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
@@ -1417,6 +1522,12 @@ export class PsychoacousticEngine {
     await this.audioEl?.play().catch(() => {});
     this.isPlaying = true;
     this.nextStepTime = this.ctx.currentTime + 0.1;
+    // Re-arm studio crossfade timer cleanly with exact remaining audio time
+    if (this.studioDeckPausedRemainingSec !== null && this.studioDeckOnCrossfade) {
+      const remaining = this.studioDeckPausedRemainingSec;
+      const cb = this.studioDeckOnCrossfade;
+      this.scheduleDeckCrossfade(remaining, cb);
+    }
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     void this.requestWakeLock();
   }
@@ -1485,7 +1596,11 @@ export class PsychoacousticEngine {
     this.isPlaying = false;
     this.studioLoadToken++;
     this.usingStudioAudio = false;
+    this.usingCustomTrack = false;
+    this.activeCustomTrack = null;
     this.activeTrackName = null;
+    this.studioDeckPausedRemainingSec = null;
+    this.studioDeckOnCrossfade = null;
     this.clearStudioDeck(0.1);
     this.clearTimers();
     if (this.visibilityHandler) {

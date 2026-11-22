@@ -29,6 +29,9 @@
   ],
   "vars": {
     "APP_ENV": "open-research-beta",
-    "GEMINI_DAILY_CAP": "100"
+    "ENABLE_LLM_PARSE": "false",
+    "GEMINI_DAILY_CAP": "100",
+    "MUSIC_PROVIDER": "lyria",
+    "MUSIC_GEN_DAILY_CAP": "3"
   }
 }

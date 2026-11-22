@@ -4,6 +4,7 @@ import {
   BarChart3,
   CheckCircle2,
   FlaskConical,
+  ShieldCheck,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
@@ -20,6 +21,7 @@ interface DebriefViewProps {
   plannedDurationMin: number;
   actualDurationSec: number;
   liveAdjustments: LiveAdjustment[];
+  ephemeralMode?: boolean;
   onStartNew: () => void;
   onViewInsights: () => void;
 }
@@ -43,6 +45,7 @@ export function DebriefView({
   plannedDurationMin,
   actualDurationSec,
   liveAdjustments,
+  ephemeralMode = false,
   onStartNew,
   onViewInsights,
 }: DebriefViewProps) {
@@ -51,6 +54,7 @@ export function DebriefView({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [ephemeralCompleted, setEphemeralCompleted] = useState(false);
   const [learningUpdate, setLearningUpdate] = useState<{
     armName: string;
     cohortLabel: string;
@@ -73,6 +77,10 @@ export function DebriefView({
   };
 
   const handleSubmit = async () => {
+    if (ephemeralMode || sessionId.startsWith('eph_')) {
+      setEphemeralCompleted(true);
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await api.submitDebrief({
@@ -89,6 +97,48 @@ export function DebriefView({
       setSubmitting(false);
     }
   };
+
+  if (ephemeralCompleted) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <div className="animate-rise glass-stage rounded-3xl p-6 sm:p-9 space-y-6 text-center">
+          <SonicOrb mood="calm" size="md" label="Session Complete" />
+          <div>
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Local-Only Privacy Mode · Zero Data Stored
+            </div>
+            <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl">
+              Your shift: <span className="text-aurora">{baselineScore} → {postScore} (Δ {deltaPreview >= 0 ? `+${deltaPreview}` : deltaPreview})</span>
+            </h2>
+            <p className="mt-2 text-sm text-slate-400">
+              Because research telemetry was opted out, nothing from this session was saved to your
+              browser or to our servers. You can opt in anytime on the next session to unlock
+              personal Bandit adaptation.
+            </p>
+          </div>
+          <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={onViewInsights}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-400/40 bg-cyan-400/12 px-5 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-400/20"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Explore Public Research Brain
+            </button>
+            <button
+              type="button"
+              onClick={onStartNew}
+              className="btn-aurora inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-slate-950"
+            >
+              Start a New Session
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (learningUpdate) {
     return (
@@ -325,7 +375,11 @@ export function DebriefView({
           className="btn-aurora flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 disabled:opacity-60"
         >
           <CheckCircle2 className="h-5 w-5" />
-          {submitting ? 'Updating neural model...' : 'Save Feedback & Train Platform'}
+          {ephemeralMode
+            ? 'See Local Session Summary'
+            : submitting
+              ? 'Updating neural model...'
+              : 'Save Feedback & Train Platform'}
         </button>
       </div>
     </div>

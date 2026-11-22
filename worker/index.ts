@@ -1,9 +1,16 @@
 import { parseNaturalCheckIn } from '../shared/parser';
 import {
+  composeScientificMusicPrompt,
+  getGenreDisplayMeta,
+  sanitizeCustomVibe,
+} from '../shared/promptComposer';
+import {
   PROTOCOL_ARMS,
   buildCohortKey,
+  computeImplicitReward,
   computeSessionReward,
   formatCohortLabel,
+  resolveEnergyTier,
   selectProtocolRecommendation,
   type BanditStatRow,
 } from '../shared/protocols';
@@ -13,120 +20,38 @@ import {
   getTimeOfDayBucket,
   type ABValidationStats,
   type AcousticParams,
+  type AppRuntimeConfig,
+  type ArchetypeComboPerformance,
   type ArmPerformance,
+  type AudioSourceType,
   type CohortPerformance,
   type CurrentState,
+  type CustomTrackInfo,
   type DebriefPayload,
   type EnergyTier,
   type GenrePerformance,
   type LiveAdjustment,
-  type LivePubMedPaper,
   type MusicGenreChoice,
   type OutputDevice,
   type ParsedCheckIn,
   type ResearchInsights,
   type ResolvedGenre,
+  type RetentionMetrics,
   type SessionEnvironment,
   type SessionRecord,
   type TargetState,
   type UserProfile,
   type WorkedRating,
 } from '../shared/types';
-import type { D1Database, Env } from './env';
+import type { D1Database, Env, ExecutionContext } from './env';
+import { fetchVerifiedLiveLiterature } from './literature';
+import { resolveMusicProvider } from './musicProviders';
 
-let schemaReady = false;
-
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS profiles (
-    id TEXT PRIMARY KEY,
-    age INTEGER NOT NULL,
-    age_band TEXT NOT NULL,
-    role TEXT NOT NULL,
-    texture_pref TEXT NOT NULL,
-    noise_sensitivity TEXT NOT NULL,
-    default_device TEXT NOT NULL,
-    primary_challenge TEXT NOT NULL,
-    research_consent INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  )`,
-  `CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    profile_id TEXT NOT NULL,
-    cohort_key TEXT NOT NULL,
-    raw_input_text TEXT NOT NULL DEFAULT '',
-    current_state TEXT NOT NULL,
-    baseline_score INTEGER NOT NULL,
-    target_state TEXT NOT NULL,
-    environment TEXT NOT NULL,
-    device TEXT NOT NULL,
-    safety_mode INTEGER NOT NULL DEFAULT 0,
-    planned_duration_min INTEGER NOT NULL,
-    actual_duration_sec INTEGER NOT NULL DEFAULT 0,
-    completion_ratio REAL NOT NULL DEFAULT 0,
-    arm_id TEXT NOT NULL,
-    arm_name TEXT NOT NULL,
-    is_exploration INTEGER NOT NULL DEFAULT 0,
-    acoustic_params_json TEXT NOT NULL,
-    cited_study_ids_json TEXT NOT NULL,
-    live_adjustments_json TEXT NOT NULL DEFAULT '[]',
-    time_of_day_bucket TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending_debrief',
-    post_score INTEGER,
-    delta_score INTEGER,
-    worked_rating TEXT,
-    feedback_tags_json TEXT NOT NULL DEFAULT '[]',
-    reward_score REAL,
-    notes TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL,
-    completed_at TEXT
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_sessions_profile ON sessions(profile_id, created_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS idx_sessions_cohort ON sessions(cohort_key, status)`,
-  `CREATE TABLE IF NOT EXISTS bandit_stats (
-    scope_type TEXT NOT NULL,
-    scope_id TEXT NOT NULL,
-    arm_id TEXT NOT NULL,
-    alpha REAL NOT NULL,
-    beta REAL NOT NULL,
-    trials INTEGER NOT NULL DEFAULT 0,
-    avg_delta REAL NOT NULL DEFAULT 0,
-    avg_completion REAL NOT NULL DEFAULT 0,
-    avg_reward REAL NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (scope_type, scope_id, arm_id)
-  )`,
-  `CREATE TABLE IF NOT EXISTS api_usage_daily (
-    day TEXT PRIMARY KEY,
-    gemini_calls INTEGER NOT NULL DEFAULT 0
-  )`,
-  `CREATE TABLE IF NOT EXISTS rate_limits (
-    bucket_key TEXT PRIMARY KEY,
-    hits INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL
-  )`,
-];
-
-const MIGRATION_ALTERS = [
-  `ALTER TABLE profiles ADD COLUMN preferred_mod_mult REAL NOT NULL DEFAULT 1.0`,
-  `ALTER TABLE sessions ADD COLUMN is_control_trial INTEGER NOT NULL DEFAULT 0`,
-  `ALTER TABLE sessions ADD COLUMN energy_tier TEXT NOT NULL DEFAULT 'focus'`,
-  `ALTER TABLE sessions ADD COLUMN music_genre TEXT NOT NULL DEFAULT 'deep_electronic'`,
-  `CREATE INDEX IF NOT EXISTS idx_sessions_control ON sessions(is_control_trial, status)`,
-];
-
-async function ensureSchema(db: D1Database): Promise<void> {
-  if (schemaReady) return;
-  await db.batch(SCHEMA_STATEMENTS.map((sql) => db.prepare(sql)));
-  for (const sql of MIGRATION_ALTERS) {
-    try {
-      await db.prepare(sql).run();
-    } catch {
-      // Column or index already exists
-    }
-  }
-  schemaReady = true;
-}
+const EEA_UK_CH_COUNTRIES = new Set([
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE',
+  'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
+  'IS', 'LI', 'NO', 'GB', 'UK', 'CH',
+]);
 
 const ALLOWED_ORIGINS = new Set([
   'https://nootropic.fm',
@@ -148,8 +73,8 @@ function corsHeaders(request?: Request): Record<string, string> {
       : '*';
   return {
     'access-control-allow-origin': allowOrigin,
-    'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'content-type, x-admin-key, authorization',
+    'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+    'access-control-allow-headers': 'content-type, x-admin-key, x-profile-token, authorization',
   };
 }
 
@@ -160,6 +85,21 @@ function constantTimeEqual(a: string, b: string): boolean {
     diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return diff === 0;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function generateProfileToken(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return `nfm_tok_${Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')}`;
 }
 
 function isAuthorizedAdmin(request: Request, env: Env): boolean {
@@ -181,14 +121,7 @@ async function checkDailyRateLimit(
 ): Promise<boolean> {
   const ip = request.headers.get('cf-connecting-ip') ?? 'local';
   const day = new Date().toISOString().slice(0, 10);
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(`nootropic-fm:${day}:${action}:${ip}`)
-  );
-  const hashHex = Array.from(new Uint8Array(digest))
-    .slice(0, 12)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  const hashHex = (await sha256Hex(`nootropic-fm:${day}:${action}:${ip}`)).slice(0, 24);
   const bucketKey = `${day}:${action}:${hashHex}`;
 
   const existing = await db
@@ -225,8 +158,8 @@ function json(data: unknown, status = 200, request?: Request): Response {
 function mapProfileRow(row: Record<string, unknown>): UserProfile {
   return {
     id: String(row.id),
-    age: Number(row.age),
-    ageBand: String(row.age_band) as UserProfile['ageBand'],
+    age: Math.max(18, Number(row.age)),
+    ageBand: ageToBand(Math.max(18, Number(row.age))),
     role: String(row.role) as UserProfile['role'],
     texturePref: String(row.texture_pref) as UserProfile['texturePref'],
     noiseSensitivity: String(row.noise_sensitivity) as UserProfile['noiseSensitivity'],
@@ -242,11 +175,10 @@ function mapProfileRow(row: Record<string, unknown>): UserProfile {
   };
 }
 
-function mapSessionRow(row: Record<string, unknown>): SessionRecord {
+function mapSessionRow(row: Record<string, unknown>, includeProfileId = true): SessionRecord {
   const acousticParams = JSON.parse(String(row.acoustic_params_json)) as AcousticParams;
-  return {
+  const rec: SessionRecord = {
     id: String(row.id),
-    profileId: String(row.profile_id),
     cohortKey: String(row.cohort_key),
     rawInputText: String(row.raw_input_text ?? ''),
     currentState: String(row.current_state) as CurrentState,
@@ -262,33 +194,45 @@ function mapSessionRow(row: Record<string, unknown>): SessionRecord {
     armName: String(row.arm_name),
     isExploration: Number(row.is_exploration) === 1,
     isControlTrial: Number(row.is_control_trial ?? 0) === 1,
-    energyTier: (String(row.energy_tier || acousticParams.energyTier || 'focus') as EnergyTier),
-    musicGenre: (String(row.music_genre || acousticParams.genre || 'deep_electronic') as ResolvedGenre),
+    energyTier: String(row.energy_tier || acousticParams.energyTier || 'focus') as EnergyTier,
+    musicGenre: String(row.music_genre || acousticParams.genre || 'deep_electronic'),
+    initialMusicGenre: row.initial_music_genre ? String(row.initial_music_genre) : undefined,
+    customGenreSlug: row.custom_genre_slug ? String(row.custom_genre_slug) : null,
+    audioSource: (row.audio_source as AudioSourceType | undefined) ?? 'studio_library',
+    retentionOutcome: row.retention_outcome ? String(row.retention_outcome) : null,
     acousticParams,
     citedStudyIds: JSON.parse(String(row.cited_study_ids_json)) as string[],
     liveAdjustments: JSON.parse(String(row.live_adjustments_json ?? '[]')) as LiveAdjustment[],
     timeOfDayBucket: String(row.time_of_day_bucket) as SessionRecord['timeOfDayBucket'],
     status: String(row.status) as SessionRecord['status'],
-    postScore: row.post_score === null || row.post_score === undefined ? null : Number(row.post_score),
-    deltaScore: row.delta_score === null || row.delta_score === undefined ? null : Number(row.delta_score),
+    postScore:
+      row.post_score === null || row.post_score === undefined ? null : Number(row.post_score),
+    deltaScore:
+      row.delta_score === null || row.delta_score === undefined ? null : Number(row.delta_score),
     workedRating: (row.worked_rating as WorkedRating | null) ?? null,
     feedbackTags: JSON.parse(String(row.feedback_tags_json ?? '[]')) as string[],
-    rewardScore: row.reward_score === null || row.reward_score === undefined ? null : Number(row.reward_score),
+    rewardScore:
+      row.reward_score === null || row.reward_score === undefined ? null : Number(row.reward_score),
     notes: String(row.notes ?? ''),
     createdAt: String(row.created_at),
     completedAt: row.completed_at ? String(row.completed_at) : null,
   };
+  if (includeProfileId) {
+    rec.profileId = String(row.profile_id);
+  }
+  return rec;
 }
 
 /**
- * Optional Gemini Flash check-in enhancement with strict daily cap so cost stays $0.
+ * Optional Gemini Flash check-in enhancement ONLY when explicitly opted in via ENABLE_LLM_PARSE="true".
+ * Strictly isolated from GEMINI_MUSIC_API_KEY so Lyria billing never leaks into /api/parse!
  */
 async function enhanceWithGeminiIfConfigured(
   env: Env,
   rawText: string,
   fallback: ParsedCheckIn
 ): Promise<ParsedCheckIn> {
-  if (!env.GEMINI_API_KEY || rawText.trim().length < 6) {
+  if (env.ENABLE_LLM_PARSE !== 'true' || !env.GEMINI_API_KEY || rawText.trim().length < 6) {
     return fallback;
   }
 
@@ -304,7 +248,7 @@ async function enhanceWithGeminiIfConfigured(
   }
 
   try {
-    const prompt = `Extract structured audio session context from the user's message. Respond STRICTLY with a valid JSON object (no markdown) with these keys:
+    const prompt = `Extract structured audio session context from the user's message. Respond STRICTLY with valid JSON (no markdown) with keys:
 {
   "extractedAge": number | null,
   "currentState": "distracted" | "fatigued" | "stressed" | "anxious" | "calm_neutral" | "restless",
@@ -313,24 +257,24 @@ async function enhanceWithGeminiIfConfigured(
   "device": "headphones" | "speakers" | "car_audio",
   "durationMin": number
 }
-Safety rule: if the user is driving (driver, car, bus, minibus, truck, road), set environment="driving", device="car_audio", and targetState MUST NOT be "sleep_winddown" or "calm_reset" (use "alert_focus").
+Safety rule: if driving (driver, car, bus, minibus, truck, road), set environment="driving", device="car_audio", and targetState MUST NOT be "sleep_winddown" or "calm_reset" (use "alert_focus").
 Message: """${rawText}"""`;
 
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': env.GEMINI_API_KEY,
+        },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.1,
-          },
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
         }),
+        signal: AbortSignal.timeout(4000),
       }
     );
-
     if (!res.ok) return fallback;
 
     await env.DB.prepare(
@@ -356,7 +300,10 @@ Message: """${rawText}"""`;
 
     return {
       ...fallback,
-      extractedAge: typeof parsed.extractedAge === 'number' ? parsed.extractedAge : fallback.extractedAge,
+      extractedAge:
+        typeof parsed.extractedAge === 'number' && parsed.extractedAge >= 18
+          ? parsed.extractedAge
+          : fallback.extractedAge,
       currentState: parsed.currentState ?? fallback.currentState,
       targetState,
       environment,
@@ -372,101 +319,12 @@ Message: """${rawText}"""`;
   }
 }
 
-const pubmedCache = new Map<string, { expiresAt: number; papers: LivePubMedPaper[] }>();
-
-/**
- * Live peer-reviewed study lookup against official US National Library of Medicine (NIH) PubMed API.
- * Free ($0), cached 12h per context, strict 2.6s timeout so protocol synthesis is always snappy.
- */
-async function fetchLivePubMedPapers(
-  targetState: TargetState,
-  environment: SessionEnvironment
-): Promise<LivePubMedPaper[]> {
-  const cacheKey = `${environment}:${targetState}`;
-  const cached = pubmedCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.papers;
-  }
-
-  const queryByContext = (): string => {
-    if (environment === 'driving') {
-      return '(music[Title/Abstract] OR auditory[Title/Abstract]) AND (driving[Title/Abstract] OR vigilance[Title/Abstract]) AND (attention[Title/Abstract] OR arousal[Title/Abstract])';
-    }
-    if (targetState === 'sleep_winddown') {
-      return 'music[Title/Abstract] AND ("sleep quality"[Title/Abstract] OR "slow oscillation"[Title/Abstract] OR insomnia[Title/Abstract])';
-    }
-    if (targetState === 'calm_reset') {
-      return 'music[Title/Abstract] AND (cortisol[Title/Abstract] OR "autonomic"[Title/Abstract] OR "stress recovery"[Title/Abstract])';
-    }
-    if (targetState === 'energy_lift') {
-      return 'music[Title/Abstract] AND (tempo[Title/Abstract] OR arousal[Title/Abstract]) AND (fatigue[Title/Abstract] OR alertness[Title/Abstract])';
-    }
-    return '("amplitude modulation"[Title/Abstract] OR "background music"[Title/Abstract] OR "white noise"[Title/Abstract]) AND ("sustained attention"[Title/Abstract] OR "cognitive performance"[Title/Abstract])';
-  };
-
-  try {
-    const term = encodeURIComponent(queryByContext());
-    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=3&sort=relevance&term=${term}`;
-    const searchRes = await fetch(searchUrl, {
-      signal: AbortSignal.timeout(2600),
-      headers: { 'user-agent': 'nootropic.fm/1.0 (open-research-psychoacoustics)' },
-    });
-    if (!searchRes.ok) return [];
-    const searchData = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
-    const ids = (searchData.esearchresult?.idlist ?? []).slice(0, 2);
-    if (ids.length === 0) return [];
-
-    const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(',')}`;
-    const sumRes = await fetch(summaryUrl, {
-      signal: AbortSignal.timeout(2600),
-      headers: { 'user-agent': 'nootropic.fm/1.0 (open-research-psychoacoustics)' },
-    });
-    if (!sumRes.ok) return [];
-    const sumData = (await sumRes.json()) as {
-      result?: Record<
-        string,
-        {
-          uid?: string;
-          title?: string;
-          authors?: Array<{ name?: string }>;
-          fulljournalname?: string;
-          source?: string;
-          pubdate?: string;
-        }
-      >;
-    };
-
-    const papers: LivePubMedPaper[] = [];
-    for (const id of ids) {
-      const item = sumData.result?.[id];
-      if (!item?.title) continue;
-      const firstAuthor = item.authors?.[0]?.name ?? 'Research Team';
-      const authorLabel =
-        (item.authors?.length ?? 0) > 1 ? `${firstAuthor} et al.` : firstAuthor;
-      const yearMatch = (item.pubdate ?? '').match(/\d{4}/);
-      papers.push({
-        pmid: id,
-        title: item.title.replace(/\.$/, ''),
-        authors: authorLabel,
-        journal: item.fulljournalname || item.source || 'PubMed Indexed Journal',
-        year: yearMatch ? yearMatch[0] : 'Peer-Reviewed',
-        url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`,
-      });
-    }
-
-    if (papers.length > 0) {
-      pubmedCache.set(cacheKey, {
-        expiresAt: Date.now() + 12 * 60 * 60 * 1000,
-        papers,
-      });
-    }
-    return papers;
-  } catch {
-    return [];
-  }
-}
-
-type BanditScopeType = 'cohort' | 'profile' | 'cohort_genre' | 'profile_genre';
+type BanditScopeType =
+  | 'cohort'
+  | 'profile'
+  | 'cohort_genre'
+  | 'profile_genre'
+  | 'cohort_arm_genre';
 
 async function fetchBanditRows(
   db: D1Database,
@@ -491,57 +349,122 @@ async function fetchBanditRows(
   }));
 }
 
+/**
+ * Atomic, separated Explicit vs Implicit Bandit update with delta-replacement support
+ * so an explicit debrief cleanly supersedes any earlier implicit retention update
+ * (zero double counting & zero avg_delta dilution!).
+ */
 async function updateBanditScope(
   db: D1Database,
-  scopeType: BanditScopeType,
-  scopeId: string,
-  armId: string,
-  reward: number,
-  delta: number,
-  completionRatio: number,
-  weight = 1.0
+  opts: {
+    scopeType: BanditScopeType;
+    scopeId: string;
+    armId: string;
+    mode: 'explicit' | 'implicit' | 'return_bonus';
+    reward: number;
+    weight: number;
+    delta?: number;
+    completionRatio: number;
+    supersedePrevReward?: number;
+    supersedePrevWeight?: number;
+  }
 ): Promise<{ alpha: number; beta: number; trials: number; successRatePct: number }> {
-  const arm = PROTOCOL_ARMS.find((a) => a.id === armId);
+  const arm = PROTOCOL_ARMS.find((a) => a.id === opts.armId);
   const priorAlpha = arm?.priorAlpha ?? 2.5;
   const priorBeta = arm?.priorBeta ?? 1.5;
 
+  const prevW = opts.supersedePrevWeight ?? 0;
+  const prevR = opts.supersedePrevReward ?? 0;
+  const addAlpha = Number((opts.reward * opts.weight - prevR * prevW).toFixed(3));
+  const addBeta = Number(((1 - opts.reward) * opts.weight - (1 - prevR) * prevW).toFixed(3));
+
   const existing = await db
     .prepare(
-      `SELECT alpha, beta, trials, avg_delta, avg_completion, avg_reward
+      `SELECT alpha, beta, trials, explicit_trials, implicit_trials, explicit_delta_sum, retention_sum, avg_delta, avg_completion, avg_reward
        FROM bandit_stats WHERE scope_type = ? AND scope_id = ? AND arm_id = ?`
     )
-    .bind(scopeType, scopeId, armId)
+    .bind(opts.scopeType, opts.scopeId, opts.armId)
     .first<Record<string, unknown>>();
 
   const prevAlpha = existing ? Number(existing.alpha) : priorAlpha;
   const prevBeta = existing ? Number(existing.beta) : priorBeta;
   const prevTrials = existing ? Number(existing.trials) : 0;
-  const prevAvgDelta = existing ? Number(existing.avg_delta) : 0;
-  const prevAvgComp = existing ? Number(existing.avg_completion) : 0;
-  const prevAvgReward = existing ? Number(existing.avg_reward) : 0;
+  const prevExpTrials = existing ? Number(existing.explicit_trials ?? 0) : 0;
+  const prevImpTrials = existing ? Number(existing.implicit_trials ?? 0) : 0;
+  const prevExpDeltaSum = existing ? Number(existing.explicit_delta_sum ?? 0) : 0;
+  const prevRetSum = existing ? Number(existing.retention_sum ?? 0) : 0;
+  const prevAvgReward = existing ? Number(existing.avg_reward ?? 0) : 0;
 
-  const newTrials = prevTrials + 1;
-  const newAlpha = Number((prevAlpha + reward * weight).toFixed(3));
-  const newBeta = Number((prevBeta + (1 - reward) * weight).toFixed(3));
-  const newAvgDelta = Number(((prevAvgDelta * prevTrials + delta) / newTrials).toFixed(3));
-  const newAvgComp = Number(((prevAvgComp * prevTrials + completionRatio) / newTrials).toFixed(3));
-  const newAvgReward = Number(((prevAvgReward * prevTrials + reward) / newTrials).toFixed(3));
+  const isReplacement = prevW > 0;
+  const newExpTrials = opts.mode === 'explicit' ? prevExpTrials + 1 : prevExpTrials;
+  const newImpTrials =
+    opts.mode === 'implicit' && !isReplacement
+      ? prevImpTrials + 1
+      : opts.mode === 'explicit' && isReplacement
+        ? Math.max(0, prevImpTrials - 1)
+        : prevImpTrials;
+  const newTrials =
+    opts.mode === 'return_bonus'
+      ? prevTrials
+      : isReplacement
+        ? Math.max(1, prevTrials)
+        : prevTrials + 1;
+
+  const newAlpha = Number(Math.max(0.2, prevAlpha + addAlpha).toFixed(3));
+  const newBeta = Number(Math.max(0.2, prevBeta + addBeta).toFixed(3));
+  const newExpDeltaSum =
+    opts.mode === 'explicit' ? prevExpDeltaSum + (opts.delta ?? 0) : prevExpDeltaSum;
+  const newRetSum =
+    opts.mode === 'return_bonus' || isReplacement
+      ? prevRetSum
+      : prevRetSum + opts.completionRatio;
+
+  const newAvgDelta =
+    newExpTrials > 0 ? Number((newExpDeltaSum / newExpTrials).toFixed(3)) : 0;
+  const newAvgComp =
+    newTrials > 0 ? Number((newRetSum / newTrials).toFixed(3)) : opts.completionRatio;
+  const newAvgReward =
+    newTrials > 0
+      ? Number(((prevAvgReward * prevTrials + opts.reward) / Math.max(1, prevTrials + 1)).toFixed(3))
+      : opts.reward;
+
   const now = new Date().toISOString();
-
   await db
     .prepare(
-      `INSERT INTO bandit_stats (scope_type, scope_id, arm_id, alpha, beta, trials, avg_delta, avg_completion, avg_reward, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO bandit_stats (
+         scope_type, scope_id, arm_id, alpha, beta, trials,
+         explicit_trials, implicit_trials, explicit_delta_sum, retention_sum,
+         avg_delta, avg_completion, avg_reward, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(scope_type, scope_id, arm_id) DO UPDATE SET
          alpha = excluded.alpha,
          beta = excluded.beta,
          trials = excluded.trials,
+         explicit_trials = excluded.explicit_trials,
+         implicit_trials = excluded.implicit_trials,
+         explicit_delta_sum = excluded.explicit_delta_sum,
+         retention_sum = excluded.retention_sum,
          avg_delta = excluded.avg_delta,
          avg_completion = excluded.avg_completion,
          avg_reward = excluded.avg_reward,
          updated_at = excluded.updated_at`
     )
-    .bind(scopeType, scopeId, armId, newAlpha, newBeta, newTrials, newAvgDelta, newAvgComp, newAvgReward, now)
+    .bind(
+      opts.scopeType,
+      opts.scopeId,
+      opts.armId,
+      newAlpha,
+      newBeta,
+      newTrials,
+      newExpTrials,
+      newImpTrials,
+      newExpDeltaSum,
+      newRetSum,
+      newAvgDelta,
+      newAvgComp,
+      newAvgReward,
+      now
+    )
     .run();
 
   return {
@@ -552,8 +475,174 @@ async function updateBanditScope(
   };
 }
 
+// 5-minute isolate cache for core studio stems so we don't spam R2 Class A `list()` on every player mount
+let coreCatalogCache: {
+  expiresAt: number;
+  tracksByGenre: Record<
+    ResolvedGenre,
+    Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier }>
+  >;
+} | null = null;
+
+async function getCoreStudioCatalog(env: Env) {
+  if (coreCatalogCache && coreCatalogCache.expiresAt > Date.now()) {
+    return coreCatalogCache.tracksByGenre;
+  }
+
+  const tracksByGenre: Record<
+    ResolvedGenre,
+    Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier }>
+  > = {
+    lofi_keys: [],
+    deep_electronic: [],
+    cinematic_strings: [],
+    jazz_rhodes: [],
+    acoustic_pluck: [],
+    nature_rain: [],
+  };
+
+  const defaultEnergyForGenre = (g: ResolvedGenre): EnergyTier => {
+    if (g === 'nature_rain') return 'calm';
+    if (g === 'deep_electronic') return 'drive';
+    return 'focus';
+  };
+
+  if (env.AUDIO_BUCKET) {
+    let cursor: string | undefined;
+    for (let page = 0; page < 4; page++) {
+      const listed = await env.AUDIO_BUCKET.list({ limit: 500, cursor });
+      for (const obj of listed.objects) {
+        if (obj.key.startsWith('custom/')) continue;
+        if (!/\.(mp3|ogg|opus|m4a|wav)$/i.test(obj.key)) continue;
+        const segments = obj.key.split('/');
+        const folder = segments[0];
+        if (!(folder in tracksByGenre) || segments.length < 2) continue;
+
+        const genreKey = folder as ResolvedGenre;
+        let energy: EnergyTier = defaultEnergyForGenre(genreKey);
+        let fileName = segments[segments.length - 1];
+
+        if (
+          segments.length >= 3 &&
+          (segments[1] === 'calm' || segments[1] === 'focus' || segments[1] === 'drive')
+        ) {
+          energy = segments[1] as EnergyTier;
+          fileName = segments.slice(2).join('/');
+        } else {
+          const lower = fileName.toLowerCase();
+          if (lower.startsWith('calm_') || lower.startsWith('calm-')) energy = 'calm';
+          else if (lower.startsWith('drive_') || lower.startsWith('drive-')) energy = 'drive';
+          else if (lower.startsWith('focus_') || lower.startsWith('focus-')) energy = 'focus';
+        }
+
+        const cleanName = fileName
+          .replace(/\.[^.]+$/, '')
+          .replace(/^(calm|focus|drive)[-_]+/i, '')
+          .replace(/[-_]+/g, ' ')
+          .trim();
+
+        const encodedPath = segments.map((s) => encodeURIComponent(s)).join('/');
+        tracksByGenre[genreKey].push({
+          key: obj.key,
+          name: cleanName || 'Studio Track',
+          url: `/api/audio/stream/${encodedPath}`,
+          size: obj.size,
+          energy,
+        });
+      }
+      if (!listed.truncated || !listed.cursor) break;
+      cursor = listed.cursor;
+    }
+  }
+
+  coreCatalogCache = {
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    tracksByGenre,
+  };
+  return tracksByGenre;
+}
+
+async function lookupCachedCustomTrack(
+  db: D1Database,
+  genreSlug: string,
+  energyTier: EnergyTier
+): Promise<CustomTrackInfo | null> {
+  const exact = await db
+    .prepare(
+      `SELECT * FROM custom_tracks WHERE genre_slug = ? AND energy_tier = ? AND status = 'ready'
+       ORDER BY RANDOM() LIMIT 1`
+    )
+    .bind(genreSlug, energyTier)
+    .first<Record<string, unknown>>();
+
+  const row =
+    exact ??
+    (await db
+      .prepare(
+        `SELECT * FROM custom_tracks WHERE genre_slug = ? AND status = 'ready'
+         ORDER BY play_count DESC LIMIT 1`
+      )
+      .bind(genreSlug)
+      .first<Record<string, unknown>>());
+
+  if (!row) return null;
+  const r2Key = String(row.r2_key);
+  const encoded = r2Key
+    .split('/')
+    .map((s) => encodeURIComponent(s))
+    .join('/');
+  return {
+    id: String(row.id),
+    genreSlug: String(row.genre_slug),
+    displayLabel: String(row.display_label),
+    energyTier: String(row.energy_tier) as EnergyTier,
+    url: `/api/audio/stream/${encoded}`,
+    provider: String(row.provider),
+    bpm: Number(row.bpm ?? 92),
+    durationSec: Number(row.duration_sec ?? 120),
+    sizeBytes: Number(row.size_bytes ?? 0),
+    playCount: Number(row.play_count ?? 0),
+  };
+}
+
+async function verifyProfileAccess(
+  db: D1Database,
+  profileId: string,
+  request: Request
+): Promise<{
+  ok: boolean;
+  row: Record<string, unknown> | null;
+  issuedLegacyToken?: string;
+}> {
+  const row = await db.prepare('SELECT * FROM profiles WHERE id = ?').bind(profileId).first();
+  if (!row) return { ok: false, row: null };
+
+  const storedHash = row.token_hash ? String(row.token_hash) : '';
+  const providedToken = request.headers.get('x-profile-token')?.trim() ?? '';
+
+  if (!storedHash) {
+    // Seamless 1-time token issuance for existing v1 profiles created before migration 0004
+    const freshToken = generateProfileToken();
+    const freshHash = await sha256Hex(freshToken);
+    await db
+      .prepare('UPDATE profiles SET token_hash = ? WHERE id = ?')
+      .bind(freshHash, profileId)
+      .run();
+    return { ok: true, row, issuedLegacyToken: freshToken };
+  }
+
+  if (!providedToken) {
+    return { ok: false, row };
+  }
+  const providedHash = await sha256Hex(providedToken);
+  if (!constantTimeEqual(providedHash, storedHash)) {
+    return { ok: false, row };
+  }
+  return { ok: true, row };
+}
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) {
       return new Response('Not found', { status: 404 });
@@ -564,15 +653,17 @@ export default {
     }
 
     try {
-      await ensureSchema(env.DB);
-
       // GET /api/health
       if (url.pathname === '/api/health' && request.method === 'GET') {
+        const provider = resolveMusicProvider(env);
         return json(
           {
             ok: true,
+            version: '2.0',
             mode: env.APP_ENV ?? 'open-research-beta',
-            hasGemini: Boolean(env.GEMINI_API_KEY),
+            hasGemini: env.ENABLE_LLM_PARSE === 'true' && Boolean(env.GEMINI_API_KEY),
+            hasLiveMusicGen: Boolean(provider),
+            musicProvider: provider?.id ?? 'none',
             exportProtected: Boolean(env.ADMIN_EXPORT_KEY),
             hasAudioBucket: Boolean(env.AUDIO_BUCKET),
           },
@@ -581,70 +672,80 @@ export default {
         );
       }
 
-      // GET /api/audio/catalog — Lists studio audio stems uploaded to Cloudflare R2 per genre x energy tier
-      if (url.pathname === '/api/audio/catalog' && request.method === 'GET') {
-        const tracksByGenre: Record<
-          ResolvedGenre,
-          Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier }>
-        > = {
-          lofi_keys: [],
-          deep_electronic: [],
-          cinematic_strings: [],
-          jazz_rhodes: [],
-          acoustic_pluck: [],
-          nature_rain: [],
+      // GET /api/config — Runtime privacy/region config + daily cap + popular Community R2 Cache vibes
+      if (url.pathname === '/api/config' && request.method === 'GET') {
+        const cfCountry = String(
+          ((request as unknown as { cf?: { country?: string } }).cf?.country ?? 'US').toUpperCase()
+        );
+        const regionRequiresOptIn = EEA_UK_CH_COUNTRIES.has(cfCountry);
+        const provider = resolveMusicProvider(env);
+        const dailyCapMax = Math.max(0, Number(env.MUSIC_GEN_DAILY_CAP ?? '3'));
+        const today = new Date().toISOString().slice(0, 10);
+
+        const [usageRow, popularRes] = await Promise.all([
+          env.DB.prepare('SELECT music_gen_calls FROM api_usage_daily WHERE day = ?')
+            .bind(today)
+            .first<{ music_gen_calls?: number }>(),
+          env.DB.prepare(
+            `SELECT genre_slug, display_label, energy_tier, SUM(play_count) AS total_plays
+             FROM custom_tracks WHERE status = 'ready'
+             GROUP BY genre_slug, energy_tier
+             ORDER BY total_plays DESC, MAX(created_at) DESC
+             LIMIT 10`
+          ).all<Record<string, unknown>>(),
+        ]);
+
+        const usedToday = Number(usageRow?.music_gen_calls ?? 0);
+        const config: AppRuntimeConfig = {
+          regionRequiresOptIn,
+          countryCode: cfCountry,
+          customLiveGenAvailable: Boolean(provider) && usedToday < dailyCapMax,
+          musicProvider: provider?.id ?? 'cache_only',
+          dailyCapMax,
+          dailyCapRemaining: Math.max(0, dailyCapMax - usedToday),
+          popularCustomVibes: popularRes.results.map((r) => ({
+            genreSlug: String(r.genre_slug),
+            displayLabel: String(r.display_label),
+            energyTier: String(r.energy_tier) as EnergyTier,
+            playCount: Number(r.total_plays ?? 0),
+          })),
         };
-
-        const defaultEnergyForGenre = (g: ResolvedGenre): EnergyTier => {
-          if (g === 'nature_rain') return 'calm';
-          if (g === 'deep_electronic') return 'drive';
-          return 'focus';
-        };
-
-        if (env.AUDIO_BUCKET) {
-          const listed = await env.AUDIO_BUCKET.list({ limit: 500 });
-          for (const obj of listed.objects) {
-            if (!/\.(mp3|ogg|opus|m4a|wav)$/i.test(obj.key)) continue;
-            const segments = obj.key.split('/');
-            const folder = segments[0];
-            if (!(folder in tracksByGenre) || segments.length < 2) continue;
-
-            const genreKey = folder as ResolvedGenre;
-            let energy: EnergyTier = defaultEnergyForGenre(genreKey);
-            let fileName = segments[segments.length - 1];
-
-            // Supports both <genre>/<energy>/<file>.mp3 and flat <genre>/<file>.mp3
-            if (segments.length >= 3 && (segments[1] === 'calm' || segments[1] === 'focus' || segments[1] === 'drive')) {
-              energy = segments[1] as EnergyTier;
-              fileName = segments.slice(2).join('/');
-            } else {
-              const lower = fileName.toLowerCase();
-              if (lower.startsWith('calm_') || lower.startsWith('calm-')) energy = 'calm';
-              else if (lower.startsWith('drive_') || lower.startsWith('drive-')) energy = 'drive';
-              else if (lower.startsWith('focus_') || lower.startsWith('focus-')) energy = 'focus';
-            }
-
-            const cleanName = fileName
-              .replace(/\.[^.]+$/, '')
-              .replace(/^(calm|focus|drive)[-_]+/i, '')
-              .replace(/[-_]+/g, ' ')
-              .trim();
-
-            const encodedPath = segments.map((s) => encodeURIComponent(s)).join('/');
-            tracksByGenre[genreKey].push({
-              key: obj.key,
-              name: cleanName || 'Studio Track',
-              url: `/api/audio/stream/${encodedPath}`,
-              size: obj.size,
-              energy,
-            });
-          }
-        }
-
-        return json({ tracksByGenre }, 200, request);
+        return json({ config }, 200, request);
       }
 
-      // GET /api/audio/stream/:genre/:file — Streams studio stems directly from Cloudflare R2 ($0 egress!)
+      // GET /api/audio/catalog — Core Studio Stems + Community R2 Custom Tracks
+      if (url.pathname === '/api/audio/catalog' && request.method === 'GET') {
+        const [tracksByGenre, customRows] = await Promise.all([
+          getCoreStudioCatalog(env),
+          env.DB.prepare(
+            `SELECT * FROM custom_tracks WHERE status = 'ready' ORDER BY play_count DESC, created_at DESC LIMIT 120`
+          ).all<Record<string, unknown>>(),
+        ]);
+
+        const customTracks: CustomTrackInfo[] = customRows.results.map((row) => {
+          const r2Key = String(row.r2_key);
+          const encoded = r2Key
+            .split('/')
+            .map((s) => encodeURIComponent(s))
+            .join('/');
+          return {
+            id: String(row.id),
+            genreSlug: String(row.genre_slug),
+            displayLabel: String(row.display_label),
+            energyTier: String(row.energy_tier) as EnergyTier,
+            url: `/api/audio/stream/${encoded}`,
+            provider: String(row.provider),
+            bpm: Number(row.bpm ?? 92),
+            durationSec: Number(row.duration_sec ?? 120),
+            sizeBytes: Number(row.size_bytes ?? 0),
+            playCount: Number(row.play_count ?? 0),
+          };
+        });
+
+        return json({ tracksByGenre, customTracks }, 200, request);
+      }
+
+      // GET /api/audio/stream/* — Streams studio & custom R2 stems with HTTP Range (206) support ($0 egress!)
       if (url.pathname.startsWith('/api/audio/stream/') && request.method === 'GET') {
         if (!env.AUDIO_BUCKET) {
           return json({ error: 'Audio bucket not configured' }, 404, request);
@@ -655,7 +756,21 @@ export default {
           .map((seg) => decodeURIComponent(seg))
           .join('/');
 
-        const object = await env.AUDIO_BUCKET.get(key);
+        const rangeHeader = request.headers.get('range');
+        let r2Range: { offset: number; length?: number } | undefined;
+        if (rangeHeader) {
+          const m = rangeHeader.match(/^bytes=(\d+)-(\d*)$/);
+          if (m) {
+            const start = Number(m[1]);
+            const end = m[2] ? Number(m[2]) : undefined;
+            r2Range = {
+              offset: start,
+              ...(end !== undefined && end >= start ? { length: end - start + 1 } : {}),
+            };
+          }
+        }
+
+        const object = await env.AUDIO_BUCKET.get(key, r2Range ? { range: r2Range } : undefined);
         if (!object) {
           return json({ error: 'Audio track not found' }, 404, request);
         }
@@ -670,20 +785,67 @@ export default {
           else headers.set('content-type', 'application/octet-stream');
         }
         headers.set('etag', object.etag);
+        headers.set('accept-ranges', 'bytes');
         headers.set('cache-control', 'public, max-age=31536000, immutable');
 
-        return new Response(object.body, { headers });
+        if (r2Range) {
+          const end =
+            r2Range.length !== undefined
+              ? Math.min(object.size - 1, r2Range.offset + r2Range.length - 1)
+              : object.size - 1;
+          headers.set('content-range', `bytes ${r2Range.offset}-${end}/${object.size}`);
+          headers.set('content-length', String(Math.max(0, end - r2Range.offset + 1)));
+          return new Response(object.body, { status: 206, headers });
+        }
+
+        headers.set('content-length', String(object.size));
+        return new Response(object.body, { status: 200, headers });
       }
 
-      // POST /api/profile
+      // POST /api/profile — Creates/updates 18+ listener profile with SHA-256 auth token
       if (url.pathname === '/api/profile' && request.method === 'POST') {
         const allowed = await checkDailyRateLimit(env.DB, request, 'profile', 60);
         if (!allowed) {
           return json({ error: 'Daily profile rate limit reached. Please try again tomorrow.' }, 429, request);
         }
         const body = (await request.json()) as Partial<UserProfile>;
-        const id = body.id && body.id.length >= 8 ? body.id : `anon_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
-        const age = Math.max(16, Math.min(95, Number(body.age ?? 32)));
+        const rawAge = Number(body.age ?? 32);
+        if (!Number.isFinite(rawAge) || rawAge < 18 || rawAge > 95) {
+          return json({ error: 'nootropic.fm is restricted to listeners aged 18+.' }, 400, request);
+        }
+
+        const isUpdating = Boolean(body.id && body.id.length >= 8);
+        let id = isUpdating
+          ? String(body.id)
+          : `anon_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+        let profileToken: string | undefined;
+        let tokenHash = '';
+
+        if (isUpdating) {
+          const existing = await env.DB.prepare('SELECT token_hash FROM profiles WHERE id = ?')
+            .bind(id)
+            .first<{ token_hash?: string }>();
+          if (existing?.token_hash) {
+            const provided = request.headers.get('x-profile-token')?.trim() ?? '';
+            const providedHash = provided ? await sha256Hex(provided) : '';
+            if (!provided || !constantTimeEqual(providedHash, existing.token_hash)) {
+              // Do not overwrite another user's profile; allocate a clean profile instead
+              id = `anon_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+              profileToken = generateProfileToken();
+              tokenHash = await sha256Hex(profileToken);
+            } else {
+              tokenHash = existing.token_hash;
+            }
+          } else {
+            profileToken = generateProfileToken();
+            tokenHash = await sha256Hex(profileToken);
+          }
+        } else {
+          profileToken = generateProfileToken();
+          tokenHash = await sha256Hex(profileToken);
+        }
+
+        const age = Math.round(rawAge);
         const ageBand = ageToBand(age);
         const now = new Date().toISOString();
 
@@ -696,14 +858,15 @@ export default {
           noiseSensitivity: body.noiseSensitivity ?? 'medium',
           defaultDevice: body.defaultDevice ?? 'headphones',
           primaryChallenge: body.primaryChallenge ?? 'distraction',
-          researchConsent: body.researchConsent !== false,
+          researchConsent: body.researchConsent === true,
+          preferredModMult: body.preferredModMult ?? 1.0,
           createdAt: body.createdAt ?? now,
           updatedAt: now,
         };
 
         await env.DB.prepare(
-          `INSERT INTO profiles (id, age, age_band, role, texture_pref, noise_sensitivity, default_device, primary_challenge, research_consent, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO profiles (id, age, age_band, role, texture_pref, noise_sensitivity, default_device, primary_challenge, research_consent, token_hash, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              age = excluded.age,
              age_band = excluded.age_band,
@@ -713,6 +876,7 @@ export default {
              default_device = excluded.default_device,
              primary_challenge = excluded.primary_challenge,
              research_consent = excluded.research_consent,
+             token_hash = COALESCE(profiles.token_hash, excluded.token_hash),
              updated_at = excluded.updated_at`
         )
           .bind(
@@ -725,49 +889,83 @@ export default {
             profile.defaultDevice,
             profile.primaryChallenge,
             profile.researchConsent ? 1 : 0,
+            tokenHash,
             profile.createdAt,
             profile.updatedAt
           )
           .run();
 
-        return json({ profile });
+        return json({ profile, ...(profileToken ? { profileToken } : {}) }, 200, request);
       }
 
-      // GET /api/profile/:id
+      // GET /api/profile/:id — Authenticated via X-Profile-Token; returns pendingDebrief ONLY if listened >= 60s
       if (url.pathname.startsWith('/api/profile/') && request.method === 'GET') {
         const id = decodeURIComponent(url.pathname.replace('/api/profile/', ''));
-        const row = await env.DB.prepare('SELECT * FROM profiles WHERE id = ?').bind(id).first();
-        if (!row) return json({ error: 'Profile not found' }, 404);
+        const auth = await verifyProfileAccess(env.DB, id, request);
+        if (!auth.row) return json({ error: 'Profile not found' }, 404, request);
+        if (!auth.ok) return json({ error: 'Unauthorized profile access' }, 401, request);
 
         const pendingRow = await env.DB.prepare(
-          `SELECT * FROM sessions WHERE profile_id = ? AND status = 'pending_debrief' ORDER BY created_at DESC LIMIT 1`
+          `SELECT * FROM sessions
+           WHERE profile_id = ? AND status = 'pending_debrief' AND actual_duration_sec >= 60
+           ORDER BY created_at DESC LIMIT 1`
         )
           .bind(id)
           .first();
 
-        return json({
-          profile: mapProfileRow(row),
-          pendingDebrief: pendingRow ? mapSessionRow(pendingRow) : null,
-        });
+        return json(
+          {
+            profile: mapProfileRow(auth.row),
+            pendingDebrief: pendingRow ? mapSessionRow(pendingRow) : null,
+            ...(auth.issuedLegacyToken ? { profileToken: auth.issuedLegacyToken } : {}),
+          },
+          200,
+          request
+        );
+      }
+
+      // DELETE /api/profile/:id — GDPR "Delete My Data" (authenticated via X-Profile-Token)
+      if (url.pathname.startsWith('/api/profile/') && request.method === 'DELETE') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'profile_delete', 20);
+        if (!allowed) return json({ error: 'Rate limit reached.' }, 429, request);
+
+        const id = decodeURIComponent(url.pathname.replace('/api/profile/', ''));
+        const auth = await verifyProfileAccess(env.DB, id, request);
+        if (!auth.row) return json({ error: 'Profile not found' }, 404, request);
+        if (!auth.ok) return json({ error: 'Unauthorized deletion request' }, 401, request);
+
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM sessions WHERE profile_id = ?').bind(id),
+          env.DB.prepare(
+            `DELETE FROM bandit_stats WHERE scope_type IN ('profile', 'profile_genre') AND scope_id = ?`
+          ).bind(id),
+          env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id),
+        ]);
+
+        return json({ ok: true, deletedProfileId: id }, 200, request);
       }
 
       // POST /api/parse
       if (url.pathname === '/api/parse' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'parse', 120);
+        if (!allowed) return json({ error: 'Daily parse rate limit reached.' }, 429, request);
         const body = (await request.json()) as { text?: string; profile?: Partial<UserProfile> };
         const rawText = String(body.text ?? '').trim();
         const localParsed = parseNaturalCheckIn(rawText, body.profile);
         const finalParsed = await enhanceWithGeminiIfConfigured(env, rawText, localParsed);
-        return json({ parsed: finalParsed });
+        return json({ parsed: finalParsed }, 200, request);
       }
 
-      // POST /api/protocol/start
+      // POST /api/protocol/start — Synthesizes 2-Layer Formula, checks R2 Custom Cache, credits D1/D7 return bonus
       if (url.pathname === '/api/protocol/start' && request.method === 'POST') {
-        const allowed = await checkDailyRateLimit(env.DB, request, 'session_start', 35);
+        const allowed = await checkDailyRateLimit(env.DB, request, 'session_start', 40);
         if (!allowed) {
           return json({ error: 'Daily session rate limit reached. Please try again tomorrow.' }, 429, request);
         }
         const body = (await request.json()) as {
-          profileId: string;
+          profileId?: string;
+          ephemeralMode?: boolean;
+          ephemeralProfile?: Partial<UserProfile>;
           rawInputText?: string;
           currentState: CurrentState;
           baselineScore: number;
@@ -777,19 +975,52 @@ export default {
           durationMin: number;
           ageOverride?: number;
           requestedGenre?: MusicGenreChoice;
+          customGenreInput?: string;
         };
 
-        const profileRow = await env.DB.prepare('SELECT * FROM profiles WHERE id = ?')
-          .bind(body.profileId)
-          .first();
-        if (!profileRow) return json({ error: 'Profile not found. Complete onboarding first.' }, 404);
+        let profile: UserProfile;
+        let isEphemeral = Boolean(body.ephemeralMode);
 
-        let profile = mapProfileRow(profileRow);
-        if (typeof body.ageOverride === 'number' && body.ageOverride >= 16 && body.ageOverride <= 95 && body.ageOverride !== profile.age) {
-          profile = { ...profile, age: body.ageOverride, ageBand: ageToBand(body.ageOverride) };
-          await env.DB.prepare('UPDATE profiles SET age = ?, age_band = ?, updated_at = ? WHERE id = ?')
-            .bind(profile.age, profile.ageBand, new Date().toISOString(), profile.id)
-            .run();
+        if (isEphemeral || !body.profileId) {
+          const safeAge = Math.max(18, Math.min(95, Number(body.ephemeralProfile?.age ?? body.ageOverride ?? 32)));
+          profile = {
+            id: 'ephemeral_local',
+            age: safeAge,
+            ageBand: ageToBand(safeAge),
+            role: body.ephemeralProfile?.role ?? 'other',
+            texturePref: body.ephemeralProfile?.texturePref ?? 'warm_organic',
+            noiseSensitivity: body.ephemeralProfile?.noiseSensitivity ?? 'medium',
+            defaultDevice: body.device ?? 'headphones',
+            primaryChallenge: 'distraction',
+            researchConsent: false,
+            preferredModMult: 1.0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          isEphemeral = true;
+        } else {
+          const profileRow = await env.DB.prepare('SELECT * FROM profiles WHERE id = ?')
+            .bind(body.profileId)
+            .first();
+          if (!profileRow) {
+            return json({ error: 'Profile not found. Complete calibration first.' }, 404, request);
+          }
+          profile = mapProfileRow(profileRow);
+          if (!profile.researchConsent) {
+            isEphemeral = true;
+          }
+          if (
+            !isEphemeral &&
+            typeof body.ageOverride === 'number' &&
+            body.ageOverride >= 18 &&
+            body.ageOverride <= 95 &&
+            body.ageOverride !== profile.age
+          ) {
+            profile = { ...profile, age: body.ageOverride, ageBand: ageToBand(body.ageOverride) };
+            await env.DB.prepare('UPDATE profiles SET age = ?, age_band = ?, updated_at = ? WHERE id = ?')
+              .bind(profile.age, profile.ageBand, new Date().toISOString(), profile.id)
+              .run();
+          }
         }
 
         const effectiveTarget: TargetState =
@@ -797,18 +1028,137 @@ export default {
           (body.targetState === 'sleep_winddown' || body.targetState === 'calm_reset')
             ? 'alert_focus'
             : body.targetState;
+        const energyTier = resolveEnergyTier(effectiveTarget, body.environment, body.currentState);
         const cohortKey = buildCohortKey(profile.ageBand, body.environment, effectiveTarget);
 
-        const [cohortStats, profileStats, cohortGenreStats, profileGenreStats, livePubMedPapers] =
-          await Promise.all([
-            fetchBanditRows(env.DB, 'cohort', cohortKey),
-            fetchBanditRows(env.DB, 'profile', profile.id),
-            fetchBanditRows(env.DB, 'cohort_genre', cohortKey),
-            fetchBanditRows(env.DB, 'profile_genre', profile.id),
-            fetchLivePubMedPapers(effectiveTarget, body.environment),
-          ]);
+        const sanitizedCustom = sanitizeCustomVibe(body.customGenreInput);
+        if (sanitizedCustom?.rejectedReason) {
+          return json({ error: sanitizedCustom.rejectedReason }, 400, request);
+        }
+        const validCustom = sanitizedCustom && !sanitizedCustom.rejectedReason ? sanitizedCustom : null;
 
-        const sessionId = `ses_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+        // Check daily cap & R2 custom track cache
+        const today = new Date().toISOString().slice(0, 10);
+        const provider = resolveMusicProvider(env);
+        const dailyCapMax = Math.max(0, Number(env.MUSIC_GEN_DAILY_CAP ?? '3'));
+
+        const [
+          cohortStats,
+          profileStats,
+          cohortGenreStats,
+          profileGenreStats,
+          cohortArmGenreStats,
+          livePubMedPapers,
+          cachedCustom,
+          usageRow,
+        ] = await Promise.all([
+          fetchBanditRows(env.DB, 'cohort', cohortKey),
+          isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile', profile.id),
+          fetchBanditRows(env.DB, 'cohort_genre', cohortKey),
+          isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile_genre', profile.id),
+          validCustom
+            ? fetchBanditRows(env.DB, 'cohort_arm_genre', `${cohortKey}|${validCustom.slug}`)
+            : body.requestedGenre && body.requestedGenre !== 'auto'
+              ? fetchBanditRows(env.DB, 'cohort_arm_genre', `${cohortKey}|${body.requestedGenre}`)
+              : Promise.resolve([]),
+          fetchVerifiedLiveLiterature(env, effectiveTarget, body.environment),
+          validCustom ? lookupCachedCustomTrack(env.DB, validCustom.slug, energyTier) : Promise.resolve(null),
+          env.DB.prepare('SELECT music_gen_calls FROM api_usage_daily WHERE day = ?')
+            .bind(today)
+            .first<{ music_gen_calls?: number }>(),
+        ]);
+
+        const liveGenAvailable =
+          Boolean(provider) && Number(usageRow?.music_gen_calls ?? 0) < dailyCapMax;
+
+        // Credit one-time D1/D7 Return Retention bonus to the prior session that brought this user back!
+        let returnBonusAwarded = false;
+        if (!isEphemeral && profile.researchConsent) {
+          const prior = await env.DB.prepare(
+            `SELECT id, cohort_key, arm_id, music_genre, is_control_trial, completion_ratio, created_at
+             FROM sessions
+             WHERE profile_id = ? AND return_bonus_credited = 0 AND actual_duration_sec >= 60
+             ORDER BY created_at DESC LIMIT 1`
+          )
+            .bind(profile.id)
+            .first<Record<string, unknown>>();
+
+          if (prior?.created_at) {
+            const elapsedMs = Date.now() - Date.parse(String(prior.created_at));
+            const twelveHours = 12 * 60 * 60 * 1000;
+            const sevenDays = 7 * 24 * 60 * 60 * 1000;
+            if (elapsedMs >= twelveHours && elapsedMs <= sevenDays) {
+              const priorArm = String(prior.arm_id);
+              const priorGenre = String(prior.music_genre || 'deep_electronic');
+              const priorCohort = String(prior.cohort_key);
+              const priorControl = Number(prior.is_control_trial ?? 0) === 1;
+              const priorComp = Number(prior.completion_ratio ?? 0.5);
+
+              await env.DB.prepare('UPDATE sessions SET return_bonus_credited = 1 WHERE id = ?')
+                .bind(String(prior.id))
+                .run();
+
+              const bonusTasks: Array<Promise<unknown>> = [
+                updateBanditScope(env.DB, {
+                  scopeType: 'cohort_genre',
+                  scopeId: priorCohort,
+                  armId: priorGenre,
+                  mode: 'return_bonus',
+                  reward: 0.88,
+                  weight: 0.35,
+                  completionRatio: priorComp,
+                }),
+                updateBanditScope(env.DB, {
+                  scopeType: 'profile_genre',
+                  scopeId: profile.id,
+                  armId: priorGenre,
+                  mode: 'return_bonus',
+                  reward: 0.88,
+                  weight: 0.35,
+                  completionRatio: priorComp,
+                }),
+              ];
+              if (!priorControl) {
+                bonusTasks.push(
+                  updateBanditScope(env.DB, {
+                    scopeType: 'cohort',
+                    scopeId: priorCohort,
+                    armId: priorArm,
+                    mode: 'return_bonus',
+                    reward: 0.88,
+                    weight: 0.35,
+                    completionRatio: priorComp,
+                  }),
+                  updateBanditScope(env.DB, {
+                    scopeType: 'profile',
+                    scopeId: profile.id,
+                    armId: priorArm,
+                    mode: 'return_bonus',
+                    reward: 0.88,
+                    weight: 0.35,
+                    completionRatio: priorComp,
+                  })
+                );
+              }
+              await Promise.all(bonusTasks);
+              returnBonusAwarded = true;
+            }
+          }
+        }
+
+        if (cachedCustom) {
+          ctx.waitUntil(
+            env.DB.prepare('UPDATE custom_tracks SET play_count = play_count + 1 WHERE id = ?')
+              .bind(cachedCustom.id)
+              .run()
+              .catch(() => {})
+          );
+        }
+
+        const sessionId = isEphemeral
+          ? `eph_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`
+          : `ses_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+
         const recommendation = {
           ...selectProtocolRecommendation({
             sessionId,
@@ -820,121 +1170,681 @@ export default {
             device: body.device,
             durationMin: Math.max(5, Math.min(120, Number(body.durationMin ?? 30))),
             requestedGenre: body.requestedGenre,
+            customGenreInput: validCustom?.displayLabel,
+            cachedCustomTrackUrl: cachedCustom?.url,
+            liveGenAvailable,
+            ephemeralMode: isEphemeral,
             cohortStats,
             profileStats,
             cohortGenreStats,
             profileGenreStats,
+            cohortArmGenreStats,
+            returnBonusAwarded,
           }),
           livePubMedPapers,
         };
 
-        const now = new Date().toISOString();
-        await env.DB.prepare(
-          `INSERT INTO sessions (
-            id, profile_id, cohort_key, raw_input_text, current_state, baseline_score,
-            target_state, environment, device, safety_mode, planned_duration_min,
-            actual_duration_sec, completion_ratio, arm_id, arm_name, is_exploration,
-            is_control_trial, energy_tier, music_genre,
-            acoustic_params_json, cited_study_ids_json, live_adjustments_json,
-            time_of_day_bucket, status, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, 'pending_debrief', ?)`
-        )
-          .bind(
-            sessionId,
-            profile.id,
-            recommendation.cohortKey,
-            body.rawInputText ?? '',
-            recommendation.currentState,
-            recommendation.baselineScore,
-            recommendation.targetState,
-            recommendation.environment,
-            recommendation.device,
-            recommendation.safetyMode ? 1 : 0,
-            recommendation.plannedDurationMin,
-            recommendation.arm.id,
-            recommendation.arm.name,
-            recommendation.isExploration ? 1 : 0,
-            recommendation.isControlTrial ? 1 : 0,
-            recommendation.params.energyTier,
-            recommendation.params.genre,
-            JSON.stringify(recommendation.params),
-            JSON.stringify(recommendation.arm.studyIds),
-            getTimeOfDayBucket(),
-            now
+        if (!isEphemeral) {
+          const now = new Date().toISOString();
+          const finalGenreKey = recommendation.customGenreSlug ?? recommendation.params.genre;
+          await env.DB.prepare(
+            `INSERT INTO sessions (
+              id, profile_id, cohort_key, raw_input_text, current_state, baseline_score,
+              target_state, environment, device, safety_mode, planned_duration_min,
+              actual_duration_sec, completion_ratio, arm_id, arm_name, is_exploration,
+              is_control_trial, energy_tier, music_genre, initial_music_genre,
+              custom_genre_slug, audio_source,
+              acoustic_params_json, cited_study_ids_json, live_adjustments_json,
+              time_of_day_bucket, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, 'active', ?)`
           )
-          .run();
+            .bind(
+              sessionId,
+              profile.id,
+              recommendation.cohortKey,
+              (body.rawInputText ?? '').slice(0, 500),
+              recommendation.currentState,
+              recommendation.baselineScore,
+              recommendation.targetState,
+              recommendation.environment,
+              recommendation.device,
+              recommendation.safetyMode ? 1 : 0,
+              recommendation.plannedDurationMin,
+              recommendation.arm.id,
+              recommendation.arm.name,
+              recommendation.isExploration ? 1 : 0,
+              recommendation.isControlTrial ? 1 : 0,
+              recommendation.params.energyTier,
+              finalGenreKey,
+              finalGenreKey,
+              recommendation.customGenreSlug ?? null,
+              recommendation.audioSource,
+              JSON.stringify(recommendation.params),
+              JSON.stringify(recommendation.arm.studyIds),
+              getTimeOfDayBucket(),
+              now
+            )
+            .run();
+        }
 
-        return json({ recommendation });
+        return json({ recommendation }, 200, request);
       }
 
-      // POST /api/session/genre — Persists 1-tap Reveal or Player Layer 2 Music swaps for accurate Bandit attribution
+      // POST /api/music/generate — 2-Speed Custom Vibe Generator + R2 Community Cache + Atomic Cap & Lock
+      if (url.pathname === '/api/music/generate' && request.method === 'POST') {
+        const body = (await request.json()) as {
+          customGenre: string;
+          energyTier: EnergyTier;
+          targetState: TargetState;
+          bpm?: number;
+          harmonicMode?: AcousticParams['harmonicMode'];
+          speakerSafeEQ?: boolean;
+          noiseSensitivity?: 'low' | 'medium' | 'high';
+          sessionId?: string;
+        };
+
+        const sanitized = sanitizeCustomVibe(body.customGenre);
+        if (!sanitized || sanitized.rejectedReason) {
+          return json(
+            { error: sanitized?.rejectedReason ?? 'Invalid custom genre name.' },
+            400,
+            request
+          );
+        }
+
+        const energyTier: EnergyTier =
+          body.energyTier === 'calm' || body.energyTier === 'drive' ? body.energyTier : 'focus';
+
+        // 1. Check R2 Community Cache FIRST ($0.00!)
+        const existingTracksRes = await env.DB.prepare(
+          `SELECT * FROM custom_tracks WHERE genre_slug = ? AND energy_tier = ? AND status = 'ready'`
+        )
+          .bind(sanitized.slug, energyTier)
+          .all<Record<string, unknown>>();
+
+        const existingTracks = existingTracksRes.results;
+        const totalPlays = existingTracks.reduce((acc, r) => acc + Number(r.play_count ?? 0), 0);
+
+        // Serve from cache unless 1 track exists AND play_count >= 5 (unlocks 2nd variation!)
+        if (existingTracks.length >= 2 || (existingTracks.length === 1 && totalPlays < 5)) {
+          const picked = existingTracks[Math.floor(Math.random() * existingTracks.length)];
+          const r2Key = String(picked.r2_key);
+          const encoded = r2Key
+            .split('/')
+            .map((s) => encodeURIComponent(s))
+            .join('/');
+          return json(
+            {
+              status: 'ready',
+              fromCache: true,
+              track: {
+                id: String(picked.id),
+                genreSlug: sanitized.slug,
+                displayLabel: String(picked.display_label),
+                energyTier,
+                url: `/api/audio/stream/${encoded}`,
+                provider: String(picked.provider),
+                bpm: Number(picked.bpm ?? 92),
+              },
+            },
+            200,
+            request
+          );
+        }
+
+        const provider = resolveMusicProvider(env);
+        if (!provider || !env.AUDIO_BUCKET) {
+          return json(
+            {
+              status: 'unavailable',
+              message: 'Live custom generation is currently offline; playing closest studio library match.',
+            },
+            200,
+            request
+          );
+        }
+
+        const perIpOk = await checkDailyRateLimit(env.DB, request, 'music_gen', 2);
+        if (!perIpOk) {
+          return json(
+            {
+              status: 'rate_limited',
+              message: 'Daily per-listener custom generation limit (2/day) reached. Studio & cached vibes remain unlimited.',
+            },
+            429,
+            request
+          );
+        }
+
+        // 2. Acquire atomic job lock (prevents duplicate $0.08 spend on concurrent requests)
+        const jobKey = `${sanitized.slug}:${energyTier}`;
+        const nowIso = new Date().toISOString();
+        const existingJob = await env.DB.prepare('SELECT * FROM music_generation_jobs WHERE job_key = ?')
+          .bind(jobKey)
+          .first<Record<string, unknown>>();
+
+        if (existingJob && String(existingJob.status) === 'generating') {
+          const ageMs = Date.now() - Date.parse(String(existingJob.updated_at));
+          if (ageMs < 90_000) {
+            return json({ status: 'generating', jobKey, pollAfterMs: 3500 }, 202, request);
+          }
+        }
+
+        // 3. Atomic Daily Cap Reservation (guaranteed hard spend ceiling!)
+        const dailyCapMax = Math.max(0, Number(env.MUSIC_GEN_DAILY_CAP ?? '3'));
+        const today = nowIso.slice(0, 10);
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO api_usage_daily (day, gemini_calls, music_gen_calls, music_gen_cost_cents)
+           VALUES (?, 0, 0, 0)`
+        )
+          .bind(today)
+          .run();
+
+        const reserveRes = await env.DB.prepare(
+          `UPDATE api_usage_daily
+           SET music_gen_calls = music_gen_calls + 1,
+               music_gen_cost_cents = music_gen_cost_cents + ?
+           WHERE day = ? AND music_gen_calls < ?`
+        )
+          .bind(provider.costCentsPerTrack, today, dailyCapMax)
+          .run();
+
+        if ((reserveRes.meta?.changes ?? 0) === 0) {
+          return json(
+            {
+              status: 'cap_reached',
+              message: 'Daily community generation budget reached; enjoy instant playback from our studio library & cached vibes!',
+            },
+            200,
+            request
+          );
+        }
+
+        // Lock job row
+        await env.DB.prepare(
+          `INSERT INTO music_generation_jobs (job_key, genre_slug, energy_tier, status, provider, created_at, updated_at)
+           VALUES (?, ?, ?, 'generating', ?, ?, ?)
+           ON CONFLICT(job_key) DO UPDATE SET status = 'generating', provider = excluded.provider, error_msg = NULL, updated_at = excluded.updated_at`
+        )
+          .bind(jobKey, sanitized.slug, energyTier, provider.id, nowIso, nowIso)
+          .run();
+
+        const bpm = Number(body.bpm ?? (energyTier === 'calm' ? 68 : energyTier === 'drive' ? 108 : 92));
+        const prompt = composeScientificMusicPrompt({
+          customGenreLabel: sanitized.displayLabel,
+          energyTier,
+          targetState: body.targetState ?? 'alert_focus',
+          params: {
+            bpm,
+            harmonicMode: body.harmonicMode ?? 'warm_min9',
+            speakerSafeEQ: Boolean(body.speakerSafeEQ),
+          },
+          noiseSensitivity: body.noiseSensitivity ?? 'medium',
+        });
+
+        // Wrap generate -> R2.put -> D1.insert in ctx.waitUntil(p) AND await p so mobile disconnects
+        // never abort mid-flight and waste $0.08!
+        const generationPromise = (async () => {
+          try {
+            const generated = await provider.generate({ prompt, durationSec: 135 });
+            const trackId = `trk_${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}`;
+            const r2Key = `custom/${sanitized.slug}/${energyTier}/${trackId}.mp3`;
+
+            await env.AUDIO_BUCKET!.put(r2Key, generated.audioBytes, {
+              httpMetadata: {
+                contentType: generated.contentType,
+                cacheControl: 'public, max-age=31536000, immutable',
+              },
+              customMetadata: {
+                genreSlug: sanitized.slug,
+                energyTier,
+                provider: generated.provider,
+                modelId: generated.modelId,
+              },
+            });
+
+            const doneIso = new Date().toISOString();
+            await env.DB.batch([
+              env.DB.prepare(
+                `INSERT INTO custom_tracks (
+                  id, genre_slug, display_label, energy_tier, r2_key, provider, model_id,
+                  prompt_text, bpm, duration_sec, size_bytes, play_count, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'ready', ?)`
+              ).bind(
+                trackId,
+                sanitized.slug,
+                sanitized.displayLabel,
+                energyTier,
+                r2Key,
+                generated.provider,
+                generated.modelId,
+                prompt,
+                bpm,
+                generated.estimatedDurationSec,
+                generated.audioBytes.byteLength,
+                doneIso
+              ),
+              env.DB.prepare(
+                `UPDATE music_generation_jobs SET status = 'ready', r2_key = ?, track_id = ?, updated_at = ? WHERE job_key = ?`
+              ).bind(r2Key, trackId, doneIso, jobKey),
+            ]);
+
+            if (body.sessionId && !body.sessionId.startsWith('eph_')) {
+              await env.DB.prepare(
+                `UPDATE sessions SET audio_source = 'community_cache' WHERE id = ?`
+              )
+                .bind(body.sessionId)
+                .run()
+                .catch(() => {});
+            }
+
+            const encoded = r2Key
+              .split('/')
+              .map((s) => encodeURIComponent(s))
+              .join('/');
+            return {
+              ok: true as const,
+              track: {
+                id: trackId,
+                genreSlug: sanitized.slug,
+                displayLabel: sanitized.displayLabel,
+                energyTier,
+                url: `/api/audio/stream/${encoded}`,
+                provider: generated.provider,
+                bpm,
+              },
+            };
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : 'Generation failed';
+            const failIso = new Date().toISOString();
+            await env.DB.batch([
+              env.DB.prepare(
+                `UPDATE music_generation_jobs SET status = 'failed', error_msg = ?, updated_at = ? WHERE job_key = ?`
+              ).bind(errMsg.slice(0, 240), failIso, jobKey),
+              // Refund daily cap slot if provider errored before producing valid audio
+              env.DB.prepare(
+                `UPDATE api_usage_daily
+                 SET music_gen_calls = MAX(0, music_gen_calls - 1),
+                     music_gen_cost_cents = MAX(0, music_gen_cost_cents - ?)
+                 WHERE day = ?`
+              ).bind(provider.costCentsPerTrack, today),
+            ]).catch(() => {});
+            return { ok: false as const, error: errMsg };
+          }
+        })();
+
+        ctx.waitUntil(generationPromise);
+        const result = await generationPromise;
+
+        if (!result.ok) {
+          return json(
+            {
+              status: 'failed',
+              message:
+                result.error === 'VOCAL_LEAKAGE_DETECTED'
+                  ? 'Rejected generated audio containing vocal artifacts to protect instrumental quality.'
+                  : 'Custom track generation temporarily unavailable; continuing smoothly on studio library.',
+            },
+            200,
+            request
+          );
+        }
+
+        return json({ status: 'ready', fromCache: false, track: result.track }, 200, request);
+      }
+
+      // GET /api/music/status?slug=...&energy=...
+      if (url.pathname === '/api/music/status' && request.method === 'GET') {
+        const slug = url.searchParams.get('slug') ?? '';
+        const energy = (url.searchParams.get('energy') ?? 'focus') as EnergyTier;
+        if (!slug) return json({ error: 'Missing slug' }, 400, request);
+
+        const track = await lookupCachedCustomTrack(env.DB, slug, energy);
+        if (track) {
+          return json({ status: 'ready', track }, 200, request);
+        }
+        const job = await env.DB.prepare('SELECT status, error_msg FROM music_generation_jobs WHERE job_key = ?')
+          .bind(`${slug}:${energy}`)
+          .first<{ status: string; error_msg?: string }>();
+
+        return json({ status: job?.status ?? 'not_found', error: job?.error_msg ?? null }, 200, request);
+      }
+
+      // POST /api/session/genre — Persists Layer 2 swaps & flags Instant Swap (<60s)
       if (url.pathname === '/api/session/genre' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'session_genre', 150);
+        if (!allowed) return json({ error: 'Rate limit reached.' }, 429, request);
+
         const body = (await request.json()) as {
           sessionId: string;
-          genre: ResolvedGenre;
+          genre: string;
+          customGenreSlug?: string | null;
+          audioSource?: AudioSourceType;
+          atSec?: number;
           params?: AcousticParams;
         };
-        if (!body.sessionId || !(body.genre in GENRE_META)) {
-          return json({ error: 'Invalid session or genre' }, 400, request);
+        if (!body.sessionId || body.sessionId.startsWith('eph_')) {
+          return json({ ok: true, ephemeral: true }, 200, request);
         }
-        const row = await env.DB.prepare('SELECT acoustic_params_json FROM sessions WHERE id = ?')
+
+        const row = await env.DB.prepare(
+          'SELECT profile_id, cohort_key, arm_id, initial_music_genre, is_control_trial, acoustic_params_json, genre_swapped_at_sec FROM sessions WHERE id = ?'
+        )
           .bind(body.sessionId)
-          .first<{ acoustic_params_json: string }>();
+          .first<Record<string, unknown>>();
         if (!row) return json({ error: 'Session not found' }, 404, request);
 
         const prevParams = JSON.parse(String(row.acoustic_params_json)) as AcousticParams;
+        const nextGenreKey = body.customGenreSlug || body.genre;
         const nextParams: AcousticParams = body.params
-          ? { ...prevParams, ...body.params, genre: body.genre }
-          : { ...prevParams, genre: body.genre, genreSelectionMode: 'user_chosen' };
+          ? { ...prevParams, ...body.params }
+          : {
+              ...prevParams,
+              ...(body.genre in GENRE_META ? { genre: body.genre as ResolvedGenre } : {}),
+              genreSelectionMode: body.customGenreSlug ? 'custom_vibe' : 'user_chosen',
+              customGenreSlug: body.customGenreSlug ?? undefined,
+            };
+
+        const atSec = typeof body.atSec === 'number' ? Math.round(body.atSec) : null;
+        const isInstantSwap =
+          atSec !== null &&
+          atSec > 0 &&
+          atSec < 60 &&
+          row.genre_swapped_at_sec === null &&
+          nextGenreKey !== String(row.initial_music_genre);
 
         await env.DB.prepare(
-          `UPDATE sessions SET music_genre = ?, acoustic_params_json = ? WHERE id = ?`
+          `UPDATE sessions
+           SET music_genre = ?,
+               custom_genre_slug = ?,
+               audio_source = COALESCE(?, audio_source),
+               genre_swapped_at_sec = COALESCE(genre_swapped_at_sec, ?),
+               acoustic_params_json = ?
+           WHERE id = ?`
         )
-          .bind(body.genre, JSON.stringify(nextParams), body.sessionId)
+          .bind(
+            nextGenreKey,
+            body.customGenreSlug ?? null,
+            body.audioSource ?? null,
+            isInstantSwap ? atSec : null,
+            JSON.stringify(nextParams),
+            body.sessionId
+          )
           .run();
 
-        return json({ ok: true, genre: body.genre }, 200, request);
+        // Instant Genre Swap (<60s) gives mild negative implicit feedback strictly to the INITIAL genre
+        if (isInstantSwap) {
+          const initialGenre = String(row.initial_music_genre);
+          const cohortKey = String(row.cohort_key);
+          const profileId = String(row.profile_id);
+          await Promise.all([
+            updateBanditScope(env.DB, {
+              scopeType: 'cohort_genre',
+              scopeId: cohortKey,
+              armId: initialGenre,
+              mode: 'implicit',
+              reward: 0.2,
+              weight: 0.35,
+              completionRatio: 0.05,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'profile_genre',
+              scopeId: profileId,
+              armId: initialGenre,
+              mode: 'implicit',
+              reward: 0.2,
+              weight: 0.35,
+              completionRatio: 0.05,
+            }),
+          ]);
+        }
+
+        return json({ ok: true, genre: nextGenreKey, instantSwapRecorded: isInstantSwap }, 200, request);
       }
 
-      // POST /api/session/progress
+      // POST /api/session/progress — 90s heartbeat; promotes 'active' -> 'pending_debrief' at >= 60s
       if (url.pathname === '/api/session/progress' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'progress', 200);
+        if (!allowed) return json({ error: 'Rate limit reached.' }, 429, request);
+
         const body = (await request.json()) as {
           sessionId: string;
           actualDurationSec: number;
           liveAdjustments: LiveAdjustment[];
         };
-        const row = await env.DB.prepare('SELECT planned_duration_min FROM sessions WHERE id = ?')
-          .bind(body.sessionId)
-          .first<{ planned_duration_min: number }>();
-        if (!row) return json({ error: 'Session not found' }, 404);
+        if (!body.sessionId || body.sessionId.startsWith('eph_')) {
+          return json({ ok: true, completionRatio: 0 }, 200, request);
+        }
 
+        const row = await env.DB.prepare('SELECT planned_duration_min, status FROM sessions WHERE id = ?')
+          .bind(body.sessionId)
+          .first<{ planned_duration_min: number; status: string }>();
+        if (!row) return json({ error: 'Session not found' }, 404, request);
+
+        const actualSec = Math.max(0, Math.round(body.actualDurationSec));
         const plannedSec = Math.max(60, Number(row.planned_duration_min) * 60);
-        const completionRatio = Number(Math.min(1, Math.max(0, body.actualDurationSec / plannedSec)).toFixed(3));
+        const completionRatio = Number(Math.min(1, Math.max(0, actualSec / plannedSec)).toFixed(3));
+        const nextStatus =
+          row.status === 'active' && actualSec >= 60 ? 'pending_debrief' : row.status;
 
         await env.DB.prepare(
-          `UPDATE sessions SET actual_duration_sec = ?, completion_ratio = ?, live_adjustments_json = ? WHERE id = ?`
+          `UPDATE sessions
+           SET actual_duration_sec = MAX(actual_duration_sec, ?),
+               completion_ratio = MAX(completion_ratio, ?),
+               live_adjustments_json = ?,
+               status = ?,
+               last_beacon_at = ?
+           WHERE id = ?`
         )
           .bind(
-            Math.round(body.actualDurationSec),
+            actualSec,
             completionRatio,
             JSON.stringify(body.liveAdjustments ?? []),
+            nextStatus,
+            new Date().toISOString(),
             body.sessionId
           )
           .run();
 
-        return json({ ok: true, completionRatio });
+        return json({ ok: true, completionRatio }, 200, request);
       }
 
-      // POST /api/session/debrief
+      // POST /api/session/beacon — Cross-browser navigator.sendBeacon (text/plain JSON, zero CORS preflight!)
+      // visibilitychange = checkpoint ONLY (protects lock-screen listening!); pagehide/completion evaluates implicit retention.
+      if (url.pathname === '/api/session/beacon' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'beacon', 250);
+        if (!allowed) return json({ ok: false }, 429, request);
+
+        const raw = await request.text();
+        let body: {
+          sessionId?: string;
+          event?: 'visibility' | 'pagehide' | 'milestone';
+          actualDurationSec?: number;
+          audioStarted?: boolean;
+          liveAdjustments?: LiveAdjustment[];
+        };
+        try {
+          body = JSON.parse(raw) as typeof body;
+        } catch {
+          return json({ error: 'Invalid beacon payload' }, 400, request);
+        }
+
+        if (!body.sessionId || body.sessionId.startsWith('eph_')) {
+          return json({ ok: true, ephemeral: true }, 200, request);
+        }
+
+        const row = await env.DB.prepare('SELECT * FROM sessions WHERE id = ?')
+          .bind(body.sessionId)
+          .first<Record<string, unknown>>();
+        if (!row) return json({ ok: false }, 404, request);
+
+        const session = mapSessionRow(row);
+        if (session.status === 'completed') {
+          return json({ ok: true, alreadyCompleted: true }, 200, request);
+        }
+
+        const actualSec = Math.max(session.actualDurationSec, Math.round(body.actualDurationSec ?? 0));
+        const plannedSec = Math.max(60, session.plannedDurationMin * 60);
+        const completionRatio = Number(Math.min(1, Math.max(0, actualSec / plannedSec)).toFixed(3));
+        const now = new Date().toISOString();
+        const nextStatus =
+          session.status === 'active' && actualSec >= 60 ? 'pending_debrief' : session.status;
+
+        const event = body.event ?? 'visibility';
+        const shouldEvaluateImplicit =
+          (event === 'pagehide' && body.audioStarted !== false && actualSec >= 5) ||
+          (event === 'milestone' && completionRatio >= 0.75);
+
+        let implicitReward = row.implicit_reward_score !== null && row.implicit_reward_score !== undefined
+          ? Number(row.implicit_reward_score)
+          : null;
+        let implicitWeight = Number(row.implicit_applied_weight ?? 0);
+        let retentionOutcome = session.retentionOutcome ?? null;
+
+        if (shouldEvaluateImplicit) {
+          const isEarlyBounce = event === 'pagehide' && actualSec < 90;
+          const computed = computeImplicitReward({
+            actualDurationSec: actualSec,
+            completionRatio,
+            isEarlyBounce,
+            instantGenreSwapped: false,
+          });
+          const targetWeight = 0.45;
+          const finalGenre = session.musicGenre || 'deep_electronic';
+
+          // Delta-replace any previous implicit milestone update cleanly
+          const updates: Array<Promise<unknown>> = [
+            updateBanditScope(env.DB, {
+              scopeType: 'cohort_genre',
+              scopeId: session.cohortKey,
+              armId: finalGenre,
+              mode: 'implicit',
+              reward: computed.reward,
+              weight: targetWeight,
+              completionRatio,
+              supersedePrevReward: implicitReward ?? 0,
+              supersedePrevWeight: implicitWeight,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'profile_genre',
+              scopeId: String(row.profile_id),
+              armId: finalGenre,
+              mode: 'implicit',
+              reward: computed.reward,
+              weight: targetWeight,
+              completionRatio,
+              supersedePrevReward: implicitReward ?? 0,
+              supersedePrevWeight: implicitWeight,
+            }),
+          ];
+
+          if (!session.isControlTrial) {
+            updates.push(
+              updateBanditScope(env.DB, {
+                scopeType: 'cohort',
+                scopeId: session.cohortKey,
+                armId: session.armId,
+                mode: 'implicit',
+                reward: computed.reward,
+                weight: targetWeight,
+                completionRatio,
+                supersedePrevReward: implicitReward ?? 0,
+                supersedePrevWeight: implicitWeight,
+              }),
+              updateBanditScope(env.DB, {
+                scopeType: 'profile',
+                scopeId: String(row.profile_id),
+                armId: session.armId,
+                mode: 'implicit',
+                reward: computed.reward,
+                weight: targetWeight,
+                completionRatio,
+                supersedePrevReward: implicitReward ?? 0,
+                supersedePrevWeight: implicitWeight,
+              }),
+              updateBanditScope(env.DB, {
+                scopeType: 'cohort_arm_genre',
+                scopeId: `${session.cohortKey}|${finalGenre}`,
+                armId: session.armId,
+                mode: 'implicit',
+                reward: computed.reward,
+                weight: targetWeight,
+                completionRatio,
+                supersedePrevReward: implicitReward ?? 0,
+                supersedePrevWeight: implicitWeight,
+              })
+            );
+          }
+
+          await Promise.all(updates);
+          implicitReward = computed.reward;
+          implicitWeight = targetWeight;
+          retentionOutcome = computed.outcome;
+        }
+
+        await env.DB.prepare(
+          `UPDATE sessions
+           SET actual_duration_sec = ?,
+               completion_ratio = ?,
+               live_adjustments_json = ?,
+               status = ?,
+               implicit_reward_score = ?,
+               implicit_applied_weight = ?,
+               retention_outcome = ?,
+               last_beacon_at = ?
+           WHERE id = ?`
+        )
+          .bind(
+            actualSec,
+            completionRatio,
+            JSON.stringify(body.liveAdjustments ?? session.liveAdjustments),
+            nextStatus,
+            implicitReward,
+            implicitWeight,
+            retentionOutcome,
+            now,
+            body.sessionId
+          )
+          .run();
+
+        return json({ ok: true, retentionOutcome, completionRatio }, 200, request);
+      }
+
+      // POST /api/session/debrief — Explicit 10s Debrief (supersedes any prior implicit update via delta-replacement!)
       if (url.pathname === '/api/session/debrief' && request.method === 'POST') {
         const allowed = await checkDailyRateLimit(env.DB, request, 'debrief', 45);
         if (!allowed) {
           return json({ error: 'Daily debrief limit reached. Please try again tomorrow.' }, 429, request);
         }
         const body = (await request.json()) as DebriefPayload;
+        if (!body.sessionId || body.sessionId.startsWith('eph_')) {
+          return json(
+            {
+              ok: true,
+              learningUpdate: {
+                sessionId: body.sessionId,
+                armId: 'ephemeral',
+                armName: 'Local-Only Session',
+                cohortKey: 'local',
+                cohortLabel: 'Local-Only Privacy Mode',
+                delta: body.postScore - 2,
+                reward: 0.75,
+                cohortSuccessRatePct: 0,
+                cohortTrials: 0,
+                profileSuccessRatePct: 0,
+                profileTrials: 0,
+                wasControlTrial: false,
+                preferredModMult: 1.0,
+              },
+            },
+            200,
+            request
+          );
+        }
+
         const row = await env.DB.prepare('SELECT * FROM sessions WHERE id = ?')
           .bind(body.sessionId)
-          .first();
+          .first<Record<string, unknown>>();
         if (!row) return json({ error: 'Session not found' }, 404, request);
 
         const session = mapSessionRow(row);
@@ -959,8 +1869,9 @@ export default {
           liveAdjustments,
         });
 
-        // Scientific data hygiene: full Bandit weight for >=60s listening; softer weight for brief previews
         const learningWeight = actualSec >= 60 ? 1.0 : 0.35;
+        const prevImplicitReward = Number(row.implicit_reward_score ?? 0);
+        const prevImplicitWeight = Number(row.implicit_applied_weight ?? 0);
 
         const now = new Date().toISOString();
         await env.DB.prepare(
@@ -974,6 +1885,7 @@ export default {
             worked_rating = ?,
             feedback_tags_json = ?,
             reward_score = ?,
+            implicit_applied_weight = 0,
             notes = ?,
             completed_at = ?
            WHERE id = ?`
@@ -993,31 +1905,107 @@ export default {
           )
           .run();
 
-        // Update BOTH Layer 1 (protocol arm) AND Layer 2 (music genre) Bandit models —
-        // strictly skipping active-AM Bandit arm updates on Blind Pure-Music Control trials so control
-        // sessions never pollute active protocol scoring (they feed A/B Validation instead!).
         let cohortUpdated = { successRatePct: 0, trials: 0 };
         let profileUpdated = { successRatePct: 0, trials: 0 };
         const finalGenre = session.musicGenre || session.acousticParams?.genre || 'deep_electronic';
+        const profileId = String(row.profile_id);
 
         if (!session.isControlTrial) {
           const [cUp, pUp] = await Promise.all([
-            updateBanditScope(env.DB, 'cohort', session.cohortKey, session.armId, reward, delta, completionRatio, learningWeight),
-            updateBanditScope(env.DB, 'profile', session.profileId, session.armId, reward, delta, completionRatio, learningWeight),
-            updateBanditScope(env.DB, 'cohort_genre', session.cohortKey, finalGenre, reward, delta, completionRatio, learningWeight),
-            updateBanditScope(env.DB, 'profile_genre', session.profileId, finalGenre, reward, delta, completionRatio, learningWeight),
+            updateBanditScope(env.DB, {
+              scopeType: 'cohort',
+              scopeId: session.cohortKey,
+              armId: session.armId,
+              mode: 'explicit',
+              reward,
+              weight: learningWeight,
+              delta,
+              completionRatio,
+              supersedePrevReward: prevImplicitReward,
+              supersedePrevWeight: prevImplicitWeight,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'profile',
+              scopeId: profileId,
+              armId: session.armId,
+              mode: 'explicit',
+              reward,
+              weight: learningWeight,
+              delta,
+              completionRatio,
+              supersedePrevReward: prevImplicitReward,
+              supersedePrevWeight: prevImplicitWeight,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'cohort_genre',
+              scopeId: session.cohortKey,
+              armId: finalGenre,
+              mode: 'explicit',
+              reward,
+              weight: learningWeight,
+              delta,
+              completionRatio,
+              supersedePrevReward: prevImplicitReward,
+              supersedePrevWeight: prevImplicitWeight,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'profile_genre',
+              scopeId: profileId,
+              armId: finalGenre,
+              mode: 'explicit',
+              reward,
+              weight: learningWeight,
+              delta,
+              completionRatio,
+              supersedePrevReward: prevImplicitReward,
+              supersedePrevWeight: prevImplicitWeight,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'cohort_arm_genre',
+              scopeId: `${session.cohortKey}|${finalGenre}`,
+              armId: session.armId,
+              mode: 'explicit',
+              reward,
+              weight: learningWeight,
+              delta,
+              completionRatio,
+              supersedePrevReward: prevImplicitReward,
+              supersedePrevWeight: prevImplicitWeight,
+            }),
           ]);
           cohortUpdated = cUp;
           profileUpdated = pUp;
         } else {
-          // Control trial still teaches Layer 2 music preference cleanly
+          // Control trial still updates Layer 2 genre preference cleanly
           await Promise.all([
-            updateBanditScope(env.DB, 'cohort_genre', session.cohortKey, finalGenre, reward, delta, completionRatio, learningWeight * 0.75),
-            updateBanditScope(env.DB, 'profile_genre', session.profileId, finalGenre, reward, delta, completionRatio, learningWeight * 0.75),
+            updateBanditScope(env.DB, {
+              scopeType: 'cohort_genre',
+              scopeId: session.cohortKey,
+              armId: finalGenre,
+              mode: 'explicit',
+              reward,
+              weight: learningWeight * 0.75,
+              delta,
+              completionRatio,
+              supersedePrevReward: prevImplicitReward,
+              supersedePrevWeight: prevImplicitWeight,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'profile_genre',
+              scopeId: profileId,
+              armId: finalGenre,
+              mode: 'explicit',
+              reward,
+              weight: learningWeight * 0.75,
+              delta,
+              completionRatio,
+              supersedePrevReward: prevImplicitReward,
+              supersedePrevWeight: prevImplicitWeight,
+            }),
           ]);
           const [cStats, pStats] = await Promise.all([
             fetchBanditRows(env.DB, 'cohort', session.cohortKey),
-            fetchBanditRows(env.DB, 'profile', session.profileId),
+            fetchBanditRows(env.DB, 'profile', profileId),
           ]);
           const cRow = cStats.find((r) => r.armId === session.armId);
           const pRow = pStats.find((r) => r.armId === session.armId);
@@ -1031,10 +2019,9 @@ export default {
           };
         }
 
-        // Adapt user's personal AM sensitivity multiplier from debrief tags + live modulation tweaks
-        let updatedModMult = 1.0;
+        // Adapt personal AM sensitivity multiplier
         const profRow = await env.DB.prepare('SELECT preferred_mod_mult FROM profiles WHERE id = ?')
-          .bind(session.profileId)
+          .bind(profileId)
           .first<{ preferred_mod_mult?: number }>();
         const prevMult = Number(profRow?.preferred_mod_mult ?? 1.0);
         let multDelta = 0;
@@ -1051,113 +2038,234 @@ export default {
         if (netModTweak !== 0) {
           multDelta += Math.max(-0.1, Math.min(0.1, netModTweak * 0.35));
         }
-        updatedModMult = Number(Math.max(0.65, Math.min(1.35, prevMult + multDelta)).toFixed(2));
+        const updatedModMult = Number(Math.max(0.65, Math.min(1.35, prevMult + multDelta)).toFixed(2));
         if (multDelta !== 0 && !session.isControlTrial) {
           await env.DB.prepare('UPDATE profiles SET preferred_mod_mult = ?, updated_at = ? WHERE id = ?')
-            .bind(updatedModMult, now, session.profileId)
+            .bind(updatedModMult, now, profileId)
             .run();
         }
 
-        return json({
-          ok: true,
-          learningUpdate: {
-            sessionId: session.id,
-            armId: session.armId,
-            armName: session.armName,
-            cohortKey: session.cohortKey,
-            cohortLabel: formatCohortLabel(session.cohortKey),
-            delta,
-            reward,
-            cohortSuccessRatePct: cohortUpdated.successRatePct,
-            cohortTrials: cohortUpdated.trials,
-            profileSuccessRatePct: profileUpdated.successRatePct,
-            profileTrials: profileUpdated.trials,
-            wasControlTrial: session.isControlTrial,
-            preferredModMult: updatedModMult,
+        return json(
+          {
+            ok: true,
+            learningUpdate: {
+              sessionId: session.id,
+              armId: session.armId,
+              armName: session.armName,
+              cohortKey: session.cohortKey,
+              cohortLabel: formatCohortLabel(session.cohortKey),
+              delta,
+              reward,
+              cohortSuccessRatePct: cohortUpdated.successRatePct,
+              cohortTrials: cohortUpdated.trials,
+              profileSuccessRatePct: profileUpdated.successRatePct,
+              profileTrials: profileUpdated.trials,
+              wasControlTrial: session.isControlTrial,
+              preferredModMult: updatedModMult,
+            },
           },
-        });
+          200,
+          request
+        );
       }
 
       // POST /api/session/dismiss
       if (url.pathname === '/api/session/dismiss' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'dismiss', 60);
+        if (!allowed) return json({ error: 'Rate limit reached.' }, 429, request);
         const body = (await request.json()) as { sessionId: string };
-        await env.DB.prepare(`UPDATE sessions SET status = 'abandoned' WHERE id = ? AND status = 'pending_debrief'`)
+        await env.DB.prepare(
+          `UPDATE sessions SET status = 'abandoned' WHERE id = ? AND status IN ('active', 'pending_debrief')`
+        )
           .bind(body.sessionId)
           .run();
-        return json({ ok: true });
+        return json({ ok: true }, 200, request);
       }
 
-      // GET /api/insights
+      // GET /api/insights — SQL-Aggregated Research Brain (ZERO profileId exposed publicly!)
       if (url.pathname === '/api/insights' && request.method === 'GET') {
         const profileId = url.searchParams.get('profileId') ?? '';
+        let canReadPersonal = false;
+        if (profileId) {
+          const auth = await verifyProfileAccess(env.DB, profileId, request);
+          canReadPersonal = auth.ok;
+        }
 
-        const [profilesCountRow, allSessionsRes, cohortBanditRes, personalBanditRes] = await Promise.all([
-          env.DB.prepare('SELECT COUNT(*) as c FROM profiles').first<{ c: number }>(),
-          env.DB.prepare('SELECT * FROM sessions ORDER BY created_at DESC LIMIT 200').all<Record<string, unknown>>(),
+        const [
+          profilesCountRow,
+          totalsRow,
+          abRows,
+          retentionRow,
+          returnStatsRow,
+          cohortAggRes,
+          cohortBanditRes,
+          personalBanditRes,
+          genreAggRes,
+          comboAggRes,
+          recentRes,
+        ] = await Promise.all([
+          env.DB.prepare('SELECT COUNT(*) AS c FROM profiles').first<{ c: number }>(),
+          env.DB.prepare(
+            `SELECT
+               COUNT(*) AS total_sessions,
+               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_debriefs,
+               SUM(CASE WHEN status = 'pending_debrief' AND actual_duration_sec >= 60 THEN 1 ELSE 0 END) AS pending_debriefs,
+               SUM(CASE WHEN is_exploration = 1 THEN 1 ELSE 0 END) AS exploration_count,
+               SUM(CASE WHEN status = 'completed' AND (worked_rating = 'yes' OR (worked_rating = 'partial' AND COALESCE(delta_score, 0) > 0)) THEN 1 ELSE 0 END) AS positive_completed,
+               AVG(CASE WHEN status = 'completed' THEN delta_score END) AS avg_delta
+             FROM sessions`
+          ).first<Record<string, unknown>>(),
+          env.DB.prepare(
+            `SELECT
+               is_control_trial,
+               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS comp_n,
+               AVG(CASE WHEN status = 'completed' THEN delta_score END) AS avg_delta,
+               SUM(CASE WHEN status = 'completed' AND (worked_rating = 'yes' OR (worked_rating = 'partial' AND COALESCE(delta_score, 0) > 0)) THEN 1 ELSE 0 END) AS pos_n,
+               AVG(CASE WHEN actual_duration_sec >= 10 THEN completion_ratio END) AS avg_ret
+             FROM sessions
+             GROUP BY is_control_trial`
+          ).all<Record<string, unknown>>(),
+          env.DB.prepare(
+            `SELECT
+               COUNT(*) AS tracked_n,
+               AVG(completion_ratio) AS avg_comp,
+               SUM(CASE WHEN completion_ratio >= 0.75 THEN 1 ELSE 0 END) AS completed_75_n,
+               SUM(CASE WHEN retention_outcome = 'early_bounce' OR (status != 'completed' AND actual_duration_sec > 0 AND actual_duration_sec < 90) THEN 1 ELSE 0 END) AS bounce_n,
+               SUM(CASE WHEN genre_swapped_at_sec IS NOT NULL AND genre_swapped_at_sec < 60 THEN 1 ELSE 0 END) AS swap_n
+             FROM sessions
+             WHERE actual_duration_sec >= 10 OR status = 'completed'`
+          ).first<Record<string, unknown>>(),
+          env.DB.prepare(
+            `SELECT
+               COUNT(DISTINCT profile_id) AS total_active_profiles,
+               SUM(CASE WHEN session_count >= 2 THEN 1 ELSE 0 END) AS returning_profiles,
+               SUM(CASE WHEN span_hours >= 12 AND span_hours <= 48 THEN 1 ELSE 0 END) AS d1_profiles,
+               SUM(CASE WHEN span_hours >= 12 AND span_hours <= 168 THEN 1 ELSE 0 END) AS d7_profiles
+             FROM (
+               SELECT
+                 profile_id,
+                 COUNT(*) AS session_count,
+                 (julianday(MAX(created_at)) - julianday(MIN(created_at))) * 24.0 AS span_hours
+               FROM sessions
+               GROUP BY profile_id
+             )`
+          ).first<Record<string, unknown>>(),
+          env.DB.prepare(
+            `SELECT
+               cohort_key,
+               COUNT(*) AS total_sessions,
+               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_sessions,
+               AVG(CASE WHEN status = 'completed' THEN delta_score END) AS avg_delta,
+               SUM(CASE WHEN status = 'completed' AND (worked_rating = 'yes' OR (worked_rating = 'partial' AND COALESCE(delta_score, 0) > 0)) THEN 1 ELSE 0 END) AS pos_n
+             FROM sessions
+             GROUP BY cohort_key
+             ORDER BY total_sessions DESC
+             LIMIT 30`
+          ).all<Record<string, unknown>>(),
           env.DB.prepare(`SELECT * FROM bandit_stats WHERE scope_type = 'cohort'`).all<Record<string, unknown>>(),
-          profileId
+          canReadPersonal
             ? env.DB.prepare(`SELECT * FROM bandit_stats WHERE scope_type = 'profile' AND scope_id = ?`)
                 .bind(profileId)
                 .all<Record<string, unknown>>()
             : Promise.resolve({ results: [] as Record<string, unknown>[] }),
+          env.DB.prepare(
+            `SELECT
+               music_genre,
+               COUNT(*) AS total_n,
+               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS comp_n,
+               SUM(CASE WHEN status = 'completed' AND (worked_rating = 'yes' OR (worked_rating = 'partial' AND COALESCE(delta_score, 0) > 0)) THEN 1 ELSE 0 END) AS pos_n,
+               AVG(CASE WHEN status = 'completed' THEN delta_score END) AS avg_delta,
+               AVG(CASE WHEN actual_duration_sec >= 10 THEN completion_ratio END) AS avg_ret
+             FROM sessions
+             GROUP BY music_genre
+             ORDER BY comp_n DESC, total_n DESC
+             LIMIT 24`
+          ).all<Record<string, unknown>>(),
+          env.DB.prepare(
+            `SELECT
+               cohort_key,
+               arm_name,
+               music_genre,
+               COUNT(*) AS sessions_n,
+               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS comp_n,
+               SUM(CASE WHEN status = 'completed' AND (worked_rating = 'yes' OR (worked_rating = 'partial' AND COALESCE(delta_score, 0) > 0)) THEN 1 ELSE 0 END) AS pos_n,
+               AVG(CASE WHEN status = 'completed' THEN delta_score END) AS avg_delta,
+               AVG(CASE WHEN actual_duration_sec >= 10 THEN completion_ratio END) AS avg_ret
+             FROM sessions
+             GROUP BY cohort_key, arm_name, music_genre
+             ORDER BY sessions_n DESC
+             LIMIT 12`
+          ).all<Record<string, unknown>>(),
+          env.DB.prepare('SELECT * FROM sessions ORDER BY created_at DESC LIMIT 20').all<Record<string, unknown>>(),
         ]);
 
-        const sessions = allSessionsRes.results.map(mapSessionRow);
-        const completed = sessions.filter((s) => s.status === 'completed');
-        const pending = sessions.filter((s) => s.status === 'pending_debrief');
-
-        const positiveCount = completed.filter(
-          (s) => s.workedRating === 'yes' || (s.workedRating === 'partial' && (s.deltaScore ?? 0) > 0)
-        ).length;
+        const totalSessions = Number(totalsRow?.total_sessions ?? 0);
+        const completedDebriefs = Number(totalsRow?.completed_debriefs ?? 0);
+        const pendingDebriefs = Number(totalsRow?.pending_debriefs ?? 0);
+        const positiveCompleted = Number(totalsRow?.positive_completed ?? 0);
         const globalSuccessRatePct =
-          completed.length > 0 ? Math.round((positiveCount / completed.length) * 100) : 0;
+          completedDebriefs > 0 ? Math.round((positiveCompleted / completedDebriefs) * 100) : 0;
         const globalAvgDelta =
-          completed.length > 0
-            ? Number(
-                (completed.reduce((acc, s) => acc + (s.deltaScore ?? 0), 0) / completed.length).toFixed(2)
-              )
+          totalsRow?.avg_delta !== null && totalsRow?.avg_delta !== undefined
+            ? Number(Number(totalsRow.avg_delta).toFixed(2))
             : 0;
         const explorationSharePct =
-          sessions.length > 0
-            ? Math.round((sessions.filter((s) => s.isExploration).length / sessions.length) * 100)
+          totalSessions > 0
+            ? Math.round((Number(totalsRow?.exploration_count ?? 0) / totalSessions) * 100)
             : 0;
 
-        // Blind A/B Scientific Validation: Active 3-Band AM vs Pure-Music Control (AM = 0%)
-        const activeCompleted = completed.filter((s) => !s.isControlTrial);
-        const controlCompleted = completed.filter((s) => s.isControlTrial);
-        const avgDeltaOf = (list: SessionRecord[]) =>
-          list.length > 0
-            ? Number((list.reduce((acc, s) => acc + (s.deltaScore ?? 0), 0) / list.length).toFixed(2))
-            : 0;
-        const successPctOf = (list: SessionRecord[]) =>
-          list.length > 0
-            ? Math.round(
-                (list.filter(
-                  (s) => s.workedRating === 'yes' || (s.workedRating === 'partial' && (s.deltaScore ?? 0) > 0)
-                ).length /
-                  list.length) *
-                  100
-              )
-            : 0;
-        const activeAvgDelta = avgDeltaOf(activeCompleted);
-        const controlAvgDelta = avgDeltaOf(controlCompleted);
+        // Blind A/B Validation (Explicit Δ + Listen Retention %)
+        const activeAb = abRows.results.find((r) => Number(r.is_control_trial ?? 0) === 0);
+        const controlAb = abRows.results.find((r) => Number(r.is_control_trial ?? 0) === 1);
+        const activeN = Number(activeAb?.comp_n ?? 0);
+        const controlN = Number(controlAb?.comp_n ?? 0);
+        const activeAvgDelta = activeN > 0 ? Number(Number(activeAb?.avg_delta ?? 0).toFixed(2)) : 0;
+        const controlAvgDelta = controlN > 0 ? Number(Number(controlAb?.avg_delta ?? 0).toFixed(2)) : 0;
+        const activeListenRet = Math.round(Number(activeAb?.avg_ret ?? 0) * 100);
+        const controlListenRet = Math.round(Number(controlAb?.avg_ret ?? 0) * 100);
+
         const abValidation: ABValidationStats = {
-          activeSessions: activeCompleted.length,
-          controlSessions: controlCompleted.length,
+          activeSessions: activeN,
+          controlSessions: controlN,
           activeAvgDelta,
           controlAvgDelta,
-          activeSuccessRatePct: successPctOf(activeCompleted),
-          controlSuccessRatePct: successPctOf(controlCompleted),
+          activeSuccessRatePct:
+            activeN > 0 ? Math.round((Number(activeAb?.pos_n ?? 0) / activeN) * 100) : 0,
+          controlSuccessRatePct:
+            controlN > 0 ? Math.round((Number(controlAb?.pos_n ?? 0) / controlN) * 100) : 0,
+          activeListenRetentionPct: activeListenRet,
+          controlListenRetentionPct: controlListenRet,
           deltaLift:
-            activeCompleted.length > 0 && controlCompleted.length > 0
-              ? Number((activeAvgDelta - controlAvgDelta).toFixed(2))
+            activeN > 0 && controlN > 0 ? Number((activeAvgDelta - controlAvgDelta).toFixed(2)) : 0,
+          retentionLiftPct:
+            activeListenRet > 0 && controlListenRet > 0 ? activeListenRet - controlListenRet : 0,
+          readyForStats: activeN >= 10 && controlN >= 5,
+        };
+
+        // Behavioral Retention Metrics (separate from Explicit Δ!)
+        const trackedN = Number(retentionRow?.tracked_n ?? 0);
+        const totalActiveProfiles = Number(returnStatsRow?.total_active_profiles ?? 0);
+        const retentionMetrics: RetentionMetrics = {
+          trackedSessions: trackedN,
+          avgListenRetentionPct: Math.round(Number(retentionRow?.avg_comp ?? 0) * 100),
+          completionRatePct:
+            trackedN > 0 ? Math.round((Number(retentionRow?.completed_75_n ?? 0) / trackedN) * 100) : 0,
+          earlyBounceRatePct:
+            trackedN > 0 ? Math.round((Number(retentionRow?.bounce_n ?? 0) / trackedN) * 100) : 0,
+          instantSwapRatePct:
+            trackedN > 0 ? Math.round((Number(retentionRow?.swap_n ?? 0) / trackedN) * 100) : 0,
+          d1ReturnRatePct:
+            totalActiveProfiles > 0
+              ? Math.round((Number(returnStatsRow?.d1_profiles ?? 0) / totalActiveProfiles) * 100)
               : 0,
-          readyForStats: activeCompleted.length >= 10 && controlCompleted.length >= 5,
+          d7ReturnRatePct:
+            totalActiveProfiles > 0
+              ? Math.round((Number(returnStatsRow?.d7_profiles ?? 0) / totalActiveProfiles) * 100)
+              : 0,
+          returningProfiles: Number(returnStatsRow?.returning_profiles ?? 0),
         };
 
         const armNameMap = new Map(PROTOCOL_ARMS.map((a) => [a.id, a.name]));
-
-        // Group cohort bandit stats
         const cohortBanditMap = new Map<string, ArmPerformance[]>();
         for (const r of cohortBanditRes.results) {
           const cohortKey = String(r.scope_id);
@@ -1167,6 +2275,8 @@ export default {
             armId: String(r.arm_id),
             armName: armNameMap.get(String(r.arm_id)) ?? String(r.arm_id),
             trials: Number(r.trials),
+            explicitTrials: Number(r.explicit_trials ?? 0),
+            implicitTrials: Number(r.implicit_trials ?? 0),
             successRatePct: Math.round((alpha / (alpha + beta)) * 100),
             avgDelta: Number(Number(r.avg_delta).toFixed(2)),
             avgCompletionPct: Math.round(Number(r.avg_completion) * 100),
@@ -1178,36 +2288,23 @@ export default {
           cohortBanditMap.set(cohortKey, list);
         }
 
-        // Build cohort summaries
-        const cohortSessionGroups = new Map<string, SessionRecord[]>();
-        for (const s of sessions) {
-          const list = cohortSessionGroups.get(s.cohortKey) ?? [];
-          list.push(s);
-          cohortSessionGroups.set(s.cohortKey, list);
-        }
-
-        const cohorts: CohortPerformance[] = Array.from(cohortSessionGroups.entries())
-          .map(([cohortKey, list]) => {
-            const comp = list.filter((s) => s.status === 'completed');
-            const pos = comp.filter((s) => s.workedRating === 'yes').length;
-            const arms = (cohortBanditMap.get(cohortKey) ?? []).sort(
-              (a, b) => b.successRatePct - a.successRatePct
-            );
-            return {
-              cohortKey,
-              cohortLabel: formatCohortLabel(cohortKey),
-              totalSessions: list.length,
-              completedSessions: comp.length,
-              avgDelta:
-                comp.length > 0
-                  ? Number((comp.reduce((a, b) => a + (b.deltaScore ?? 0), 0) / comp.length).toFixed(2))
-                  : 0,
-              successRatePct: comp.length > 0 ? Math.round((pos / comp.length) * 100) : 0,
-              topArmName: arms[0]?.armName ?? list[0]?.armName ?? '—',
-              arms,
-            };
-          })
-          .sort((a, b) => b.totalSessions - a.totalSessions);
+        const cohorts: CohortPerformance[] = cohortAggRes.results.map((c) => {
+          const cohortKey = String(c.cohort_key);
+          const comp = Number(c.completed_sessions ?? 0);
+          const arms = (cohortBanditMap.get(cohortKey) ?? []).sort(
+            (a, b) => b.successRatePct - a.successRatePct
+          );
+          return {
+            cohortKey,
+            cohortLabel: formatCohortLabel(cohortKey),
+            totalSessions: Number(c.total_sessions ?? 0),
+            completedSessions: comp,
+            avgDelta: comp > 0 ? Number(Number(c.avg_delta ?? 0).toFixed(2)) : 0,
+            successRatePct: comp > 0 ? Math.round((Number(c.pos_n ?? 0) / comp) * 100) : 0,
+            topArmName: arms[0]?.armName ?? '—',
+            arms,
+          };
+        });
 
         const personalArms: ArmPerformance[] = personalBanditRes.results
           .map((r) => {
@@ -1217,6 +2314,8 @@ export default {
               armId: String(r.arm_id),
               armName: armNameMap.get(String(r.arm_id)) ?? String(r.arm_id),
               trials: Number(r.trials),
+              explicitTrials: Number(r.explicit_trials ?? 0),
+              implicitTrials: Number(r.implicit_trials ?? 0),
               successRatePct: Math.round((alpha / (alpha + beta)) * 100),
               avgDelta: Number(Number(r.avg_delta).toFixed(2)),
               avgCompletionPct: Math.round(Number(r.avg_completion) * 100),
@@ -1226,46 +2325,60 @@ export default {
           })
           .sort((a, b) => b.successRatePct - a.successRatePct);
 
-        // Aggregate Music Genre Layer performance across real completed sessions
-        const genreBuckets = new Map<ResolvedGenre, { total: number; positive: number; deltaSum: number }>();
-        for (const s of completed) {
-          const g = (s.acousticParams?.genre as ResolvedGenre | undefined) ?? 'deep_electronic';
-          if (!GENRE_META[g]) continue;
-          const b = genreBuckets.get(g) ?? { total: 0, positive: 0, deltaSum: 0 };
-          b.total += 1;
-          if (s.workedRating === 'yes' || (s.workedRating === 'partial' && (s.deltaScore ?? 0) > 0)) {
-            b.positive += 1;
-          }
-          b.deltaSum += s.deltaScore ?? 0;
-          genreBuckets.set(g, b);
-        }
-        const genreLeaderboard: GenrePerformance[] = Array.from(genreBuckets.entries())
-          .map(([genre, b]) => ({
-            genre,
-            label: GENRE_META[genre].label,
-            sessions: b.total,
-            successRatePct: Math.round((b.positive / b.total) * 100),
-            avgDelta: Number((b.deltaSum / b.total).toFixed(2)),
-          }))
-          .sort((a, b) => b.successRatePct - a.successRatePct || b.sessions - a.sessions);
+        const genreLeaderboard: GenrePerformance[] = genreAggRes.results.map((r) => {
+          const slug = String(r.music_genre || 'deep_electronic');
+          const display = getGenreDisplayMeta(slug);
+          const compN = Number(r.comp_n ?? 0);
+          const totalN = Number(r.total_n ?? 0);
+          return {
+            genre: slug,
+            label: display.label,
+            isCustom: display.isCustom,
+            sessions: compN > 0 ? compN : totalN,
+            successRatePct: compN > 0 ? Math.round((Number(r.pos_n ?? 0) / compN) * 100) : 0,
+            avgDelta: compN > 0 ? Number(Number(r.avg_delta ?? 0).toFixed(2)) : 0,
+            avgRetentionPct: Math.round(Number(r.avg_ret ?? 0) * 100),
+          };
+        });
+
+        const topArchetypeCombos: ArchetypeComboPerformance[] = comboAggRes.results.map((r) => {
+          const cohortKey = String(r.cohort_key);
+          const slug = String(r.music_genre || 'deep_electronic');
+          const compN = Number(r.comp_n ?? 0);
+          return {
+            cohortKey,
+            cohortLabel: formatCohortLabel(cohortKey),
+            armName: String(r.arm_name),
+            genreSlug: slug,
+            genreLabel: getGenreDisplayMeta(slug).label,
+            sessions: Number(r.sessions_n ?? 0),
+            avgDelta: compN > 0 ? Number(Number(r.avg_delta ?? 0).toFixed(2)) : 0,
+            avgRetentionPct: Math.round(Number(r.avg_ret ?? 0) * 100),
+            successRatePct: compN > 0 ? Math.round((Number(r.pos_n ?? 0) / compN) * 100) : 0,
+          };
+        });
+
+        // Public privacy scrub: NEVER include profileId, rawInputText, or notes in public recentSessions!
+        const recentSessions = recentRes.results.map((r) => {
+          const mapped = mapSessionRow(r, false);
+          return { ...mapped, rawInputText: '', notes: '' };
+        });
 
         const insights: ResearchInsights = {
           totalProfiles: Number(profilesCountRow?.c ?? 0),
-          totalSessions: sessions.length,
-          completedDebriefs: completed.length,
-          pendingDebriefs: pending.length,
+          totalSessions,
+          completedDebriefs,
+          pendingDebriefs,
           globalSuccessRatePct,
           globalAvgDelta,
           explorationSharePct,
           abValidation,
+          retentionMetrics,
           cohorts,
           personalArms,
           genreLeaderboard,
-          recentSessions: sessions.slice(0, 20).map((s) => ({
-            ...s,
-            rawInputText: '',
-            notes: '',
-          })),
+          topArchetypeCombos,
+          recentSessions,
         };
 
         return json({ insights }, 200, request);
@@ -1308,6 +2421,13 @@ export default {
             s.is_control_trial,
             s.energy_tier,
             s.music_genre,
+            s.initial_music_genre,
+            s.custom_genre_slug,
+            s.audio_source,
+            s.genre_swapped_at_sec,
+            s.implicit_reward_score,
+            s.retention_outcome,
+            s.return_bonus_credited,
             s.acoustic_params_json,
             s.status,
             s.post_score,
@@ -1325,81 +2445,29 @@ export default {
 
         if (format === 'csv') {
           const headers = [
-            'session_id',
-            'age_band',
-            'role',
-            'cohort_key',
-            'time_of_day_bucket',
-            'current_state',
-            'baseline_score',
-            'target_state',
-            'environment',
-            'device',
-            'safety_mode',
-            'planned_duration_min',
-            'actual_duration_sec',
-            'completion_ratio',
-            'arm_id',
-            'is_exploration',
-            'is_control_trial',
-            'energy_tier',
-            'music_genre',
-            'genre_mode',
-            'modulation_hz',
-            'modulation_depth',
-            'crossover_hz',
-            'upper_crossover_hz',
-            'stereo_am_spread',
-            'preferred_mod_mult',
-            'bpm',
-            'noise_color',
-            'noise_level',
-            'status',
-            'post_score',
-            'delta_score',
-            'worked_rating',
-            'reward_score',
-            'created_at',
+            'session_id', 'age_band', 'role', 'cohort_key', 'time_of_day_bucket',
+            'current_state', 'baseline_score', 'target_state', 'environment', 'device',
+            'safety_mode', 'planned_duration_min', 'actual_duration_sec', 'completion_ratio',
+            'arm_id', 'is_exploration', 'is_control_trial', 'energy_tier',
+            'music_genre', 'initial_music_genre', 'custom_genre_slug', 'audio_source',
+            'genre_swapped_at_sec', 'implicit_reward_score', 'retention_outcome', 'return_bonus_credited',
+            'modulation_hz', 'modulation_depth', 'crossover_hz', 'upper_crossover_hz',
+            'stereo_am_spread', 'preferred_mod_mult', 'bpm', 'noise_color', 'noise_level',
+            'status', 'post_score', 'delta_score', 'worked_rating', 'reward_score', 'created_at',
           ];
           const csvLines = [headers.join(',')];
           for (const r of rows.results) {
             const ap = JSON.parse(String(r.acoustic_params_json)) as AcousticParams;
             const vals = [
-              r.session_id,
-              r.age_band,
-              r.role,
-              r.cohort_key,
-              r.time_of_day_bucket,
-              r.current_state,
-              r.baseline_score,
-              r.target_state,
-              r.environment,
-              r.device,
-              r.safety_mode,
-              r.planned_duration_min,
-              r.actual_duration_sec,
-              r.completion_ratio,
-              r.arm_id,
-              r.is_exploration,
-              r.is_control_trial ?? 0,
-              r.energy_tier ?? ap.energyTier ?? 'focus',
-              r.music_genre ?? ap.genre ?? 'auto',
-              ap.genreSelectionMode ?? 'auto',
-              ap.modulationHz,
-              ap.modulationDepth,
-              ap.crossoverHz ?? 190,
-              ap.upperCrossoverHz ?? 4500,
-              ap.stereoAmSpread ? 1 : 0,
-              r.preferred_mod_mult ?? 1.0,
-              ap.bpm,
-              ap.noiseColor,
-              ap.noiseLevel,
-              r.status,
-              r.post_score ?? '',
-              r.delta_score ?? '',
-              r.worked_rating ?? '',
-              r.reward_score ?? '',
-              r.created_at,
+              r.session_id, r.age_band, r.role, r.cohort_key, r.time_of_day_bucket,
+              r.current_state, r.baseline_score, r.target_state, r.environment, r.device,
+              r.safety_mode, r.planned_duration_min, r.actual_duration_sec, r.completion_ratio,
+              r.arm_id, r.is_exploration, r.is_control_trial ?? 0, r.energy_tier ?? ap.energyTier ?? 'focus',
+              r.music_genre ?? ap.genre ?? 'auto', r.initial_music_genre ?? '', r.custom_genre_slug ?? '', r.audio_source ?? '',
+              r.genre_swapped_at_sec ?? '', r.implicit_reward_score ?? '', r.retention_outcome ?? '', r.return_bonus_credited ?? 0,
+              ap.modulationHz, ap.modulationDepth, ap.crossoverHz ?? 190, ap.upperCrossoverHz ?? 4500,
+              ap.stereoAmSpread ? 1 : 0, r.preferred_mod_mult ?? 1.0, ap.bpm, ap.noiseColor, ap.noiseLevel,
+              r.status, r.post_score ?? '', r.delta_score ?? '', r.worked_rating ?? '', r.reward_score ?? '', r.created_at,
             ];
             csvLines.push(vals.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','));
           }
@@ -1424,6 +2492,7 @@ export default {
           JSON.stringify(
             {
               platform: 'nootropic.fm',
+              version: '2.0',
               license: 'Anonymized Open Research Dataset',
               exportedAt: new Date().toISOString(),
               count: sanitized.length,
@@ -1442,12 +2511,13 @@ export default {
         );
       }
 
-      return json({ error: 'API route not found' }, 404);
+      return json({ error: 'API route not found' }, 404, request);
     } catch (err) {
       console.error('Worker API error:', err);
       return json(
         { error: err instanceof Error ? err.message : 'Internal server error' },
-        500
+        500,
+        request
       );
     }
   },

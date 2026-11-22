@@ -1,6 +1,9 @@
 import type {
   AcousticParams,
+  AppRuntimeConfig,
+  AudioSourceType,
   CurrentState,
+  CustomTrackInfo,
   DebriefPayload,
   EnergyTier,
   LiveAdjustment,
@@ -16,13 +19,67 @@ import type {
   UserProfile,
 } from '../../shared/types';
 
-export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? '';
+export const API_BASE =
+  (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? '';
+
+export const PROFILE_STORAGE_KEY = 'nootropic_fm_profile_id_v1';
+export const PROFILE_TOKEN_KEY = 'nootropic_fm_profile_token_v2';
+export const PROFILE_EXPIRES_KEY = 'nootropic_fm_profile_expires_v2';
+const PROFILE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90-day client storage TTL
+
+export function saveStoredProfileAuth(profileId: string, token?: string): void {
+  try {
+    localStorage.setItem(PROFILE_STORAGE_KEY, profileId);
+    if (token) {
+      localStorage.setItem(PROFILE_TOKEN_KEY, token);
+    }
+    localStorage.setItem(PROFILE_EXPIRES_KEY, String(Date.now() + PROFILE_TTL_MS));
+  } catch {
+    // ignore storage quota / private mode
+  }
+}
+
+export function getStoredProfileAuth(): { profileId: string; token: string | null } | null {
+  try {
+    const profileId = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!profileId) return null;
+    const exp = Number(localStorage.getItem(PROFILE_EXPIRES_KEY) ?? '0');
+    if (exp > 0 && Date.now() > exp) {
+      clearStoredProfileAuth();
+      return null;
+    }
+    const token = localStorage.getItem(PROFILE_TOKEN_KEY);
+    return { profileId, token };
+  } catch {
+    return null;
+  }
+}
+
+export function clearStoredProfileAuth(): void {
+  try {
+    localStorage.removeItem(PROFILE_STORAGE_KEY);
+    localStorage.removeItem(PROFILE_TOKEN_KEY);
+    localStorage.removeItem(PROFILE_EXPIRES_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function getProfileTokenHeader(): Record<string, string> {
+  try {
+    const token = localStorage.getItem(PROFILE_TOKEN_KEY);
+    return token ? { 'x-profile-token': token } : {};
+  } catch {
+    return {};
+  }
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       'content-type': 'application/json',
+      ...getProfileTokenHeader(),
       ...(init?.headers ?? {}),
     },
   });
@@ -34,18 +91,28 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => apiFetch<{ ok: boolean; mode: string; hasGemini: boolean }>('/api/health'),
+  health: () =>
+    apiFetch<{ ok: boolean; version: string; mode: string; hasLiveMusicGen: boolean }>('/api/health'),
+
+  getConfig: () => apiFetch<{ config: AppRuntimeConfig }>('/api/config'),
 
   saveProfile: (profile: Partial<UserProfile>) =>
-    apiFetch<{ profile: UserProfile }>('/api/profile', {
+    apiFetch<{ profile: UserProfile; profileToken?: string }>('/api/profile', {
       method: 'POST',
       body: JSON.stringify(profile),
     }),
 
   getProfile: (id: string) =>
-    apiFetch<{ profile: UserProfile; pendingDebrief: SessionRecord | null }>(
-      `/api/profile/${encodeURIComponent(id)}`
-    ),
+    apiFetch<{
+      profile: UserProfile;
+      pendingDebrief: SessionRecord | null;
+      profileToken?: string;
+    }>(`/api/profile/${encodeURIComponent(id)}`),
+
+  deleteProfile: (id: string) =>
+    apiFetch<{ ok: boolean; deletedProfileId: string }>(`/api/profile/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
 
   parseCheckIn: (text: string, profile?: Partial<UserProfile> | null) =>
     apiFetch<{ parsed: ParsedCheckIn }>('/api/parse', {
@@ -54,7 +121,9 @@ export const api = {
     }),
 
   startProtocol: (payload: {
-    profileId: string;
+    profileId?: string;
+    ephemeralMode?: boolean;
+    ephemeralProfile?: Partial<UserProfile>;
     rawInputText: string;
     currentState: CurrentState;
     baselineScore: number;
@@ -64,11 +133,48 @@ export const api = {
     durationMin: number;
     ageOverride?: number;
     requestedGenre?: MusicGenreChoice;
+    customGenreInput?: string;
   }) =>
     apiFetch<{ recommendation: ProtocolRecommendation }>('/api/protocol/start', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  generateCustomMusic: (payload: {
+    customGenre: string;
+    energyTier: EnergyTier;
+    targetState: TargetState;
+    bpm?: number;
+    harmonicMode?: AcousticParams['harmonicMode'];
+    speakerSafeEQ?: boolean;
+    noiseSensitivity?: 'low' | 'medium' | 'high';
+    sessionId?: string;
+  }) =>
+    apiFetch<{
+      status: 'ready' | 'generating' | 'unavailable' | 'cap_reached' | 'rate_limited' | 'failed';
+      fromCache?: boolean;
+      message?: string;
+      pollAfterMs?: number;
+      track?: {
+        id: string;
+        genreSlug: string;
+        displayLabel: string;
+        energyTier: EnergyTier;
+        url: string;
+        provider: string;
+        bpm: number;
+      };
+    }>('/api/music/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getMusicStatus: (slug: string, energy: EnergyTier) =>
+    apiFetch<{
+      status: string;
+      error?: string | null;
+      track?: CustomTrackInfo;
+    }>(`/api/music/status?slug=${encodeURIComponent(slug)}&energy=${encodeURIComponent(energy)}`),
 
   saveProgress: (payload: {
     sessionId: string;
@@ -80,12 +186,45 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  /**
+   * Cross-browser navigator.sendBeacon (text/plain Blob avoids CORS OPTIONS preflight drops on iOS Safari).
+   */
+  sendSessionBeacon: (payload: {
+    sessionId: string;
+    event: 'visibility' | 'pagehide' | 'milestone';
+    actualDurationSec: number;
+    audioStarted: boolean;
+    liveAdjustments: LiveAdjustment[];
+  }): void => {
+    if (!payload.sessionId || payload.sessionId.startsWith('eph_')) return;
+    const url = `${API_BASE}/api/session/beacon`;
+    const body = JSON.stringify(payload);
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        const blob = new Blob([body], { type: 'text/plain;charset=UTF-8' });
+        navigator.sendBeacon(url, blob);
+        return;
+      }
+    } catch {
+      // fall through to keepalive fetch
+    }
+    void fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain;charset=UTF-8' },
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  },
+
   updateSessionGenre: (payload: {
     sessionId: string;
-    genre: ResolvedGenre;
+    genre: string;
+    customGenreSlug?: string | null;
+    audioSource?: AudioSourceType;
+    atSec?: number;
     params?: AcousticParams;
   }) =>
-    apiFetch<{ ok: boolean; genre: ResolvedGenre }>('/api/session/genre', {
+    apiFetch<{ ok: boolean; genre: string; instantSwapRecorded?: boolean }>('/api/session/genre', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
@@ -130,5 +269,6 @@ export const api = {
         ResolvedGenre,
         Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier }>
       >;
+      customTracks?: CustomTrackInfo[];
     }>('/api/audio/catalog'),
 };

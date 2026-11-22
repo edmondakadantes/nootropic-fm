@@ -88,7 +88,7 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
   );
   const [baselineScore, setBaselineScore] = useState<number>(2);
   const [researchConsent, setResearchConsent] = useState<boolean>(
-    initialProfile?.researchConsent ?? true
+    initialProfile?.researchConsent ?? false
   );
   const [listeningField, setListeningField] = useState<1 | 2 | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -155,7 +155,7 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
     try {
       const profilePayload: Partial<UserProfile> = {
         id: initialProfile?.id,
-        age: parsedIntent.extractedAge ?? parsedProfile.age,
+        age: Math.max(18, parsedIntent.extractedAge ?? parsedProfile.age),
         role: parsedIntent.extractedRole ?? parsedProfile.role,
         texturePref: parsedProfile.texturePref,
         noiseSensitivity: parsedProfile.noiseSensitivity,

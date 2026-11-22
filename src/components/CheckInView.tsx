@@ -10,12 +10,14 @@ import {
   Mic,
   MicOff,
   Music2,
+  Plus,
   ShieldCheck,
   Sparkles,
   Volume2,
   X,
 } from 'lucide-react';
 import { parseNaturalCheckIn, parseOnboardingAnswers } from '../../shared/parser';
+import { sanitizeCustomVibe } from '../../shared/promptComposer';
 import {
   DEVICE_LABELS,
   ENV_LABELS,
@@ -23,6 +25,7 @@ import {
   ROLE_LABELS,
   STATE_LABELS,
   TARGET_LABELS,
+  type AppRuntimeConfig,
   type CurrentState,
   type MusicGenreChoice,
   type NoiseSensitivity,
@@ -34,18 +37,19 @@ import {
   type UserProfile,
   type UserRole,
 } from '../../shared/types';
-import { api } from '../lib/api';
 import type { FieldMood } from './AmbientField';
 import { SonicOrb } from './SonicOrb';
 
 interface CheckInViewProps {
   profile: UserProfile | null;
+  runtimeConfig: AppRuntimeConfig | null;
   pendingDebrief: SessionRecord | null;
   onOpenPendingDebrief: () => void;
   onDismissPending: () => void;
   onMoodChange?: (mood: FieldMood) => void;
   onLaunchUnifiedSession: (payload: {
     profileUpdate?: Partial<UserProfile>;
+    ephemeralMode: boolean;
     rawInputText: string;
     currentState: CurrentState;
     baselineScore: number;
@@ -55,6 +59,7 @@ interface CheckInViewProps {
     durationMin: number;
     ageOverride?: number;
     requestedGenre?: MusicGenreChoice;
+    customGenreInput?: string;
   }) => Promise<void>;
 }
 
@@ -145,8 +150,17 @@ interface SpeechRecognitionInstance {
   stop: () => void;
 }
 
+function browserHasGpc(): boolean {
+  try {
+    return (navigator as unknown as { globalPrivacyControl?: boolean }).globalPrivacyControl === true;
+  } catch {
+    return false;
+  }
+}
+
 export function CheckInView({
   profile,
+  runtimeConfig,
   pendingDebrief,
   onOpenPendingDebrief,
   onDismissPending,
@@ -169,20 +183,35 @@ export function CheckInView({
   );
   const [durationMin, setDurationMin] = useState<number>(35);
   const [genreChoice, setGenreChoice] = useState<MusicGenreChoice>('auto');
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customVibeText, setCustomVibeText] = useState('');
+  const [customVibeError, setCustomVibeError] = useState<string | null>(null);
 
-  // First-visit profile anchors (auto-prefilled if mentioned in Step 1 text!)
-  const [age, setAge] = useState<number>(profile?.age ?? 32);
+  // First-visit profile anchors (18+ strictly enforced!)
+  const [age, setAge] = useState<number>(Math.max(18, profile?.age ?? 32));
+  const [ageError, setAgeError] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole>(profile?.role ?? 'knowledge_worker');
   const [noiseSensitivity, setNoiseSensitivity] = useState<NoiseSensitivity>(
     profile?.noiseSensitivity ?? 'medium'
   );
-  const [researchConsent, setResearchConsent] = useState<boolean>(profile?.researchConsent ?? true);
+  // Privacy-first default: unchecked in EEA/UK/CH or GPC browsers until user explicitly opts in
+  const defaultConsent = profile
+    ? profile.researchConsent
+    : !browserHasGpc() && !(runtimeConfig?.regionRequiresOptIn ?? true);
+  const [researchConsent, setResearchConsent] = useState<boolean>(defaultConsent);
+  const [consentTouched, setConsentTouched] = useState(false);
   const [ageOverride, setAgeOverride] = useState<number | undefined>(undefined);
 
   const [detectedChips, setDetectedChips] = useState<string[]>([]);
-  const [usedGemini, setUsedGemini] = useState(false);
   const [listening, setListening] = useState(false);
   const [starting, setStarting] = useState(false);
+
+  // Sync default opt-in once /api/config returns region info (unless user already toggled it)
+  useEffect(() => {
+    if (!profile && !consentTouched && runtimeConfig) {
+      setResearchConsent(!browserHasGpc() && !runtimeConfig.regionRequiresOptIn);
+    }
+  }, [profile, consentTouched, runtimeConfig]);
 
   const isDriving = environment === 'driving';
 
@@ -213,38 +242,24 @@ export function CheckInView({
     setEnvironment(instant.environment);
     setDevice(instant.device);
     setDurationMin(instant.durationMin);
-    if (instant.extractedAge) {
+    if (instant.extractedAge && instant.extractedAge >= 18) {
       setAge(instant.extractedAge);
       setAgeOverride(instant.extractedAge);
+      setAgeError(null);
     }
     if (instant.extractedRole) {
       setRole(instant.extractedRole);
     }
-    if (instant.extractedGenre) {
+    if (instant.extractedCustomGenre) {
+      setShowCustomInput(true);
+      setCustomVibeText(instant.extractedCustomGenre);
+      setCustomVibeError(null);
+    } else if (instant.extractedGenre) {
+      setShowCustomInput(false);
+      setCustomVibeText('');
       setGenreChoice(instant.extractedGenre);
     }
     setDetectedChips(instant.detectedKeywords);
-  };
-
-  const serverEnhance = async (text: string) => {
-    if (!text.trim()) return;
-    try {
-      const { parsed } = await api.parseCheckIn(text, profile ?? { age, role, defaultDevice: device });
-      setCurrentState(parsed.currentState);
-      setTargetState(parsed.targetState);
-      setEnvironment(parsed.environment);
-      setDevice(parsed.device);
-      setDurationMin(parsed.durationMin);
-      if (parsed.extractedAge) {
-        setAge(parsed.extractedAge);
-        setAgeOverride(parsed.extractedAge);
-      }
-      if (parsed.extractedRole) setRole(parsed.extractedRole);
-      setDetectedChips(parsed.detectedKeywords);
-      setUsedGemini(parsed.usedGemini);
-    } catch {
-      // Deterministic local parse already applied
-    }
   };
 
   const applyPreset = (preset: QuickStatePreset) => {
@@ -267,7 +282,6 @@ export function CheckInView({
       `${preset.durationMin} min`,
       ...(preset.environment === 'driving' ? ['Driving Safety Mode'] : []),
     ]);
-    // Immediately glide to Step 2 micro-calibration!
     setStep(2);
   };
 
@@ -292,7 +306,6 @@ export function CheckInView({
       const transcript = event.results[0]?.[0]?.transcript ?? '';
       if (transcript) {
         liveAnalyze(transcript);
-        void serverEnhance(transcript);
       }
     };
     recognition.onerror = () => setListening(false);
@@ -313,6 +326,23 @@ export function CheckInView({
   };
 
   const handleLaunch = async () => {
+    if (isFirstVisit && (!Number.isFinite(age) || age < 18 || age > 95)) {
+      setAgeError('nootropic.fm is restricted to listeners aged 18+.');
+      return;
+    }
+    setAgeError(null);
+
+    let validatedCustom: string | undefined = undefined;
+    if (showCustomInput && customVibeText.trim()) {
+      const check = sanitizeCustomVibe(customVibeText);
+      if (check?.rejectedReason) {
+        setCustomVibeError(check.rejectedReason);
+        return;
+      }
+      validatedCustom = check?.displayLabel;
+    }
+    setCustomVibeError(null);
+
     setStarting(true);
     try {
       const effectiveTarget: TargetState =
@@ -320,12 +350,13 @@ export function CheckInView({
           ? 'alert_focus'
           : targetState;
       const effectiveDevice: OutputDevice = isDriving ? 'car_audio' : device;
+      const ephemeralMode = !researchConsent;
 
       let profileUpdate: Partial<UserProfile> | undefined = undefined;
       if (isFirstVisit) {
         const parsedBase = parseOnboardingAnswers(rawText, '');
         profileUpdate = {
-          age: Math.max(16, Math.min(95, age || parsedBase.age)),
+          age: Math.max(18, Math.min(95, age || parsedBase.age)),
           role: isDriving && role === 'knowledge_worker' ? 'driver' : role,
           texturePref: parsedBase.texturePref,
           noiseSensitivity,
@@ -344,6 +375,7 @@ export function CheckInView({
 
       await onLaunchUnifiedSession({
         profileUpdate,
+        ephemeralMode,
         rawInputText: rawText,
         currentState,
         baselineScore,
@@ -352,16 +384,19 @@ export function CheckInView({
         device: effectiveDevice,
         durationMin,
         ageOverride: isFirstVisit ? age : ageOverride,
-        requestedGenre: genreChoice,
+        requestedGenre: validatedCustom ? 'auto' : genreChoice,
+        customGenreInput: validatedCustom,
       });
     } finally {
       setStarting(false);
     }
   };
 
+  const popularCustom = runtimeConfig?.popularCustomVibes ?? [];
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center space-y-6">
-      {/* Deferred Debrief Banner (returning users) */}
+      {/* Deferred Debrief Banner (returning users — ONLY shown for sessions listened >= 60s!) */}
       {pendingDebrief && (
         <div className="animate-rise w-full flex flex-col justify-between gap-3 rounded-2xl border border-amber-400/35 bg-amber-500/10 p-4 backdrop-blur-md sm:flex-row sm:items-center">
           <div className="flex items-start gap-3">
@@ -371,8 +406,8 @@ export function CheckInView({
                 Unrated previous session ({pendingDebrief.armName})
               </div>
               <p className="text-xs text-amber-200/80">
-                10 seconds: tell us how your {pendingDebrief.plannedDurationMin}-min session worked
-                so the engine keeps getting smarter.
+                10 seconds: tell us how your {Math.max(1, Math.round(pendingDebrief.actualDurationSec / 60))}-min
+                session worked so the engine keeps getting smarter.
               </p>
             </div>
           </div>
@@ -412,7 +447,7 @@ export function CheckInView({
         </h1>
         <p className="mt-2 max-w-lg text-xs text-slate-400 sm:text-sm">
           {step === 1
-            ? 'Tap a state or describe how you feel — we match peer-reviewed neuroscience (Layer 1) with studio music you love (Layer 2).'
+            ? 'Tap a state or describe how you feel — we fuse peer-reviewed neuroscience (Layer 1) inside any instrumental sound you love (Layer 2).'
             : '5 seconds so our engine measures your real before → after shift and adapts every session.'}
         </p>
       </div>
@@ -434,10 +469,9 @@ export function CheckInView({
         ))}
       </div>
 
-      {/* STEP 1: STATE-FIRST HERO (1-Tap Quick Pills + Conversational Free Text/Voice) */}
+      {/* STEP 1: STATE-FIRST HERO */}
       {step === 1 && (
         <div key="step-1" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
-          {/* 1-Tap Instant Mood & Intent Grid */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-mono-tech text-[11px] uppercase tracking-[0.16em] text-cyan-300/85">
@@ -466,21 +500,19 @@ export function CheckInView({
             </div>
           </div>
 
-          {/* Free-Response Conversational + Voice Box */}
           <div className="glow-input-wrap">
             <div className="relative flex items-start rounded-[1rem] bg-[#060a14]/95">
               <textarea
                 rows={2}
                 value={rawText}
                 onChange={(e) => liveAnalyze(e.target.value)}
-                onBlur={() => void serverEnhance(rawText)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     setStep(2);
                   }
                 }}
-                placeholder="Or write/speak in your own words — e.g. I'm a 40yo minibus driver, distracted right now, need 40 min of focus..."
+                placeholder="Or write/speak freely — e.g. I'm a distracted developer, need 40 min of sharp focus, and feel like chill reggae..."
                 className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder-slate-500/80 focus:outline-none sm:text-base"
               />
               <button
@@ -498,12 +530,11 @@ export function CheckInView({
             </div>
           </div>
 
-          {/* Live extracted telemetry chips */}
           {detectedChips.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
                 <Cpu className="h-3 w-3 text-cyan-400" />
-                {usedGemini ? 'AI Context:' : 'Understood:'}
+                Understood:
               </span>
               {detectedChips.map((chip) => (
                 <span
@@ -527,10 +558,9 @@ export function CheckInView({
         </div>
       )}
 
-      {/* STEP 2: MICRO-CALIBRATION (Baseline + Layer 2 Music + Output + First-visit Profile) */}
+      {/* STEP 2: MICRO-CALIBRATION */}
       {step === 2 && (
         <div key="step-2" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
-          {/* Compact Step 1 Summary Header */}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.06] px-4 py-2.5">
             <div className="text-xs text-slate-200">
               <span className="text-slate-400">Trajectory: </span>
@@ -551,12 +581,10 @@ export function CheckInView({
             </button>
           </div>
 
-          {/* 1. Baseline 1-5 (Essential for measuring real Δ!) */}
+          {/* 1. Baseline 1-5 */}
           <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/55 px-4 py-3.5 sm:flex-row sm:items-center">
             <div>
-              <div className="text-xs font-semibold text-white">
-                How sharp / steady right now?
-              </div>
+              <div className="text-xs font-semibold text-white">How sharp / steady right now?</div>
               <div className="text-[11px] text-slate-400">
                 Baseline 1–5 · lets us measure your real before → after Δ
               </div>
@@ -579,21 +607,27 @@ export function CheckInView({
             </div>
           </div>
 
-          {/* 2. Layer 2 · Music Carrier */}
-          <div className="space-y-2.5 rounded-2xl border border-indigo-400/20 bg-indigo-500/[0.05] p-4">
+          {/* 2. Layer 2 · Music Carrier (Auto + 6 Instant Studio + Custom Vibe!) */}
+          <div className="space-y-3 rounded-2xl border border-indigo-400/20 bg-indigo-500/[0.05] p-4">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-200">
                 <Music2 className="h-4 w-4 text-indigo-300" />
                 <span>Layer 2 · Music Carrier</span>
               </div>
-              <span className="text-[11px] text-slate-400">100% lyric-free</span>
+              <span className="text-[11px] text-slate-400">100% lyric-free · 3-Band LR4</span>
             </div>
+
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
-                onClick={() => setGenreChoice('auto')}
+                onClick={() => {
+                  setShowCustomInput(false);
+                  setCustomVibeText('');
+                  setCustomVibeError(null);
+                  setGenreChoice('auto');
+                }}
                 className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                  genreChoice === 'auto'
+                  !showCustomInput && genreChoice === 'auto'
                     ? 'border-cyan-400/80 bg-cyan-400/20 text-white shadow-[0_0_14px_rgba(34,211,238,0.2)]'
                     : 'subtle-chip'
                 }`}
@@ -601,13 +635,19 @@ export function CheckInView({
                 <Sparkles className="h-3 w-3 text-cyan-300" />
                 Auto (Bandit learns)
               </button>
+
               {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => (
                 <button
                   key={g}
                   type="button"
-                  onClick={() => setGenreChoice(g)}
+                  onClick={() => {
+                    setShowCustomInput(false);
+                    setCustomVibeText('');
+                    setCustomVibeError(null);
+                    setGenreChoice(g);
+                  }}
                   className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                    genreChoice === g
+                    !showCustomInput && genreChoice === g
                       ? 'border-indigo-400/80 bg-indigo-500/25 text-white'
                       : 'subtle-chip'
                   }`}
@@ -615,7 +655,70 @@ export function CheckInView({
                   {GENRE_META[g].label}
                 </button>
               ))}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCustomInput((v) => !v);
+                  setCustomVibeError(null);
+                }}
+                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  showCustomInput
+                    ? 'border-fuchsia-400/80 bg-fuchsia-500/20 text-fuchsia-100 shadow-[0_0_14px_rgba(232,121,249,0.22)]'
+                    : 'border-fuchsia-400/35 bg-fuchsia-500/10 text-fuchsia-200 hover:border-fuchsia-400/60'
+                }`}
+              >
+                <Plus className="h-3 w-3" />
+                Custom vibe
+              </button>
             </div>
+
+            {showCustomInput && (
+              <div className="animate-step space-y-2.5 pt-1">
+                <div className="glow-input-wrap">
+                  <input
+                    type="text"
+                    value={customVibeText}
+                    onChange={(e) => {
+                      setCustomVibeText(e.target.value);
+                      setCustomVibeError(null);
+                    }}
+                    placeholder="Type any instrumental vibe — e.g. chill reggae, synthwave, bossa nova, flamenco..."
+                    className="w-full rounded-[1rem] bg-[#060a14]/95 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none sm:text-sm"
+                  />
+                </div>
+                {customVibeError && (
+                  <p className="text-[11px] text-rose-300">{customVibeError}</p>
+                )}
+
+                {popularCustom.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                      Instant R2 Cache:
+                    </span>
+                    {popularCustom.map((v) => (
+                      <button
+                        key={`${v.genreSlug}:${v.energyTier}`}
+                        type="button"
+                        onClick={() => {
+                          setCustomVibeText(v.displayLabel);
+                          setCustomVibeError(null);
+                        }}
+                        className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-200 hover:bg-emerald-500/20"
+                      >
+                        {v.displayLabel}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-400">
+                  {runtimeConfig?.customLiveGenAvailable
+                    ? `Checks our instant R2 Community Cache first ($0); new vibes generate in the background (${runtimeConfig.dailyCapRemaining} community slots left today) and crossfade seamlessly under 3-Band LR4 AM.`
+                    : 'Checks our instant R2 Community Cache first; if not cached yet, we match your closest studio carrier immediately with zero wait.'}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* 3. Output Device + Duration Row */}
@@ -680,25 +783,28 @@ export function CheckInView({
             </div>
           </div>
 
-          {/* 4. First-Visit Only: Saved 1x Personal Anchors + Open Research Consent */}
+          {/* 4. First-Visit Only: 18+ Anchors + Privacy-First Opt-In Consent */}
           {isFirstVisit && (
             <div className="space-y-3 rounded-2xl border border-slate-800/90 bg-slate-950/65 p-4">
               <div className="flex items-center justify-between">
                 <span className="font-mono-tech text-[10px] uppercase tracking-[0.16em] text-cyan-300/85">
-                  Saved once · Used for cohort learning
+                  18+ Listener Profile · Saved once if opted in
                 </span>
                 <span className="text-[11px] text-slate-500">No login required</span>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
-                  <label className="mb-1 block text-[11px] text-slate-400">Age</label>
+                  <label className="mb-1 block text-[11px] text-slate-400">Age (18+)</label>
                   <input
                     type="number"
-                    min={16}
+                    min={18}
                     max={95}
                     value={age}
-                    onChange={(e) => setAge(Number(e.target.value) || 32)}
+                    onChange={(e) => {
+                      setAge(Number(e.target.value));
+                      setAgeError(null);
+                    }}
                     className="w-full rounded-xl border border-slate-700/80 bg-slate-900 px-3 py-2 font-mono-tech text-xs text-white focus:border-cyan-400 focus:outline-none"
                   />
                 </div>
@@ -730,19 +836,25 @@ export function CheckInView({
                 </div>
               </div>
 
+              {ageError && <p className="text-xs text-rose-300">{ageError}</p>}
+
               <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.05] px-3 py-2.5 text-[11px] leading-relaxed text-slate-300">
                 <input
                   type="checkbox"
                   checked={researchConsent}
-                  onChange={(e) => setResearchConsent(e.target.checked)}
+                  onChange={(e) => {
+                    setConsentTouched(true);
+                    setResearchConsent(e.target.checked);
+                  }}
                   className="mt-0.5 h-3.5 w-3.5 rounded accent-cyan-400"
                 />
                 <span>
                   <strong className="inline-flex items-center gap-1 text-emerald-300">
-                    <ShieldCheck className="h-3.5 w-3.5" /> Open Research Beta (Free Year 1):
+                    <ShieldCheck className="h-3.5 w-3.5" /> Open Research &amp; Retention Learning (Optional):
                   </strong>{' '}
-                  Share anonymized outcomes &amp; occasional (~12%) blind pure-music control trials so we can
-                  scientifically validate AM lift vs. music alone.
+                  Save an anonymous 18+ profile locally to learn from your before → after Δ, listen
+                  retention, and occasional (~12%) blind pure-music control trials. Leave unchecked
+                  for 100% local-only listening.
                 </span>
               </label>
             </div>
@@ -753,7 +865,7 @@ export function CheckInView({
               <Car className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
               <span>
                 <strong className="text-amber-200">Driving Safety Mode active:</strong>{' '}
-                {DEVICE_LABELS.car_audio} only, traffic sirens/horns (`800–3500 Hz`) stay unobstructed,
+                {DEVICE_LABELS.car_audio} only, traffic sirens/horns (800–3500 Hz) stay unobstructed,
                 and anti-monotony pulse is enabled.
               </span>
             </div>

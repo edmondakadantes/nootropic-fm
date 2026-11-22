@@ -53,7 +53,7 @@ export function parseOnboardingAnswers(
     who.match(/\b(\d{2})\b/);
   if (ageMatch) {
     const n = Number(ageMatch[1]);
-    if (n >= 16 && n <= 88) {
+    if (n >= 18 && n <= 90) {
       age = n;
       detectedHints.push(`Age ${age}`);
     }
@@ -163,7 +163,7 @@ export function parseNaturalCheckIn(
     norm.match(/(?:i\s*am|i'm|im|age|am)\s+(\d{2})(?:\s*(?:de\s+)?ani)?\b/);
   if (ageMatch) {
     const candidate = Number(ageMatch[1]);
-    if (candidate >= 16 && candidate <= 90) {
+    if (candidate >= 18 && candidate <= 90) {
       extractedAge = candidate;
       detectedKeywords.push(`Age ${candidate}`);
     }
@@ -208,6 +208,10 @@ export function parseNaturalCheckIn(
   } else if (homeSleepRegex.test(norm)) {
     environment = 'home_relax';
     detectedKeywords.push('Home');
+  } else if (/\b(developer|engineer|coder|coding|software|programmer|analyst|programator)\b/.test(norm)) {
+    environment = 'office';
+    extractedRole = 'knowledge_worker';
+    detectedKeywords.push('Desk / Deep Work');
   } else if (profile?.role === 'driver') {
     environment = 'driving';
     device = 'car_audio';
@@ -266,21 +270,29 @@ export function parseNaturalCheckIn(
     detectedKeywords.push('→ Alert Focus');
   }
 
-  // 6. Optional Musical Genre Carrier detection from free text
+  // 6. Optional Musical Genre / Custom Vibe detection from free text
   let extractedGenre: ResolvedGenre | undefined;
-  if (/\b(lofi|lo-fi|lo fi|chillhop|dusty|beats to study)\b/.test(norm)) {
+  let extractedCustomGenre: string | undefined;
+
+  const customVibeMatch = norm.match(
+    /\b(chill reggae|dub reggae|reggae|synthwave|retrowave|vaporwave|bossa nova|afrobeat|flamenco|trip hop|post rock|ambient rock|ambient techno|minimal techno|deep house|dub techno|neo soul|funk|baroque|celtic|koto|sitar|kalimba|drum and bass|downtempo|shoegaze|psytrance|classical piano)\b/
+  );
+  if (customVibeMatch) {
+    extractedCustomGenre = customVibeMatch[1];
+    detectedKeywords.push(`Custom Vibe: ${customVibeMatch[1]}`);
+  } else if (/\b(lofi|lo-fi|lo fi|chillhop|dusty|beats to study)\b/.test(norm)) {
     extractedGenre = 'lofi_keys';
     detectedKeywords.push('Genre: Lo-Fi Keys');
-  } else if (/\b(electronic|techno|house|deep house|synthwave|trance|edm|club|groove)\b/.test(norm)) {
+  } else if (/\b(electronic|techno|house|trance|edm|club|groove)\b/.test(norm)) {
     extractedGenre = 'deep_electronic';
     detectedKeywords.push('Genre: Deep Electronic');
-  } else if (/\b(cinematic|orchestra|orchestral|interstellar|hans zimmer|strings|movie|epic|soundtrack)\b/.test(norm)) {
+  } else if (/\b(cinematic|orchestra|orchestral|interstellar|strings|movie|epic|soundtrack)\b/.test(norm)) {
     extractedGenre = 'cinematic_strings';
     detectedKeywords.push('Genre: Cinematic Strings');
   } else if (/\b(jazz|rhodes|soul|lounge|blues|piano)\b/.test(norm)) {
     extractedGenre = 'jazz_rhodes';
     detectedKeywords.push('Genre: Jazz Rhodes');
-  } else if (/\b(acoustic|guitar|harp|folk|indie|rock|instrumental rock|chitara)\b/.test(norm)) {
+  } else if (/\b(acoustic|guitar|harp|folk|indie|instrumental rock|chitara)\b/.test(norm)) {
     extractedGenre = 'acoustic_pluck';
     detectedKeywords.push('Genre: Acoustic Pluck');
   } else if (/\b(rain|nature|ocean|forest|wind|storm|water|ploaie|natura)\b/.test(norm)) {
@@ -293,6 +305,7 @@ export function parseNaturalCheckIn(
     extractedAge,
     extractedRole,
     extractedGenre,
+    extractedCustomGenre,
     currentState,
     targetState,
     environment,

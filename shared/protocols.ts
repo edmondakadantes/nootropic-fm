@@ -1,7 +1,14 @@
+import {
+  composeScientificMusicPrompt,
+  getGenreDisplayMeta,
+  pickClosestCoreGenre,
+  sanitizeCustomVibe,
+} from './promptComposer';
 import { getStudiesByIds } from './studies';
 import type {
   AcousticParams,
   AgeBand,
+  AudioSourceType,
   CurrentState,
   EnergyTier,
   FormulaIngredient,
@@ -16,7 +23,7 @@ import type {
   UserProfile,
   WorkedRating,
 } from './types';
-import { ENERGY_LABELS, ENV_LABELS, GENRE_META, TARGET_LABELS } from './types';
+import { ENERGY_LABELS, ENV_LABELS, TARGET_LABELS } from './types';
 
 /**
  * Candidate acoustic arms (protocols) explored & optimized by the Contextual Bandit.
@@ -300,6 +307,30 @@ export function computeSessionReward(input: {
   return { reward: Number(reward.toFixed(3)), delta };
 }
 
+/**
+ * Implicit behavioral retention reward (weight 0.45) — learns automatically even when
+ * a user closes the tab without submitting explicit 10s debrief!
+ */
+export function computeImplicitReward(input: {
+  actualDurationSec: number;
+  completionRatio: number;
+  isEarlyBounce: boolean;
+  instantGenreSwapped: boolean;
+}): { reward: number; outcome: 'completed_retention' | 'steady_listen' | 'early_bounce' | 'instant_swap' } {
+  if (input.instantGenreSwapped) {
+    return { reward: 0.2, outcome: 'instant_swap' };
+  }
+  if (input.isEarlyBounce || input.actualDurationSec < 90) {
+    return { reward: 0.22, outcome: 'early_bounce' };
+  }
+  if (input.completionRatio >= 0.75) {
+    return { reward: 0.84, outcome: 'completed_retention' };
+  }
+  // Partial listen (between 90s and 75% completion) -> neutral-positive scaled cleanly
+  const scaled = 0.48 + Math.min(0.32, input.completionRatio * 0.42);
+  return { reward: Number(scaled.toFixed(3)), outcome: 'steady_listen' };
+}
+
 export function resolveEnergyTier(
   targetState: TargetState,
   environment: SessionEnvironment,
@@ -452,7 +483,10 @@ export function buildFormulaIngredients(input: {
   isDriving: boolean;
 }): FormulaIngredient[] {
   const { params, durationMin, isDriving } = input;
-  const genreLabel = GENRE_META[params.genre].label;
+  const genreDisplay = getGenreDisplayMeta(
+    params.customGenreSlug ?? params.genre,
+    params.customGenreLabel
+  );
   const energyInfo = ENERGY_LABELS[params.energyTier];
   const upperHz = params.upperCrossoverHz ?? 4500;
   const bandName =
@@ -473,13 +507,15 @@ export function buildFormulaIngredients(input: {
     },
     {
       role: 'Layer 2 · Music',
-      compound: `${genreLabel} · ${energyInfo.label}`,
+      compound: `${genreDisplay.label} · ${energyInfo.label}`,
       dose:
-        params.genreSelectionMode === 'auto'
-          ? 'Auto by Bandit'
-          : params.genreSelectionMode === 'iso_adapted'
-            ? 'Iso-Adapted'
-            : 'Your Taste',
+        params.genreSelectionMode === 'custom_vibe'
+          ? 'Custom Vibe'
+          : params.genreSelectionMode === 'auto'
+            ? 'Auto by Bandit'
+            : params.genreSelectionMode === 'iso_adapted'
+              ? 'Iso-Adapted'
+              : 'Your Taste',
       evidenceTag: 'Salimpoor 2011 · Perham 2014',
     },
     {
@@ -512,37 +548,78 @@ export function buildFormulaIngredients(input: {
 }
 
 /**
- * Allows instant 1-tap Layer 2 Music swap directly on the Reveal card before pressing Play.
+ * Allows instant 1-tap Layer 2 Music swap (core genre OR custom vibe) directly on the Reveal card.
  */
 export function swapRecommendationGenre(
   rec: ProtocolRecommendation,
-  newGenre: ResolvedGenre
+  newGenre: ResolvedGenre,
+  customVibe?: {
+    slug: string;
+    label: string;
+    cachedUrl?: string;
+    liveGenAvailable?: boolean;
+    noiseSensitivity?: 'low' | 'medium' | 'high';
+  }
 ): ProtocolRecommendation {
   const isDriving = rec.safetyMode || rec.environment === 'driving';
+  const fallbackCore = customVibe
+    ? pickClosestCoreGenre(customVibe.slug, rec.params.energyTier)
+    : newGenre;
+
   const nextParams: AcousticParams = {
     ...rec.params,
-    genre: newGenre,
-    genreSelectionMode: 'user_chosen',
+    genre: fallbackCore,
+    genreSelectionMode: customVibe ? 'custom_vibe' : 'user_chosen',
+    customGenreSlug: customVibe?.slug,
+    customGenreLabel: customVibe?.label,
   };
   let genreAdaptationNote: string | undefined = undefined;
 
-  if ((rec.targetState === 'sleep_winddown' || rec.targetState === 'calm_reset') && newGenre === 'deep_electronic') {
+  if (
+    !customVibe &&
+    (rec.targetState === 'sleep_winddown' || rec.targetState === 'calm_reset') &&
+    newGenre === 'deep_electronic'
+  ) {
     nextParams.genreSelectionMode = 'iso_adapted';
     nextParams.bpm = rec.targetState === 'sleep_winddown' ? 0 : 68;
     nextParams.pulseIntensity = rec.targetState === 'sleep_winddown' ? 0 : 0.16;
     nextParams.filterCutoffHz = Math.min(nextParams.filterCutoffHz, 860);
     genreAdaptationNote =
       'Kept your preferred Deep Electronic timbre, automatically routed to our Calm energy pool and low-pass softened for autonomic down-regulation (Iso-Principle).';
-  } else if (isDriving && newGenre === 'nature_rain') {
+  } else if (!customVibe && isDriving && newGenre === 'nature_rain') {
     nextParams.genreSelectionMode = 'iso_adapted';
     genreAdaptationNote =
       'Kept your Nature & Rain aesthetic while strictly capping rain density and keeping road alertness frequencies open.';
   }
 
+  const audioSource: AudioSourceType = customVibe
+    ? customVibe.cachedUrl
+      ? 'community_cache'
+      : customVibe.liveGenAvailable
+        ? 'live_generating'
+        : 'studio_library'
+    : 'studio_library';
+
+  const composedMusicPrompt = customVibe
+    ? composeScientificMusicPrompt({
+        customGenreLabel: customVibe.label,
+        energyTier: nextParams.energyTier,
+        targetState: rec.targetState,
+        params: nextParams,
+        noiseSensitivity: customVibe.noiseSensitivity ?? 'medium',
+      })
+    : undefined;
+
   return {
     ...rec,
     params: nextParams,
     genreAdaptationNote,
+    audioSource,
+    fallbackCoreGenre: fallbackCore,
+    customGenreSlug: customVibe?.slug,
+    customGenreLabel: customVibe?.label,
+    customTrackUrl: customVibe?.cachedUrl,
+    composedMusicPrompt,
     formulaIngredients: buildFormulaIngredients({
       params: nextParams,
       durationMin: rec.plannedDurationMin,
@@ -561,11 +638,17 @@ export function selectProtocolRecommendation(input: {
   device: OutputDevice;
   durationMin: number;
   requestedGenre?: MusicGenreChoice;
+  customGenreInput?: string;
+  cachedCustomTrackUrl?: string;
+  liveGenAvailable?: boolean;
+  ephemeralMode?: boolean;
   cohortStats: BanditStatRow[];
   profileStats: BanditStatRow[];
   cohortGenreStats?: BanditStatRow[];
   profileGenreStats?: BanditStatRow[];
+  cohortArmGenreStats?: BanditStatRow[];
   allowControlTrial?: boolean;
+  returnBonusAwarded?: boolean;
 }): ProtocolRecommendation {
   const isDriving = input.environment === 'driving';
   const effectiveTarget: TargetState =
@@ -585,19 +668,24 @@ export function selectProtocolRecommendation(input: {
 
   const cohortMap = new Map(input.cohortStats.map((s) => [s.armId, s]));
   const profileMap = new Map(input.profileStats.map((s) => [s.armId, s]));
+  const armGenreMap = new Map((input.cohortArmGenreStats ?? []).map((s) => [s.armId, s]));
 
   const scored = candidates.map((arm) => {
     const c = cohortMap.get(arm.id);
     const p = profileMap.get(arm.id);
+    const ag = armGenreMap.get(arm.id);
+    const agShrink = ag ? Math.min(1, ag.trials / 5) : 0;
 
     const alpha =
       arm.priorAlpha +
       (c ? Math.max(0, c.alpha - arm.priorAlpha) : 0) +
-      (p ? Math.max(0, p.alpha - arm.priorAlpha) * 1.5 : 0);
+      (p ? Math.max(0, p.alpha - arm.priorAlpha) * 1.5 : 0) +
+      (ag ? Math.max(0, ag.alpha - arm.priorAlpha) * agShrink * 1.2 : 0);
     const beta =
       arm.priorBeta +
       (c ? Math.max(0, c.beta - arm.priorBeta) : 0) +
-      (p ? Math.max(0, p.beta - arm.priorBeta) * 1.5 : 0);
+      (p ? Math.max(0, p.beta - arm.priorBeta) * 1.5 : 0) +
+      (ag ? Math.max(0, ag.beta - arm.priorBeta) * agShrink * 1.2 : 0);
 
     const expectedMean = alpha / (alpha + beta);
     const thompsonDraw = sampleBeta(alpha, beta);
@@ -618,15 +706,28 @@ export function selectProtocolRecommendation(input: {
   const isExploration = thompsonWinner.arm.id !== bestExploit.arm.id;
   const chosen = thompsonWinner;
 
-  const genreResolution = resolveGenreLayer({
-    requestedGenre: input.requestedGenre,
-    targetState: effectiveTarget,
-    environment: input.environment,
-    currentState: input.currentState,
-    profile: input.profile,
-    cohortGenreStats: input.cohortGenreStats,
-    profileGenreStats: input.profileGenreStats,
-  });
+  const sanitizedCustom = sanitizeCustomVibe(input.customGenreInput);
+  const validCustom = sanitizedCustom && !sanitizedCustom.rejectedReason ? sanitizedCustom : null;
+
+  const genreResolution = validCustom
+    ? {
+        genre: pickClosestCoreGenre(validCustom.slug, energyTier),
+        mode: 'custom_vibe' as const,
+        adaptationNote: input.cachedCustomTrackUrl
+          ? undefined
+          : input.liveGenAvailable
+            ? `Starting immediately on our closest studio carrier while your custom instrumental ${validCustom.displayLabel} track generates and crossfades in seamlessly.`
+            : `Custom live generation is warming up — matched you immediately with our closest studio carrier (${getGenreDisplayMeta(pickClosestCoreGenre(validCustom.slug, energyTier)).label}) for zero wait.`,
+      }
+    : resolveGenreLayer({
+        requestedGenre: input.requestedGenre,
+        targetState: effectiveTarget,
+        environment: input.environment,
+        currentState: input.currentState,
+        profile: input.profile,
+        cohortGenreStats: input.cohortGenreStats,
+        profileGenreStats: input.profileGenreStats,
+      });
 
   const personalModMult = Math.max(0.65, Math.min(1.35, input.profile.preferredModMult ?? 1.0));
 
@@ -637,6 +738,8 @@ export function selectProtocolRecommendation(input: {
     genre: genreResolution.genre,
     genreSelectionMode: genreResolution.mode,
     energyTier,
+    customGenreSlug: validCustom?.slug,
+    customGenreLabel: validCustom?.displayLabel,
   };
 
   params.modulationDepth = Number(
@@ -663,7 +766,6 @@ export function selectProtocolRecommendation(input: {
     params.filterCutoffHz = Math.min(params.filterCutoffHz, 1850);
   }
 
-  // Iso-adapt genre tempo if deep_electronic chosen for calm/sleep
   if (genreResolution.mode === 'iso_adapted' && params.genre === 'deep_electronic') {
     params.bpm = effectiveTarget === 'sleep_winddown' ? 0 : 68;
     params.pulseIntensity = effectiveTarget === 'sleep_winddown' ? 0 : 0.16;
@@ -689,9 +791,9 @@ export function selectProtocolRecommendation(input: {
     params.stereoAmSpread = false;
   }
 
-  // Transparent Blind A/B Control (12% of consented sessions): engine delivers pure 3-Band studio music (AM = 0)
-  // while keeping UI blinded until debrief so we can statistically prove real AM lift vs music alone!
+  // Blind A/B Control strictly gated on explicit Research Consent (never runs in Local-Only mode)
   const isControlTrial =
+    !input.ephemeralMode &&
     input.allowControlTrial !== false &&
     input.profile.researchConsent === true &&
     Math.random() < 0.12;
@@ -699,11 +801,51 @@ export function selectProtocolRecommendation(input: {
   const cohortKey = buildCohortKey(input.profile.ageBand, input.environment, effectiveTarget);
   const confidencePct = Math.round(chosen.expectedMean * 100);
 
+  const audioSource: AudioSourceType = validCustom
+    ? input.cachedCustomTrackUrl
+      ? 'community_cache'
+      : input.liveGenAvailable
+        ? 'live_generating'
+        : 'studio_library'
+    : 'studio_library';
+
+  const composedMusicPrompt = validCustom
+    ? composeScientificMusicPrompt({
+        customGenreLabel: validCustom.displayLabel,
+        energyTier,
+        targetState: effectiveTarget,
+        params,
+        noiseSensitivity: input.profile.noiseSensitivity,
+      })
+    : undefined;
+
   const formulaIngredients = buildFormulaIngredients({
     params,
     durationMin: input.durationMin,
     isDriving,
   });
+
+  const personalizationSummary: string[] = [];
+  if (input.ephemeralMode || !input.profile.researchConsent) {
+    personalizationSummary.push('Local-only privacy mode (no behavioral tracking or remote profile writes)');
+  } else if (chosen.profileTrials > 0) {
+    personalizationSummary.push(`Personalized from ${chosen.profileTrials} of your past sessions`);
+  } else if (chosen.cohortTrials > 0) {
+    personalizationSummary.push(`Matched to ${chosen.cohortTrials} sessions in your cohort (${confidencePct}% fit)`);
+  } else {
+    personalizationSummary.push('Peer-reviewed scientific baseline (calibrating from your response)');
+  }
+  if (personalModMult !== 1.0) {
+    personalizationSummary.push(`Personal AM depth calibrated to ${Math.round(personalModMult * 100)}%`);
+  }
+  if (isDriving) {
+    personalizationSummary.push('Driving Safety EQ open (800–3500 Hz traffic cues protected)');
+  } else if (params.stereoAmSpread) {
+    personalizationSummary.push('Headphone +32° organic stereo AM shimmer enabled');
+  }
+  if (input.returnBonusAwarded) {
+    personalizationSummary.push('Welcome back · your return strengthened your previous formula score');
+  }
 
   const evidenceNote =
     chosen.profileTrials > 0
@@ -724,9 +866,17 @@ export function selectProtocolRecommendation(input: {
     params,
     isExploration,
     isControlTrial,
+    ephemeralMode: Boolean(input.ephemeralMode || !input.profile.researchConsent),
     safetyMode: isDriving,
     safetyWarnings,
     genreAdaptationNote: genreResolution.adaptationNote,
+    audioSource,
+    fallbackCoreGenre: genreResolution.genre,
+    customGenreSlug: validCustom?.slug,
+    customGenreLabel: validCustom?.displayLabel,
+    customTrackUrl: input.cachedCustomTrackUrl,
+    composedMusicPrompt,
+    personalizationSummary,
     formulaIngredients,
     rationale: `${chosen.arm.description} ${evidenceNote}${explorationNote}`,
     studies: getStudiesByIds(chosen.arm.studyIds),
@@ -739,5 +889,6 @@ export function selectProtocolRecommendation(input: {
     baselineScore: input.baselineScore,
     environment: input.environment,
     device: effectiveDevice,
+    returnBonusAwarded: input.returnBonusAwarded,
   };
 }

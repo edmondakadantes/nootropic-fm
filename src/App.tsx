@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BarChart3, Download, Radio, SlidersHorizontal, Sparkles } from 'lucide-react';
+import {
+  BarChart3,
+  Download,
+  Radio,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { sanitizeCustomVibe } from '../shared/promptComposer';
 import { formatCohortLabel, swapRecommendationGenre } from '../shared/protocols';
 import type {
+  AppRuntimeConfig,
   CurrentState,
   LiveAdjustment,
   MusicGenreChoice,
@@ -20,21 +31,28 @@ import { InsightsView } from './components/InsightsView';
 import { OnboardingView } from './components/OnboardingView';
 import { PlayerView } from './components/PlayerView';
 import { ProtocolRevealView } from './components/ProtocolRevealView';
-import { api } from './lib/api';
+import {
+  api,
+  clearStoredProfileAuth,
+  getStoredProfileAuth,
+  saveStoredProfileAuth,
+} from './lib/api';
 
 type Screen = 'onboarding' | 'checkin' | 'reveal' | 'player' | 'debrief' | 'insights';
-
-const PROFILE_STORAGE_KEY = 'nootropic_fm_profile_id_v1';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('checkin');
   const [booting, setBooting] = useState(true);
+  const [runtimeConfig, setRuntimeConfig] = useState<AppRuntimeConfig | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pendingDebrief, setPendingDebrief] = useState<SessionRecord | null>(null);
   const [activeRec, setActiveRec] = useState<ProtocolRecommendation | null>(null);
   const [researching, setResearching] = useState(false);
   const [fieldMood, setFieldMood] = useState<FieldMood>('default');
   const [audioActive, setAudioActive] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [deletingData, setDeletingData] = useState(false);
+  const [privacyStatus, setPrivacyStatus] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<{
     prompt: () => Promise<void>;
     userChoice: Promise<{ outcome: string }>;
@@ -53,6 +71,7 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
+
   const [debriefContext, setDebriefContext] = useState<{
     sessionId: string;
     armName: string;
@@ -61,30 +80,43 @@ export default function App() {
     plannedDurationMin: number;
     actualDurationSec: number;
     liveAdjustments: LiveAdjustment[];
+    ephemeralMode?: boolean;
   } | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   useEffect(() => {
-    const restore = async () => {
-      const savedId = localStorage.getItem(PROFILE_STORAGE_KEY);
-      if (!savedId) {
+    const boot = async () => {
+      // Fetch runtime config (region opt-in, live music gen capability, popular R2 custom vibes)
+      const configPromise = api
+        .getConfig()
+        .then((res) => setRuntimeConfig(res.config))
+        .catch(() => {});
+
+      const stored = getStoredProfileAuth();
+      if (!stored?.profileId) {
+        await configPromise;
         setBooting(false);
         setScreen('checkin');
         return;
       }
+
       try {
-        const res = await api.getProfile(savedId);
+        const res = await api.getProfile(stored.profileId);
+        if (res.profileToken) {
+          saveStoredProfileAuth(res.profile.id, res.profileToken);
+        }
         setProfile(res.profile);
         setPendingDebrief(res.pendingDebrief);
         setScreen('checkin');
       } catch {
-        localStorage.removeItem(PROFILE_STORAGE_KEY);
+        clearStoredProfileAuth();
         setScreen('checkin');
       } finally {
+        await configPromise;
         setBooting(false);
       }
     };
-    void restore();
+    void boot();
   }, []);
 
   const moodFromTarget = useCallback((env: SessionEnvironment, target: TargetState): FieldMood => {
@@ -95,31 +127,29 @@ export default function App() {
     return 'focus';
   }, []);
 
-  const startSessionWithProfile = useCallback(
-    async (
-      activeProfile: UserProfile,
-      payload: {
-        rawInputText: string;
-        currentState: CurrentState;
-        baselineScore: number;
-        targetState: TargetState;
-        environment: SessionEnvironment;
-        device: OutputDevice;
-        durationMin: number;
-        ageOverride?: number;
-        requestedGenre?: MusicGenreChoice;
-      }
-    ) => {
+  const startSession = useCallback(
+    async (payload: {
+      profileId?: string;
+      ephemeralMode?: boolean;
+      ephemeralProfile?: Partial<UserProfile>;
+      rawInputText: string;
+      currentState: CurrentState;
+      baselineScore: number;
+      targetState: TargetState;
+      environment: SessionEnvironment;
+      device: OutputDevice;
+      durationMin: number;
+      ageOverride?: number;
+      requestedGenre?: MusicGenreChoice;
+      customGenreInput?: string;
+    }) => {
       setErrorBanner(null);
       setActiveRec(null);
       setResearching(true);
       setFieldMood(moodFromTarget(payload.environment, payload.targetState));
       setScreen('reveal');
       try {
-        const { recommendation } = await api.startProtocol({
-          profileId: activeProfile.id,
-          ...payload,
-        });
+        const { recommendation } = await api.startProtocol(payload);
         setActiveRec(recommendation);
         setPendingDebrief(null);
         setFieldMood(moodFromTarget(recommendation.environment, recommendation.targetState));
@@ -148,11 +178,14 @@ export default function App() {
     }
   ) => {
     setErrorBanner(null);
-    const { profile: saved } = await api.saveProfile(data);
-    localStorage.setItem(PROFILE_STORAGE_KEY, saved.id);
+    const { profile: saved, profileToken } = await api.saveProfile(data);
+    saveStoredProfileAuth(saved.id, profileToken);
     setProfile(saved);
     if (firstSession) {
-      await startSessionWithProfile(saved, firstSession);
+      await startSession({
+        profileId: saved.id,
+        ...firstSession,
+      });
     } else {
       setScreen('checkin');
     }
@@ -160,6 +193,7 @@ export default function App() {
 
   const handleLaunchUnifiedSession = async (payload: {
     profileUpdate?: Partial<UserProfile>;
+    ephemeralMode: boolean;
     rawInputText: string;
     currentState: CurrentState;
     baselineScore: number;
@@ -169,39 +203,102 @@ export default function App() {
     durationMin: number;
     ageOverride?: number;
     requestedGenre?: MusicGenreChoice;
+    customGenreInput?: string;
   }) => {
     setErrorBanner(null);
+
+    if (payload.ephemeralMode) {
+      const { profileUpdate, ...sessionPayload } = payload;
+      await startSession({
+        ...sessionPayload,
+        ephemeralMode: true,
+        ephemeralProfile: profileUpdate ?? (profile ?? undefined),
+      });
+      return;
+    }
+
     let activeProfile = profile;
     if (!activeProfile) {
-      const { profile: saved } = await api.saveProfile(
+      const { profile: saved, profileToken } = await api.saveProfile(
         payload.profileUpdate ?? {
-          age: payload.ageOverride ?? 32,
+          age: Math.max(18, payload.ageOverride ?? 32),
           defaultDevice: payload.device,
           researchConsent: true,
         }
       );
-      localStorage.setItem(PROFILE_STORAGE_KEY, saved.id);
+      saveStoredProfileAuth(saved.id, profileToken);
       setProfile(saved);
       activeProfile = saved;
     }
-    const { profileUpdate: _ignored, ...sessionPayload } = payload;
-    await startSessionWithProfile(activeProfile, sessionPayload);
+
+    const { profileUpdate: _ignored, ephemeralMode: _eph, ...sessionPayload } = payload;
+    await startSession({
+      profileId: activeProfile.id,
+      ...sessionPayload,
+    });
   };
 
   const handleSwapRevealGenre = useCallback((newGenre: ResolvedGenre) => {
     setActiveRec((prev) => {
       if (!prev) return prev;
       const updated = swapRecommendationGenre(prev, newGenre);
-      void api
-        .updateSessionGenre({
-          sessionId: updated.sessionId,
-          genre: newGenre,
-          params: updated.params,
-        })
-        .catch(() => {});
+      if (!updated.ephemeralMode) {
+        void api
+          .updateSessionGenre({
+            sessionId: updated.sessionId,
+            genre: newGenre,
+            customGenreSlug: null,
+            audioSource: 'studio_library',
+            params: updated.params,
+          })
+          .catch(() => {});
+      }
       return updated;
     });
   }, []);
+
+  const handleSwapCustomVibe = useCallback(
+    async (customLabel: string) => {
+      if (!activeRec) return;
+      const sanitized = sanitizeCustomVibe(customLabel);
+      if (!sanitized || sanitized.rejectedReason || !sanitized.slug) return;
+
+      // Fast check if this custom vibe already exists in Cloudflare R2 Community Cache
+      let cachedUrl: string | undefined;
+      try {
+        const st = await api.getMusicStatus(sanitized.slug, activeRec.params.energyTier);
+        if (st.status === 'ready' && st.track?.url) {
+          cachedUrl = st.track.url;
+        }
+      } catch {
+        // fallback cleanly
+      }
+
+      setActiveRec((prev) => {
+        if (!prev) return prev;
+        const updated = swapRecommendationGenre(prev, prev.params.genre, {
+          slug: sanitized.slug,
+          label: sanitized.displayLabel,
+          cachedUrl,
+          liveGenAvailable: runtimeConfig?.customLiveGenAvailable ?? false,
+          noiseSensitivity: profile?.noiseSensitivity ?? 'medium',
+        });
+        if (!updated.ephemeralMode) {
+          void api
+            .updateSessionGenre({
+              sessionId: updated.sessionId,
+              genre: updated.fallbackCoreGenre,
+              customGenreSlug: sanitized.slug,
+              audioSource: updated.audioSource,
+              params: updated.params,
+            })
+            .catch(() => {});
+        }
+        return updated;
+      });
+    },
+    [activeRec, runtimeConfig, profile]
+  );
 
   const handleFinishToDebrief = useCallback(
     (stats: { actualDurationSec: number; liveAdjustments: LiveAdjustment[] }) => {
@@ -214,6 +311,7 @@ export default function App() {
         plannedDurationMin: activeRec.plannedDurationMin,
         actualDurationSec: stats.actualDurationSec,
         liveAdjustments: stats.liveAdjustments,
+        ephemeralMode: activeRec.ephemeralMode,
       });
       setActiveRec(null);
       setAudioActive(false);
@@ -233,6 +331,7 @@ export default function App() {
       plannedDurationMin: pendingDebrief.plannedDurationMin,
       actualDurationSec: pendingDebrief.actualDurationSec || 600,
       liveAdjustments: pendingDebrief.liveAdjustments,
+      ephemeralMode: false,
     });
     setPendingDebrief(null);
     setFieldMood('calm');
@@ -244,6 +343,34 @@ export default function App() {
     const id = pendingDebrief.id;
     setPendingDebrief(null);
     await api.dismissPending(id).catch(() => {});
+  };
+
+  const handleDeleteMyData = async () => {
+    setDeletingData(true);
+    setPrivacyStatus(null);
+    try {
+      if (profile) {
+        await api.deleteProfile(profile.id);
+      }
+      clearStoredProfileAuth();
+      setProfile(null);
+      setPendingDebrief(null);
+      setActiveRec(null);
+      setDebriefContext(null);
+      setAudioActive(false);
+      setScreen('checkin');
+      setPrivacyStatus(
+        'Your profile, session history, and personal Bandit records have been permanently erased from Cloudflare D1 and this browser.'
+      );
+    } catch (err) {
+      setPrivacyStatus(
+        err instanceof Error
+          ? `Could not delete remote record: ${err.message}`
+          : 'Unable to delete profile right now.'
+      );
+    } finally {
+      setDeletingData(false);
+    }
   };
 
   return (
@@ -267,7 +394,7 @@ export default function App() {
                 nootropic<span className="text-cyan-400">.fm</span>
               </div>
               <div className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                Open Research Beta
+                Tune your mind
               </div>
             </div>
           </button>
@@ -360,6 +487,7 @@ export default function App() {
         ) : screen === 'checkin' ? (
           <CheckInView
             profile={profile}
+            runtimeConfig={runtimeConfig}
             pendingDebrief={pendingDebrief}
             onOpenPendingDebrief={handleOpenPendingDebrief}
             onDismissPending={() => void handleDismissPending()}
@@ -371,7 +499,9 @@ export default function App() {
             loading={researching}
             recommendation={activeRec}
             mood={fieldMood}
+            customLiveGenAvailable={runtimeConfig?.customLiveGenAvailable}
             onSwapGenre={handleSwapRevealGenre}
+            onSwapCustomVibe={(label) => void handleSwapCustomVibe(label)}
             onLaunchAudio={() => setScreen('player')}
             onBack={() => {
               setActiveRec(null);
@@ -402,9 +532,88 @@ export default function App() {
         )}
       </main>
 
-      <footer className="relative z-10 border-t border-white/[0.05] py-5 text-center text-[11px] text-slate-500">
-        nootropic.fm · Tune your mind · Open Research Beta (Year 1 Free) · Psychoacoustic cognitive
-        wellness audio, not a medical device.
+      {/* Privacy & Delete My Data Modal */}
+      {showPrivacyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage w-full max-w-md rounded-3xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-emerald-300">
+                <ShieldCheck className="h-5 w-5" />
+                <h3 className="text-base font-semibold text-white">Privacy &amp; Your Data (18+)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrivacyModal(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs leading-relaxed text-slate-300">
+              <p>
+                <strong>Zero third-party ad trackers or external font CDNs.</strong> All fonts are
+                self-hosted on Cloudflare edge.
+              </p>
+              <p>
+                <strong>Genuine opt-in (EEA / UK / Global Privacy Control):</strong> Without research
+                consent, nootropic.fm runs in 100% local-only mode with zero database writes and zero
+                retention beacons.
+              </p>
+              <p>
+                <strong>Pseudonymized &amp; 18+ only:</strong> Profiles use a random device token
+                (90-day local TTL) and are never exposed in public Research Brain feeds.
+              </p>
+            </div>
+
+            {privacyStatus && (
+              <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-200">
+                {privacyStatus}
+              </div>
+            )}
+
+            {profile ? (
+              <div className="space-y-2.5 border-t border-slate-800 pt-3">
+                <div className="text-[11px] text-slate-400">
+                  Active pseudonymized profile stored on this device (Age {profile.age}).
+                </div>
+                <button
+                  type="button"
+                  disabled={deletingData}
+                  onClick={() => void handleDeleteMyData()}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-500/45 bg-rose-500/15 px-4 py-3 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {deletingData ? 'Erasing data...' : 'Delete My Profile & Session Data'}
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5 text-xs text-slate-400">
+                No personal profile is currently stored in this browser.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <footer className="relative z-10 border-t border-white/[0.05] px-4 py-5 text-center text-[11px] text-slate-500">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+          <span>
+            nootropic.fm · Tune your mind · Open Research Beta (18+ · Year 1 Free) · Psychoacoustic
+            cognitive wellness audio, not a medical device.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setPrivacyStatus(null);
+              setShowPrivacyModal(true);
+            }}
+            className="inline-flex items-center gap-1 font-medium text-cyan-400/90 underline-offset-2 hover:text-cyan-300 hover:underline"
+          >
+            <ShieldCheck className="h-3 w-3" />
+            Privacy &amp; Delete My Data
+          </button>
+        </div>
       </footer>
     </div>
   );

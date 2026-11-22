@@ -1,0 +1,175 @@
+import type {
+  AcousticParams,
+  EnergyTier,
+  HarmonicMode,
+  NoiseSensitivity,
+  ResolvedGenre,
+  TargetState,
+} from './types';
+import { GENRE_META } from './types';
+
+export interface SanitizedCustomVibe {
+  slug: string;
+  displayLabel: string;
+  rejectedReason?: string;
+}
+
+const CORE_GENRE_KEYS = new Set<string>(Object.keys(GENRE_META));
+
+const FORBIDDEN_PATTERNS = [
+  /\b(lyrics?|vocals?|singing|singer|rap|rapper|spoken\s*word|speech|choir|chant|scream|shout)\b/i,
+  /\b(ignore\s+previous|system\s+prompt|jailbreak|override|http:\/\/|https:\/\/)\b/i,
+  /\b(drake|taylor\s*swift|beyonce|eminem|billie\s*eilish|weeknd|bad\s*bunny|kanye|rihanna|bob\s*marley|hans\s*zimmer|daft\s*punk|beatles|coldplay|radiohead|nirvana|metallica|pink\s*floyd)\b/i,
+];
+
+function toTitleCase(text: string): string {
+  return text
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * Sanitizes and canonicalizes any free-form user vibe (e.g., "chill reggae" -> "chill_reggae").
+ * Rejects vocal/lyric requests, prompt injections, and artist names for copyright & science hygiene.
+ */
+export function sanitizeCustomVibe(rawInput: string | undefined | null): SanitizedCustomVibe | null {
+  if (!rawInput) return null;
+  const cleaned = rawInput
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9\s&-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 48);
+
+  if (cleaned.length < 2) return null;
+
+  for (const rx of FORBIDDEN_PATTERNS) {
+    if (rx.test(cleaned)) {
+      return {
+        slug: '',
+        displayLabel: '',
+        rejectedReason:
+          'Custom vibes must be purely instrumental genres (no vocals, artist names, or URLs).',
+      };
+    }
+  }
+
+  const slug = cleaned
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[\s-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 36);
+
+  if (slug.length < 2) return null;
+
+  return {
+    slug,
+    displayLabel: toTitleCase(cleaned),
+  };
+}
+
+/**
+ * Maps any custom genre slug to the closest of our 6 instant R2 Studio genres
+ * so playback starts in <0.5s while the custom vibe generates in the background.
+ */
+export function pickClosestCoreGenre(slug: string, energyTier: EnergyTier): ResolvedGenre {
+  const s = slug.toLowerCase();
+  if (CORE_GENRE_KEYS.has(s)) return s as ResolvedGenre;
+
+  if (/(rain|ocean|forest|nature|water|wind|sleep|zen|meditat|drone|tibetan|bowl|spa)/.test(s)) {
+    return 'nature_rain';
+  }
+  if (/(synthwave|techno|house|trance|edm|dnb|drum_and_bass|cyberpunk|electro|dubstep|progressive|minimal|vaporwave|retrowave)/.test(s)) {
+    return 'deep_electronic';
+  }
+  if (/(classical|orchestra|cello|violin|piano|neoclassical|ambient_film|cinematic|epic|baroque|score|strings)/.test(s)) {
+    return 'cinematic_strings';
+  }
+  if (/(jazz|bossa|rhodes|soul|funk|neo_soul|lounge|blues|swing|smooth)/.test(s)) {
+    return 'jazz_rhodes';
+  }
+  if (/(acoustic|folk|guitar|flamenco|harp|koto|sitar|kalimba|ukulele|indie_folk|celtic|country)/.test(s)) {
+    return 'acoustic_pluck';
+  }
+  if (/(reggae|dub|chillhop|lofi|lo_fi|hip_hop|boom_bap|downtempo|trip_hop|afrobeat)/.test(s)) {
+    return energyTier === 'drive' ? 'deep_electronic' : 'lofi_keys';
+  }
+
+  if (energyTier === 'calm') return 'nature_rain';
+  if (energyTier === 'drive') return 'deep_electronic';
+  return 'lofi_keys';
+}
+
+export function getGenreDisplayMeta(
+  genreSlug: string,
+  customLabel?: string | null
+): { label: string; shortDesc: string; vibeTag: string; isCustom: boolean } {
+  if (genreSlug in GENRE_META) {
+    const core = GENRE_META[genreSlug as ResolvedGenre];
+    return { ...core, isCustom: false };
+  }
+  const label =
+    customLabel?.trim() ||
+    toTitleCase(genreSlug.replace(/^custom\//, '').replace(/[_-]+/g, ' '));
+  return {
+    label,
+    shortDesc: 'Custom instrumental vibe · Community R2 Cache',
+    vibeTag: 'Custom · Lyric-Free · 3-Band LR4',
+    isCustom: true,
+  };
+}
+
+const HARMONIC_DESCRIPTORS: Record<HarmonicMode, string> = {
+  bright_maj9: 'uplifting warm major-9th harmonies in D major',
+  warm_min9: 'grounded cozy minor-9th harmonies in A minor',
+  suspended_open: 'spacious open suspended chords in C major',
+  deep_drone: 'ultra-warm low-frequency harmonic drone in G major',
+};
+
+/**
+ * Deterministic ($0) Scientific Prompt Composer (Layer 1 Studies -> Layer 2 Music Prompt).
+ * Guarantees instrumental lyric-free aesthetic aligned with target BPM, energy tier, and safety EQ.
+ * Note: Exact neuro-modulation (14-18 Hz / 10 Hz / 6 Hz) is ALWAYS applied mathematically by our
+ * 3-Band Linkwitz-Riley (LR4) DSP engine — never claimed from the text prompt alone.
+ */
+export function composeScientificMusicPrompt(input: {
+  customGenreLabel: string;
+  energyTier: EnergyTier;
+  targetState: TargetState;
+  params: Pick<AcousticParams, 'bpm' | 'harmonicMode' | 'speakerSafeEQ'>;
+  noiseSensitivity: NoiseSensitivity;
+}): string {
+  const { customGenreLabel, energyTier, targetState, params, noiseSensitivity } = input;
+  const harmonicDesc = HARMONIC_DESCRIPTORS[params.harmonicMode];
+
+  const tempoClause =
+    targetState === 'sleep_winddown' || energyTier === 'calm'
+      ? 'beatless or ultra-slow 62-70 BPM pulse with zero harsh drums'
+      : params.bpm > 0
+        ? `steady continuous ${params.bpm} BPM rhythmic groove`
+        : 'steady hypnotic 92 BPM rhythmic pulse';
+
+  const textureClause =
+    noiseSensitivity === 'high'
+      ? 'velvety warm low-pass mastering with zero piercing highs or harsh percussion'
+      : params.speakerSafeEQ
+        ? 'clear warm studio mastering with open mid-range space, no siren-like synths, no startling horn blasts, and smooth forward momentum suitable for vehicle speakers'
+        : 'rich warm analog studio production with solid clean sub-bass and smooth mid-range body';
+
+  const goalClause =
+    targetState === 'sleep_winddown'
+      ? 'designed for tranquil nocturnal pre-sleep decompression'
+      : targetState === 'calm_reset'
+        ? 'designed for parasympathetic stress recovery and calm clarity'
+        : targetState === 'deep_flow'
+          ? 'designed for uninterrupted deep work and sustained cognitive flow'
+          : targetState === 'energy_lift'
+            ? 'designed for clean mental alertness and afternoon clarity'
+            : 'designed for steady sustained executive attention';
+
+  return `2-minute strictly instrumental ${customGenreLabel} track, ${tempoClause}, ${harmonicDesc}, ${textureClause}, zero vocals, zero lyrics, zero humming, zero choir, zero spoken samples, no abrupt drops or sudden silences, seamless continuous dynamics ideal for looping, ${goalClause}.`;
+}

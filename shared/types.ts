@@ -59,6 +59,12 @@ export type ResolvedGenre = Exclude<MusicGenreChoice, 'auto'>;
 
 export type EnergyTier = 'calm' | 'focus' | 'drive';
 
+export type AudioSourceType =
+  | 'studio_library'
+  | 'community_cache'
+  | 'live_generating'
+  | 'procedural_fallback';
+
 export interface UserProfile {
   id: string;
   age: number;
@@ -91,8 +97,10 @@ export interface AcousticParams {
   antiMonotonyCycleMin: number;
   binauralOffsetHz: number;
   genre: ResolvedGenre;
-  genreSelectionMode: 'auto' | 'user_chosen' | 'iso_adapted';
+  genreSelectionMode: 'auto' | 'user_chosen' | 'iso_adapted' | 'custom_vibe';
   energyTier: EnergyTier;
+  customGenreSlug?: string;
+  customGenreLabel?: string;
 }
 
 export interface ScientificStudy {
@@ -112,11 +120,14 @@ export interface ScientificStudy {
 
 export interface LivePubMedPaper {
   pmid: string;
+  source?: 'pubmed' | 'openalex';
   title: string;
   authors: string;
   journal: string;
   year: string;
   url: string;
+  doiUrl?: string;
+  appliedMechanism?: string;
 }
 
 export interface FormulaIngredient {
@@ -135,7 +146,7 @@ export interface ProtocolArm {
   drivingSafe: boolean;
   priorAlpha: number;
   priorBeta: number;
-  baseParams: Omit<AcousticParams, 'genre' | 'genreSelectionMode' | 'energyTier' | 'stereoAmSpread'>;
+  baseParams: Omit<AcousticParams, 'genre' | 'genreSelectionMode' | 'energyTier' | 'stereoAmSpread' | 'customGenreSlug' | 'customGenreLabel'>;
   studyIds: string[];
 }
 
@@ -151,6 +162,7 @@ export interface ParsedCheckIn {
   extractedAge?: number;
   extractedRole?: UserRole;
   extractedGenre?: ResolvedGenre;
+  extractedCustomGenre?: string;
   currentState: CurrentState;
   targetState: TargetState;
   environment: SessionEnvironment;
@@ -158,6 +170,19 @@ export interface ParsedCheckIn {
   durationMin: number;
   detectedKeywords: string[];
   usedGemini: boolean;
+}
+
+export interface CustomTrackInfo {
+  id: string;
+  genreSlug: string;
+  displayLabel: string;
+  energyTier: EnergyTier;
+  url: string;
+  provider: string;
+  bpm: number;
+  durationSec: number;
+  sizeBytes: number;
+  playCount: number;
 }
 
 export interface ProtocolRecommendation {
@@ -168,9 +193,17 @@ export interface ProtocolRecommendation {
   params: AcousticParams;
   isExploration: boolean;
   isControlTrial: boolean;
+  ephemeralMode?: boolean;
   safetyMode: boolean;
   safetyWarnings: string[];
   genreAdaptationNote?: string;
+  audioSource: AudioSourceType;
+  fallbackCoreGenre: ResolvedGenre;
+  customGenreSlug?: string;
+  customGenreLabel?: string;
+  customTrackUrl?: string;
+  composedMusicPrompt?: string;
+  personalizationSummary: string[];
   formulaIngredients: FormulaIngredient[];
   rationale: string;
   studies: ScientificStudy[];
@@ -184,11 +217,12 @@ export interface ProtocolRecommendation {
   baselineScore: number;
   environment: SessionEnvironment;
   device: OutputDevice;
+  returnBonusAwarded?: boolean;
 }
 
 export interface SessionRecord {
   id: string;
-  profileId: string;
+  profileId?: string;
   cohortKey: string;
   rawInputText: string;
   currentState: CurrentState;
@@ -205,7 +239,11 @@ export interface SessionRecord {
   isExploration: boolean;
   isControlTrial: boolean;
   energyTier: EnergyTier;
-  musicGenre: ResolvedGenre;
+  musicGenre: string;
+  initialMusicGenre?: string;
+  customGenreSlug?: string | null;
+  audioSource?: AudioSourceType;
+  retentionOutcome?: string | null;
   acousticParams: AcousticParams;
   citedStudyIds: string[];
   liveAdjustments: LiveAdjustment[];
@@ -235,6 +273,8 @@ export interface ArmPerformance {
   armId: string;
   armName: string;
   trials: number;
+  explicitTrials?: number;
+  implicitTrials?: number;
   successRatePct: number;
   avgDelta: number;
   avgCompletionPct: number;
@@ -243,11 +283,25 @@ export interface ArmPerformance {
 }
 
 export interface GenrePerformance {
-  genre: ResolvedGenre;
+  genre: string;
   label: string;
+  isCustom?: boolean;
   sessions: number;
   successRatePct: number;
   avgDelta: number;
+  avgRetentionPct?: number;
+}
+
+export interface ArchetypeComboPerformance {
+  cohortKey: string;
+  cohortLabel: string;
+  armName: string;
+  genreSlug: string;
+  genreLabel: string;
+  sessions: number;
+  avgDelta: number;
+  avgRetentionPct: number;
+  successRatePct: number;
 }
 
 export interface CohortPerformance {
@@ -268,8 +322,22 @@ export interface ABValidationStats {
   controlAvgDelta: number;
   activeSuccessRatePct: number;
   controlSuccessRatePct: number;
+  activeListenRetentionPct: number;
+  controlListenRetentionPct: number;
   deltaLift: number;
+  retentionLiftPct: number;
   readyForStats: boolean;
+}
+
+export interface RetentionMetrics {
+  trackedSessions: number;
+  avgListenRetentionPct: number;
+  completionRatePct: number;
+  earlyBounceRatePct: number;
+  instantSwapRatePct: number;
+  d1ReturnRatePct: number;
+  d7ReturnRatePct: number;
+  returningProfiles: number;
 }
 
 export interface ResearchInsights {
@@ -281,17 +349,35 @@ export interface ResearchInsights {
   globalAvgDelta: number;
   explorationSharePct: number;
   abValidation: ABValidationStats;
+  retentionMetrics: RetentionMetrics;
   cohorts: CohortPerformance[];
   personalArms: ArmPerformance[];
   genreLeaderboard: GenrePerformance[];
+  topArchetypeCombos: ArchetypeComboPerformance[];
   recentSessions: SessionRecord[];
 }
 
+export interface AppRuntimeConfig {
+  regionRequiresOptIn: boolean;
+  countryCode: string;
+  customLiveGenAvailable: boolean;
+  musicProvider: string;
+  dailyCapMax: number;
+  dailyCapRemaining: number;
+  popularCustomVibes: Array<{
+    genreSlug: string;
+    displayLabel: string;
+    energyTier: EnergyTier;
+    playCount: number;
+  }>;
+}
+
 export function ageToBand(age: number): AgeBand {
-  if (age < 25) return '18-24';
-  if (age < 35) return '25-34';
-  if (age < 45) return '35-44';
-  if (age < 55) return '45-54';
+  const safeAge = Math.max(18, age);
+  if (safeAge < 25) return '18-24';
+  if (safeAge < 35) return '25-34';
+  if (safeAge < 45) return '35-44';
+  if (safeAge < 55) return '45-54';
   return '55+';
 }
 
