@@ -29,6 +29,7 @@ export function NeuralCompassSelector({
 }: NeuralCompassSelectorProps) {
   const padRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [showAllStates, setShowAllStates] = useState(false);
 
   const updateFromClientPoint = (clientX: number, clientY: number) => {
     const el = padRef.current;
@@ -144,17 +145,17 @@ export function NeuralCompassSelector({
           />
         </svg>
 
-        {/* Biological Axis Edge Labels */}
-        <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-full bg-slate-950/75 px-2.5 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.14em] text-slate-300/80">
+        {/* Biological Axis Edge Labels (kept flush to edges so cursor never collides) */}
+        <div className="pointer-events-none absolute left-1/2 top-1.5 z-0 -translate-x-1/2 rounded-full bg-slate-950/70 px-2.5 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.14em] text-slate-300/80">
           ▲ High Energy · Wired
         </div>
-        <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-slate-950/75 px-2.5 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.14em] text-slate-300/80">
+        <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-0 -translate-x-1/2 rounded-full bg-slate-950/70 px-2.5 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.14em] text-slate-300/80">
           ▼ Low Energy · Drained
         </div>
-        <div className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 rounded bg-slate-950/70 px-1.5 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-slate-400">
-          Foggy / Tense
+        <div className="pointer-events-none absolute left-1.5 top-1/2 z-0 -translate-y-1/2 rounded bg-slate-950/55 px-1.5 py-0.5 font-mono-tech text-[8px] uppercase tracking-wider text-slate-500">
+          Tense / Fog
         </div>
-        <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded bg-slate-950/70 px-1.5 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-slate-400">
+        <div className="pointer-events-none absolute right-1.5 top-1/2 z-0 -translate-y-1/2 rounded bg-slate-950/55 px-1.5 py-0.5 font-mono-tech text-[8px] uppercase tracking-wider text-slate-500">
           Clear / Open
         </div>
 
@@ -200,7 +201,7 @@ export function NeuralCompassSelector({
             top: cursorTop,
             transition: dragging ? 'none' : 'left 220ms ease-out, top 220ms ease-out',
           }}
-          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+          className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
         >
           <span
             className="absolute -inset-4 rounded-full opacity-35 blur-md"
@@ -261,13 +262,24 @@ export function NeuralCompassSelector({
           {selectedState.dspNote}
         </p>
 
-        {/* 5 Closest Micro-States around the current cursor position (fine-tune in 1 tap!) */}
+        {/* Nearby Micro-States + 1-Tap Expand All 19 States */}
         <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
-          <div className="text-[10px] font-medium text-slate-500">
-            Closest nuances in this neural zone (tap to refine):
+          <div className="flex items-center justify-between gap-2 text-[10px]">
+            <span className="font-medium text-slate-500">
+              {showAllStates
+                ? `All ${NEURAL_MICRO_STATES.length} neural states (tap any):`
+                : 'Closest nuances in this neural zone (tap to refine):'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAllStates((v) => !v)}
+              className="font-medium text-cyan-300 hover:text-cyan-200"
+            >
+              {showAllStates ? 'Show nearby only' : `Browse all ${NEURAL_MICRO_STATES.length} states`}
+            </button>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {nearby.map((st) => {
+            {(showAllStates ? NEURAL_MICRO_STATES : nearby).map((st) => {
               const active = selectedState.id === st.id;
               return (
                 <button
