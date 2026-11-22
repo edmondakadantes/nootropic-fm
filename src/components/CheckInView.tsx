@@ -237,15 +237,7 @@ export function CheckInView({
 
       {/* Centerpiece Sonic Orb + Conversational Hero */}
       <div className="animate-rise flex flex-col items-center text-center">
-        <SonicOrb
-          mood={activeMood}
-          size="md"
-          label={
-            isDriving
-              ? 'Driving Safety Mode'
-              : `${TARGET_LABELS[targetState]} · ${durationMin} min`
-          }
-        />
+        <SonicOrb mood={activeMood} size="md" label="Tune your mind" />
         <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-4xl">
           Where do you want your <span className="text-aurora">mind to go?</span>
         </h1>

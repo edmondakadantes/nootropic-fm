@@ -191,15 +191,7 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
         <SonicOrb
           mood={currentMood}
           size={isEditing ? 'sm' : 'lg'}
-          label={
-            currentMood === 'driving'
-              ? 'Driving Safety Calibration'
-              : currentMood === 'calm'
-                ? 'Autonomic Calm Field'
-                : currentMood === 'flow'
-                  ? 'Deep Flow Resonance'
-                  : 'Open Research Beta · Free Year 1'
-          }
+          label="Tune your mind"
         />
 
         <h1 className="animate-rise delay-75 mt-5 text-3xl font-bold tracking-tight text-white sm:text-5xl leading-[1.08]">

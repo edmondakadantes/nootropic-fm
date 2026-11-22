@@ -371,8 +371,8 @@ export default function App() {
       </main>
 
       <footer className="relative z-10 border-t border-white/[0.05] py-5 text-center text-[11px] text-slate-500">
-        nootropic.fm · Open Research Beta (Year 1 Free) · Psychoacoustic cognitive wellness audio,
-        not a medical device.
+        nootropic.fm · Tune your mind · Open Research Beta (Year 1 Free) · Psychoacoustic cognitive
+        wellness audio, not a medical device.
       </footer>
     </div>
   );
