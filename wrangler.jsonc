@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nootropic-fm",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-11-22",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nootropic-fm-db",
+      "database_id": "4767875c-6348-4d02-8398-8f2c77f03a85",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "APP_ENV": "open-research-beta",
+    "GEMINI_DAILY_CAP": "100"
+  }
+}

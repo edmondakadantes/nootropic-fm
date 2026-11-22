@@ -1,0 +1,1 @@
+{"root":["./worker/env.d.ts","./worker/index.ts","./shared/parser.ts","./shared/protocols.ts","./shared/studies.ts","./shared/types.ts"],"version":"5.8.3"}
