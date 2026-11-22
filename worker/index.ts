@@ -16,6 +16,7 @@ import {
   type CurrentState,
   type DebriefPayload,
   type LiveAdjustment,
+  type LivePubMedPaper,
   type OutputDevice,
   type ParsedCheckIn,
   type ResearchInsights,
@@ -342,6 +343,100 @@ Message: """${rawText}"""`;
   }
 }
 
+const pubmedCache = new Map<string, { expiresAt: number; papers: LivePubMedPaper[] }>();
+
+/**
+ * Live peer-reviewed study lookup against official US National Library of Medicine (NIH) PubMed API.
+ * Free ($0), cached 12h per context, strict 2.6s timeout so protocol synthesis is always snappy.
+ */
+async function fetchLivePubMedPapers(
+  targetState: TargetState,
+  environment: SessionEnvironment
+): Promise<LivePubMedPaper[]> {
+  const cacheKey = `${environment}:${targetState}`;
+  const cached = pubmedCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.papers;
+  }
+
+  const queryByContext = (): string => {
+    if (environment === 'driving') {
+      return '(music[Title/Abstract] OR auditory[Title/Abstract]) AND (driving[Title/Abstract] OR vigilance[Title/Abstract]) AND (attention[Title/Abstract] OR arousal[Title/Abstract])';
+    }
+    if (targetState === 'sleep_winddown') {
+      return 'music[Title/Abstract] AND ("sleep quality"[Title/Abstract] OR "slow oscillation"[Title/Abstract] OR insomnia[Title/Abstract])';
+    }
+    if (targetState === 'calm_reset') {
+      return 'music[Title/Abstract] AND (cortisol[Title/Abstract] OR "autonomic"[Title/Abstract] OR "stress recovery"[Title/Abstract])';
+    }
+    if (targetState === 'energy_lift') {
+      return 'music[Title/Abstract] AND (tempo[Title/Abstract] OR arousal[Title/Abstract]) AND (fatigue[Title/Abstract] OR alertness[Title/Abstract])';
+    }
+    return '("amplitude modulation"[Title/Abstract] OR "background music"[Title/Abstract] OR "white noise"[Title/Abstract]) AND ("sustained attention"[Title/Abstract] OR "cognitive performance"[Title/Abstract])';
+  };
+
+  try {
+    const term = encodeURIComponent(queryByContext());
+    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=3&sort=relevance&term=${term}`;
+    const searchRes = await fetch(searchUrl, {
+      signal: AbortSignal.timeout(2600),
+      headers: { 'user-agent': 'nootropic.fm/1.0 (open-research-psychoacoustics)' },
+    });
+    if (!searchRes.ok) return [];
+    const searchData = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
+    const ids = (searchData.esearchresult?.idlist ?? []).slice(0, 2);
+    if (ids.length === 0) return [];
+
+    const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(',')}`;
+    const sumRes = await fetch(summaryUrl, {
+      signal: AbortSignal.timeout(2600),
+      headers: { 'user-agent': 'nootropic.fm/1.0 (open-research-psychoacoustics)' },
+    });
+    if (!sumRes.ok) return [];
+    const sumData = (await sumRes.json()) as {
+      result?: Record<
+        string,
+        {
+          uid?: string;
+          title?: string;
+          authors?: Array<{ name?: string }>;
+          fulljournalname?: string;
+          source?: string;
+          pubdate?: string;
+        }
+      >;
+    };
+
+    const papers: LivePubMedPaper[] = [];
+    for (const id of ids) {
+      const item = sumData.result?.[id];
+      if (!item?.title) continue;
+      const firstAuthor = item.authors?.[0]?.name ?? 'Research Team';
+      const authorLabel =
+        (item.authors?.length ?? 0) > 1 ? `${firstAuthor} et al.` : firstAuthor;
+      const yearMatch = (item.pubdate ?? '').match(/\d{4}/);
+      papers.push({
+        pmid: id,
+        title: item.title.replace(/\.$/, ''),
+        authors: authorLabel,
+        journal: item.fulljournalname || item.source || 'PubMed Indexed Journal',
+        year: yearMatch ? yearMatch[0] : 'Peer-Reviewed',
+        url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`,
+      });
+    }
+
+    if (papers.length > 0) {
+      pubmedCache.set(cacheKey, {
+        expiresAt: Date.now() + 12 * 60 * 60 * 1000,
+        papers,
+      });
+    }
+    return papers;
+  } catch {
+    return [];
+  }
+}
+
 async function fetchBanditRows(
   db: D1Database,
   scopeType: 'cohort' | 'profile',
@@ -577,24 +672,28 @@ export default {
             : body.targetState;
         const cohortKey = buildCohortKey(profile.ageBand, body.environment, effectiveTarget);
 
-        const [cohortStats, profileStats] = await Promise.all([
+        const [cohortStats, profileStats, livePubMedPapers] = await Promise.all([
           fetchBanditRows(env.DB, 'cohort', cohortKey),
           fetchBanditRows(env.DB, 'profile', profile.id),
+          fetchLivePubMedPapers(effectiveTarget, body.environment),
         ]);
 
         const sessionId = `ses_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
-        const recommendation = selectProtocolRecommendation({
-          sessionId,
-          profile,
-          currentState: body.currentState,
-          baselineScore: Math.max(1, Math.min(5, Number(body.baselineScore ?? 2))),
-          targetState: body.targetState,
-          environment: body.environment,
-          device: body.device,
-          durationMin: Math.max(5, Math.min(120, Number(body.durationMin ?? 30))),
-          cohortStats,
-          profileStats,
-        });
+        const recommendation = {
+          ...selectProtocolRecommendation({
+            sessionId,
+            profile,
+            currentState: body.currentState,
+            baselineScore: Math.max(1, Math.min(5, Number(body.baselineScore ?? 2))),
+            targetState: body.targetState,
+            environment: body.environment,
+            device: body.device,
+            durationMin: Math.max(5, Math.min(120, Number(body.durationMin ?? 30))),
+            cohortStats,
+            profileStats,
+          }),
+          livePubMedPapers,
+        };
 
         const now = new Date().toISOString();
         await env.DB.prepare(

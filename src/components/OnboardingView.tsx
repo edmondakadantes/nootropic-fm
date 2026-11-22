@@ -3,10 +3,11 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Cpu,
+  Headphones,
   Mic,
   MicOff,
-  Play,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import type {
   TargetState,
   UserProfile,
 } from '../../shared/types';
+import { DEVICE_LABELS } from '../../shared/types';
 import type { FieldMood } from './AmbientField';
 import { SonicOrb } from './SonicOrb';
 
@@ -47,14 +49,6 @@ const WHO_HINTS = [
   '28yo writer looking for creative flow',
 ];
 
-const SOUND_HINTS = [
-  'Warm organic pads, vehicle speakers, nothing harsh',
-  'Steady rhythmic pulse that keeps me sharp',
-  'Minimal electronic on headphones',
-  'Soft rain & gentle ambient textures',
-  'Sensitive to sharp highs, keep noise soft',
-];
-
 const INTENT_HINTS = [
   'Distracted right now — need sharp focus for 40 minutes while driving',
   'Afternoon slump — need energy and clarity for 30 minutes',
@@ -76,53 +70,57 @@ interface SpeechRecognitionInstance {
 
 export function OnboardingView({ initialProfile, onComplete, onMoodChange }: OnboardingViewProps) {
   const isEditing = Boolean(initialProfile);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
 
   const [whoText, setWhoText] = useState(
     initialProfile ? `Age ${initialProfile.age}, ${initialProfile.role.replace('_', ' ')}` : ''
   );
-  const [soundText, setSoundText] = useState(
-    initialProfile
-      ? `${initialProfile.texturePref.replace('_', ' ')}, ${initialProfile.defaultDevice.replace('_', ' ')}`
-      : ''
-  );
   const [intentText, setIntentText] = useState('');
+  const [soundNote, setSoundNote] = useState('');
+  const [showSoundNote, setShowSoundNote] = useState(false);
+  const [deviceOverride, setDeviceOverride] = useState<OutputDevice | null>(
+    initialProfile?.defaultDevice ?? null
+  );
   const [baselineScore, setBaselineScore] = useState<number>(2);
   const [researchConsent, setResearchConsent] = useState<boolean>(
     initialProfile?.researchConsent ?? true
   );
-  const [listeningField, setListeningField] = useState<1 | 2 | 3 | null>(null);
+  const [listeningField, setListeningField] = useState<1 | 2 | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const parsedProfile = useMemo(
-    () => parseOnboardingAnswers(whoText, soundText, initialProfile),
-    [whoText, soundText, initialProfile]
+    () => parseOnboardingAnswers(whoText, soundNote, initialProfile),
+    [whoText, soundNote, initialProfile]
   );
 
   const parsedIntent = useMemo(() => {
-    const combined = `${whoText}. ${soundText}. ${intentText}`.trim();
+    const combined = `${whoText}. ${intentText}. ${soundNote}`.trim();
     return parseNaturalCheckIn(combined, {
       age: parsedProfile.age,
       role: parsedProfile.role,
-      defaultDevice: parsedProfile.defaultDevice,
+      defaultDevice: deviceOverride ?? parsedProfile.defaultDevice,
     });
-  }, [whoText, soundText, intentText, parsedProfile]);
+  }, [whoText, intentText, soundNote, parsedProfile, deviceOverride]);
+
+  const effectiveDevice: OutputDevice =
+    parsedIntent.environment === 'driving'
+      ? 'car_audio'
+      : (deviceOverride ?? parsedIntent.device);
 
   const currentMood: FieldMood = useMemo(() => {
     if (parsedIntent.environment === 'driving' || parsedProfile.role === 'driver') return 'driving';
     if (parsedIntent.targetState === 'calm_reset') return 'calm';
     if (parsedIntent.targetState === 'deep_flow') return 'flow';
     if (parsedIntent.targetState === 'sleep_winddown') return 'sleep';
-    if (step === 3) return 'focus';
+    if (step === 2) return 'focus';
     return 'default';
   }, [parsedIntent, parsedProfile.role, step]);
 
-  // Keep ambient field mood synced smoothly
   useEffect(() => {
     onMoodChange?.(currentMood);
   }, [currentMood, onMoodChange]);
 
-  const startVoice = (targetStep: 1 | 2 | 3) => {
+  const startVoice = (targetStep: 1 | 2) => {
     const Win = window as unknown as {
       SpeechRecognition?: new () => SpeechRecognitionInstance;
       webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
@@ -140,20 +138,11 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
       const t = e.results[0]?.[0]?.transcript ?? '';
       if (!t) return;
       if (targetStep === 1) setWhoText((prev) => (prev ? `${prev}, ${t}` : t));
-      if (targetStep === 2) setSoundText((prev) => (prev ? `${prev}, ${t}` : t));
-      if (targetStep === 3) setIntentText((prev) => (prev ? `${prev}, ${t}` : t));
+      if (targetStep === 2) setIntentText((prev) => (prev ? `${prev}, ${t}` : t));
     };
     rec.onerror = () => setListeningField(null);
     rec.onend = () => setListeningField(null);
     rec.start();
-  };
-
-  const appendHint = (current: string, setter: (v: string) => void, hint: string) => {
-    if (!current.trim()) {
-      setter(hint);
-    } else if (!current.toLowerCase().includes(hint.toLowerCase().slice(0, 14))) {
-      setter(`${current.trim()}, ${hint.toLowerCase()}`);
-    }
   };
 
   const handleComplete = async (launchSession: boolean) => {
@@ -165,19 +154,19 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
         role: parsedIntent.extractedRole ?? parsedProfile.role,
         texturePref: parsedProfile.texturePref,
         noiseSensitivity: parsedProfile.noiseSensitivity,
-        defaultDevice: parsedProfile.defaultDevice,
+        defaultDevice: effectiveDevice,
         primaryChallenge: parsedProfile.primaryChallenge,
         researchConsent,
       };
 
       if (launchSession) {
         await onComplete(profilePayload, {
-          rawInputText: intentText.trim() || `${whoText} · ${soundText}`.trim(),
+          rawInputText: intentText.trim() || whoText.trim(),
           currentState: parsedIntent.currentState,
           baselineScore,
           targetState: parsedIntent.targetState,
           environment: parsedIntent.environment,
-          device: parsedIntent.device,
+          device: effectiveDevice,
           durationMin: parsedIntent.durationMin,
           ageOverride: parsedIntent.extractedAge ?? parsedProfile.age,
         });
@@ -188,8 +177,6 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
       setSubmitting(false);
     }
   };
-
-  const totalSteps = isEditing ? 2 : 3;
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center">
@@ -212,7 +199,7 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
         <h1 className="animate-rise delay-75 mt-5 text-3xl font-bold tracking-tight text-white sm:text-5xl leading-[1.08]">
           {isEditing ? (
             <>
-              Refine your <span className="text-aurora">acoustic profile</span>
+              Refine your <span className="text-aurora">listener profile</span>
             </>
           ) : (
             <>
@@ -222,39 +209,39 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
         </h1>
 
         <p className="animate-rise delay-150 mt-3 max-w-lg text-sm leading-relaxed text-slate-400 sm:text-base">
-          Answer in your own words. We synthesize real-time psychoacoustic audio from peer-reviewed
-          science — and adapt from every session you rate.
+          Tell us who you are and how you want to feel — <strong className="text-slate-200">nootropic.fm</strong>{' '}
+          searches peer-reviewed studies and chooses the optimal psychoacoustic sound automatically.
         </p>
       </div>
 
-      {/* Minimal glowing step dots */}
-      <div className="animate-rise delay-225 mt-6 mb-5 flex items-center gap-2.5">
-        {Array.from({ length: totalSteps }, (_, idx) => idx + 1).map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setStep(s as 1 | 2 | 3)}
-            aria-label={`Step ${s}`}
-            className={`h-1.5 rounded-full transition-all duration-500 ${
-              s === step
-                ? 'w-10 bg-gradient-to-r from-cyan-400 to-indigo-400 shadow-[0_0_14px_rgba(34,211,238,0.65)]'
-                : s < step
-                  ? 'w-5 bg-cyan-400/50'
-                  : 'w-5 bg-slate-800'
-            }`}
-          />
-        ))}
-      </div>
+      {/* Minimal glowing step dots (just 2 steps!) */}
+      {!isEditing && (
+        <div className="animate-rise delay-225 mt-6 mb-5 flex items-center gap-2.5">
+          {[1, 2].map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setStep(s as 1 | 2)}
+              aria-label={`Step ${s}`}
+              className={`h-1.5 rounded-full transition-all duration-500 ${
+                s === step
+                  ? 'w-12 bg-gradient-to-r from-cyan-400 to-indigo-400 shadow-[0_0_14px_rgba(34,211,238,0.65)]'
+                  : 'w-6 bg-cyan-400/35'
+              }`}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Conversational Free-Response Stage */}
-      <div className="animate-rise delay-300 glass-stage w-full rounded-3xl p-6 sm:p-8">
+      <div className="animate-rise delay-300 glass-stage mt-4 w-full rounded-3xl p-6 sm:p-8">
         {step === 1 && (
           <div key="step-1" className="animate-step space-y-5">
             <div className="flex items-center justify-between">
               <span className="font-mono-tech text-[11px] uppercase tracking-[0.18em] text-cyan-300/80">
-                01 / {String(totalSteps).padStart(2, '0')} · Listener
+                {isEditing ? 'Listener Profile' : '01 / 02 · Listener'}
               </span>
-              <span className="text-[11px] text-slate-500">Type freely or speak</span>
+              <span className="text-[11px] text-slate-500">Write freely or speak</span>
             </div>
 
             <h2 className="text-xl font-semibold text-white sm:text-2xl">
@@ -271,7 +258,8 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      setStep(2);
+                      if (isEditing) void handleComplete(false);
+                      else setStep(2);
                     }
                   }}
                   placeholder="Write freely — e.g. I'm a 40-year-old minibus driver who gets distracted on long routes..."
@@ -292,7 +280,6 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
               </div>
             </div>
 
-            {/* Subtle, whisper-soft suggested answers */}
             <div className="space-y-2">
               <div className="text-[11px] font-medium text-slate-500">
                 Or tap a subtle inspiration:
@@ -311,11 +298,10 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
               </div>
             </div>
 
-            {/* Live subtle signal extraction */}
             {whoText.trim().length > 2 && parsedProfile.detectedHints.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                  <Cpu className="h-3 w-3 text-cyan-400/80" /> Calibrating:
+                  <Cpu className="h-3 w-3 text-cyan-400/80" /> Understood:
                 </span>
                 {parsedProfile.detectedHints.slice(0, 4).map((h) => (
                   <span
@@ -332,107 +318,6 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
               <span className="text-[11px] text-slate-500">
                 Anonymous · No account or email required
               </span>
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                className="btn-aurora inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-slate-950"
-              >
-                Next
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div key="step-2" className="animate-step space-y-5">
-            <div className="flex items-center justify-between">
-              <span className="font-mono-tech text-[11px] uppercase tracking-[0.18em] text-cyan-300/80">
-                02 / {String(totalSteps).padStart(2, '0')} · Soundscape & Output
-              </span>
-              <span className="text-[11px] text-slate-500">Your ears, your rules</span>
-            </div>
-
-            <h2 className="text-xl font-semibold text-white sm:text-2xl">
-              What kind of sound feels best — and how do you listen?
-            </h2>
-
-            <div className="glow-input-wrap">
-              <div className="relative flex items-start rounded-[1rem] bg-[#060a14]/95">
-                <textarea
-                  rows={2}
-                  autoFocus
-                  value={soundText}
-                  onChange={(e) => setSoundText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (isEditing) void handleComplete(false);
-                      else setStep(3);
-                    }
-                  }}
-                  placeholder="e.g. Warm smooth beats on vehicle speakers, no piercing highs or harsh static..."
-                  className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder-slate-500/80 focus:outline-none sm:text-base"
-                />
-                <button
-                  type="button"
-                  onClick={() => startVoice(2)}
-                  title="Speak your preference"
-                  className={`absolute right-2.5 top-2.5 flex h-10 w-10 items-center justify-center rounded-xl border transition ${
-                    listeningField === 2
-                      ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
-                      : 'border-slate-700/70 bg-slate-900/80 text-cyan-300 hover:border-cyan-400/50 hover:bg-cyan-400/10'
-                  }`}
-                >
-                  {listeningField === 2 ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-[11px] font-medium text-slate-500">
-                Subtle suggestions (tap to add):
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {SOUND_HINTS.map((hint) => (
-                  <button
-                    key={hint}
-                    type="button"
-                    onClick={() => appendHint(soundText, setSoundText, hint)}
-                    className="subtle-chip rounded-full px-3 py-1.5 text-xs text-left"
-                  >
-                    {hint}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {parsedProfile.detectedHints.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                  <Sparkles className="h-3 w-3 text-indigo-400" /> Profile DNA:
-                </span>
-                {parsedProfile.detectedHints.map((h) => (
-                  <span
-                    key={h}
-                    className="font-mono-tech rounded-md border border-indigo-400/25 bg-indigo-500/10 px-2 py-0.5 text-[11px] text-indigo-200"
-                  >
-                    {h}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div className="flex items-center justify-between pt-2">
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-2.5 text-xs font-medium text-slate-300 hover:border-slate-700 hover:text-white"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back
-              </button>
-
               {isEditing ? (
                 <button
                   type="button"
@@ -446,10 +331,10 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
               ) : (
                 <button
                   type="button"
-                  onClick={() => setStep(3)}
+                  onClick={() => setStep(2)}
                   className="btn-aurora inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-slate-950"
                 >
-                  One last thing
+                  Next
                   <ArrowRight className="h-4 w-4" />
                 </button>
               )}
@@ -457,17 +342,17 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
           </div>
         )}
 
-        {step === 3 && !isEditing && (
-          <div key="step-3" className="animate-step space-y-5">
+        {step === 2 && !isEditing && (
+          <div key="step-2" className="animate-step space-y-5">
             <div className="flex items-center justify-between">
               <span className="font-mono-tech text-[11px] uppercase tracking-[0.18em] text-cyan-300/80">
-                03 / 03 · Instant Session
+                02 / 02 · Mental State & Science Match
               </span>
-              <span className="text-[11px] text-slate-500">Ready to tune</span>
+              <span className="text-[11px] text-emerald-300/90">Auto-sound enabled</span>
             </div>
 
             <h2 className="text-xl font-semibold text-white sm:text-2xl">
-              How do you feel right now — and where do you want to be?
+              How do you feel right now — and what state do you want?
             </h2>
 
             <div className="glow-input-wrap">
@@ -488,15 +373,15 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
                 />
                 <button
                   type="button"
-                  onClick={() => startVoice(3)}
+                  onClick={() => startVoice(2)}
                   title="Speak your current state"
                   className={`absolute right-2.5 top-2.5 flex h-10 w-10 items-center justify-center rounded-xl border transition ${
-                    listeningField === 3
+                    listeningField === 2
                       ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
                       : 'border-slate-700/70 bg-slate-900/80 text-cyan-300 hover:border-cyan-400/50 hover:bg-cyan-400/10'
                   }`}
                 >
-                  {listeningField === 3 ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {listeningField === 2 ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                 </button>
               </div>
             </div>
@@ -517,7 +402,61 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
               </div>
             </div>
 
-            {/* Sleek Baseline Rating Bar */}
+            {/* Platform auto-selects soundscape + quick 3-pill audio output */}
+            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.06] p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-cyan-200">
+                  <Sparkles className="h-4 w-4 text-cyan-300" />
+                  <span>Soundscape chosen automatically by nootropic.fm from science</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSoundNote((v) => !v)}
+                  className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-cyan-200"
+                >
+                  Any sound dislikes?
+                  <ChevronDown
+                    className={`h-3 w-3 transition-transform ${showSoundNote ? 'rotate-180' : ''}`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 mr-1">
+                  <Headphones className="h-3.5 w-3.5" /> Listening on:
+                </span>
+                {(['headphones', 'speakers', 'car_audio'] as OutputDevice[]).map((d) => {
+                  const lockedByDriving = parsedIntent.environment === 'driving' && d !== 'car_audio';
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      disabled={lockedByDriving}
+                      onClick={() => setDeviceOverride(d)}
+                      className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+                        effectiveDevice === d
+                          ? 'border-cyan-400/70 bg-cyan-400/20 text-white'
+                          : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700'
+                      } ${lockedByDriving ? 'opacity-30 cursor-not-allowed' : ''}`}
+                    >
+                      {DEVICE_LABELS[d]}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {showSoundNote && (
+                <input
+                  type="text"
+                  value={soundNote}
+                  onChange={(e) => setSoundNote(e.target.value)}
+                  placeholder="Optional — e.g. sensitive to high pitch, no rain, prefer rhythmic beat..."
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950/80 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400/60 focus:outline-none"
+                />
+              )}
+            </div>
+
+            {/* Baseline 1–5 */}
             <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/55 px-4 py-3 sm:flex-row sm:items-center">
               <div>
                 <div className="text-xs font-medium text-slate-300">Current baseline (1–5)</div>
@@ -541,11 +480,10 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
               </div>
             </div>
 
-            {/* Live detected session tags */}
             {parsedIntent.detectedKeywords.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                  <Cpu className="h-3 w-3 text-cyan-400" /> Protocol blueprint:
+                  <Cpu className="h-3 w-3 text-cyan-400" /> Research query:
                 </span>
                 {parsedIntent.detectedKeywords.map((k) => (
                   <span
@@ -558,7 +496,6 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
               </div>
             )}
 
-            {/* Ultra-clean inline Open Research consent */}
             <label className="flex cursor-pointer items-center gap-2.5 text-xs text-slate-400">
               <input
                 type="checkbox"
@@ -568,15 +505,14 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
               />
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400/80" />
               <span>
-                Free during Year 1 Open Research — allow my anonymous session outcomes to train the
-                engine.
+                Free during Year 1 Open Research — allow my anonymous outcomes to improve the engine.
               </span>
             </label>
 
             <div className="flex items-center justify-between gap-3 pt-1">
               <button
                 type="button"
-                onClick={() => setStep(2)}
+                onClick={() => setStep(1)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3 text-xs font-medium text-slate-300 hover:border-slate-700 hover:text-white"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
@@ -588,10 +524,10 @@ export function OnboardingView({ initialProfile, onComplete, onMoodChange }: Onb
                 onClick={() => void handleComplete(true)}
                 className="btn-aurora inline-flex flex-1 items-center justify-center gap-2.5 rounded-xl px-6 py-3.5 text-sm font-bold text-slate-950 sm:flex-initial disabled:opacity-60"
               >
-                <Play className="h-4 w-4 fill-slate-950" />
+                <Sparkles className="h-4 w-4" />
                 {submitting
-                  ? 'Synthesizing protocol...'
-                  : `Generate & Play (${parsedIntent.durationMin} min)`}
+                  ? 'Searching science...'
+                  : `Search Science & Build Protocol (${parsedIntent.durationMin}m)`}
               </button>
             </div>
           </div>

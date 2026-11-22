@@ -82,11 +82,21 @@ export interface ScientificStudy {
   journal: string;
   title: string;
   mechanism: string;
+  soundEffect: string;
   summary: string;
   caveat: string;
   doiOrUrl: string;
   applicableTargets: TargetState[];
   applicableEnvironments?: SessionEnvironment[];
+}
+
+export interface LivePubMedPaper {
+  pmid: string;
+  title: string;
+  authors: string;
+  journal: string;
+  year: string;
+  url: string;
 }
 
 export interface ProtocolArm {
@@ -135,6 +145,8 @@ export interface ProtocolRecommendation {
   safetyWarnings: string[];
   rationale: string;
   studies: ScientificStudy[];
+  livePubMedPapers?: LivePubMedPaper[];
+  autoSelectedAtmosphere: AtmosphereStyle;
   confidencePct: number;
   cohortTrials: number;
   profileTrials: number;

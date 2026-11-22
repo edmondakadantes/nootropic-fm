@@ -2,6 +2,7 @@ import { getStudiesByIds } from './studies';
 import type {
   AcousticParams,
   AgeBand,
+  AtmosphereStyle,
   CurrentState,
   LiveAdjustment,
   OutputDevice,
@@ -69,7 +70,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
       antiMonotonyCycleMin: 4,
       binauralOffsetHz: 0,
     },
-    studyIds: ['woods-2024-am-attention', 'unal-2013-driving-audio', 'heiderscheit-2015-iso-principle'],
+    studyIds: ['woods-2024-am-attention', 'unal-2013-driving-audio', 'husain-2002-tempo-arousal', 'heiderscheit-2015-iso-principle'],
   },
   {
     id: 'steady-horizon-14hz',
@@ -173,7 +174,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
       antiMonotonyCycleMin: 0,
       binauralOffsetHz: 2.5,
     },
-    studyIds: ['thoma-2013-music-stress-hpa', 'heiderscheit-2015-iso-principle', 'garcia-argibay-2019-binaural-meta'],
+    studyIds: ['ngo-2013-acoustic-sleep', 'thoma-2013-music-stress-hpa', 'heiderscheit-2015-iso-principle', 'garcia-argibay-2019-binaural-meta'],
   },
 ];
 
@@ -370,6 +371,21 @@ export function selectProtocolRecommendation(input: {
     ? ' (Includes a controlled exploration trial so the engine can test whether a slightly different acoustic profile works even better for you.)'
     : '';
 
+  // Science-driven automatic atmosphere selection (no guesswork required from user)
+  let autoSelectedAtmosphere: AtmosphereStyle = 'warm_horizon';
+  if (effectiveTarget === 'sleep_winddown') {
+    autoSelectedAtmosphere = 'deep_cosmos';
+  } else if (effectiveTarget === 'calm_reset') {
+    autoSelectedAtmosphere = 'rain_sanctuary';
+  } else if (isDriving || effectiveTarget === 'energy_lift' || input.currentState === 'fatigued') {
+    autoSelectedAtmosphere = params.pulseIntensity >= 0.48 ? 'kinetic_drive' : 'warm_horizon';
+  } else if (effectiveTarget === 'deep_flow') {
+    autoSelectedAtmosphere =
+      input.profile.texturePref === 'nature_drift' ? 'rain_sanctuary' : 'deep_cosmos';
+  } else if (input.profile.texturePref === 'rhythmic_pulse') {
+    autoSelectedAtmosphere = 'kinetic_drive';
+  }
+
   return {
     sessionId: input.sessionId,
     cohortKey,
@@ -381,6 +397,7 @@ export function selectProtocolRecommendation(input: {
     safetyWarnings,
     rationale: `${chosen.arm.description} ${evidenceNote}${explorationNote}`,
     studies: getStudiesByIds(chosen.arm.studyIds),
+    autoSelectedAtmosphere,
     confidencePct,
     cohortTrials: chosen.cohortTrials,
     profileTrials: chosen.profileTrials,

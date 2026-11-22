@@ -17,9 +17,10 @@ import { DebriefView } from './components/DebriefView';
 import { InsightsView } from './components/InsightsView';
 import { OnboardingView } from './components/OnboardingView';
 import { PlayerView } from './components/PlayerView';
+import { ProtocolRevealView } from './components/ProtocolRevealView';
 import { api } from './lib/api';
 
-type Screen = 'onboarding' | 'checkin' | 'player' | 'debrief' | 'insights';
+type Screen = 'onboarding' | 'checkin' | 'reveal' | 'player' | 'debrief' | 'insights';
 
 const PROFILE_STORAGE_KEY = 'nootropic_fm_profile_id_v1';
 
@@ -29,6 +30,7 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pendingDebrief, setPendingDebrief] = useState<SessionRecord | null>(null);
   const [activeRec, setActiveRec] = useState<ProtocolRecommendation | null>(null);
+  const [researching, setResearching] = useState(false);
   const [fieldMood, setFieldMood] = useState<FieldMood>('default');
   const [audioActive, setAudioActive] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<{
@@ -106,6 +108,10 @@ export default function App() {
       }
     ) => {
       setErrorBanner(null);
+      setActiveRec(null);
+      setResearching(true);
+      setFieldMood(moodFromTarget(payload.environment, payload.targetState));
+      setScreen('reveal');
       try {
         const { recommendation } = await api.startProtocol({
           profileId: activeProfile.id,
@@ -114,9 +120,11 @@ export default function App() {
         setActiveRec(recommendation);
         setPendingDebrief(null);
         setFieldMood(moodFromTarget(recommendation.environment, recommendation.targetState));
-        setScreen('player');
       } catch (err) {
         setErrorBanner(err instanceof Error ? err.message : 'Unable to start protocol');
+        setScreen('checkin');
+      } finally {
+        setResearching(false);
       }
     },
     [moodFromTarget]
@@ -251,7 +259,7 @@ export default function App() {
                 type="button"
                 onClick={() => setScreen(activeRec ? 'player' : 'checkin')}
                 className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
-                  screen === 'checkin' || screen === 'player' || screen === 'debrief'
+                  screen === 'checkin' || screen === 'reveal' || screen === 'player' || screen === 'debrief'
                     ? 'bg-cyan-400/15 text-cyan-200 border border-cyan-400/35'
                     : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
                 }`}
@@ -322,6 +330,17 @@ export default function App() {
             onDismissPending={() => void handleDismissPending()}
             onMoodChange={setFieldMood}
             onStartSession={handleStartSession}
+          />
+        ) : screen === 'reveal' ? (
+          <ProtocolRevealView
+            loading={researching}
+            recommendation={activeRec}
+            mood={fieldMood}
+            onLaunchAudio={() => setScreen('player')}
+            onBack={() => {
+              setActiveRec(null);
+              setScreen('checkin');
+            }}
           />
         ) : screen === 'player' && activeRec ? (
           <PlayerView

@@ -56,7 +56,9 @@ export function PlayerView({
   const [intensityMult, setIntensityMult] = useState(1.0);
   const [modMult, setModMult] = useState(1.0);
   const [adjustments, setAdjustments] = useState<LiveAdjustment[]>([]);
-  const [atmosphere, setAtmosphere] = useState<AtmosphereStyle>('warm_horizon');
+  const [atmosphere, setAtmosphere] = useState<AtmosphereStyle>(
+    recommendation.autoSelectedAtmosphere ?? 'warm_horizon'
+  );
   const [telemetry, setTelemetry] = useState<EngineTelemetry>({
     phase: 'entry',
     phaseLabel: 'Entry & Alignment (Iso-Principle)',
@@ -65,7 +67,7 @@ export function PlayerView({
     currentModDepth: recommendation.params.modulationDepth,
     currentBpm: recommendation.params.bpm,
     antiMonotonyActive: false,
-    atmosphere: 'warm_horizon',
+    atmosphere: recommendation.autoSelectedAtmosphere ?? 'warm_horizon',
     backgroundAudioActive: false,
   });
 
@@ -86,7 +88,8 @@ export function PlayerView({
         await engineRef.current?.start(
           recommendation.params,
           recommendation.plannedDurationMin,
-          `${recommendation.arm.name} · ${TARGET_LABELS[recommendation.targetState]}`
+          `${recommendation.arm.name} · ${TARGET_LABELS[recommendation.targetState]}`,
+          recommendation.autoSelectedAtmosphere
         );
         if (mounted) {
           setIsPlaying(true);

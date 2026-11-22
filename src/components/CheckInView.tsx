@@ -7,7 +7,6 @@ import {
   Cpu,
   Mic,
   MicOff,
-  Play,
   SlidersHorizontal,
   Sparkles,
   X,
@@ -467,8 +466,8 @@ export function CheckInView({
           onClick={handleLaunch}
           className="btn-aurora flex w-full items-center justify-center gap-2.5 rounded-2xl px-6 py-4 text-base font-bold text-slate-950 disabled:opacity-60"
         >
-          <Play className="h-5 w-5 fill-slate-950" />
-          {starting ? 'Synthesizing your protocol...' : `Start Session · ${durationMin} min`}
+          <Sparkles className="h-5 w-5" />
+          {starting ? 'Searching scientific literature...' : `Search Science & Build Protocol · ${durationMin} min`}
         </button>
 
         {isDriving && (
