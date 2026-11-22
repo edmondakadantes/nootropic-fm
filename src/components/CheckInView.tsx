@@ -19,6 +19,14 @@ import {
   X,
 } from 'lucide-react';
 import {
+  NEURAL_MICRO_STATES,
+  coordsToBaselineScore,
+  findClosestMicroState,
+  matchMicroStateFromText,
+  type NeuralCoords,
+  type NeuralMicroState,
+} from '../../shared/neuralStates';
+import {
   parseNaturalCheckIn,
   parseOnboardingAnswers,
   parseProfileSentence,
@@ -29,7 +37,6 @@ import {
   GENDER_LABELS,
   GENRE_META,
   ROLE_SHORT_LABELS,
-  STATE_LABELS,
   TARGET_LABELS,
   formatProfileSummary,
   type AppRuntimeConfig,
@@ -46,6 +53,7 @@ import {
   type UserRole,
 } from '../../shared/types';
 import type { FieldMood } from './AmbientField';
+import { NeuralCompassSelector, NeuralTrajectoryPreview } from './NeuralCompass';
 import { SonicOrb } from './SonicOrb';
 
 interface CheckInViewProps {
@@ -61,6 +69,10 @@ interface CheckInViewProps {
     ephemeralMode: boolean;
     rawInputText: string;
     currentState: CurrentState;
+    microStateId?: string;
+    microStateLabel?: string;
+    arousalPct?: number;
+    clarityPct?: number;
     baselineScore: number;
     targetState: TargetState;
     environment: SessionEnvironment;
@@ -72,56 +84,8 @@ interface CheckInViewProps {
   }) => Promise<void>;
 }
 
-const MOOD_CARDS: Array<{
-  state: CurrentState;
-  label: string;
-  sub: string;
-  defaultBaseline: number;
-  suggestedTarget: TargetState;
-}> = [
-  {
-    state: 'fatigued',
-    label: 'Tired / Low Energy',
-    sub: 'Sluggish, heavy, foggy',
-    defaultBaseline: 2,
-    suggestedTarget: 'energy_lift',
-  },
-  {
-    state: 'distracted',
-    label: 'Distracted / Scattered',
-    sub: 'Mind jumping, hard to lock in',
-    defaultBaseline: 2,
-    suggestedTarget: 'alert_focus',
-  },
-  {
-    state: 'stressed',
-    label: 'Stressed / Tense',
-    sub: 'Overloaded, tight shoulders',
-    defaultBaseline: 2,
-    suggestedTarget: 'calm_reset',
-  },
-  {
-    state: 'anxious',
-    label: 'Anxious / Racing Mind',
-    sub: 'Too many loops, restless thoughts',
-    defaultBaseline: 2,
-    suggestedTarget: 'calm_reset',
-  },
-  {
-    state: 'restless',
-    label: 'Restless / Bored',
-    sub: 'Need groove & steady stimulation',
-    defaultBaseline: 3,
-    suggestedTarget: 'deep_flow',
-  },
-  {
-    state: 'calm_neutral',
-    label: 'Calm / Ready to Work',
-    sub: 'Steady baseline — ready for flow',
-    defaultBaseline: 3,
-    suggestedTarget: 'deep_flow',
-  },
-];
+const DEFAULT_MICRO_STATE =
+  NEURAL_MICRO_STATES.find((s) => s.id === 'brain_fog') ?? NEURAL_MICRO_STATES[0];
 
 const TARGET_CARDS: Array<{
   target: TargetState;
@@ -210,10 +174,15 @@ export function CheckInView({
   const [researchConsent, setResearchConsent] = useState<boolean>(defaultConsent);
   const [consentTouched, setConsentTouched] = useState(false);
 
-  // Beat 2: Current mental state
+  // Beat 2: Continuous 2D Neural Compass (Russell Circumplex Arousal × Clarity) + 19 Micro-States
   const [feelingText, setFeelingText] = useState('');
-  const [currentState, setCurrentState] = useState<CurrentState>('fatigued');
-  const [baselineScore, setBaselineScore] = useState<number>(2);
+  const [neuralCoords, setNeuralCoords] = useState<NeuralCoords>({
+    energy: DEFAULT_MICRO_STATE.energy,
+    clarity: DEFAULT_MICRO_STATE.clarity,
+  });
+  const [selectedMicroState, setSelectedMicroState] = useState<NeuralMicroState>(DEFAULT_MICRO_STATE);
+  const [currentState, setCurrentState] = useState<CurrentState>(DEFAULT_MICRO_STATE.coreState);
+  const [baselineScore, setBaselineScore] = useState<number>(DEFAULT_MICRO_STATE.defaultBaseline);
 
   // Beat 3: Target state, duration & output
   const [goalText, setGoalText] = useState('');
@@ -306,11 +275,55 @@ export function CheckInView({
     if (parsed.occupationLabel) setOccupationLabel(parsed.occupationLabel);
   };
 
+  const applyMicroState = (st: NeuralMicroState, syncCoords = true) => {
+    setSelectedMicroState(st);
+    setCurrentState(st.coreState);
+    if (syncCoords) {
+      setNeuralCoords({ energy: st.energy, clarity: st.clarity });
+    }
+    setBaselineScore(st.defaultBaseline);
+    setTargetState(
+      isDriving && (st.suggestedTarget === 'calm_reset' || st.suggestedTarget === 'sleep_winddown')
+        ? 'alert_focus'
+        : st.suggestedTarget
+    );
+  };
+
+  const handleCompassCoordsChange = (next: NeuralCoords) => {
+    setNeuralCoords(next);
+    const closest = findClosestMicroState(next.energy, next.clarity);
+    setSelectedMicroState(closest);
+    setCurrentState(closest.coreState);
+    setBaselineScore(coordsToBaselineScore(next.energy, next.clarity));
+    setTargetState(
+      isDriving && (closest.suggestedTarget === 'calm_reset' || closest.suggestedTarget === 'sleep_winddown')
+        ? 'alert_focus'
+        : closest.suggestedTarget
+    );
+  };
+
   const handleFeelingChange = (text: string) => {
     setFeelingText(text);
     if (!text.trim()) return;
+    const microMatch = matchMicroStateFromText(text);
     const parsed = parseNaturalCheckIn(text, { age, role, defaultDevice: device });
-    setCurrentState(parsed.currentState);
+
+    if (microMatch) {
+      applyMicroState(microMatch, true);
+    } else {
+      setCurrentState(parsed.currentState);
+      const fallbackMicro =
+        NEURAL_MICRO_STATES.find((s) => s.coreState === parsed.currentState) ?? DEFAULT_MICRO_STATE;
+      setSelectedMicroState(fallbackMicro);
+      setNeuralCoords({ energy: fallbackMicro.energy, clarity: fallbackMicro.clarity });
+      setBaselineScore(fallbackMicro.defaultBaseline);
+      setTargetState(
+        isDriving && (fallbackMicro.suggestedTarget === 'calm_reset' || fallbackMicro.suggestedTarget === 'sleep_winddown')
+          ? 'alert_focus'
+          : fallbackMicro.suggestedTarget
+      );
+    }
+
     if (parsed.environment === 'driving') {
       setEnvironment('driving');
       setDevice('car_audio');
@@ -321,11 +334,6 @@ export function CheckInView({
     } else if (parsed.extractedGenre) {
       setShowCustomInput(false);
       setGenreChoice(parsed.extractedGenre);
-    }
-    // Suggest matching target automatically
-    const card = MOOD_CARDS.find((m) => m.state === parsed.currentState);
-    if (card) {
-      setTargetState(isDriving && card.suggestedTarget === 'calm_reset' ? 'alert_focus' : card.suggestedTarget);
     }
   };
 
@@ -437,7 +445,8 @@ export function CheckInView({
 
       const combinedRaw = [
         introText.trim(),
-        feelingText.trim() || `Feeling ${STATE_LABELS[currentState]}`,
+        feelingText.trim() ||
+          `Feeling ${selectedMicroState.label} (Energy ${neuralCoords.energy}%, Clarity ${neuralCoords.clarity}%)`,
         goalText.trim() || `Want ${TARGET_LABELS[effectiveTarget]} for ${durationMin} min`,
         validatedCustom ? `Music: ${validatedCustom}` : '',
       ]
@@ -473,6 +482,10 @@ export function CheckInView({
         ephemeralMode,
         rawInputText: combinedRaw,
         currentState,
+        microStateId: selectedMicroState.id,
+        microStateLabel: selectedMicroState.label,
+        arousalPct: neuralCoords.energy,
+        clarityPct: neuralCoords.clarity,
         baselineScore,
         targetState: effectiveTarget,
         environment: effectiveEnv,
@@ -603,7 +616,8 @@ export function CheckInView({
         {beat === 3 && (
           <>
             <p className="mt-3 text-xs font-medium text-cyan-300/90">
-              Got it — feeling {STATE_LABELS[currentState].split(' ')[0]} ({baselineScore}/5).
+              Got it — {selectedMicroState.label} (Energy {neuralCoords.energy}% · Clarity{' '}
+              {neuralCoords.clarity}%).
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl leading-[1.12]">
               What state do you want to reach, <span className="text-aurora">and for how long?</span>
@@ -662,7 +676,7 @@ export function CheckInView({
                 onClick={() => setBeat(2)}
                 className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-0.5 text-cyan-200 transition hover:bg-cyan-400/20"
               >
-                Now: {STATE_LABELS[currentState].split(' ')[0]} ({baselineScore}/5)
+                Now: {selectedMicroState.shortLabel} ({neuralCoords.energy}% / {neuralCoords.clarity}%)
               </button>
             )}
             {beat > 3 && (
@@ -878,7 +892,7 @@ export function CheckInView({
       )}
 
       {/* ===================================================================== */}
-      {/* BEAT 2: HOW ARE YOU FEELING RIGHT NOW? (+ Baseline 1-5)               */}
+      {/* BEAT 2: INTERACTIVE 2D NEURAL STATE COMPASS (19 MICRO-STATES)         */}
       {/* ===================================================================== */}
       {beat === 2 && (
         <div key="beat-2" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
@@ -894,7 +908,7 @@ export function CheckInView({
                     setBeat(3);
                   }
                 }}
-                placeholder='Tell me in your own words — e.g. "Tired and mentally foggy after lunch" or tap a feeling below...'
+                placeholder='Describe anything freely — e.g. "Over-caffeinated and jittery", "Brain fog after 5 Zoom calls", "Creative block"...'
                 className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder-slate-500/80 focus:outline-none sm:text-base"
               />
               <button
@@ -912,60 +926,14 @@ export function CheckInView({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {MOOD_CARDS.map((card) => {
-              const active = currentState === card.state;
-              return (
-                <button
-                  key={card.state}
-                  type="button"
-                  onClick={() => {
-                    setCurrentState(card.state);
-                    setBaselineScore(card.defaultBaseline);
-                    setTargetState(
-                      isDriving && card.suggestedTarget === 'calm_reset'
-                        ? 'alert_focus'
-                        : card.suggestedTarget
-                    );
-                  }}
-                  className={`rounded-2xl border p-3 text-left transition-all ${
-                    active
-                      ? 'border-cyan-400 bg-cyan-400/15 shadow-[0_0_20px_rgba(34,211,238,0.2)]'
-                      : 'border-slate-800/90 bg-slate-950/60 hover:border-cyan-400/40'
-                  }`}
-                >
-                  <div className="text-xs font-semibold text-white">{card.label}</div>
-                  <div className="mt-0.5 text-[10px] text-slate-400">{card.sub}</div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Inline Baseline 1-5 (measures real scientific Before -> After Delta) */}
-          <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/55 px-4 py-3.5 sm:flex-row sm:items-center">
-            <div>
-              <div className="text-xs font-semibold text-white">How sharp / steady right now?</div>
-              <div className="text-[11px] text-slate-400">
-                Baseline 1 (very drained) → 5 (peak) · measures your real before → after Δ
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setBaselineScore(n)}
-                  className={`h-9 w-9 rounded-xl border font-mono-tech text-xs font-bold transition-all ${
-                    baselineScore === n
-                      ? 'scale-105 border-cyan-400 bg-cyan-400/20 text-white shadow-[0_0_16px_rgba(34,211,238,0.35)]'
-                      : 'border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-600'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
+          <NeuralCompassSelector
+            coords={neuralCoords}
+            selectedState={selectedMicroState}
+            baselineScore={baselineScore}
+            onChangeCoords={handleCompassCoordsChange}
+            onSelectMicroState={(st) => applyMicroState(st, true)}
+            onChangeBaseline={setBaselineScore}
+          />
 
           <div className="flex items-center gap-2.5">
             {isFirstVisit && (
@@ -991,10 +959,17 @@ export function CheckInView({
       )}
 
       {/* ===================================================================== */}
-      {/* BEAT 3: TARGET STATE, DURATION & OUTPUT                               */}
+      {/* BEAT 3: TARGET STATE, ISO-VECTOR TRAJECTORY, DURATION & OUTPUT        */}
       {/* ===================================================================== */}
       {beat === 3 && (
         <div key="beat-3" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
+          {/* Live Iso-Principle Vector Map: Current (X,Y) -> Target (X,Y) */}
+          <NeuralTrajectoryPreview
+            fromCoords={neuralCoords}
+            fromLabel={selectedMicroState.shortLabel}
+            targetState={targetState}
+            durationMin={durationMin}
+          />
           <div className="glow-input-wrap">
             <div className="relative flex items-start rounded-[1rem] bg-[#060a14]/95">
               <textarea

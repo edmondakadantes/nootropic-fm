@@ -1,1 +1,1 @@
-{"root":["./worker/env.d.ts","./worker/index.ts","./worker/literature.ts","./worker/musicproviders.ts","./shared/parser.ts","./shared/promptcomposer.ts","./shared/protocols.ts","./shared/studies.ts","./shared/types.ts"],"version":"5.8.3"}
+{"root":["./worker/env.d.ts","./worker/index.ts","./worker/literature.ts","./worker/musicproviders.ts","./shared/neuralstates.ts","./shared/parser.ts","./shared/promptcomposer.ts","./shared/protocols.ts","./shared/studies.ts","./shared/types.ts"],"version":"5.8.3"}

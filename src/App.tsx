@@ -161,6 +161,10 @@ export default function App() {
       ephemeralProfile?: Partial<UserProfile>;
       rawInputText: string;
       currentState: CurrentState;
+      microStateId?: string;
+      microStateLabel?: string;
+      arousalPct?: number;
+      clarityPct?: number;
       baselineScore: number;
       targetState: TargetState;
       environment: SessionEnvironment;
@@ -204,6 +208,10 @@ export default function App() {
     ephemeralMode: boolean;
     rawInputText: string;
     currentState: CurrentState;
+    microStateId?: string;
+    microStateLabel?: string;
+    arousalPct?: number;
+    clarityPct?: number;
     baselineScore: number;
     targetState: TargetState;
     environment: SessionEnvironment;

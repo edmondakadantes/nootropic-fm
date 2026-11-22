@@ -1,3 +1,4 @@
+import { getMicroStateById } from './neuralStates';
 import {
   composeScientificMusicPrompt,
   getGenreDisplayMeta,
@@ -632,6 +633,10 @@ export function selectProtocolRecommendation(input: {
   sessionId: string;
   profile: UserProfile;
   currentState: CurrentState;
+  microStateId?: string;
+  microStateLabel?: string;
+  arousalPct?: number;
+  clarityPct?: number;
   baselineScore: number;
   targetState: TargetState;
   environment: SessionEnvironment;
@@ -791,6 +796,31 @@ export function selectProtocolRecommendation(input: {
     params.stereoAmSpread = false;
   }
 
+  // Real psychoacoustic micro-state calibration (Russell Circumplex Arousal × Clarity nuance!)
+  const microState = getMicroStateById(input.microStateId);
+  if (microState) {
+    if (
+      microState.id === 'overcaffeinated' ||
+      microState.id === 'wired_but_tired' ||
+      microState.id === 'anxious_racing'
+    ) {
+      // Never spike cortisol on an already-wired nervous system: smooth Alpha->SMR ceiling
+      params.modulationHz = Math.min(params.modulationHz, 12.5);
+      params.modulationDepth = Number(Math.max(0.16, params.modulationDepth * 0.82).toFixed(2));
+      params.filterCutoffHz = Math.min(params.filterCutoffHz, 2100);
+    } else if (microState.id === 'creative_block') {
+      // Open associative alpha-border modulation & spacious suspended harmony
+      params.modulationHz = Math.min(params.modulationHz, 10.5);
+      params.harmonicMode = 'suspended_open';
+    } else if (microState.id === 'screen_fatigue' || microState.id === 'burned_out') {
+      // Gentle upper roll-off for tired visual/auditory cortex
+      params.filterCutoffHz = Math.min(params.filterCutoffHz, 1750);
+      params.noiseLevel = Math.min(params.noiseLevel, 0.08);
+    } else if (microState.id === 'highway_monotony') {
+      params.antiMonotonyCycleMin = Math.min(params.antiMonotonyCycleMin || 8, 6);
+    }
+  }
+
   // Blind A/B Control strictly gated on explicit Research Consent (never runs in Local-Only mode)
   const isControlTrial =
     !input.ephemeralMode &&
@@ -843,6 +873,9 @@ export function selectProtocolRecommendation(input: {
   } else if (params.stereoAmSpread) {
     personalizationSummary.push('Headphone +32° organic stereo AM shimmer enabled');
   }
+  if (microState) {
+    personalizationSummary.push(`Neural state tuned: ${microState.label} — ${microState.dspNote}`);
+  }
   if (input.returnBonusAwarded) {
     personalizationSummary.push('Welcome back · your return strengthened your previous formula score');
   }
@@ -885,6 +918,10 @@ export function selectProtocolRecommendation(input: {
     profileTrials: chosen.profileTrials,
     plannedDurationMin: input.durationMin,
     currentState: input.currentState,
+    microStateId: microState?.id ?? input.microStateId,
+    microStateLabel: microState?.label ?? input.microStateLabel,
+    arousalPct: input.arousalPct ?? microState?.energy,
+    clarityPct: input.clarityPct ?? microState?.clarity,
     targetState: effectiveTarget,
     baselineScore: input.baselineScore,
     environment: input.environment,

@@ -148,6 +148,10 @@ export const api = {
     ephemeralProfile?: Partial<UserProfile>;
     rawInputText: string;
     currentState: CurrentState;
+    microStateId?: string;
+    microStateLabel?: string;
+    arousalPct?: number;
+    clarityPct?: number;
     baselineScore: number;
     targetState: TargetState;
     environment: SessionEnvironment;

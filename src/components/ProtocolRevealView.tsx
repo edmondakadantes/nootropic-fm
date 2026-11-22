@@ -187,10 +187,16 @@ export function ProtocolRevealView({
     const traceSteps = [
       {
         idx: 0,
-        title: 'Analyzing your identity, state & goal',
+        title: 'Analyzing your identity, neural coordinates & goal',
         detail: recommendation
-          ? `${profileLine} · ${STATE_LABELS[recommendation.currentState].split(' ')[0]} (${recommendation.baselineScore}/5) → ${TARGET_LABELS[recommendation.targetState]} for ${recommendation.plannedDurationMin} min`
-          : 'Reading your profile, baseline state, and listening environment...',
+          ? `${profileLine} · ${
+              recommendation.microStateLabel ?? STATE_LABELS[recommendation.currentState].split(' ')[0]
+            }${
+              typeof recommendation.arousalPct === 'number' && typeof recommendation.clarityPct === 'number'
+                ? ` (${recommendation.arousalPct}% Energy · ${recommendation.clarityPct}% Clarity)`
+                : ''
+            } → ${TARGET_LABELS[recommendation.targetState]} for ${recommendation.plannedDurationMin} min`
+          : 'Mapping your profile, arousal × clarity coordinates & target state...',
       },
       {
         idx: 1,
@@ -374,8 +380,11 @@ export function ProtocolRevealView({
           )}
         </h1>
         <p className="mx-auto max-w-xl text-xs leading-relaxed text-slate-300 sm:text-sm">
-          To move you from <strong>{STATE_LABELS[recommendation.currentState].split(' ')[0]}</strong> to{' '}
-          <strong className="text-cyan-200">{TARGET_LABELS[recommendation.targetState]}</strong> for{' '}
+          To guide you from{' '}
+          <strong>
+            {recommendation.microStateLabel ?? STATE_LABELS[recommendation.currentState].split(' ')[0]}
+          </strong>{' '}
+          to <strong className="text-cyan-200">{TARGET_LABELS[recommendation.targetState]}</strong> for{' '}
           <strong>{recommendation.plannedDurationMin} minutes</strong>, here are the peer-reviewed
           studies I matched and the exact sound layers I will generate for you.
         </p>

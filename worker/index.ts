@@ -1159,6 +1159,10 @@ export default {
           ephemeralProfile?: Partial<UserProfile>;
           rawInputText?: string;
           currentState: CurrentState;
+          microStateId?: string;
+          microStateLabel?: string;
+          arousalPct?: number;
+          clarityPct?: number;
           baselineScore: number;
           targetState: TargetState;
           environment: SessionEnvironment;
@@ -1255,7 +1259,7 @@ export default {
             : body.requestedGenre && body.requestedGenre !== 'auto'
               ? fetchBanditRows(env.DB, 'cohort_arm_genre', `${cohortKey}|${body.requestedGenre}`)
               : Promise.resolve([]),
-          fetchVerifiedLiveLiterature(env, effectiveTarget, body.environment),
+          fetchVerifiedLiveLiterature(env, effectiveTarget, body.environment, body.microStateId),
           validCustom ? lookupCachedCustomTrack(env.DB, validCustom.slug, energyTier) : Promise.resolve(null),
           env.DB.prepare('SELECT music_gen_calls FROM api_usage_daily WHERE day = ?')
             .bind(today)
@@ -1358,6 +1362,16 @@ export default {
             sessionId,
             profile,
             currentState: body.currentState,
+            microStateId: body.microStateId,
+            microStateLabel: body.microStateLabel,
+            arousalPct:
+              typeof body.arousalPct === 'number'
+                ? Math.max(0, Math.min(100, Math.round(body.arousalPct)))
+                : undefined,
+            clarityPct:
+              typeof body.clarityPct === 'number'
+                ? Math.max(0, Math.min(100, Math.round(body.clarityPct)))
+                : undefined,
             baselineScore: Math.max(1, Math.min(5, Number(body.baselineScore ?? 2))),
             targetState: body.targetState,
             environment: body.environment,

@@ -173,6 +173,10 @@ export interface ParsedCheckIn {
   extractedGenre?: ResolvedGenre;
   extractedCustomGenre?: string;
   currentState: CurrentState;
+  microStateId?: string;
+  microStateLabel?: string;
+  arousalPct?: number;
+  clarityPct?: number;
   targetState: TargetState;
   environment: SessionEnvironment;
   device: OutputDevice;
@@ -222,6 +226,10 @@ export interface ProtocolRecommendation {
   profileTrials: number;
   plannedDurationMin: number;
   currentState: CurrentState;
+  microStateId?: string;
+  microStateLabel?: string;
+  arousalPct?: number;
+  clarityPct?: number;
   targetState: TargetState;
   baselineScore: number;
   environment: SessionEnvironment;

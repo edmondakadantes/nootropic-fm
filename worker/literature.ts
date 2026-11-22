@@ -1,3 +1,4 @@
+import { getMicroStateById } from '../shared/neuralStates';
 import type { LivePubMedPaper, SessionEnvironment, TargetState } from '../shared/types';
 import type { D1Database, Env } from './env';
 
@@ -37,23 +38,26 @@ function inferAppliedMechanism(
 async function fetchPubMed(
   env: Env,
   targetState: TargetState,
-  environment: SessionEnvironment
+  environment: SessionEnvironment,
+  queryOverride?: string
 ): Promise<LivePubMedPaper[]> {
-  const query = (() => {
-    if (environment === 'driving') {
-      return '(music[Title/Abstract] OR auditory[Title/Abstract]) AND (driving[Title/Abstract] OR vigilance[Title/Abstract]) AND (attention[Title/Abstract] OR arousal[Title/Abstract])';
-    }
-    if (targetState === 'sleep_winddown') {
-      return 'music[Title/Abstract] AND ("sleep quality"[Title/Abstract] OR insomnia[Title/Abstract])';
-    }
-    if (targetState === 'calm_reset') {
-      return 'music[Title/Abstract] AND (cortisol[Title/Abstract] OR autonomic[Title/Abstract] OR "stress recovery"[Title/Abstract])';
-    }
-    if (targetState === 'energy_lift') {
-      return 'music[Title/Abstract] AND (tempo[Title/Abstract] OR arousal[Title/Abstract]) AND (fatigue[Title/Abstract] OR alertness[Title/Abstract])';
-    }
-    return '("amplitude modulation"[Title/Abstract] OR "background music"[Title/Abstract] OR "white noise"[Title/Abstract]) AND ("sustained attention"[Title/Abstract] OR "cognitive performance"[Title/Abstract])';
-  })();
+  const query =
+    queryOverride ??
+    (() => {
+      if (environment === 'driving') {
+        return '(music[Title/Abstract] OR auditory[Title/Abstract]) AND (driving[Title/Abstract] OR vigilance[Title/Abstract]) AND (attention[Title/Abstract] OR arousal[Title/Abstract])';
+      }
+      if (targetState === 'sleep_winddown') {
+        return 'music[Title/Abstract] AND ("sleep quality"[Title/Abstract] OR insomnia[Title/Abstract])';
+      }
+      if (targetState === 'calm_reset') {
+        return 'music[Title/Abstract] AND (cortisol[Title/Abstract] OR autonomic[Title/Abstract] OR "stress recovery"[Title/Abstract])';
+      }
+      if (targetState === 'energy_lift') {
+        return 'music[Title/Abstract] AND (tempo[Title/Abstract] OR arousal[Title/Abstract]) AND (fatigue[Title/Abstract] OR alertness[Title/Abstract])';
+      }
+      return '("amplitude modulation"[Title/Abstract] OR "background music"[Title/Abstract] OR "white noise"[Title/Abstract]) AND ("sustained attention"[Title/Abstract] OR "cognitive performance"[Title/Abstract])';
+    })();
 
   const apiKeyParam = env.NCBI_API_KEY ? `&api_key=${encodeURIComponent(env.NCBI_API_KEY)}` : '';
   try {
@@ -119,15 +123,18 @@ async function fetchPubMed(
 async function fetchOpenAlex(
   env: Env,
   targetState: TargetState,
-  environment: SessionEnvironment
+  environment: SessionEnvironment,
+  termOverride?: string
 ): Promise<LivePubMedPaper[]> {
-  const term = (() => {
-    if (environment === 'driving') return 'music driving vigilance arousal';
-    if (targetState === 'sleep_winddown') return 'music sleep quality relaxation';
-    if (targetState === 'calm_reset') return 'music stress recovery autonomic cortisol';
-    if (targetState === 'energy_lift') return 'musical tempo arousal alertness cognitive';
-    return 'amplitude modulation music sustained attention';
-  })();
+  const term =
+    termOverride ??
+    (() => {
+      if (environment === 'driving') return 'music driving vigilance arousal';
+      if (targetState === 'sleep_winddown') return 'music sleep quality relaxation';
+      if (targetState === 'calm_reset') return 'music stress recovery autonomic cortisol';
+      if (targetState === 'energy_lift') return 'musical tempo arousal alertness cognitive';
+      return 'amplitude modulation music sustained attention';
+    })();
 
   const filter = `title_and_abstract.search:${term},has_doi:true,type:article`;
   const select = 'id,doi,title,publication_year,authorships,primary_location';
@@ -220,9 +227,13 @@ async function writeD1LitCache(
 export async function fetchVerifiedLiveLiterature(
   env: Env,
   targetState: TargetState,
-  environment: SessionEnvironment
+  environment: SessionEnvironment,
+  microStateId?: string
 ): Promise<LivePubMedPaper[]> {
-  const cacheKey = `v2:${environment}:${targetState}`;
+  const micro = environment === 'driving' ? undefined : getMicroStateById(microStateId);
+  const cacheKey = micro
+    ? `v2:${environment}:${targetState}:${micro.id}`
+    : `v2:${environment}:${targetState}`;
   const mem = memoryLitCache.get(cacheKey);
   if (mem && mem.expiresAt > Date.now()) {
     return mem.papers;
@@ -234,10 +245,18 @@ export async function fetchVerifiedLiveLiterature(
     return d1Cached;
   }
 
-  const [pubmed, openalex] = await Promise.all([
-    fetchPubMed(env, targetState, environment),
-    fetchOpenAlex(env, targetState, environment),
+  let [pubmed, openalex] = await Promise.all([
+    fetchPubMed(env, targetState, environment, micro?.pubmedTerm),
+    fetchOpenAlex(env, targetState, environment, micro?.openAlexTerm),
   ]);
+
+  // Graceful fallback to broader verified query if a specific micro-state query returned zero hits
+  if (micro && pubmed.length === 0 && openalex.length === 0) {
+    [pubmed, openalex] = await Promise.all([
+      fetchPubMed(env, targetState, environment),
+      fetchOpenAlex(env, targetState, environment),
+    ]);
+  }
 
   // Deduplicate by normalized title
   const seenTitles = new Set<string>();
