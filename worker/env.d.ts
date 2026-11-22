@@ -23,8 +23,34 @@ export interface D1Database {
   exec(query: string): Promise<{ count: number; duration: number }>;
 }
 
+export interface R2ObjectInfo {
+  key: string;
+  size: number;
+  etag: string;
+  httpMetadata?: {
+    contentType?: string;
+  };
+}
+
+export interface R2ObjectBody extends R2ObjectInfo {
+  body: ReadableStream<Uint8Array>;
+  writeHttpMetadata(headers: Headers): void;
+}
+
+export interface R2Objects {
+  objects: R2ObjectInfo[];
+  truncated: boolean;
+  cursor?: string;
+}
+
+export interface R2Bucket {
+  get(key: string): Promise<R2ObjectBody | null>;
+  list(options?: { prefix?: string; limit?: number }): Promise<R2Objects>;
+}
+
 export interface Env {
   DB: D1Database;
+  AUDIO_BUCKET?: R2Bucket;
   APP_ENV?: string;
   GEMINI_API_KEY?: string;
   GEMINI_DAILY_CAP?: string;

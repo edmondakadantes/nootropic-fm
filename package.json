@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "db:migrate:local": "wrangler d1 migrations apply nootropic-fm-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply nootropic-fm-db --remote",
+    "upload:stems": "node scripts/upload-stems.mjs",
     "deploy": "npm run build && wrangler deploy --config dist/nootropic_fm/wrangler.json"
   },
   "dependencies": {

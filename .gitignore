@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-pages
+audio-stems
 .wrangler
 .dev.vars
 .dev.vars.*

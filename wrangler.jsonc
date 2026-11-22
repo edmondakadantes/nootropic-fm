@@ -21,6 +21,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "AUDIO_BUCKET",
+      "bucket_name": "nootropic-fm-audio"
+    }
+  ],
   "vars": {
     "APP_ENV": "open-research-beta",
     "GEMINI_DAILY_CAP": "100"

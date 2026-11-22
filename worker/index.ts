@@ -547,10 +547,78 @@ export default {
             mode: env.APP_ENV ?? 'open-research-beta',
             hasGemini: Boolean(env.GEMINI_API_KEY),
             exportProtected: Boolean(env.ADMIN_EXPORT_KEY),
+            hasAudioBucket: Boolean(env.AUDIO_BUCKET),
           },
           200,
           request
         );
+      }
+
+      // GET /api/audio/catalog — Lists studio audio stems uploaded to Cloudflare R2 per genre
+      if (url.pathname === '/api/audio/catalog' && request.method === 'GET') {
+        const tracksByGenre: Record<
+          ResolvedGenre,
+          Array<{ key: string; name: string; url: string; size: number }>
+        > = {
+          lofi_keys: [],
+          deep_electronic: [],
+          cinematic_strings: [],
+          jazz_rhodes: [],
+          acoustic_pluck: [],
+          nature_rain: [],
+        };
+
+        if (env.AUDIO_BUCKET) {
+          const listed = await env.AUDIO_BUCKET.list({ limit: 500 });
+          for (const obj of listed.objects) {
+            if (!/\.(mp3|ogg|opus|m4a|wav)$/i.test(obj.key)) continue;
+            const [folder, ...rest] = obj.key.split('/');
+            const fileName = rest.join('/');
+            if (fileName && folder in tracksByGenre) {
+              const genreKey = folder as ResolvedGenre;
+              const cleanName = fileName.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
+              tracksByGenre[genreKey].push({
+                key: obj.key,
+                name: cleanName,
+                url: `/api/audio/stream/${encodeURIComponent(folder)}/${encodeURIComponent(fileName)}`,
+                size: obj.size,
+              });
+            }
+          }
+        }
+
+        return json({ tracksByGenre }, 200, request);
+      }
+
+      // GET /api/audio/stream/:genre/:file — Streams studio stems directly from Cloudflare R2 ($0 egress!)
+      if (url.pathname.startsWith('/api/audio/stream/') && request.method === 'GET') {
+        if (!env.AUDIO_BUCKET) {
+          return json({ error: 'Audio bucket not configured' }, 404, request);
+        }
+        const rawPath = url.pathname.replace('/api/audio/stream/', '');
+        const key = rawPath
+          .split('/')
+          .map((seg) => decodeURIComponent(seg))
+          .join('/');
+
+        const object = await env.AUDIO_BUCKET.get(key);
+        if (!object) {
+          return json({ error: 'Audio track not found' }, 404, request);
+        }
+
+        const headers = new Headers(corsHeaders(request));
+        object.writeHttpMetadata(headers);
+        if (!headers.get('content-type')) {
+          if (key.endsWith('.mp3')) headers.set('content-type', 'audio/mpeg');
+          else if (key.endsWith('.ogg') || key.endsWith('.opus')) headers.set('content-type', 'audio/ogg');
+          else if (key.endsWith('.m4a')) headers.set('content-type', 'audio/mp4');
+          else if (key.endsWith('.wav')) headers.set('content-type', 'audio/wav');
+          else headers.set('content-type', 'application/octet-stream');
+        }
+        headers.set('etag', object.etag);
+        headers.set('cache-control', 'public, max-age=31536000, immutable');
+
+        return new Response(object.body, { headers });
       }
 
       // POST /api/profile

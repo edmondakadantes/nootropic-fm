@@ -17,7 +17,7 @@ import {
 import type { LiveAdjustment, ProtocolRecommendation, ResolvedGenre } from '../../shared/types';
 import { DEVICE_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
 import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
-import { api } from '../lib/api';
+import { API_BASE, api } from '../lib/api';
 import { NeuralVisualizer } from './NeuralVisualizer';
 
 interface PlayerViewProps {
@@ -66,6 +66,8 @@ export function PlayerView({
     antiMonotonyActive: false,
     genre: recommendation.params.genre ?? 'deep_electronic',
     backgroundAudioActive: false,
+    usingStudioAudio: false,
+    activeTrackName: null,
   });
 
   const plannedSec = recommendation.plannedDurationMin * 60;
@@ -82,6 +84,29 @@ export function PlayerView({
     let mounted = true;
     const startAudio = async () => {
       try {
+        // Fetch live Cloudflare R2 Studio Stem catalog in parallel so stems fade in seamlessly
+        void api
+          .getAudioCatalog()
+          .then(({ tracksByGenre }) => {
+            if (!mounted) return;
+            const resolved: typeof tracksByGenre = {
+              lofi_keys: [],
+              deep_electronic: [],
+              cinematic_strings: [],
+              jazz_rhodes: [],
+              acoustic_pluck: [],
+              nature_rain: [],
+            };
+            (Object.keys(tracksByGenre) as ResolvedGenre[]).forEach((g) => {
+              resolved[g] = tracksByGenre[g].map((t) => ({
+                ...t,
+                url: `${API_BASE}${t.url}`,
+              }));
+            });
+            engineRef.current?.setStudioCatalog(resolved);
+          })
+          .catch(() => {});
+
         await engineRef.current?.start(
           recommendation.params,
           recommendation.plannedDurationMin,
@@ -239,6 +264,11 @@ export function PlayerView({
                 <Waves className="h-3.5 w-3.5" />
                 {recommendation.arm.name}
               </span>
+              {telemetry.usingStudioAudio && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/14 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+                  Studio Audio · {telemetry.activeTrackName}
+                </span>
+              )}
               <span
                 className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
                   recommendation.isExploration

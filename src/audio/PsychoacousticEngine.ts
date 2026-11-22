@@ -7,6 +7,12 @@ import type {
 
 export type SessionPhase = 'entry' | 'plateau' | 'landing';
 
+export interface StudioTrackRef {
+  key: string;
+  name: string;
+  url: string;
+}
+
 export interface EngineTelemetry {
   phase: SessionPhase;
   phaseLabel: string;
@@ -18,6 +24,8 @@ export interface EngineTelemetry {
   antiMonotonyActive: boolean;
   genre: ResolvedGenre;
   backgroundAudioActive: boolean;
+  usingStudioAudio: boolean;
+  activeTrackName: string | null;
 }
 
 const CHORD_PROGRESSIONS: Record<HarmonicMode, number[][]> = {
@@ -159,6 +167,8 @@ export class PsychoacousticEngine {
 
   // Dual-band crossover music buses
   private cleanSubBus: GainNode | null = null;
+  private proceduralMaster: GainNode | null = null;
+  private studioBus: GainNode | null = null;
   private padBus: GainNode | null = null;
   private padFilter: BiquadFilterNode | null = null;
   private amGain: GainNode | null = null;
@@ -180,6 +190,17 @@ export class PsychoacousticEngine {
   private audioEl: HTMLAudioElement | null = null;
   private backgroundAudioActive = false;
   private wakeLock: { release: () => Promise<void> } | null = null;
+
+  // Dual-Deck Gapless Studio Stem Engine (Cloudflare R2 -> Multiband AM >190 Hz)
+  private studioCatalog: Partial<Record<ResolvedGenre, StudioTrackRef[]>> = {};
+  private bufferCache = new Map<string, AudioBuffer>();
+  private activeStudioSource: AudioBufferSourceNode | null = null;
+  private activeStudioGain: GainNode | null = null;
+  private studioCrossfadeTimer: number | null = null;
+  private studioTrackIdx = 0;
+  private studioLoadToken = 0;
+  private usingStudioAudio = false;
+  private activeTrackName: string | null = null;
 
   private params: AcousticParams | null = null;
   private genre: ResolvedGenre = 'deep_electronic';
@@ -270,6 +291,18 @@ export class PsychoacousticEngine {
     const crossoverHz = params.crossoverHz || 190;
     const musicMixBus = ctx.createGain();
     musicMixBus.gain.value = 1.0;
+
+    // Master envelope for procedural synth (smoothly ducks when R2 Studio Stems fade in)
+    const proceduralMaster = ctx.createGain();
+    proceduralMaster.gain.setValueAtTime(1.0, ctx.currentTime);
+    proceduralMaster.connect(musicMixBus);
+    this.proceduralMaster = proceduralMaster;
+
+    // Dedicated Studio Stem Bus (R2 MP3/Opus stems route directly into Multiband AM Crossover!)
+    const studioBus = ctx.createGain();
+    studioBus.gain.setValueAtTime(0.95, ctx.currentTime);
+    studioBus.connect(musicMixBus);
+    this.studioBus = studioBus;
 
     // Dedicated Clean Sub-Bass Bus (< 190 Hz -> bypasses AM completely!)
     const cleanSubBus = ctx.createGain();
@@ -390,7 +423,7 @@ export class PsychoacousticEngine {
     const padBus = ctx.createGain();
     padBus.gain.value = this.getGenrePadLevel(this.genre);
     padBus.connect(padFilter);
-    padFilter.connect(musicMixBus);
+    padFilter.connect(proceduralMaster);
     padFilter.connect(reverbSend);
 
     this.padBus = padBus;
@@ -502,10 +535,10 @@ export class PsychoacousticEngine {
       this.binauralNodes = [leftOsc, rightOsc, panLeft, panRight, binGain];
     }
 
-    // Melodic & Groove Pulse Bus -> routes into musicMixBus (joins Multiband AM) + Delay + Reverb
+    // Melodic & Groove Pulse Bus -> routes into proceduralMaster (joins Multiband AM) + Delay + Reverb
     const pulseBus = ctx.createGain();
     pulseBus.gain.value = this.getGenrePulseLevel(this.genre);
-    pulseBus.connect(musicMixBus);
+    pulseBus.connect(proceduralMaster);
     pulseBus.connect(delaySend);
     pulseBus.connect(reverbSend);
     this.pulseBus = pulseBus;
@@ -516,6 +549,144 @@ export class PsychoacousticEngine {
     this.isPlaying = true;
     this.setupMediaSession(title);
     void this.requestWakeLock();
+    void this.activateStudioForGenre(this.genre);
+  }
+
+  public setStudioCatalog(catalog: Partial<Record<ResolvedGenre, StudioTrackRef[]>>): void {
+    this.studioCatalog = catalog;
+    if (this.isPlaying && this.ctx) {
+      void this.activateStudioForGenre(this.genre);
+    }
+  }
+
+  private clearStudioDeck(fadeSec = 1.6): void {
+    if (this.studioCrossfadeTimer !== null) {
+      window.clearTimeout(this.studioCrossfadeTimer);
+      this.studioCrossfadeTimer = null;
+    }
+    const prevSrc = this.activeStudioSource;
+    const prevGain = this.activeStudioGain;
+    this.activeStudioSource = null;
+    this.activeStudioGain = null;
+
+    if (this.ctx && prevGain && prevSrc) {
+      const now = this.ctx.currentTime;
+      try {
+        prevGain.gain.cancelScheduledValues(now);
+        prevGain.gain.setValueAtTime(Math.max(0.0001, prevGain.gain.value), now);
+        prevGain.gain.exponentialRampToValueAtTime(0.0001, now + fadeSec);
+      } catch {
+        // ignore
+      }
+      window.setTimeout(() => {
+        try {
+          prevSrc.stop();
+          prevSrc.disconnect();
+        } catch {
+          // ignore
+        }
+      }, fadeSec * 1000 + 150);
+    } else if (prevSrc) {
+      try {
+        prevSrc.stop();
+        prevSrc.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  private async loadAudioBuffer(url: string): Promise<AudioBuffer | null> {
+    if (!this.ctx) return null;
+    const cached = this.bufferCache.get(url);
+    if (cached) return cached;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const arr = await res.arrayBuffer();
+      if (!this.ctx) return null;
+      const decoded = await this.ctx.decodeAudioData(arr);
+      this.bufferCache.set(url, decoded);
+      return decoded;
+    } catch {
+      return null;
+    }
+  }
+
+  private async activateStudioForGenre(genre: ResolvedGenre): Promise<void> {
+    const token = ++this.studioLoadToken;
+    const tracks = this.studioCatalog[genre] ?? [];
+
+    if (tracks.length === 0 || !this.ctx || !this.studioBus) {
+      this.clearStudioDeck(1.5);
+      this.usingStudioAudio = false;
+      this.activeTrackName = null;
+      if (this.ctx && this.proceduralMaster && this.cleanSubBus) {
+        const now = this.ctx.currentTime;
+        this.proceduralMaster.gain.setTargetAtTime(1.0, now, 0.7);
+        this.cleanSubBus.gain.setTargetAtTime(0.9, now, 0.7);
+      }
+      return;
+    }
+
+    const chosenIdx = this.studioTrackIdx % tracks.length;
+    const track = tracks[chosenIdx];
+    const buffer = await this.loadAudioBuffer(track.url);
+    if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !buffer) {
+      return;
+    }
+
+    this.playStudioBuffer(buffer, track.name, genre, chosenIdx, token);
+
+    // Pre-fetch next track silently in background for seamless zero-gap crossfade
+    if (tracks.length > 1) {
+      const nextTrack = tracks[(chosenIdx + 1) % tracks.length];
+      void this.loadAudioBuffer(nextTrack.url);
+    }
+  }
+
+  private playStudioBuffer(
+    buffer: AudioBuffer,
+    trackName: string,
+    genre: ResolvedGenre,
+    idx: number,
+    token: number
+  ): void {
+    if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const fadeInSec = 2.6;
+
+    // Smoothly crossfade out previous studio deck (if any) & duck procedural synth
+    this.clearStudioDeck(fadeInSec);
+    if (this.proceduralMaster && this.cleanSubBus) {
+      this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.85);
+      this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.85);
+    }
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const deckGain = ctx.createGain();
+    deckGain.gain.setValueAtTime(0.0001, now);
+    deckGain.gain.exponentialRampToValueAtTime(0.96, now + fadeInSec);
+
+    src.connect(deckGain);
+    deckGain.connect(this.studioBus);
+    src.start(now);
+
+    this.activeStudioSource = src;
+    this.activeStudioGain = deckGain;
+    this.usingStudioAudio = true;
+    this.activeTrackName = trackName;
+
+    // Schedule seamless equal-power crossfade 7 seconds before track ends
+    const crossfadeLeadSec = Math.min(7, Math.max(2, buffer.duration * 0.18));
+    const waitMs = Math.max(1500, (buffer.duration - crossfadeLeadSec) * 1000);
+    this.studioCrossfadeTimer = window.setTimeout(() => {
+      if (!this.isPlaying || token !== this.studioLoadToken) return;
+      this.studioTrackIdx = idx + 1;
+      void this.activateStudioForGenre(genre);
+    }, waitMs);
   }
 
   private getGenreReverbLevel(g: ResolvedGenre): number {
@@ -577,8 +748,10 @@ export class PsychoacousticEngine {
       this.vinylGain.gain.setTargetAtTime(targetVinyl, now, 0.6);
     }
 
-    // Gently crossfade chord bed into new genre's timbre
+    // Gently crossfade chord bed into new genre's timbre & activate R2 studio stems if uploaded
     this.spawnChord(this.chordIndex);
+    this.studioTrackIdx = 0;
+    void this.activateStudioForGenre(style);
   }
 
   public getGenre(): ResolvedGenre {
@@ -1046,6 +1219,8 @@ export class PsychoacousticEngine {
       antiMonotonyActive,
       genre: this.genre,
       backgroundAudioActive: this.backgroundAudioActive,
+      usingStudioAudio: this.usingStudioAudio,
+      activeTrackName: this.activeTrackName,
     };
   }
 
@@ -1143,10 +1318,18 @@ export class PsychoacousticEngine {
       window.clearInterval(this.pulseTimer);
       this.pulseTimer = null;
     }
+    if (this.studioCrossfadeTimer !== null) {
+      window.clearTimeout(this.studioCrossfadeTimer);
+      this.studioCrossfadeTimer = null;
+    }
   }
 
   private stopImmediate(): void {
     this.isPlaying = false;
+    this.studioLoadToken++;
+    this.usingStudioAudio = false;
+    this.activeTrackName = null;
+    this.clearStudioDeck(0.1);
     this.clearTimers();
     void this.releaseWakeLock();
     try {
@@ -1177,6 +1360,8 @@ export class PsychoacousticEngine {
     this.vinylGain = null;
     this.reverbSend = null;
     this.cleanSubBus = null;
+    this.proceduralMaster = null;
+    this.studioBus = null;
     if (this.ctx) {
       this.ctx.close().catch(() => {});
       this.ctx = null;

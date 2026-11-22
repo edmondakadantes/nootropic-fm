@@ -7,6 +7,7 @@ import type {
   ParsedCheckIn,
   ProtocolRecommendation,
   ResearchInsights,
+  ResolvedGenre,
   SessionEnvironment,
   SessionRecord,
   TargetState,
@@ -108,4 +109,12 @@ export const api = {
     apiFetch<{ insights: ResearchInsights }>(
       `/api/insights${profileId ? `?profileId=${encodeURIComponent(profileId)}` : ''}`
     ),
+
+  getAudioCatalog: () =>
+    apiFetch<{
+      tracksByGenre: Record<
+        ResolvedGenre,
+        Array<{ key: string; name: string; url: string; size: number }>
+      >;
+    }>('/api/audio/catalog'),
 };
