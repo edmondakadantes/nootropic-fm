@@ -18,18 +18,24 @@ import {
   ageToBand,
   GENRE_META,
   getTimeOfDayBucket,
+  ROLE_LABELS,
+  STATE_LABELS,
+  TARGET_LABELS,
   type ABValidationStats,
   type AcousticParams,
   type AppRuntimeConfig,
   type ArchetypeComboPerformance,
   type ArmPerformance,
   type AudioSourceType,
+  type CohortIntelligenceCard,
   type CohortPerformance,
   type CurrentState,
   type CustomTrackInfo,
+  type DatasetInquiryPayload,
   type DebriefPayload,
   type EnergyTier,
   type GenrePerformance,
+  type GlobalRetentionFunnel,
   type LiveAdjustment,
   type MusicGenreChoice,
   type OutputDevice,
@@ -778,7 +784,7 @@ export default {
         return json(
           {
             ok: true,
-            version: '3.5',
+            version: '4.0',
             mode: env.APP_ENV ?? 'open-research-beta',
             hasGemini: env.ENABLE_LLM_PARSE === 'true' && Boolean(env.GEMINI_API_KEY),
             hasLiveMusicGen: Boolean(provider),
@@ -2168,7 +2174,7 @@ export default {
         const raw = await request.text();
         let body: {
           sessionId?: string;
-          event?: 'visibility' | 'pagehide' | 'milestone';
+          event?: 'visibility' | 'pagehide' | 'milestone' | 'milestone_25' | 'milestone_50' | 'milestone_75' | 'milestone_90';
           actualDurationSec?: number;
           audioStarted?: boolean;
           liveAdjustments?: LiveAdjustment[];
@@ -2201,9 +2207,22 @@ export default {
           session.status === 'active' && actualSec >= 60 ? 'pending_debrief' : session.status;
 
         const event = body.event ?? 'visibility';
+        const computedMilestone =
+          event === 'milestone_90' || completionRatio >= 0.9
+            ? 90
+            : event === 'milestone_75' || event === 'milestone' || completionRatio >= 0.75
+              ? 75
+              : event === 'milestone_50' || completionRatio >= 0.5
+                ? 50
+                : event === 'milestone_25' || completionRatio >= 0.25
+                  ? 25
+                  : 0;
+        const maxMilestonePct = Math.max(Number(row.max_milestone_pct ?? 0), computedMilestone);
+
         const shouldEvaluateImplicit =
           (event === 'pagehide' && body.audioStarted !== false && actualSec >= 5) ||
-          (event === 'milestone' && completionRatio >= 0.75);
+          ((event === 'milestone' || event === 'milestone_75' || event === 'milestone_90') &&
+            completionRatio >= 0.75);
 
         let implicitReward = row.implicit_reward_score !== null && row.implicit_reward_score !== undefined
           ? Number(row.implicit_reward_score)
@@ -2296,6 +2315,7 @@ export default {
           `UPDATE sessions
            SET actual_duration_sec = ?,
                completion_ratio = ?,
+               max_milestone_pct = MAX(COALESCE(max_milestone_pct, 0), ?),
                live_adjustments_json = ?,
                status = ?,
                implicit_reward_score = ?,
@@ -2307,6 +2327,7 @@ export default {
           .bind(
             actualSec,
             completionRatio,
+            maxMilestonePct,
             JSON.stringify(body.liveAdjustments ?? session.liveAdjustments),
             nextStatus,
             implicitReward,
@@ -2317,7 +2338,155 @@ export default {
           )
           .run();
 
-        return json({ ok: true, retentionOutcome, completionRatio }, 200, request);
+        return json({ ok: true, retentionOutcome, completionRatio, maxMilestonePct }, 200, request);
+      }
+
+      // POST /api/session/claim-profile — Promotes an active 1-Click Quick-Try session into an anonymous persisted profile + session
+      if (url.pathname === '/api/session/claim-profile' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'claim_profile', 40);
+        if (!allowed) return json({ error: 'Rate limit reached.' }, 429, request);
+
+        const body = (await request.json().catch(() => ({}))) as {
+          occupationLabel?: string;
+          age?: number;
+          gender?: UserProfile['gender'];
+          currentState?: CurrentState;
+          targetState?: TargetState;
+          environment?: SessionEnvironment;
+          device?: OutputDevice;
+          plannedDurationMin?: number;
+          actualDurationSec?: number;
+          armId?: string;
+          armName?: string;
+          studySpecId?: string;
+          musicGenre?: string;
+          energyTier?: EnergyTier;
+          acousticParams?: AcousticParams;
+          citedStudyIds?: string[];
+        };
+
+        const rawAge = Number(body.age ?? 0);
+        if (!Number.isFinite(rawAge) || rawAge < 18 || rawAge > 95) {
+          return json({ error: 'Listeners must be aged 18–95 to save a research profile.' }, 400, request);
+        }
+        const occupationLabel = sanitizeOccupation(body.occupationLabel);
+        if (!occupationLabel || occupationLabel.length < 2) {
+          return json({ error: 'Please enter your profession or craft (e.g. Doctor, Programmer, Student).' }, 400, request);
+        }
+
+        const lowerOcc = occupationLabel.toLowerCase();
+        const inferredRole: UserProfile['role'] =
+          /(driver|truck|uber|courier|pilot|delivery|sofer)/.test(lowerOcc)
+            ? 'driver'
+            : /(student|phd|med\s*school|resident|pupil)/.test(lowerOcc)
+              ? 'student'
+              : /(designer|artist|writer|musician|architect|video|creative)/.test(lowerOcc)
+                ? 'creative'
+                : /(founder|ceo|owner|entrepreneur|director|manager)/.test(lowerOcc)
+                  ? 'entrepreneur'
+                  : /(dev|program|engineer|analyst|data|tech|software|it\b)/.test(lowerOcc)
+                    ? 'knowledge_worker'
+                    : 'other';
+
+        const now = new Date().toISOString();
+        const age = Math.round(rawAge);
+        const ageBand = ageToBand(age);
+        const gender = parseGenderValue(body.gender);
+        const profileId = `anon_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+        const profileToken = generateProfileToken();
+        const tokenHash = await sha256Hex(profileToken);
+        const syncCode = generateSyncCode();
+        const syncCodeHash = await sha256Hex(syncCode);
+
+        const profile: UserProfile = {
+          id: profileId,
+          age,
+          ageBand,
+          gender,
+          role: inferredRole,
+          occupationLabel,
+          texturePref: 'warm_organic',
+          noiseSensitivity: 'medium',
+          defaultDevice: body.device ?? 'headphones',
+          primaryChallenge: 'distraction',
+          researchConsent: true,
+          preferredModMult: 1.0,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        await env.DB.prepare(
+          `INSERT INTO profiles (id, display_name, age, age_band, gender, role, occupation_label, texture_pref, noise_sensitivity, default_device, primary_challenge, research_consent, token_hash, sync_code_hash, created_at, updated_at)
+           VALUES (?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
+        )
+          .bind(
+            profile.id,
+            profile.age,
+            profile.ageBand,
+            gender,
+            profile.role,
+            occupationLabel,
+            profile.texturePref,
+            profile.noiseSensitivity,
+            profile.defaultDevice,
+            profile.primaryChallenge,
+            tokenHash,
+            syncCodeHash,
+            now,
+            now
+          )
+          .run();
+
+        const sessionId = `ses_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+        const envMode: SessionEnvironment = body.environment ?? 'office';
+        const targetState: TargetState = body.targetState ?? 'deep_flow';
+        const currentState: CurrentState = body.currentState ?? 'distracted';
+        const plannedMin = Math.max(5, Math.min(120, Math.round(Number(body.plannedDurationMin ?? 25))));
+        const actualSec = Math.max(0, Math.round(Number(body.actualDurationSec ?? 0)));
+        const compRatio = Number(Math.min(1, actualSec / (plannedMin * 60)).toFixed(3));
+        const initMilestone =
+          compRatio >= 0.9 ? 90 : compRatio >= 0.75 ? 75 : compRatio >= 0.5 ? 50 : compRatio >= 0.25 ? 25 : 0;
+        const cohortKey = buildCohortKey(ageBand, envMode, targetState);
+        const musicGenre = (body.musicGenre || 'lofi_keys').slice(0, 48);
+
+        await env.DB.prepare(
+          `INSERT INTO sessions (
+            id, profile_id, cohort_key, raw_input_text, current_state, baseline_score,
+            target_state, environment, device, safety_mode, planned_duration_min,
+            actual_duration_sec, completion_ratio, max_milestone_pct, arm_id, arm_name, is_exploration,
+            is_control_trial, energy_tier, music_genre, initial_music_genre,
+            custom_genre_slug, audio_source, study_spec_id,
+            acoustic_params_json, cited_study_ids_json, live_adjustments_json,
+            time_of_day_bucket, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, 2, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, NULL, 'studio_library', ?, ?, ?, '[]', ?, 'active', ?)`
+        )
+          .bind(
+            sessionId,
+            profile.id,
+            cohortKey,
+            `Quick-Try claimed: ${occupationLabel}`,
+            currentState,
+            targetState,
+            envMode,
+            body.device ?? 'headphones',
+            plannedMin,
+            actualSec,
+            compRatio,
+            initMilestone,
+            (body.armId || 'beta-focus-16hz').slice(0, 64),
+            (body.armName || 'Beta Focus 16 Hz').slice(0, 120),
+            body.energyTier ?? 'focus',
+            musicGenre,
+            musicGenre,
+            body.studySpecId ?? null,
+            JSON.stringify(body.acousticParams ?? {}),
+            JSON.stringify(body.citedStudyIds ?? []),
+            getTimeOfDayBucket(),
+            now
+          )
+          .run();
+
+        return json({ profile, profileToken, syncCode, sessionId }, 200, request);
       }
 
       // POST /api/session/pvt — Saves optional 15-second objective Psychomotor Vigilance Task (ms)
@@ -2470,10 +2639,14 @@ export default {
         const finalPvtDelta =
           finalPvtPre !== null && finalPvtPost !== null ? Math.round(finalPvtPost - finalPvtPre) : null;
 
+        const finalMilestonePct =
+          completionRatio >= 0.9 ? 90 : completionRatio >= 0.75 ? 75 : completionRatio >= 0.5 ? 50 : completionRatio >= 0.25 ? 25 : 0;
+
         await env.DB.prepare(
           `UPDATE sessions SET
             actual_duration_sec = ?,
             completion_ratio = ?,
+            max_milestone_pct = MAX(COALESCE(max_milestone_pct, 0), ?),
             live_adjustments_json = ?,
             status = 'completed',
             post_score = ?,
@@ -2494,6 +2667,7 @@ export default {
           .bind(
             actualSec,
             completionRatio,
+            finalMilestonePct,
             JSON.stringify(liveAdjustments),
             postScore,
             delta,
@@ -3018,6 +3192,160 @@ export default {
         return json({ insights }, 200, request);
       }
 
+      // GET /api/intelligence/cohorts — Aggregated Anonymized Cohort Intelligence + Retention Curve (B2B Preview / Zero PII)
+      if (url.pathname === '/api/intelligence/cohorts' && request.method === 'GET') {
+        const [funnelRow, cohortRes] = await Promise.all([
+          env.DB.prepare(
+            `SELECT
+               COUNT(*) AS measured_n,
+               SUM(CASE WHEN MAX(COALESCE(s.max_milestone_pct, 0), CAST(ROUND(COALESCE(s.completion_ratio, 0) * 100) AS INTEGER)) >= 25 THEN 1 ELSE 0 END) AS m25,
+               SUM(CASE WHEN MAX(COALESCE(s.max_milestone_pct, 0), CAST(ROUND(COALESCE(s.completion_ratio, 0) * 100) AS INTEGER)) >= 50 THEN 1 ELSE 0 END) AS m50,
+               SUM(CASE WHEN MAX(COALESCE(s.max_milestone_pct, 0), CAST(ROUND(COALESCE(s.completion_ratio, 0) * 100) AS INTEGER)) >= 75 THEN 1 ELSE 0 END) AS m75,
+               SUM(CASE WHEN MAX(COALESCE(s.max_milestone_pct, 0), CAST(ROUND(COALESCE(s.completion_ratio, 0) * 100) AS INTEGER)) >= 90 THEN 1 ELSE 0 END) AS m90,
+               AVG(COALESCE(s.completion_ratio, 0)) AS avg_comp
+             FROM sessions s
+             JOIN profiles p ON p.id = s.profile_id
+             WHERE p.research_consent = 1 AND s.actual_duration_sec >= 15`
+          ).first<Record<string, unknown>>(),
+          env.DB.prepare(
+            `SELECT
+               CASE
+                 WHEN TRIM(COALESCE(p.occupation_label, '')) != '' THEN TRIM(p.occupation_label)
+                 ELSE p.role
+               END AS prof_key,
+               s.current_state,
+               s.target_state,
+               s.arm_name,
+               COUNT(*) AS n_sessions,
+               SUM(CASE WHEN s.worked_rating = 'yes' OR (s.worked_rating = 'partial' AND COALESCE(s.delta_score, 0) > 0) THEN 1 ELSE 0 END) AS pos_explicit,
+               SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) AS n_explicit,
+               SUM(CASE WHEN MAX(COALESCE(s.max_milestone_pct, 0), CAST(ROUND(COALESCE(s.completion_ratio, 0) * 100) AS INTEGER)) >= 25 THEN 1 ELSE 0 END) AS m25,
+               SUM(CASE WHEN MAX(COALESCE(s.max_milestone_pct, 0), CAST(ROUND(COALESCE(s.completion_ratio, 0) * 100) AS INTEGER)) >= 50 THEN 1 ELSE 0 END) AS m50,
+               SUM(CASE WHEN MAX(COALESCE(s.max_milestone_pct, 0), CAST(ROUND(COALESCE(s.completion_ratio, 0) * 100) AS INTEGER)) >= 75 THEN 1 ELSE 0 END) AS m75,
+               SUM(CASE WHEN MAX(COALESCE(s.max_milestone_pct, 0), CAST(ROUND(COALESCE(s.completion_ratio, 0) * 100) AS INTEGER)) >= 90 THEN 1 ELSE 0 END) AS m90,
+               AVG(s.pvt_delta_ms) AS avg_pvt_ms,
+               MAX(s.music_genre) AS sample_genre
+             FROM sessions s
+             JOIN profiles p ON p.id = s.profile_id
+             WHERE p.research_consent = 1 AND s.is_control_trial = 0 AND s.actual_duration_sec >= 15
+             GROUP BY prof_key, s.current_state, s.target_state, s.arm_name
+             HAVING COUNT(*) >= 5
+             ORDER BY n_sessions DESC
+             LIMIT 12`
+          ).all<Record<string, unknown>>(),
+        ]);
+
+        const mN = Number(funnelRow?.measured_n ?? 0);
+        const globalRetention: GlobalRetentionFunnel = {
+          measuredSessions: mN,
+          pct25: mN > 0 ? Math.round((Number(funnelRow?.m25 ?? 0) / mN) * 100) : 0,
+          pct50: mN > 0 ? Math.round((Number(funnelRow?.m50 ?? 0) / mN) * 100) : 0,
+          pct75: mN > 0 ? Math.round((Number(funnelRow?.m75 ?? 0) / mN) * 100) : 0,
+          pct90: mN > 0 ? Math.round((Number(funnelRow?.m90 ?? 0) / mN) * 100) : 0,
+          avgCompletionPct: mN > 0 ? Math.round(Number(funnelRow?.avg_comp ?? 0) * 100) : 0,
+        };
+
+        const cohorts: CohortIntelligenceCard[] = cohortRes.results.map((r, idx) => {
+          const n = Number(r.n_sessions ?? 0);
+          const nExp = Number(r.n_explicit ?? 0);
+          const rawProf = String(r.prof_key ?? 'Listeners');
+          const profLabel =
+            rawProf in ROLE_LABELS ? ROLE_LABELS[rawProf as keyof typeof ROLE_LABELS] : rawProf;
+          const stKey = String(r.current_state ?? 'distracted') as CurrentState;
+          const tgKey = String(r.target_state ?? 'deep_flow') as TargetState;
+          const pct75 = n > 0 ? Math.round((Number(r.m75 ?? 0) / n) * 100) : 0;
+          const pct90 = n > 0 ? Math.round((Number(r.m90 ?? 0) / n) * 100) : 0;
+          const successPct =
+            nExp > 0
+              ? Math.round((Number(r.pos_explicit ?? 0) / nExp) * 100)
+              : pct75;
+
+          return {
+            id: `live_${idx}_${rawProf.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+            isLiveData: true,
+            professionLabel: profLabel,
+            fromStateLabel: (STATE_LABELS[stKey] ?? stKey).split('/')[0].trim(),
+            toStateLabel: TARGET_LABELS[tgKey] ?? tgKey,
+            studyLabel: String(r.arm_name ?? 'Study-Backed Protocol'),
+            sessions: n,
+            successRatePct: successPct,
+            fullFinishPct: pct90,
+            retentionCurve: {
+              pct25: n > 0 ? Math.round((Number(r.m25 ?? 0) / n) * 100) : 0,
+              pct50: n > 0 ? Math.round((Number(r.m50 ?? 0) / n) * 100) : 0,
+              pct75,
+              pct90,
+            },
+            blurredPreview: {
+              topGenreHint: String(r.sample_genre ?? 'Studio Match'),
+              modulationHint: '3-Band LR4 · Exact Hz/Depth/SNR',
+              avgPvtShiftMs:
+                r.avg_pvt_ms !== null && r.avg_pvt_ms !== undefined
+                  ? Math.round(Number(r.avg_pvt_ms))
+                  : null,
+              abLiftPct: null,
+            },
+          };
+        });
+
+        return json(
+          {
+            cohorts,
+            globalRetention,
+            totalLiveCohorts: cohorts.length,
+          },
+          200,
+          request
+        );
+      }
+
+      // POST /api/intelligence/inquire — B2B / Academic Research Dataset Licensing Inquiry
+      if (url.pathname === '/api/intelligence/inquire' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'b2b_inquiry', 5);
+        if (!allowed) {
+          return json({ error: 'Daily inquiry limit reached. Please try again tomorrow.' }, 429, request);
+        }
+        const body = (await request.json().catch(() => ({}))) as Partial<DatasetInquiryPayload>;
+        const email = String(body.email ?? '').trim().slice(0, 120);
+        const organization = String(body.organization ?? '').trim().slice(0, 120);
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return json({ error: 'Please enter a valid work or research email address.' }, 400, request);
+        }
+        if (organization.length < 2) {
+          return json({ error: 'Please enter your company, lab, or organization name.' }, 400, request);
+        }
+        const inquiryId = `inq_${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}`;
+        const now = new Date().toISOString();
+        await env.DB.prepare(
+          `INSERT INTO dataset_inquiries (id, email, organization, role_title, cohort_interest, use_case, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+          .bind(
+            inquiryId,
+            email,
+            organization,
+            String(body.roleTitle ?? '').trim().slice(0, 80),
+            String(body.cohortInterest ?? '').trim().slice(0, 140),
+            String(body.useCase ?? 'research').trim().slice(0, 40),
+            String(body.notes ?? '').trim().slice(0, 500),
+            now
+          )
+          .run();
+
+        return json({ ok: true, inquiryId }, 200, request);
+      }
+
+      // GET /api/admin/inquiries — Admin-Protected B2B Dataset Licensing Leads Export
+      if (url.pathname === '/api/admin/inquiries' && request.method === 'GET') {
+        if (!isAuthorizedAdmin(request, env)) {
+          return json({ error: 'Unauthorized (provide X-Admin-Key header).' }, 401, request);
+        }
+        const rows = await env.DB.prepare(
+          `SELECT * FROM dataset_inquiries ORDER BY created_at DESC LIMIT 200`
+        ).all<Record<string, unknown>>();
+        return json({ count: rows.results.length, inquiries: rows.results }, 200, request);
+      }
+
       // GET /api/dataset/export — Admin-Protected Anonymized Research Dataset (JSON or CSV)
       if (url.pathname === '/api/dataset/export' && request.method === 'GET') {
         if (!isAuthorizedAdmin(request, env)) {
@@ -3052,7 +3380,9 @@ export default {
             s.planned_duration_min,
             s.actual_duration_sec,
             s.completion_ratio,
+            s.max_milestone_pct,
             s.arm_id,
+            s.study_spec_id,
             s.is_exploration,
             s.is_control_trial,
             s.energy_tier,
@@ -3064,6 +3394,9 @@ export default {
             s.implicit_reward_score,
             s.retention_outcome,
             s.return_bonus_credited,
+            s.pvt_pre_ms,
+            s.pvt_post_ms,
+            s.pvt_delta_ms,
             s.acoustic_params_json,
             s.status,
             s.post_score,
@@ -3083,10 +3416,11 @@ export default {
           const headers = [
             'session_id', 'age_band', 'gender', 'role', 'occupation_label', 'cohort_key', 'time_of_day_bucket',
             'current_state', 'baseline_score', 'target_state', 'environment', 'device',
-            'safety_mode', 'planned_duration_min', 'actual_duration_sec', 'completion_ratio',
-            'arm_id', 'is_exploration', 'is_control_trial', 'energy_tier',
+            'safety_mode', 'planned_duration_min', 'actual_duration_sec', 'completion_ratio', 'max_milestone_pct',
+            'arm_id', 'study_spec_id', 'is_exploration', 'is_control_trial', 'energy_tier',
             'music_genre', 'initial_music_genre', 'custom_genre_slug', 'audio_source',
             'genre_swapped_at_sec', 'implicit_reward_score', 'retention_outcome', 'return_bonus_credited',
+            'pvt_pre_ms', 'pvt_post_ms', 'pvt_delta_ms',
             'modulation_hz', 'modulation_depth', 'crossover_hz', 'upper_crossover_hz',
             'stereo_am_spread', 'preferred_mod_mult', 'bpm', 'noise_color', 'noise_level',
             'status', 'post_score', 'delta_score', 'worked_rating', 'reward_score', 'created_at',
@@ -3097,10 +3431,11 @@ export default {
             const vals = [
               r.session_id, r.age_band, r.gender ?? 'prefer_not_to_say', r.role, r.occupation_label ?? '', r.cohort_key, r.time_of_day_bucket,
               r.current_state, r.baseline_score, r.target_state, r.environment, r.device,
-              r.safety_mode, r.planned_duration_min, r.actual_duration_sec, r.completion_ratio,
-              r.arm_id, r.is_exploration, r.is_control_trial ?? 0, r.energy_tier ?? ap.energyTier ?? 'focus',
+              r.safety_mode, r.planned_duration_min, r.actual_duration_sec, r.completion_ratio, r.max_milestone_pct ?? 0,
+              r.arm_id, r.study_spec_id ?? '', r.is_exploration, r.is_control_trial ?? 0, r.energy_tier ?? ap.energyTier ?? 'focus',
               r.music_genre ?? ap.genre ?? 'auto', r.initial_music_genre ?? '', r.custom_genre_slug ?? '', r.audio_source ?? '',
               r.genre_swapped_at_sec ?? '', r.implicit_reward_score ?? '', r.retention_outcome ?? '', r.return_bonus_credited ?? 0,
+              r.pvt_pre_ms ?? '', r.pvt_post_ms ?? '', r.pvt_delta_ms ?? '',
               ap.modulationHz, ap.modulationDepth, ap.crossoverHz ?? 190, ap.upperCrossoverHz ?? 4500,
               ap.stereoAmSpread ? 1 : 0, r.preferred_mod_mult ?? 1.0, ap.bpm, ap.noiseColor, ap.noiseLevel,
               r.status, r.post_score ?? '', r.delta_score ?? '', r.worked_rating ?? '', r.reward_score ?? '', r.created_at,

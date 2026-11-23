@@ -382,18 +382,23 @@ export default function App() {
       liveAdjustments: LiveAdjustment[];
       pvtPreMs?: number | null;
       pvtLapsesPre?: number | null;
+      sessionIdOverride?: string;
+      ephemeralOverride?: boolean;
     }) => {
       if (!activeRec) return;
       const spec = activeRec.executableSpec;
       setDebriefContext({
-        sessionId: activeRec.sessionId,
+        sessionId: stats.sessionIdOverride ?? activeRec.sessionId,
         armName: activeRec.arm.name,
         cohortLabel: activeRec.cohortLabel,
         baselineScore: activeRec.baselineScore,
         plannedDurationMin: activeRec.plannedDurationMin,
         actualDurationSec: stats.actualDurationSec,
         liveAdjustments: stats.liveAdjustments,
-        ephemeralMode: activeRec.ephemeralMode,
+        ephemeralMode:
+          typeof stats.ephemeralOverride === 'boolean'
+            ? stats.ephemeralOverride
+            : activeRec.ephemeralMode,
         pvtPreMs: stats.pvtPreMs ?? null,
         pvtLapsesPre: stats.pvtLapsesPre ?? null,
         studySpecId: spec?.id,
@@ -728,6 +733,10 @@ export default function App() {
             recommendation={activeRec}
             lyriaRealtimeAvailable={runtimeConfig?.lyriaRealtimeAvailable}
             onPlayingChange={setAudioActive}
+            onSessionClaimed={(claimed) => {
+              setProfile(claimed.profile);
+              setSyncCode(claimed.syncCode);
+            }}
             onFinishToDebrief={handleFinishToDebrief}
           />
         ) : screen === 'debrief' && debriefContext ? (

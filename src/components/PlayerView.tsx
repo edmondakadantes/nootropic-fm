@@ -29,10 +29,11 @@ import type {
   LiveAdjustment,
   ProtocolRecommendation,
   ResolvedGenre,
+  UserProfile,
 } from '../../shared/types';
 import { DEVICE_LABELS, ENERGY_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
 import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
-import { API_BASE, api } from '../lib/api';
+import { API_BASE, api, saveStoredProfileAuth } from '../lib/api';
 import { LiveEnvelopeProof } from './LiveEnvelopeProof';
 import { NeuralVisualizer } from './NeuralVisualizer';
 import { PvtBenchmarkModal } from './PvtBenchmarkModal';
@@ -42,11 +43,19 @@ interface PlayerViewProps {
   recommendation: ProtocolRecommendation;
   lyriaRealtimeAvailable?: boolean;
   onPlayingChange?: (playing: boolean) => void;
+  onSessionClaimed?: (claimed: {
+    profile: UserProfile;
+    profileToken: string;
+    syncCode: string;
+    sessionId: string;
+  }) => void;
   onFinishToDebrief: (stats: {
     actualDurationSec: number;
     liveAdjustments: LiveAdjustment[];
     pvtPreMs?: number | null;
     pvtLapsesPre?: number | null;
+    sessionIdOverride?: string;
+    ephemeralOverride?: boolean;
   }) => void;
 }
 
@@ -60,6 +69,7 @@ export function PlayerView({
   recommendation,
   lyriaRealtimeAvailable = false,
   onPlayingChange,
+  onSessionClaimed,
   onFinishToDebrief,
 }: PlayerViewProps) {
   const engineRef = useRef<PsychoacousticEngine | null>(null);
@@ -107,6 +117,15 @@ export function PlayerView({
   const [pvtPreMs, setPvtPreMs] = useState<number | null>(null);
   const [pvtLapsesPre, setPvtLapsesPre] = useState<number | null>(null);
 
+  // Live session promotion (lets 1-Click Quick-Try listeners claim a 5s anonymous profession profile without audio stutter!)
+  const [liveSessionId, setLiveSessionId] = useState<string>(recommendation.sessionId);
+  const [isEphemeral, setIsEphemeral] = useState<boolean>(Boolean(recommendation.ephemeralMode));
+  const [claimProfession, setClaimProfession] = useState('');
+  const [claimAge, setClaimAge] = useState('');
+  const [claimingProfile, setClaimingProfile] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [claimedSyncCode, setClaimedSyncCode] = useState<string | null>(null);
+
   const spec = recommendation.executableSpec;
   const [telemetry, setTelemetry] = useState<EngineTelemetry>({
     phase: 'entry',
@@ -146,7 +165,7 @@ export function PlayerView({
   const elapsedRef = useRef(0);
   const adjustmentsRef = useRef<LiveAdjustment[]>([]);
   const audioStartedRef = useRef(false);
-  const milestoneSentRef = useRef(false);
+  const milestonesSentRef = useRef<Set<number>>(new Set());
   const endedByUserRef = useRef(false);
   const switchedAwayRef = useRef(false);
   const pvtPreRef = useRef<{ medianMs: number | null; lapses: number | null }>({
@@ -160,6 +179,14 @@ export function PlayerView({
   pvtPreRef.current = { medianMs: pvtPreMs, lapses: pvtLapsesPre };
 
   useEffect(() => {
+    setLiveSessionId(recommendation.sessionId);
+    setIsEphemeral(Boolean(recommendation.ephemeralMode));
+    setClaimedSyncCode(null);
+    setClaimError(null);
+    milestonesSentRef.current = new Set();
+  }, [recommendation.sessionId, recommendation.ephemeralMode]);
+
+  useEffect(() => {
     onPlayingChange?.(isPlaying);
   }, [isPlaying, onPlayingChange]);
 
@@ -167,7 +194,7 @@ export function PlayerView({
   useEffect(() => {
     let mounted = true;
     switchedAwayRef.current = false;
-    milestoneSentRef.current = false;
+    milestonesSentRef.current = new Set();
     endedByUserRef.current = false;
 
     const triggerCustomCrossfade = async (trackUrl: string, label: string) => {
@@ -332,13 +359,13 @@ export function PlayerView({
 
   // Behavioral Retention Beacon lifecycle (visibilitychange checkpoint + pagehide finalize)
   useEffect(() => {
-    if (recommendation.ephemeralMode) return;
+    if (isEphemeral) return;
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && !endedByUserRef.current && elapsedRef.current > 0) {
         // Checkpoint-only: never penalizes locking phone screen while listening in background!
         api.sendSessionBeacon({
-          sessionId: recommendation.sessionId,
+          sessionId: liveSessionId,
           event: 'visibility',
           actualDurationSec: elapsedRef.current,
           audioStarted: audioStartedRef.current,
@@ -350,7 +377,7 @@ export function PlayerView({
     const handlePageHide = () => {
       if (!endedByUserRef.current && elapsedRef.current > 0) {
         api.sendSessionBeacon({
-          sessionId: recommendation.sessionId,
+          sessionId: liveSessionId,
           event: 'pagehide',
           actualDurationSec: elapsedRef.current,
           audioStarted: audioStartedRef.current,
@@ -365,9 +392,9 @@ export function PlayerView({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);
     };
-  }, [recommendation.sessionId, recommendation.ephemeralMode]);
+  }, [liveSessionId, isEphemeral]);
 
-  // Main 1-second session ticker + 90s progress checkpoint + 75% implicit completion milestone
+  // Main 1-second session ticker + 90s progress checkpoint + 25/50/75/90% retention curve milestones
   useEffect(() => {
     if (!isPlaying) return;
     const id = window.setInterval(() => {
@@ -376,28 +403,34 @@ export function PlayerView({
         const tel = engineRef.current?.updateElapsed(next);
         if (tel) setTelemetry(tel);
 
-        // 75% listen retention milestone (implicit positive signal, once per session)
-        if (
-          !recommendation.ephemeralMode &&
-          !milestoneSentRef.current &&
-          plannedSec > 0 &&
-          next / plannedSec >= 0.75
-        ) {
-          milestoneSentRef.current = true;
-          api.sendSessionBeacon({
-            sessionId: recommendation.sessionId,
-            event: 'milestone',
-            actualDurationSec: next,
-            audioStarted: audioStartedRef.current,
-            liveAdjustments: adjustmentsRef.current,
-          });
+        // 4-point behavioral listening retention milestones (25% / 50% halfway / 75% deep / 90% full)
+        if (!isEphemeral && plannedSec > 0) {
+          const ratio = next / plannedSec;
+          const checkpoints: Array<{ pct: number; ratio: number; event: 'milestone_25' | 'milestone_50' | 'milestone_75' | 'milestone_90' }> = [
+            { pct: 25, ratio: 0.25, event: 'milestone_25' },
+            { pct: 50, ratio: 0.5, event: 'milestone_50' },
+            { pct: 75, ratio: 0.75, event: 'milestone_75' },
+            { pct: 90, ratio: 0.9, event: 'milestone_90' },
+          ];
+          for (const cp of checkpoints) {
+            if (ratio >= cp.ratio && !milestonesSentRef.current.has(cp.pct)) {
+              milestonesSentRef.current.add(cp.pct);
+              api.sendSessionBeacon({
+                sessionId: liveSessionId,
+                event: cp.event,
+                actualDurationSec: next,
+                audioStarted: audioStartedRef.current,
+                liveAdjustments: adjustmentsRef.current,
+              });
+            }
+          }
         }
 
         // Periodic checkpoint every 90s (D1 free-tier write friendly)
-        if (!recommendation.ephemeralMode && next > 0 && next % 90 === 0) {
+        if (!isEphemeral && next > 0 && next % 90 === 0) {
           void api
             .saveProgress({
-              sessionId: recommendation.sessionId,
+              sessionId: liveSessionId,
               actualDurationSec: next,
               liveAdjustments: adjustmentsRef.current,
             })
@@ -414,6 +447,8 @@ export function PlayerView({
             liveAdjustments: adjustmentsRef.current,
             pvtPreMs: pvtPreRef.current.medianMs,
             pvtLapsesPre: pvtPreRef.current.lapses,
+            sessionIdOverride: liveSessionId,
+            ephemeralOverride: isEphemeral,
           });
         }
         return next;
@@ -421,13 +456,7 @@ export function PlayerView({
     }, 1000);
 
     return () => window.clearInterval(id);
-  }, [
-    isPlaying,
-    plannedSec,
-    recommendation.sessionId,
-    recommendation.ephemeralMode,
-    onFinishToDebrief,
-  ]);
+  }, [isPlaying, plannedSec, liveSessionId, isEphemeral, onFinishToDebrief]);
 
   const togglePlay = async () => {
     if (!audioStarted) {
@@ -526,10 +555,10 @@ export function PlayerView({
       ...prev,
       { atSec: elapsedRef.current, control: 'genre', delta: 0, note: style },
     ]);
-    if (!recommendation.ephemeralMode) {
+    if (!isEphemeral) {
       void api
         .updateSessionGenre({
-          sessionId: recommendation.sessionId,
+          sessionId: liveSessionId,
           genre: style,
           customGenreSlug: null,
           audioSource: carrierMode === 'studio_library' ? 'studio_library' : 'generative_live',
@@ -539,14 +568,57 @@ export function PlayerView({
     }
   };
 
+  const handleClaimProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setClaimError(null);
+    const parsedAge = Number(claimAge);
+    if (!Number.isFinite(parsedAge) || parsedAge < 18 || parsedAge > 95) {
+      setClaimError('Enter an age between 18 and 95.');
+      return;
+    }
+    if (claimProfession.trim().length < 2) {
+      setClaimError('Enter your profession (e.g. Doctor, Programmer, Student, Driver).');
+      return;
+    }
+    setClaimingProfile(true);
+    try {
+      const res = await api.claimQuickTryProfile({
+        occupationLabel: claimProfession.trim(),
+        age: Math.round(parsedAge),
+        currentState: recommendation.currentState,
+        targetState: recommendation.targetState,
+        environment: recommendation.environment,
+        device: recommendation.device,
+        plannedDurationMin: recommendation.plannedDurationMin,
+        actualDurationSec: elapsedRef.current,
+        armId: recommendation.arm.id,
+        armName: recommendation.arm.name,
+        studySpecId: recommendation.executableSpec?.id,
+        musicGenre: genre,
+        energyTier: recommendation.params.energyTier,
+        acousticParams: recommendation.params,
+        citedStudyIds: recommendation.arm.studyIds,
+      });
+      saveStoredProfileAuth(res.profile.id, res.profileToken, res.syncCode);
+      setLiveSessionId(res.sessionId);
+      setIsEphemeral(false);
+      setClaimedSyncCode(res.syncCode);
+      onSessionClaimed?.(res);
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : 'Unable to save profile right now.');
+    } finally {
+      setClaimingProfile(false);
+    }
+  };
+
   const handleEndSession = () => {
     endedByUserRef.current = true;
     engineRef.current?.stop();
     setIsPlaying(false);
-    if (!recommendation.ephemeralMode) {
+    if (!isEphemeral) {
       void api
         .saveProgress({
-          sessionId: recommendation.sessionId,
+          sessionId: liveSessionId,
           actualDurationSec: elapsedRef.current,
           liveAdjustments: adjustmentsRef.current,
         })
@@ -557,6 +629,8 @@ export function PlayerView({
       liveAdjustments: adjustmentsRef.current,
       pvtPreMs: pvtPreRef.current.medianMs,
       pvtLapsesPre: pvtPreRef.current.lapses,
+      sessionIdOverride: liveSessionId,
+      ephemeralOverride: isEphemeral,
     });
   };
 
@@ -660,7 +734,7 @@ export function PlayerView({
                   ? 'Controlled Exploration (Bandit)'
                   : `Optimal Fit · ${recommendation.confidencePct}% confidence`}
               </span>
-              {recommendation.ephemeralMode && (
+              {isEphemeral && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/90 px-2.5 py-1 text-[11px] font-medium text-slate-300">
                   <ShieldCheck className="h-3 w-3 text-emerald-400" />
                   Local-Only Mode
@@ -837,6 +911,72 @@ export function PlayerView({
             </div>
           </div>
         )}
+
+        {/* 5-Second Anonymous Profession Profile Claim Bar (for 1-Click Quick-Try listeners, zero audio stutter) */}
+        {!recommendation.safetyMode &&
+          recommendation.sessionId.startsWith('eph_quick_') &&
+          (claimedSyncCode ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-400/35 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-100">
+              <span className="inline-flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-emerald-300" />
+                <span>
+                  <strong>Cohort active ({claimProfession.trim()})</strong> — tracking your
+                  anonymous 25/50/75/90% retention &amp; state shift.
+                </span>
+              </span>
+              <span className="font-mono-tech rounded-lg border border-emerald-400/30 bg-slate-950/80 px-2.5 py-1 text-[11px] text-emerald-200">
+                Sync Key: {claimedSyncCode}
+              </span>
+            </div>
+          ) : (
+            <form
+              onSubmit={(e) => void handleClaimProfile(e)}
+              className="rounded-2xl border border-indigo-400/30 bg-indigo-500/[0.08] p-3.5 space-y-2.5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-indigo-100">
+                  Personalize while you listen (5s · anonymous) — add your profession &amp; age
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  Saves Sync QR &amp; contributes to your cohort’s retention curve
+                </span>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  maxLength={40}
+                  value={claimProfession}
+                  onChange={(e) => {
+                    setClaimProfession(e.target.value);
+                    setClaimError(null);
+                  }}
+                  placeholder="Profession (e.g. Doctor, Programmer, Student, Driver)"
+                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                />
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={18}
+                  max={95}
+                  value={claimAge}
+                  onChange={(e) => {
+                    setClaimAge(e.target.value);
+                    setClaimError(null);
+                  }}
+                  placeholder="Age 18+"
+                  className="font-mono-tech w-full rounded-xl border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none sm:w-28"
+                />
+                <button
+                  type="submit"
+                  disabled={claimingProfile}
+                  className="btn-aurora shrink-0 rounded-xl px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60"
+                >
+                  {claimingProfile ? 'Saving...' : 'Save & Track'}
+                </button>
+              </div>
+              {claimError && <p className="text-[11px] text-rose-300">{claimError}</p>}
+            </form>
+          ))}
 
         {/* Optional 15-Second Pre-Session Objective Brain Benchmark (PVT ms, hidden while driving) */}
         {!recommendation.safetyMode && (
@@ -1020,7 +1160,7 @@ export function PlayerView({
         {/* Finish Session CTA */}
         <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-800/80 pt-4 sm:flex-row">
           <p className="text-xs text-slate-400">
-            {recommendation.ephemeralMode
+            {isEphemeral
               ? 'Finished listening? End your local-only session anytime.'
               : 'Finished listening (or ready to rate now)? Complete the 10-second debrief so the engine learns what worked.'}
           </p>
@@ -1030,7 +1170,7 @@ export function PlayerView({
             className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:-translate-y-0.5 hover:bg-emerald-300"
           >
             <CheckCircle2 className="h-4 w-4" />
-            {recommendation.ephemeralMode ? 'End Session' : 'End Session & Rate (10s)'}
+            {isEphemeral ? 'End Session' : 'End Session & Rate (10s)'}
           </button>
         </div>
       </div>
@@ -1132,10 +1272,10 @@ export function PlayerView({
             setPvtPreMs(res.medianMs);
             setPvtLapsesPre(res.lapses);
             setShowPrePvt(false);
-            if (!recommendation.ephemeralMode && !recommendation.sessionId.startsWith('eph_')) {
+            if (!isEphemeral && !liveSessionId.startsWith('eph_')) {
               void api
                 .saveSessionPvt({
-                  sessionId: recommendation.sessionId,
+                  sessionId: liveSessionId,
                   phase: 'pre',
                   medianMs: res.medianMs,
                   lapses: res.lapses,

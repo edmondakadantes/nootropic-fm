@@ -313,6 +313,49 @@ export interface StudyLeaderboardEntry {
   avgPvtDeltaMs: number | null;
 }
 
+export interface CohortIntelligenceCard {
+  id: string;
+  isLiveData: boolean;
+  professionLabel: string;
+  fromStateLabel: string;
+  toStateLabel: string;
+  studyLabel: string;
+  sessions: number;
+  successRatePct: number;
+  fullFinishPct: number;
+  // Partially blurred B2B intelligence preview fields
+  retentionCurve: {
+    pct25: number;
+    pct50: number;
+    pct75: number;
+    pct90: number;
+  };
+  blurredPreview: {
+    topGenreHint: string;
+    modulationHint: string;
+    avgPvtShiftMs: number | null;
+    abLiftPct: number | null;
+  };
+}
+
+export interface GlobalRetentionFunnel {
+  measuredSessions: number;
+  pct25: number;
+  pct50: number;
+  pct75: number;
+  pct90: number;
+  avgCompletionPct: number;
+}
+
+export interface DatasetInquiryPayload {
+  email: string;
+  organization: string;
+  roleTitle?: string;
+  cohortInterest?: string;
+  useCase?: 'enterprise_wellness' | 'audio_hardware' | 'academic_research' | 'automotive_safety' | 'other';
+  notes?: string;
+}
+
 export interface ArmPerformance {
   armId: string;
   armName: string;

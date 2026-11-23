@@ -17,6 +17,7 @@ import {
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
 import { STATE_LABELS, TARGET_LABELS, type ResearchInsights } from '../../shared/types';
 import { API_BASE, api } from '../lib/api';
+import { CohortIntelligenceShowcase } from './CohortIntelligenceShowcase';
 
 interface InsightsViewProps {
   profileId?: string;
@@ -139,6 +140,9 @@ export function InsightsView({ profileId }: InsightsViewProps) {
           </button>
         </div>
       </div>
+
+      {/* Blurred B2B Cohort Intelligence Matrix & Real 25/50/75/90% Retention Funnel */}
+      <CohortIntelligenceShowcase mode="full" />
 
       {/* Admin-Protected Dataset Export Modal */}
       {showExportModal && (

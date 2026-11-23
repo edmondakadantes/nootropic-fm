@@ -3,10 +3,13 @@ import type {
   AcousticParams,
   AppRuntimeConfig,
   AudioSourceType,
+  CohortIntelligenceCard,
   CurrentState,
   CustomTrackInfo,
+  DatasetInquiryPayload,
   DebriefPayload,
   EnergyTier,
+  GlobalRetentionFunnel,
   LiveAdjustment,
   MusicGenreChoice,
   OutputDevice,
@@ -219,7 +222,7 @@ export const api = {
    */
   sendSessionBeacon: (payload: {
     sessionId: string;
-    event: 'visibility' | 'pagehide' | 'milestone';
+    event: 'visibility' | 'pagehide' | 'milestone' | 'milestone_25' | 'milestone_50' | 'milestone_75' | 'milestone_90';
     actualDurationSec: number;
     audioStarted: boolean;
     liveAdjustments: LiveAdjustment[];
@@ -370,5 +373,46 @@ export const api = {
     }>('/api/music/realtime-token', {
       method: 'POST',
       body: JSON.stringify({}),
+    }),
+
+  getCohortIntelligence: () =>
+    apiFetch<{
+      cohorts: CohortIntelligenceCard[];
+      globalRetention: GlobalRetentionFunnel;
+      totalLiveCohorts: number;
+    }>('/api/intelligence/cohorts'),
+
+  submitDatasetInquiry: (payload: DatasetInquiryPayload) =>
+    apiFetch<{ ok: boolean; inquiryId: string }>('/api/intelligence/inquire', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  claimQuickTryProfile: (payload: {
+    occupationLabel: string;
+    age: number;
+    gender?: UserProfile['gender'];
+    currentState: CurrentState;
+    targetState: TargetState;
+    environment: SessionEnvironment;
+    device: OutputDevice;
+    plannedDurationMin: number;
+    actualDurationSec: number;
+    armId: string;
+    armName: string;
+    studySpecId?: string;
+    musicGenre: string;
+    energyTier: EnergyTier;
+    acousticParams: AcousticParams;
+    citedStudyIds: string[];
+  }) =>
+    apiFetch<{
+      profile: UserProfile;
+      profileToken: string;
+      syncCode: string;
+      sessionId: string;
+    }>('/api/session/claim-profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 };
