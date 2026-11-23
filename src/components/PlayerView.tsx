@@ -4,11 +4,12 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   CreditCard,
   Crown,
   ExternalLink,
-  FlaskConical,
   Loader2,
   Lock,
   Music2,
@@ -36,7 +37,7 @@ import type {
   ResolvedGenre,
   UserProfile,
 } from '../../shared/types';
-import { DEVICE_LABELS, ENERGY_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
+import { DEVICE_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
 import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
 import { API_BASE, api, saveStoredProfileAuth } from '../lib/api';
 import { LiveEnvelopeProof } from './LiveEnvelopeProof';
@@ -135,6 +136,7 @@ export function PlayerView({
   const [selectedPaywallPlan, setSelectedPaywallPlan] = useState<'annual' | 'monthly'>('annual');
   const [unlockingCheckout, setUnlockingCheckout] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('none');
 
   // Live session promotion (lets 1-Click Quick-Try listeners claim a 5s anonymous profession profile without audio stutter!)
   const [liveSessionId, setLiveSessionId] = useState<string>(recommendation.sessionId);
@@ -688,131 +690,86 @@ export function PlayerView({
     ? getGenreDisplayMeta(recommendation.customGenreSlug ?? genre, activeCustomLabel)
     : getGenreDisplayMeta(genre);
 
+  const activeSourceShort =
+    telemetry.carrierMode === 'lyria_realtime'
+      ? 'Lyria RealTime AI'
+      : telemetry.carrierMode === 'pure_stimulus'
+        ? 'Pure Acoustic Signal'
+        : telemetry.usingCustomTrack || audioSource === 'community_cache'
+          ? activeVibeDisplay.label
+          : telemetry.usingStudioAudio
+            ? `${activeVibeDisplay.label} · Studio`
+            : activeVibeDisplay.label;
+
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
+    <div className="mx-auto w-full max-w-2xl space-y-4">
       {recommendation.safetyMode && (
-        <div className="animate-rise rounded-2xl border border-amber-400/40 bg-amber-500/12 p-4 backdrop-blur-md">
-          <div className="flex items-start gap-3">
-            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
-            <div className="space-y-1 text-xs text-amber-100">
+        <div className="animate-rise rounded-2xl border border-amber-400/40 bg-amber-500/12 p-3.5 backdrop-blur-md">
+          <div className="flex items-start gap-2.5">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+            <div className="space-y-0.5 text-xs text-amber-100">
               <div className="font-semibold uppercase tracking-wide text-amber-300">
-                Driving Safety Mode · Ambient Traffic Frequencies Protected
+                Driving Safety Mode Active
               </div>
-              {recommendation.safetyWarnings.map((w, idx) => (
-                <p key={idx} className="leading-relaxed text-amber-100/90">
-                  {w}
-                </p>
-              ))}
+              {recommendation.safetyWarnings[0] && (
+                <p className="leading-relaxed text-amber-100/90">{recommendation.safetyWarnings[0]}</p>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* 2-Speed Custom Generation Banner */}
+      {/* Brief Custom Music Background Status (disappears once crossfaded) */}
       {customGenState === 'generating' && activeCustomLabel && (
-        <div className="animate-rise flex items-center justify-between gap-3 rounded-2xl border border-fuchsia-400/35 bg-fuchsia-500/12 px-4 py-3 text-xs text-fuchsia-100 backdrop-blur-md">
-          <div className="flex items-center gap-2.5">
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fuchsia-300" />
-            <span>
-              <strong>Generating custom “{activeCustomLabel}”</strong> in the background — playing{' '}
-              <strong>{GENRE_META[genre].label}</strong> right now so you start immediately, and
-              crossfading smoothly once ready.
-            </span>
-          </div>
-          <span className="font-mono-tech hidden shrink-0 rounded-md border border-fuchsia-400/30 bg-fuchsia-500/15 px-2 py-0.5 text-[10px] text-fuchsia-200 sm:inline">
-            2-Speed R2 Cache
+        <div className="animate-rise flex items-center gap-2.5 rounded-2xl border border-fuchsia-400/35 bg-fuchsia-500/12 px-4 py-2.5 text-xs text-fuchsia-100 backdrop-blur-md">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fuchsia-300" />
+          <span>
+            Crafting custom <strong>“{activeCustomLabel}”</strong> — playing{' '}
+            <strong>{GENRE_META[genre].label}</strong> smoothly while it blends in.
           </span>
         </div>
       )}
 
       {customGenState === 'notice' && customGenNotice && (
-        <div className="animate-rise flex items-center gap-2.5 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
-          <Sparkles className="h-4 w-4 shrink-0 text-amber-300" />
+        <div className="animate-rise flex items-center gap-2 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300" />
           <span>{customGenNotice}</span>
         </div>
       )}
 
-      {/* Main Live Studio Stage */}
-      <div className="animate-rise glass-stage rounded-3xl p-5 sm:p-8 space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/35 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold text-cyan-200">
-                <Waves className="h-3.5 w-3.5" />
-                {recommendation.arm.name} · 3-Band LR4
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full border border-indigo-400/35 bg-indigo-500/12 px-2.5 py-1 text-[11px] font-medium text-indigo-200">
-                {ENERGY_LABELS[telemetry.energyTier].label}
-              </span>
-              {telemetry.carrierMode === 'lyria_realtime' ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-purple-400/45 bg-purple-500/18 px-2.5 py-1 text-[11px] font-semibold text-purple-200">
-                  <Sparkles className="h-3 w-3" />
-                  Google Lyria RealTime AI
-                </span>
-              ) : telemetry.carrierMode === 'pure_stimulus' ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/45 bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
-                  Pure Acoustic Signal
-                </span>
-              ) : telemetry.usingCustomTrack || audioSource === 'community_cache' ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-fuchsia-400/40 bg-fuchsia-500/15 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-200">
-                  <Sparkles className="h-3 w-3" />
-                  Community R2 Cache · {activeVibeDisplay.label}
-                </span>
-              ) : telemetry.usingStudioAudio ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/14 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
-                  {telemetry.studioRetuned432 ? 'Studio R2 · A=432 Hz' : 'Studio R2'} · {telemetry.activeTrackName}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/40 bg-cyan-400/12 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
-                  <Sparkles className="h-3 w-3" />
-                  {telemetry.usingRealSamples
-                    ? 'Live Studio Sampler ($0)'
-                    : 'Live As-We-Go Composer ($0)'}
-                </span>
-              )}
-              <span
-                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-                  recommendation.isExploration
-                    ? 'border-purple-400/35 bg-purple-500/15 text-purple-200'
-                    : 'border-emerald-400/35 bg-emerald-500/12 text-emerald-300'
-                }`}
-              >
-                <FlaskConical className="h-3 w-3" />
-                {recommendation.isExploration
-                  ? 'Controlled Exploration (Bandit)'
-                  : `Optimal Fit · ${recommendation.confidencePct}% confidence`}
-              </span>
-              {isEphemeral && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/90 px-2.5 py-1 text-[11px] font-medium text-slate-300">
-                  <ShieldCheck className="h-3 w-3 text-emerald-400" />
-                  Local-Only Mode
-                </span>
+      {/* STANDALONE FULL-FOCUS PLAYER STAGE (Distraction-Free) */}
+      <div className="animate-rise glass-stage rounded-3xl border border-cyan-400/20 p-5 sm:p-8 space-y-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+        {/* Minimal Header: Goal + Active Music + Timer */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold text-cyan-200">
+              <Music2 className="h-3 w-3 shrink-0" />
+              <span className="truncate">{activeSourceShort}</span>
+              {telemetry.currentModHz > 0 && (
+                <span className="shrink-0 text-cyan-300/80">· {telemetry.currentModHz} Hz</span>
               )}
             </div>
-            <h1 className="mt-3 text-2xl font-bold text-white sm:text-3xl">
+            <h1 className="font-display text-xl font-bold text-white sm:text-2xl leading-tight">
               <span className="text-aurora">{TARGET_LABELS[recommendation.targetState]}</span>
             </h1>
-            <p className="mt-1 text-xs text-slate-400">
-              Cohort: <span className="text-slate-200">{recommendation.cohortLabel}</span> · Output:{' '}
-              <span className="text-slate-200">{DEVICE_LABELS[recommendation.device]}</span> · Start:{' '}
-              <span className="text-slate-200">
-                {STATE_LABELS[recommendation.currentState]} ({recommendation.baselineScore}/5)
-              </span>
+            <p className="text-[11px] text-slate-400">
+              {STATE_LABELS[recommendation.currentState]} → {TARGET_LABELS[recommendation.targetState]} ·{' '}
+              {DEVICE_LABELS[recommendation.device]}
             </p>
           </div>
 
-          <div className="text-right space-y-1">
-            <div className="font-mono-tech text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          <div className="shrink-0 text-right space-y-1">
+            <div className="font-mono-tech text-3xl font-bold tracking-tight text-white sm:text-4xl leading-none">
               {formatTimer(elapsedSec)}
             </div>
-            <div className="font-mono-tech text-xs text-slate-400">
+            <div className="font-mono-tech text-[11px] text-slate-400">
               of {recommendation.plannedDurationMin}:00 min
             </div>
             {!isPro && plannedSec > FREE_PREVIEW_LIMIT_SEC && (
               <button
                 type="button"
                 onClick={() => onUpgradePro?.()}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
                   FREE_PREVIEW_LIMIT_SEC - elapsedSec <= 30
                     ? 'border-amber-400/60 bg-amber-400/20 text-amber-200 animate-pulse'
                     : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
@@ -821,14 +778,14 @@ export function PlayerView({
               >
                 <Clock className="h-3 w-3" />
                 {previewLocked
-                  ? 'Preview ended · Unlock'
-                  : `Free preview · ${formatTimer(Math.max(0, FREE_PREVIEW_LIMIT_SEC - elapsedSec))} left`}
+                  ? 'Preview ended'
+                  : `Free · ${formatTimer(Math.max(0, FREE_PREVIEW_LIMIT_SEC - elapsedSec))}`}
               </button>
             )}
           </div>
         </div>
 
-        {/* Upgraded Dual-Layer Radial + Ribbon Neural Visualizer */}
+        {/* Centerpiece 60fps Neural Soundwave Visualizer */}
         <NeuralVisualizer
           engine={engineRef.current}
           isPlaying={isPlaying}
@@ -836,63 +793,56 @@ export function PlayerView({
           modulationHz={telemetry.currentModHz}
         />
 
-        {/* Real-Time Laboratory Proof Scope (Live Waveform + Exact Mathematical Stimulus Envelope) */}
-        <LiveEnvelopeProof
-          engine={engineRef.current}
-          isPlaying={isPlaying}
-          entrainmentType={telemetry.entrainmentType}
-          frequencyHz={telemetry.currentModHz}
-          depth={telemetry.currentModDepth}
-          carrierLabel={
-            telemetry.usingStudioAudio
-              ? telemetry.studioRetuned432
-                ? 'Studio R2 · A=432 Hz'
-                : 'Studio R2'
-              : telemetry.usingRealSamples
-                ? 'Live Studio Sampler'
-                : telemetry.carrierMode === 'pure_stimulus'
-                  ? 'Pure Acoustic'
-                  : telemetry.carrierMode === 'lyria_realtime'
-                    ? 'Lyria RealTime AI'
-                    : 'Live Synth'
-          }
-          tuningA4Hz={telemetry.tuningA4Hz}
-        />
+        {/* Synchronized 0.1 Hz HRV Breathing Guide (only shown on calm breathing protocols) */}
+        {telemetry.hrvActive && telemetry.hrvBreathPhase && (
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/[0.08] px-4 py-2.5 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-emerald-200">
+                Breathe with the wave ·{' '}
+                <span className="uppercase tracking-wider text-white">
+                  {telemetry.hrvBreathPhase === 'inhale' ? 'Inhale Slowly (5s)' : 'Exhale Smoothly (5s)'}
+                </span>
+              </span>
+              <span className="font-mono-tech text-[10px] text-emerald-300">6 breaths/min</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-900">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-300 transition-all duration-300"
+                style={{ width: `${Math.max(8, Math.round(telemetry.hrvBreathProgress * 100))}%` }}
+              />
+            </div>
+          </div>
+        )}
 
-        {/* Iso-Principle Session Progression Bar */}
+        {/* Clean Session Progress Bar */}
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center justify-between text-[11px]">
             <span className="inline-flex items-center gap-1.5 font-medium text-cyan-300">
               <Activity className="h-3.5 w-3.5" />
-              Active phase: {telemetry.phaseLabel}
+              {telemetry.phaseLabel}
               {telemetry.antiMonotonyActive && (
-                <span className="rounded-md bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
-                  Anti-monotony lift
+                <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200">
+                  Fresh pulse
                 </span>
               )}
             </span>
             <span className="font-mono-tech text-slate-400">{Math.round(progressPct)}%</span>
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800/90">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800/90">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-indigo-400 to-amber-300 shadow-[0_0_16px_rgba(34,211,238,0.55)] transition-all duration-500"
+              className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-indigo-400 to-amber-300 shadow-[0_0_14px_rgba(34,211,238,0.55)] transition-all duration-500"
               style={{ width: `${Math.max(2, progressPct)}%` }}
             />
           </div>
-          <div className="flex justify-between text-[10px] text-slate-500">
-            <span>0% · Entry (Iso)</span>
-            <span>15% – 88% · Cognitive Plateau</span>
-            <span>100% · Landing</span>
-          </div>
         </div>
 
-        {/* Play/Pause & Tactile Live Controls */}
-        <div className="flex flex-col gap-4 rounded-2xl border border-slate-800/80 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
+        {/* Clean Primary Control Dock: Play/Pause + Volume + End & Rate */}
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800/80 bg-slate-950/65 p-3.5 sm:px-5 sm:py-4">
+          <div className="flex flex-1 items-center gap-3.5 min-w-[190px]">
             <button
               type="button"
               onClick={() => void togglePlay()}
-              className="btn-aurora inline-flex h-14 w-14 items-center justify-center rounded-full text-slate-950"
+              className="btn-aurora inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-slate-950 shadow-[0_0_24px_rgba(34,211,238,0.3)]"
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
@@ -902,7 +852,7 @@ export function PlayerView({
               )}
             </button>
 
-            <div className="w-36 space-y-1">
+            <div className="flex-1 max-w-[180px] space-y-1">
               <div className="flex items-center justify-between text-[11px] text-slate-400">
                 <span className="inline-flex items-center gap-1">
                   <Volume2 className="h-3.5 w-3.5" /> Volume
@@ -921,90 +871,34 @@ export function PlayerView({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 mr-1">
-              <Sliders className="h-3.5 w-3.5" /> Live tune:
-            </span>
-            <button
-              type="button"
-              onClick={() => tweakIntensity(-0.15)}
-              className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
-            >
-              Calmer
-            </button>
-            <button
-              type="button"
-              onClick={() => tweakIntensity(0.15)}
-              className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
-            >
-              More drive
-            </button>
-            <button
-              type="button"
-              onClick={() => tweakModulation(-0.2)}
-              className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
-            >
-              AM −
-            </button>
-            <button
-              type="button"
-              onClick={() => tweakModulation(0.2)}
-              className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
-            >
-              AM +
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleEndSession}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:-translate-y-0.5 hover:bg-emerald-300 sm:px-5 sm:py-3 sm:text-sm"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            {isEphemeral ? 'End Session' : 'End & Rate'}
+          </button>
         </div>
 
-        {/* Synchronized 0.1 Hz HRV Vagal Breath Pacer (when study includes autonomic breathing tide) */}
-        {telemetry.hrvActive && telemetry.hrvBreathPhase && (
-          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/[0.08] px-4 py-3 space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-emerald-200">
-                0.10 Hz HRV Vagal Resonance Pacer ·{' '}
-                <span className="uppercase tracking-wider text-white">
-                  {telemetry.hrvBreathPhase === 'inhale' ? 'Inhale Slowly (5s)' : 'Exhale Smoothly (5s)'}
-                </span>
-              </span>
-              <span className="font-mono-tech text-[11px] text-emerald-300">6 breaths/min</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-900">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-300 transition-all duration-300"
-                style={{ width: `${Math.max(8, Math.round(telemetry.hrvBreathProgress * 100))}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* 5-Second Anonymous Profession Profile Claim Bar (for 1-Click Quick-Try listeners, zero audio stutter) */}
+        {/* Optional 5-Second Profession Claim (only if entering from an anonymous quick-try link) */}
         {!recommendation.safetyMode &&
           recommendation.sessionId.startsWith('eph_quick_') &&
           (claimedSyncCode ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-400/35 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-100">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-400/35 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-100">
               <span className="inline-flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-emerald-300" />
-                <span>
-                  <strong>Cohort active ({claimProfession.trim()})</strong> — tracking your
-                  anonymous 25/50/75/90% retention &amp; state shift.
-                </span>
+                <strong>Saved ({claimProfession.trim()})</strong>
               </span>
-              <span className="font-mono-tech rounded-lg border border-emerald-400/30 bg-slate-950/80 px-2.5 py-1 text-[11px] text-emerald-200">
-                Sync Key: {claimedSyncCode}
-              </span>
+              <span className="font-mono-tech text-[11px] text-emerald-200">{claimedSyncCode}</span>
             </div>
           ) : (
             <form
               onSubmit={(e) => void handleClaimProfile(e)}
-              className="rounded-2xl border border-indigo-400/30 bg-indigo-500/[0.08] p-3.5 space-y-2.5"
+              className="rounded-2xl border border-indigo-400/25 bg-indigo-500/[0.07] p-3 space-y-2"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-indigo-100">
-                  Personalize while you listen (5s · anonymous) — add your profession &amp; age
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  Saves Sync QR &amp; contributes to your cohort’s retention curve
-                </span>
+              <div className="text-[11px] font-semibold text-indigo-100">
+                Save your progress while you listen (anonymous):
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
@@ -1015,7 +909,7 @@ export function PlayerView({
                     setClaimProfession(e.target.value);
                     setClaimError(null);
                   }}
-                  placeholder="Profession (e.g. Doctor, Programmer, Student, Driver)"
+                  placeholder="Profession (e.g. Doctor, Programmer, Student)"
                   className="flex-1 rounded-xl border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
                 />
                 <input
@@ -1029,306 +923,328 @@ export function PlayerView({
                     setClaimError(null);
                   }}
                   placeholder="Age 18+"
-                  className="font-mono-tech w-full rounded-xl border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none sm:w-28"
+                  className="font-mono-tech w-full rounded-xl border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none sm:w-24"
                 />
                 <button
                   type="submit"
                   disabled={claimingProfile}
                   className="btn-aurora shrink-0 rounded-xl px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60"
                 >
-                  {claimingProfile ? 'Saving...' : 'Save & Track'}
+                  {claimingProfile ? 'Saving...' : 'Save'}
                 </button>
               </div>
               {claimError && <p className="text-[11px] text-rose-300">{claimError}</p>}
             </form>
           ))}
+      </div>
 
-        {/* Optional 15-Second Pre-Session Objective Brain Benchmark (PVT ms, hidden while driving) */}
-        {!recommendation.safetyMode && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.05] px-4 py-3">
-            <div className="space-y-0.5">
-              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-200">
-                <Zap className="h-3.5 w-3.5 text-cyan-300" />
-                {pvtPreMs !== null
-                  ? `Pre-Session Baseline Locked: ${pvtPreMs} ms`
-                  : 'Optional 15s Pre-Session Brain Check (PVT ms)'}
-              </div>
-              <p className="text-[11px] text-slate-400">
-                {pvtPreMs !== null
-                  ? `Lapses (>500ms): ${pvtLapsesPre ?? 0} · Retest at debrief to prove your objective reaction-time shift.`
-                  : 'Tap 5 green flashes now to establish an objective millisecond baseline before the protocol works.'}
-              </p>
+      {/* 2 Discreet Collapsible Drawer Triggers (Collapsed by default = 100% Zen Player) */}
+      <div className="flex flex-wrap items-center justify-center gap-2.5">
+        <button
+          type="button"
+          onClick={() => setOpenDrawer((prev) => (prev === 'tune' ? 'none' : 'tune'))}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition ${
+            openDrawer === 'tune'
+              ? 'border-cyan-400/60 bg-cyan-400/15 text-cyan-100'
+              : 'border-white/10 bg-slate-900/60 text-slate-300 hover:border-cyan-400/40 hover:text-white'
+          }`}
+        >
+          <Sliders className="h-3.5 w-3.5 text-cyan-300" />
+          <span>Tune Sound &amp; Music</span>
+          {openDrawer === 'tune' ? (
+            <ChevronUp className="h-3.5 w-3.5 opacity-75" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 opacity-75" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setOpenDrawer((prev) => (prev === 'science' ? 'none' : 'science'))}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition ${
+            openDrawer === 'science'
+              ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-100'
+              : 'border-white/10 bg-slate-900/60 text-slate-300 hover:border-emerald-400/40 hover:text-white'
+          }`}
+        >
+          <Waves className="h-3.5 w-3.5 text-emerald-300" />
+          <span>Live Signal &amp; Science</span>
+          {openDrawer === 'science' ? (
+            <ChevronUp className="h-3.5 w-3.5 opacity-75" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 opacity-75" />
+          )}
+        </button>
+      </div>
+
+      {/* Collapsible Drawer 1: Live Sound Tweaks, Genre Switcher, Audio Engine & 15s Reaction Test */}
+      {openDrawer === 'tune' && (
+        <div className="animate-step glass-card rounded-3xl p-5 sm:p-6 space-y-5">
+          {/* Fine Live Tweaks */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white">
+              <Sliders className="h-3.5 w-3.5 text-cyan-300" /> Live Sound Balance
+            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => tweakIntensity(-0.15)}
+                className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
+              >
+                Calmer
+              </button>
+              <button
+                type="button"
+                onClick={() => tweakIntensity(0.15)}
+                className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
+              >
+                More drive
+              </button>
+              <button
+                type="button"
+                onClick={() => tweakModulation(-0.2)}
+                className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
+              >
+                Wave −
+              </button>
+              <button
+                type="button"
+                onClick={() => tweakModulation(0.2)}
+                className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
+              >
+                Wave +
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowPrePvt(true)}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/25"
-            >
-              <Zap className="h-3.5 w-3.5" />
-              {pvtPreMs !== null ? 'Retake Baseline' : 'Measure Baseline (15s)'}
-            </button>
           </div>
-        )}
 
-        {/* Live Synthesis Carrier Engine Switcher (Study-Locked Generative $0 / Studio R2 / Pure Acoustic / Lyria AI) */}
-        <div className="space-y-2 rounded-2xl border border-cyan-400/20 bg-slate-950/60 p-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className="font-semibold text-cyan-200">
-              Audio Synthesis Mode (Acoustic Modulation Stays 100% Locked)
-            </span>
-            <span className="font-mono-tech text-[10px] text-slate-400">
-              {telemetry.stimulusCarrierLabel}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-            {(['generative_live', 'studio_library', 'pure_stimulus', 'lyria_realtime'] as CarrierEngineMode[]).map(
-              (m) => {
-                const active = carrierMode === m;
-                const info = CARRIER_MODE_LABELS[m];
-                const isLyria = m === 'lyria_realtime';
+          {/* Music Style Switcher */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 font-medium text-slate-300">
+                <Music2 className="h-3.5 w-3.5 text-cyan-400" />
+                Switch Music Style Live
+              </span>
+              {telemetry.backgroundAudioActive && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-300">
+                  <Radio className="h-3 w-3" />
+                  Background Audio Ready
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {(Object.keys(GENRE_META) as ResolvedGenre[]).map((style) => {
+                const meta = GENRE_META[style];
+                const active = !telemetry.usingCustomTrack && genre === style;
                 return (
                   <button
-                    key={m}
+                    key={style}
                     type="button"
-                    disabled={isLyria && connectingLyria}
-                    onClick={() => void handleCarrierSwitch(m)}
-                    className={`rounded-xl border px-2.5 py-2 text-left transition ${
+                    onClick={() => switchGenre(style)}
+                    className={`rounded-xl border px-3 py-2 text-left transition-all ${
                       active
-                        ? 'border-cyan-400/70 bg-cyan-400/18 text-white shadow-[0_0_16px_rgba(34,211,238,0.18)]'
-                        : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-600 hover:text-white'
+                        ? 'border-cyan-400/70 bg-cyan-400/14 text-white'
+                        : 'border-slate-800/80 bg-slate-900/50 text-slate-300 hover:border-slate-700 hover:text-white'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[11px] font-semibold leading-tight">
-                        {m === 'generative_live'
-                          ? 'Live As-We-Go ($0)'
-                          : m === 'studio_library'
-                            ? 'Studio R2 Stems'
-                            : m === 'pure_stimulus'
-                              ? 'Pure Acoustic Signal'
-                              : connectingLyria
-                                ? 'Connecting Lyria…'
-                                : lyriaRealtimeAvailable
-                                  ? 'Lyria RealTime AI'
-                                  : 'Lyria AI (API Key)'}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 line-clamp-1 text-[9px] text-slate-400">{info.shortDesc}</div>
+                    <div className="text-xs font-semibold">{meta.label}</div>
+                    <div className="mt-0.5 text-[10px] text-slate-400">{meta.shortDesc}</div>
                   </button>
                 );
-              }
+              })}
+            </div>
+          </div>
+
+          {/* Audio Engine Switcher */}
+          <div className="space-y-2 border-t border-slate-800/80 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="font-semibold text-cyan-200">Audio Engine</span>
+              <span className="font-mono-tech text-[10px] text-slate-400">
+                {telemetry.stimulusCarrierLabel}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {(['generative_live', 'studio_library', 'pure_stimulus', 'lyria_realtime'] as CarrierEngineMode[]).map(
+                (m) => {
+                  const active = carrierMode === m;
+                  const info = CARRIER_MODE_LABELS[m];
+                  const isLyria = m === 'lyria_realtime';
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      disabled={isLyria && connectingLyria}
+                      onClick={() => void handleCarrierSwitch(m)}
+                      className={`rounded-xl border px-2.5 py-2 text-left transition ${
+                        active
+                          ? 'border-cyan-400/70 bg-cyan-400/18 text-white'
+                          : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-600 hover:text-white'
+                      }`}
+                    >
+                      <div className="text-[11px] font-semibold leading-tight">
+                        {m === 'generative_live'
+                          ? 'Live Composer'
+                          : m === 'studio_library'
+                            ? 'Studio Audio'
+                            : m === 'pure_stimulus'
+                              ? 'Pure Sound Wave'
+                              : connectingLyria
+                                ? 'Connecting…'
+                                : lyriaRealtimeAvailable
+                                  ? 'Lyria Live AI'
+                                  : 'Lyria AI'}
+                      </div>
+                      <div className="mt-0.5 line-clamp-1 text-[9px] text-slate-400">{info.shortDesc}</div>
+                    </button>
+                  );
+                }
+              )}
+            </div>
+            {lyriaNotice && (
+              <div className="rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-1.5 text-[11px] text-indigo-200">
+                {lyriaNotice}
+              </div>
             )}
           </div>
-          {lyriaNotice && (
-            <div className="rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-1.5 text-[11px] text-indigo-200">
-              {lyriaNotice}
+
+          {/* Optional 15-Second Reaction Speed Check */}
+          {!recommendation.safetyMode && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.05] px-4 py-3">
+              <div className="space-y-0.5">
+                <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-200">
+                  <Zap className="h-3.5 w-3.5 text-cyan-300" />
+                  {pvtPreMs !== null
+                    ? `Baseline Recorded: ${pvtPreMs} ms`
+                    : 'Optional 15s Reaction Speed Test'}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  {pvtPreMs !== null
+                    ? 'Retest at the end to measure your millisecond shift.'
+                    : 'Tap 5 quick flashes to measure your speed before vs. after.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrePvt(true)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/25"
+              >
+                <Zap className="h-3.5 w-3.5" />
+                {pvtPreMs !== null ? 'Retake' : 'Test Now (15s)'}
+              </button>
             </div>
           )}
         </div>
+      )}
 
-        {/* Live Music Layer (Genre Carrier) Switcher — zero dropout, keeps Multiband AM active */}
-        <div className="space-y-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className="inline-flex items-center gap-1.5 font-medium text-slate-300">
-              <Music2 className="h-3.5 w-3.5 text-cyan-400" />
-              Music Layer (switch live — {telemetry.currentModHz} Hz 3-Band AM {telemetry.crossoverHz}–
-              {telemetry.upperCrossoverHz} Hz stays locked)
-            </span>
-            {telemetry.backgroundAudioActive && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-300">
-                <Radio className="h-3 w-3" />
-                Lock-Screen &amp; Bluetooth Ready
-              </span>
+      {/* Collapsible Drawer 2: Live Signal Scope, Acoustic Telemetry & Verified Studies */}
+      {openDrawer === 'science' && (
+        <div className="animate-step glass-card rounded-3xl p-5 sm:p-6 space-y-5">
+          {/* Live 60fps Proof Scope */}
+          <LiveEnvelopeProof
+            engine={engineRef.current}
+            isPlaying={isPlaying}
+            entrainmentType={telemetry.entrainmentType}
+            frequencyHz={telemetry.currentModHz}
+            depth={telemetry.currentModDepth}
+            carrierLabel={activeSourceShort}
+            tuningA4Hz={telemetry.tuningA4Hz}
+          />
+
+          {/* Compact Telemetry Strip */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Wave</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-cyan-300">
+                {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz` : `A=${telemetry.tuningA4Hz} Hz`}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Depth</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-indigo-300">
+                {Math.round(telemetry.currentModDepth * 100)}%
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Tempo</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-white">
+                {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Beatless'}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Noise Bed</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-slate-200 capitalize">
+                {telemetry.noiseColor === 'none' ? 'Clean' : telemetry.noiseColor.replace('_', ' ')}
+              </div>
+            </div>
+          </div>
+
+          {/* Verified Peer-Reviewed Studies */}
+          <div className="space-y-3 border-t border-slate-800/80 pt-4">
+            <div className="flex items-center gap-2 text-cyan-300">
+              <BookOpen className="h-4 w-4" />
+              <h2 className="text-sm font-semibold text-white">
+                Peer-Reviewed Science Powering This Sound
+              </h2>
+            </div>
+            <p className="text-xs leading-relaxed text-slate-300">{recommendation.rationale}</p>
+
+            {recommendation.executableSpec && (
+              <StudyFidelityMatrix spec={recommendation.executableSpec} />
             )}
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {(Object.keys(GENRE_META) as ResolvedGenre[]).map((style) => {
-              const meta = GENRE_META[style];
-              const active = !telemetry.usingCustomTrack && genre === style;
-              return (
-                <button
-                  key={style}
-                  type="button"
-                  onClick={() => switchGenre(style)}
-                  className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
-                    active
-                      ? 'border-cyan-400/70 bg-cyan-400/14 text-white shadow-[0_0_22px_rgba(34,211,238,0.18)]'
-                      : 'border-slate-800/80 bg-slate-900/50 text-slate-300 hover:border-slate-700 hover:text-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs font-semibold">{meta.label}</span>
-                  </div>
-                  <div className="mt-0.5 text-[10px] text-slate-400">{meta.shortDesc}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
 
-        {/* Acoustic DNA Telemetry Grid */}
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Acoustic Signal</div>
-            <div className="font-mono-tech mt-1 text-base font-semibold text-cyan-300">
-              {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz` : `A=${telemetry.tuningA4Hz} Hz`}
-            </div>
-            <div className="truncate font-mono-tech text-[10px] text-slate-500">
-              {ENTRAINMENT_LABELS[telemetry.entrainmentType].split(' ')[0]} · {telemetry.crossoverHz}–{telemetry.upperCrossoverHz}Hz
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Signal Depth</div>
-            <div className="font-mono-tech mt-1 text-base font-semibold text-indigo-300">
-              {Math.round(telemetry.currentModDepth * 100)}%
-            </div>
-            <div className="font-mono-tech text-[10px] text-slate-500 capitalize">
-              {telemetry.tonalMode} · A={telemetry.tuningA4Hz}
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Live Tempo</div>
-            <div className="font-mono-tech mt-1 text-base font-semibold text-white">
-              {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Beatless'}
-            </div>
-            <div className="font-mono-tech text-[10px] text-slate-500">
-              {telemetry.carrierMode === 'generative_live'
-                ? telemetry.usingRealSamples
-                  ? 'Studio Sampler'
-                  : 'Live Composer'
-                : telemetry.carrierMode === 'pure_stimulus'
-                  ? 'Pure Signal'
-                  : telemetry.carrierMode === 'lyria_realtime'
-                    ? 'Lyria Live'
-                    : telemetry.studioRetuned432
-                      ? 'Studio R2 · 432Hz'
-                      : 'Studio R2'}
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Stochastic Noise</div>
-            <div className="font-mono-tech mt-1 text-base font-semibold text-slate-200 capitalize">
-              {telemetry.noiseColor === 'none' ? 'Off' : telemetry.noiseColor.replace('_', ' ')}
-            </div>
-            <div className="font-mono-tech text-[10px] text-slate-500">
-              {telemetry.noiseColor === 'none' ? 'Clean bed' : `${telemetry.noiseSnrDb} dB SNR`}
-            </div>
-          </div>
-          <div className="col-span-2 rounded-xl border border-slate-800/80 bg-slate-900/55 p-3 sm:col-span-1">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Live Tweaks</div>
-            <div className="font-mono-tech mt-1 text-base font-semibold text-amber-300">
-              {adjustments.length}
-            </div>
-          </div>
-        </div>
-
-        {/* Finish Session CTA */}
-        <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-800/80 pt-4 sm:flex-row">
-          <p className="text-xs text-slate-400">
-            {isEphemeral
-              ? 'Finished listening? End your local-only session anytime.'
-              : 'Finished listening (or ready to rate now)? Complete the 10-second debrief so the engine learns what worked.'}
-          </p>
-          <button
-            type="button"
-            onClick={handleEndSession}
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:-translate-y-0.5 hover:bg-emerald-300"
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            {isEphemeral ? 'End Session' : 'End Session & Rate (10s)'}
-          </button>
-        </div>
-      </div>
-
-      {/* Scientific Rationale & Verified Studies (Core DOIs + Live NIH PubMed & OpenAlex Links) */}
-      <div className="animate-rise delay-150 glass-card rounded-3xl p-5 sm:p-7 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-cyan-300">
-            <BookOpen className="h-5 w-5" />
-            <h2 className="text-base font-semibold text-white">
-              Verified Peer-Reviewed Science Powering This Session
-            </h2>
-          </div>
-          <span className="font-mono-tech text-[10px] uppercase tracking-wider text-slate-400">
-            Direct DOI / PubMed / OpenAlex links · Zero fabricated citations
-          </span>
-        </div>
-
-        <p className="text-sm leading-relaxed text-slate-300">{recommendation.rationale}</p>
-
-        {/* Live Study-to-Sound Fidelity Matrix */}
-        {recommendation.executableSpec && (
-          <StudyFidelityMatrix spec={recommendation.executableSpec} />
-        )}
-
-        {/* Core Acoustic DSP Studies */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {recommendation.studies.map((study) => (
-            <a
-              key={study.id}
-              href={study.doiOrUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group block rounded-2xl border border-slate-800/90 bg-slate-950/60 p-4 space-y-1.5 transition hover:border-cyan-400/45"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="text-xs font-semibold text-cyan-300">
-                  {study.authors.split(',')[0]} et al. ({study.year}) · {study.journal}
-                </div>
-                <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-slate-400 group-hover:text-cyan-300">
-                  DOI <ExternalLink className="h-3.5 w-3.5" />
-                </span>
-              </div>
-              <div className="text-xs font-medium text-white group-hover:text-cyan-100">
-                {study.title}
-              </div>
-              <p className="text-xs leading-relaxed text-slate-400">{study.summary}</p>
-              <p className="text-[11px] text-amber-300/80">Caveat: {study.caveat}</p>
-            </a>
-          ))}
-        </div>
-
-        {/* Live Matched NIH PubMed & OpenAlex Papers */}
-        {livePapers.length > 0 && (
-          <div className="space-y-2.5 border-t border-slate-800/80 pt-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
-              Live Matched Literature (NIH PubMed &amp; OpenAlex · Click to Verify)
-            </div>
-            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
-              {livePapers.map((paper) => (
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {recommendation.studies.map((study) => (
                 <a
-                  key={paper.pmid}
-                  href={paper.doiUrl || paper.url}
+                  key={study.id}
+                  href={study.doiOrUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex flex-col justify-between gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.04] p-3.5 transition hover:border-emerald-400/50 hover:bg-emerald-500/[0.08]"
+                  className="group block rounded-2xl border border-slate-800/90 bg-slate-950/60 p-3.5 space-y-1 transition hover:border-cyan-400/45"
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono-tech rounded border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-emerald-300">
-                        {paper.source === 'openalex' ? 'OpenAlex' : 'NIH PubMed'} · {paper.year}
-                      </span>
-                      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400 group-hover:text-emerald-300" />
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-[11px] font-semibold text-cyan-300">
+                      {study.authors.split(',')[0]} et al. ({study.year})
                     </div>
-                    <div className="text-xs font-medium leading-snug text-white group-hover:text-emerald-100">
-                      {paper.title}
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      {paper.authors} · {paper.journal}
-                    </div>
+                    <ExternalLink className="h-3 w-3 shrink-0 text-slate-400 group-hover:text-cyan-300" />
                   </div>
-                  {paper.appliedMechanism && (
-                    <div className="rounded-lg bg-slate-950/70 px-2.5 py-1.5 text-[11px] text-cyan-200/90">
-                      <span className="font-semibold text-cyan-300">Applied in audio:</span>{' '}
-                      {paper.appliedMechanism}
-                    </div>
-                  )}
+                  <div className="text-xs font-medium text-white group-hover:text-cyan-100">
+                    {study.title}
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-slate-400">{study.summary}</p>
                 </a>
               ))}
             </div>
+
+            {livePapers.length > 0 && (
+              <div className="space-y-2 border-t border-slate-800/80 pt-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+                  Live Matched Studies (NIH PubMed &amp; OpenAlex)
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {livePapers.map((paper) => (
+                    <a
+                      key={paper.pmid}
+                      href={paper.doiUrl || paper.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group block rounded-xl border border-emerald-400/20 bg-emerald-500/[0.04] p-3 space-y-1 transition hover:border-emerald-400/50"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono-tech text-[9px] font-semibold uppercase text-emerald-300">
+                          {paper.source === 'openalex' ? 'OpenAlex' : 'NIH PubMed'} · {paper.year}
+                        </span>
+                        <ExternalLink className="h-3 w-3 shrink-0 text-slate-400 group-hover:text-emerald-300" />
+                      </div>
+                      <div className="text-xs font-medium leading-snug text-white">
+                        {paper.title}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* 5-Minute Free Preview Complete -> Stripe Pro Unlock Overlay */}
       {previewLocked && !isPro && (

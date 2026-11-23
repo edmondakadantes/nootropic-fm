@@ -134,6 +134,10 @@ export default function App() {
   } | null>(null);
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [screen]);
+
+  useEffect(() => {
     const handler = (e: Event) => {
       e.preventDefault();
       setInstallPrompt(
@@ -738,8 +742,14 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Stage */}
-      <main className="relative z-10 mx-auto w-full max-w-5xl flex-1 px-4 py-7 sm:px-6 sm:py-11">
+      {/* Main Content Stage (vertically centered distraction-free canvas during active Player) */}
+      <main
+        className={`relative z-10 mx-auto w-full max-w-5xl flex-1 px-4 sm:px-6 ${
+          screen === 'player'
+            ? 'flex flex-col justify-center py-5 sm:py-8'
+            : 'py-7 sm:py-11'
+        }`}
+      >
         {qrToast && (
           <div className="animate-rise mx-auto mb-5 flex max-w-2xl items-center justify-between gap-3 rounded-2xl border border-emerald-400/40 bg-emerald-500/12 px-4 py-3 text-xs font-medium text-emerald-200 backdrop-blur-md">
             <span className="inline-flex items-center gap-2">
@@ -1061,29 +1071,31 @@ export default function App() {
         </div>
       )}
 
-      <footer className="relative z-10 border-t border-white/[0.05] px-4 py-5 text-center text-[11px] text-slate-500">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
-          <span>
-            nootropic.fm · Tune your mind · Psychoacoustic cognitive wellness, focus, and relaxation
-            audio — not a medical device. Not intended to diagnose, treat, cure, or prevent any
-            medical condition. Listeners 18+.
-          </span>
-          <span className="text-slate-600">
-            Samples: Salamander Grand Piano &amp; FluidR3 GM (CC-BY 3.0)
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setPrivacyStatus(null);
-              setShowPrivacyModal(true);
-            }}
-            className="inline-flex items-center gap-1 font-medium text-cyan-400/90 underline-offset-2 hover:text-cyan-300 hover:underline"
-          >
-            <ShieldCheck className="h-3 w-3" />
-            Privacy, Credits &amp; Delete My Data
-          </button>
-        </div>
-      </footer>
+      {screen !== 'player' && (
+        <footer className="relative z-10 border-t border-white/[0.05] px-4 py-5 text-center text-[11px] text-slate-500">
+          <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+            <span>
+              nootropic.fm · Tune your mind · Psychoacoustic cognitive wellness, focus, and relaxation
+              audio — not a medical device. Not intended to diagnose, treat, cure, or prevent any
+              medical condition. Listeners 18+.
+            </span>
+            <span className="text-slate-600">
+              Samples: Salamander Grand Piano &amp; FluidR3 GM (CC-BY 3.0)
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setPrivacyStatus(null);
+                setShowPrivacyModal(true);
+              }}
+              className="inline-flex items-center gap-1 font-medium text-cyan-400/90 underline-offset-2 hover:text-cyan-300 hover:underline"
+            >
+              <ShieldCheck className="h-3 w-3" />
+              Privacy, Credits &amp; Delete My Data
+            </button>
+          </div>
+        </footer>
+      )}
     </div>
   );
 }
