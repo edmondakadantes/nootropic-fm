@@ -254,6 +254,7 @@ export class PsychoacousticEngine {
   private elapsedSec = 0;
   private plannedSec = 1500;
   private lyriaStatus: LyriaRealtimeStatus = 'idle';
+  private sampleApiBase = '';
 
   public async start(
     params: AcousticParams,
@@ -265,6 +266,7 @@ export class PsychoacousticEngine {
     sampleApiBase = ''
   ): Promise<void> {
     this.stopImmediate();
+    this.sampleApiBase = sampleApiBase;
     this.params = { ...params };
     this.studySpec = executableSpec
       ? structuredClone(executableSpec)
@@ -640,6 +642,7 @@ export class PsychoacousticEngine {
       token,
       model,
       spec: this.studySpec,
+      apiBase: this.sampleApiBase,
       onStatusChange: (st, note) => {
         this.lyriaStatus = st;
         onStatus?.(st, note);

@@ -97,6 +97,54 @@ async function sha256Hex(input: string): Promise<string> {
     .join('');
 }
 
+async function hmacSha256Hex(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function signRealtimeTicket(secret: string, ttlMs = 120_000): Promise<{ ticket: string; expiresAt: string }> {
+  const expMs = Date.now() + ttlMs;
+  const nonceBytes = new Uint8Array(10);
+  crypto.getRandomValues(nonceBytes);
+  const nonce = Array.from(nonceBytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const payload = `${expMs}.${nonce}`;
+  const sig = await hmacSha256Hex(secret, `lyria-rt:${payload}`);
+  return {
+    ticket: `${payload}.${sig}`,
+    expiresAt: new Date(expMs).toISOString(),
+  };
+}
+
+async function verifyRealtimeTicket(secret: string, ticket: string): Promise<boolean> {
+  const parts = ticket.split('.');
+  if (parts.length !== 3) return false;
+  const [expStr, nonce, sig] = parts;
+  const expMs = Number(expStr);
+  if (!Number.isFinite(expMs) || expMs < Date.now() || !nonce || !sig) return false;
+  const expected = await hmacSha256Hex(secret, `lyria-rt:${expStr}.${nonce}`);
+  return constantTimeEqual(sig, expected);
+}
+
+interface CfWebSocket {
+  accept(): void;
+  send(data: string | ArrayBuffer | ArrayBufferView): void;
+  close(code?: number, reason?: string): void;
+  addEventListener(type: 'message', listener: (evt: { data: string | ArrayBuffer }) => void): void;
+  addEventListener(type: 'close', listener: (evt: { code?: number; reason?: string }) => void): void;
+  addEventListener(type: 'error', listener: () => void): void;
+}
+
 function generateProfileToken(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
@@ -773,7 +821,7 @@ export default {
           regionRequiresOptIn,
           countryCode: cfCountry,
           customLiveGenAvailable: Boolean(provider) && usedToday < dailyCapMax,
-          lyriaRealtimeAvailable: Boolean(env.GEMINI_MUSIC_API_KEY?.trim()) && usedToday < dailyCapMax,
+          lyriaRealtimeAvailable: Boolean(env.GEMINI_MUSIC_API_KEY?.trim()),
           workersAiCompilerAvailable: Boolean(env.AI),
           musicProvider: provider?.id ?? 'cache_only',
           dailyCapMax,
@@ -910,7 +958,7 @@ export default {
         return json({ spec: recommendation.executableSpec ?? spec, recommendation, fromCache }, 200, request);
       }
 
-      // POST /api/music/realtime-token — Plug-and-play Google Lyria RealTime ephemeral token minter
+      // POST /api/music/realtime-token — Mints a short-lived HMAC ticket for our secure Lyria RealTime WS proxy
       if (url.pathname === '/api/music/realtime-token' && request.method === 'POST') {
         const apiKey = env.GEMINI_MUSIC_API_KEY?.trim();
         if (!apiKey) {
@@ -923,7 +971,7 @@ export default {
             request
           );
         }
-        const allowed = await checkDailyRateLimit(env.DB, request, 'lyria_realtime_token', 3);
+        const allowed = await checkDailyRateLimit(env.DB, request, 'lyria_realtime_token', 12);
         if (!allowed) {
           return json(
             {
@@ -935,86 +983,103 @@ export default {
           );
         }
 
-        const dailyCapMax = Math.max(0, Number(env.MUSIC_GEN_DAILY_CAP ?? '3'));
-        const today = new Date().toISOString().slice(0, 10);
-        await env.DB.prepare(
-          `INSERT OR IGNORE INTO api_usage_daily (day, gemini_calls, music_gen_calls, music_gen_cost_cents)
-           VALUES (?, 0, 0, 0)`
-        )
-          .bind(today)
-          .run();
-        const usageRow = await env.DB.prepare('SELECT music_gen_calls FROM api_usage_daily WHERE day = ?')
-          .bind(today)
-          .first<{ music_gen_calls?: number }>();
-        if (Number(usageRow?.music_gen_calls ?? 0) >= dailyCapMax) {
-          return json(
-            {
-              available: false,
-              reason: 'Daily community Lyria budget reached; continuing seamlessly on $0 Live Generative Composer.',
-            },
-            200,
-            request
-          );
+        const { ticket, expiresAt } = await signRealtimeTicket(apiKey, 120_000);
+        return json(
+          {
+            available: true,
+            token: ticket,
+            expiresAt,
+            model: 'models/lyria-realtime-exp',
+          },
+          200,
+          request
+        );
+      }
+
+      // GET /api/music/realtime-ws — Secure Cloudflare Workers WebSocket Proxy to Google Lyria RealTime (BidiGenerateMusic)
+      // Keeps GEMINI_MUSIC_API_KEY 100% server-side; browser authenticates only with a 2-minute HMAC ticket.
+      if (url.pathname === '/api/music/realtime-ws' && request.method === 'GET') {
+        const apiKey = env.GEMINI_MUSIC_API_KEY?.trim();
+        if (!apiKey) {
+          return new Response('Lyria RealTime not configured', { status: 503 });
+        }
+        if ((request.headers.get('Upgrade') ?? '').toLowerCase() !== 'websocket') {
+          return new Response('Expected WebSocket Upgrade', { status: 426 });
+        }
+        const ticket = url.searchParams.get('ticket') ?? '';
+        const valid = await verifyRealtimeTicket(apiKey, ticket);
+        if (!valid) {
+          return new Response('Invalid or expired realtime ticket', { status: 401 });
         }
 
-        try {
-          const expireTime = new Date(Date.now() + 20 * 60 * 1000).toISOString();
-          const newSessionExpireTime = new Date(Date.now() + 2 * 60 * 1000).toISOString();
-          const tokenRes = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'x-goog-api-key': apiKey,
-            },
-            body: JSON.stringify({
-              uses: 1,
-              expireTime,
-              newSessionExpireTime,
-            }),
-            signal: AbortSignal.timeout(5000),
+        const upstreamUrl = `https://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateMusic?key=${encodeURIComponent(apiKey)}`;
+        const upstreamResp = (await fetch(upstreamUrl, {
+          headers: { Upgrade: 'websocket' },
+        })) as Response & { webSocket?: CfWebSocket };
+
+        const upstream = upstreamResp.webSocket;
+        if (!upstream) {
+          return new Response('Unable to connect to Google Lyria RealTime upstream', { status: 502 });
+        }
+        upstream.accept();
+
+        const WsPairCtor = (globalThis as unknown as {
+          WebSocketPair: new () => { 0: CfWebSocket; 1: CfWebSocket };
+        }).WebSocketPair;
+        const pair = new WsPairCtor();
+        const client = pair[0];
+        const server = pair[1];
+        server.accept();
+
+        const forwardWsFrame = async (target: CfWebSocket, data: unknown, asText = false) => {
+          if (typeof data === 'string') {
+            target.send(data);
+            return;
+          }
+          if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+            if (asText) {
+              target.send(new TextDecoder().decode(data as BufferSource));
+            } else {
+              target.send(data as ArrayBuffer | ArrayBufferView);
+            }
+            return;
+          }
+          if (data && typeof (data as { text?: () => Promise<string> }).text === 'function') {
+            if (asText) {
+              target.send(await (data as Blob).text());
+            } else {
+              target.send(await (data as Blob).arrayBuffer());
+            }
+          }
+        };
+
+        server.addEventListener('message', (evt) => {
+          void forwardWsFrame(upstream, evt.data, false).catch(() => {
+            try { server.close(1011, 'Upstream send failed'); } catch {}
           });
-          if (!tokenRes.ok) {
-            return json(
-              {
-                available: false,
-                reason: `Lyria RealTime auth unavailable (${tokenRes.status}); using $0 Live Generative Composer.`,
-              },
-              200,
-              request
-            );
-          }
-          const tokenData = (await tokenRes.json()) as { name?: string };
-          if (!tokenData.name) {
-            return json({ available: false, reason: 'Invalid token response.' }, 200, request);
-          }
+        });
+        upstream.addEventListener('message', (evt) => {
+          void forwardWsFrame(server, evt.data, true).catch(() => {
+            try { upstream.close(1011, 'Client send failed'); } catch {}
+          });
+        });
+        server.addEventListener('close', (evt) => {
+          try { upstream.close(evt.code || 1000, evt.reason || ''); } catch {}
+        });
+        upstream.addEventListener('close', (evt) => {
+          try { server.close(evt.code || 1000, evt.reason || ''); } catch {}
+        });
+        server.addEventListener('error', () => {
+          try { upstream.close(1011, 'Client socket error'); } catch {}
+        });
+        upstream.addEventListener('error', () => {
+          try { server.close(1011, 'Upstream socket error'); } catch {}
+        });
 
-          await env.DB.prepare(
-            `UPDATE api_usage_daily SET music_gen_calls = music_gen_calls + 1 WHERE day = ?`
-          )
-            .bind(today)
-            .run()
-            .catch(() => {});
-
-          return json(
-            {
-              available: true,
-              token: tokenData.name,
-              expiresAt: expireTime,
-              model: 'models/lyria-realtime-exp',
-            },
-            200,
-            request
-          );
-        } catch {
-          return json(
-            {
-              available: false,
-              reason: 'Lyria RealTime service unreachable; using $0 Live Generative Composer.',
-            },
-            200,
-            request
-          );
-        }
+        return new Response(null, {
+          status: 101,
+          webSocket: client,
+        } as ResponseInit & { webSocket: CfWebSocket });
       }
 
       // GET /api/audio/catalog — Core Studio Stems + Community R2 Custom Tracks

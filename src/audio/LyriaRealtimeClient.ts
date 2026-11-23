@@ -10,6 +10,7 @@ class LyriaPcmStreamProcessor extends AudioWorkletProcessor {
     this.bufferedFrames = 0;
     this.primed = false;
     this.minPrimeFrames = 4800; // ~100ms jitter buffer at 48kHz
+    this.step = 48000 / sampleRate; // Smoothly resample 48kHz Lyria PCM to browser AudioContext rate
     this.port.onmessage = (e) => {
       if (e.data && e.data.type === 'pcm') {
         this.queue.push({ left: e.data.left, right: e.data.right, offset: 0 });
@@ -44,12 +45,19 @@ class LyriaPcmStreamProcessor extends AudioWorkletProcessor {
         this.primed = false;
       } else {
         const chunk = this.queue[0];
-        outL[i] = chunk.left[chunk.offset];
-        outR[i] = chunk.right[chunk.offset];
-        chunk.offset++;
-        this.bufferedFrames--;
-        if (chunk.offset >= chunk.left.length) {
+        const idx = Math.floor(chunk.offset);
+        const frac = chunk.offset - idx;
+        const nextIdx = Math.min(chunk.left.length - 1, idx + 1);
+        outL[i] = chunk.left[idx] + (chunk.left[nextIdx] - chunk.left[idx]) * frac;
+        outR[i] = chunk.right[idx] + (chunk.right[nextIdx] - chunk.right[idx]) * frac;
+        chunk.offset += this.step;
+        while (this.queue.length > 0 && this.queue[0].offset >= this.queue[0].left.length) {
+          const overflow = this.queue[0].offset - this.queue[0].left.length;
+          this.bufferedFrames = Math.max(0, this.bufferedFrames - this.queue[0].left.length);
           this.queue.shift();
+          if (this.queue.length > 0) {
+            this.queue[0].offset += overflow;
+          }
         }
       }
     }
@@ -95,6 +103,7 @@ export class LyriaRealtimeClient {
     token: string;
     model: string;
     spec: ExecutableStudySpec;
+    apiBase?: string;
     onStatusChange?: (status: LyriaRealtimeStatus, note?: string) => void;
   }): Promise<boolean> {
     this.stop();
@@ -128,7 +137,9 @@ export class LyriaRealtimeClient {
       this.workletNode = workletNode;
       this.outputGain = outGain;
 
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(opts.token)}`;
+      const httpBase = (opts.apiBase || window.location.origin).replace(/\/+$/, '');
+      const wsBase = httpBase.replace(/^http/i, 'ws');
+      const wsUrl = `${wsBase}/api/music/realtime-ws?ticket=${encodeURIComponent(opts.token)}`;
       const ws = new WebSocket(wsUrl);
       this.ws = ws;
 
@@ -136,6 +147,7 @@ export class LyriaRealtimeClient {
 
       return await new Promise<boolean>((resolve) => {
         let settled = false;
+        let sentStart = false;
         const finish = (ok: boolean) => {
           if (settled) return;
           settled = true;
@@ -148,46 +160,62 @@ export class LyriaRealtimeClient {
             this.stop();
             finish(false);
           }
-        }, 8500);
+        }, 10000);
 
         ws.onopen = () => {
-          // 1. Setup model
+          // 1. Setup model first; wait for server's setupComplete before steering & PLAY
           ws.send(JSON.stringify({ setup: { model: opts.model || 'models/lyria-realtime-exp' } }));
-          // 2. Send weighted prompts from ExecutableStudySpec
-          ws.send(
-            JSON.stringify({
-              clientContent: {
-                weightedPrompts: lyriaCfg.weightedPrompts,
-              },
-            })
-          );
-          // 3. Send exact study BPM, scale, density, brightness, muteDrums lock
-          ws.send(
-            JSON.stringify({
-              musicGenerationConfig: {
-                bpm: lyriaCfg.config.bpm,
-                density: lyriaCfg.config.density,
-                brightness: lyriaCfg.config.brightness,
-                scale: lyriaCfg.config.scale,
-                muteBass: lyriaCfg.config.muteBass,
-                muteDrums: lyriaCfg.config.muteDrums,
-                guidance: lyriaCfg.config.guidance,
-                temperature: 1.0,
-              },
-            })
-          );
-          // 4. Start playback
-          ws.send(JSON.stringify({ playbackControl: 'PLAY' }));
         };
 
         ws.onmessage = async (evt) => {
           try {
-            const raw = evt.data instanceof Blob ? await evt.data.text() : String(evt.data);
+            let raw: string;
+            if (typeof evt.data === 'string') {
+              raw = evt.data;
+            } else if (evt.data instanceof ArrayBuffer) {
+              raw = new TextDecoder().decode(evt.data);
+            } else if (evt.data instanceof Blob) {
+              raw = await evt.data.text();
+            } else {
+              raw = String(evt.data);
+            }
             const msg = JSON.parse(raw) as {
+              setupComplete?: Record<string, unknown>;
               serverContent?: {
                 audioChunks?: Array<{ data?: string }>;
               };
             };
+
+            if (msg.setupComplete && !sentStart) {
+              sentStart = true;
+              // 2. Send weighted prompts from ExecutableStudySpec
+              ws.send(
+                JSON.stringify({
+                  clientContent: {
+                    weightedPrompts: lyriaCfg.weightedPrompts,
+                  },
+                })
+              );
+              // 3. Send exact study BPM, scale, density, brightness, muteDrums lock
+              ws.send(
+                JSON.stringify({
+                  musicGenerationConfig: {
+                    bpm: lyriaCfg.config.bpm,
+                    density: lyriaCfg.config.density,
+                    brightness: lyriaCfg.config.brightness,
+                    scale: lyriaCfg.config.scale,
+                    muteBass: lyriaCfg.config.muteBass,
+                    muteDrums: lyriaCfg.config.muteDrums,
+                    guidance: lyriaCfg.config.guidance,
+                    temperature: 1.0,
+                  },
+                })
+              );
+              // 4. Start live streaming playback
+              ws.send(JSON.stringify({ playbackControl: 'PLAY' }));
+              return;
+            }
+
             const chunks = msg.serverContent?.audioChunks ?? [];
             if (chunks.length > 0 && this.workletNode) {
               for (const ch of chunks) {
