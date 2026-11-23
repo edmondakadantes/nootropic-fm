@@ -39,6 +39,7 @@ export interface R2ObjectInfo {
   size: number;
   etag: string;
   httpMetadata?: R2HttpMetadata;
+  writeHttpMetadata?: (headers: Headers) => void;
 }
 
 export interface R2ObjectBody extends R2ObjectInfo {
@@ -53,6 +54,7 @@ export interface R2Objects {
 }
 
 export interface R2Bucket {
+  head(key: string): Promise<R2ObjectInfo | null>;
   get(key: string, options?: { range?: R2Range }): Promise<R2ObjectBody | null>;
   put(
     key: string,

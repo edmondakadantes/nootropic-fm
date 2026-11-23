@@ -272,6 +272,10 @@ export function PlayerView({
           recommendation.customGenreLabel ??
           GENRE_META[recommendation.params.genre].label;
 
+        const hasCachedCustom = Boolean(
+          recommendation.customTrackUrl && recommendation.customGenreLabel
+        );
+
         await engineRef.current?.start(
           recommendation.params,
           recommendation.plannedDurationMin,
@@ -279,7 +283,8 @@ export function PlayerView({
           recommendation.isControlTrial,
           recommendation.executableSpec,
           initialCarrier,
-          API_BASE
+          API_BASE,
+          hasCachedCustom
         );
 
         if (!mounted) return;
@@ -289,8 +294,8 @@ export function PlayerView({
           setGenre(engineRef.current.getGenre());
         }
 
-        // Case A: Custom vibe already exists in Cloudflare R2 Community Cache -> immediate crossfade!
-        if (recommendation.customTrackUrl && recommendation.customGenreLabel) {
+        // Case A: Custom vibe already exists in Cloudflare R2 Community Cache -> immediate HTTP Range streaming!
+        if (hasCachedCustom && recommendation.customTrackUrl && recommendation.customGenreLabel) {
           void triggerCustomCrossfade(
             recommendation.customTrackUrl,
             recommendation.customGenreLabel
@@ -600,10 +605,10 @@ export function PlayerView({
     setActiveCustomLabel(null);
     setCustomGenState('idle');
     setCustomGenNotice(null);
-    if (carrierMode === 'pure_stimulus') {
-      setCarrierMode('generative_live');
-      setAudioSource('generative_live');
-      engineRef.current?.setCarrierMode('generative_live');
+    if (carrierMode !== 'studio_library') {
+      setCarrierMode('studio_library');
+      setAudioSource('studio_library');
+      engineRef.current?.setCarrierMode('studio_library');
     }
     engineRef.current?.setGenre(style);
     setAdjustments((prev) => [
@@ -616,7 +621,7 @@ export function PlayerView({
           sessionId: liveSessionId,
           genre: style,
           customGenreSlug: null,
-          audioSource: carrierMode === 'studio_library' ? 'studio_library' : 'generative_live',
+          audioSource: 'studio_library',
           atSec: elapsedRef.current,
         })
         .catch(() => {});

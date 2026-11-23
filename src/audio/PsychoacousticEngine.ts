@@ -223,11 +223,13 @@ export class PsychoacousticEngine {
   private wakeLock: { release: () => Promise<void> } | null = null;
   private visibilityHandler: (() => void) | null = null;
 
-  // Dual-Deck Gapless Studio Stem Engine (Cloudflare R2)
+  // Dual-Deck Gapless Studio Stem Engine (Cloudflare R2 — Instant HTTP Range Streaming + Buffer Fallback)
   private studioCatalog: Partial<Record<ResolvedGenre, StudioTrackRef[]>> = {};
   private bufferCache = new Map<string, AudioBuffer>();
   private readonly maxCachedBuffers = 3;
   private activeStudioSource: AudioBufferSourceNode | null = null;
+  private activeStreamEl: HTMLAudioElement | null = null;
+  private activeStreamSource: MediaElementAudioSourceNode | null = null;
   private activeStudioGain: GainNode | null = null;
   private studioCrossfadeTimer: number | null = null;
   private studioDeckStartedAtCtx = 0;
@@ -263,7 +265,8 @@ export class PsychoacousticEngine {
     isControlTrial = false,
     executableSpec?: ExecutableStudySpec,
     initialCarrierMode?: CarrierEngineMode,
-    sampleApiBase = ''
+    sampleApiBase = '',
+    skipInitialStudioDeck = false
   ): Promise<void> {
     this.stopImmediate();
     this.sampleApiBase = sampleApiBase;
@@ -296,6 +299,9 @@ export class PsychoacousticEngine {
     this.visibilityHandler = () => {
       if (document.visibilityState === 'visible' && this.isPlaying && this.ctx) {
         if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {});
+        if (this.activeStreamEl && this.activeStreamEl.paused) {
+          void this.activeStreamEl.play().catch(() => {});
+        }
         if (this.audioEl && this.audioEl.paused) void this.audioEl.play().catch(() => {});
         void this.requestWakeLock();
       }
@@ -577,7 +583,7 @@ export class PsychoacousticEngine {
     this.setupMediaSession(title);
     void this.requestWakeLock();
 
-    if (this.carrierMode === 'studio_library') {
+    if (this.carrierMode === 'studio_library' && !skipInitialStudioDeck) {
       void this.activateStudioForGenre(this.genre);
     }
   }
@@ -665,7 +671,14 @@ export class PsychoacousticEngine {
 
   public setStudioCatalog(catalog: Partial<Record<ResolvedGenre, StudioTrackRef[]>>): void {
     this.studioCatalog = catalog;
-    if (this.isPlaying && this.ctx && this.carrierMode === 'studio_library') {
+    if (
+      this.isPlaying &&
+      this.ctx &&
+      this.carrierMode === 'studio_library' &&
+      !this.activeCustomTrack &&
+      !this.usingCustomTrack &&
+      !this.usingStudioAudio
+    ) {
       void this.activateStudioForGenre(this.genre);
     }
   }
@@ -676,11 +689,15 @@ export class PsychoacousticEngine {
       this.studioCrossfadeTimer = null;
     }
     const prevSrc = this.activeStudioSource;
+    const prevStreamEl = this.activeStreamEl;
+    const prevStreamSrc = this.activeStreamSource;
     const prevGain = this.activeStudioGain;
     this.activeStudioSource = null;
+    this.activeStreamEl = null;
+    this.activeStreamSource = null;
     this.activeStudioGain = null;
 
-    if (this.ctx && prevGain && prevSrc) {
+    if (this.ctx && prevGain && (prevSrc || prevStreamEl)) {
       const now = this.ctx.currentTime;
       try {
         prevGain.gain.cancelScheduledValues(now);
@@ -691,16 +708,35 @@ export class PsychoacousticEngine {
       }
       window.setTimeout(() => {
         try {
-          prevSrc.stop();
-          prevSrc.disconnect();
+          prevSrc?.stop();
+          prevSrc?.disconnect();
+        } catch {
+          // ignore
+        }
+        try {
+          if (prevStreamEl) {
+            prevStreamEl.pause();
+            prevStreamEl.src = '';
+          }
+          prevStreamSrc?.disconnect();
+          prevGain.disconnect();
         } catch {
           // ignore
         }
       }, fadeSec * 1000 + 150);
-    } else if (prevSrc) {
+    } else {
       try {
-        prevSrc.stop();
-        prevSrc.disconnect();
+        prevSrc?.stop();
+        prevSrc?.disconnect();
+      } catch {
+        // ignore
+      }
+      try {
+        if (prevStreamEl) {
+          prevStreamEl.pause();
+          prevStreamEl.src = '';
+        }
+        prevStreamSrc?.disconnect();
       } catch {
         // ignore
       }
@@ -754,18 +790,121 @@ export class PsychoacousticEngine {
     }
   }
 
+  private async playStreamingTrack(
+    url: string,
+    trackName: string,
+    token: number,
+    targetGain: number,
+    isCustom: boolean
+  ): Promise<boolean> {
+    if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return false;
+    try {
+      const el = new Audio();
+      el.crossOrigin = 'anonymous';
+      el.preload = 'auto';
+      el.loop = true;
+      (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+      if (this.studySpec?.music.tuningA4Hz === 432) {
+        el.playbackRate = 432 / 440;
+        const pitchEl = el as HTMLAudioElement & {
+          preservesPitch?: boolean;
+          webkitPreservesPitch?: boolean;
+        };
+        if ('preservesPitch' in pitchEl) pitchEl.preservesPitch = false;
+        if ('webkitPreservesPitch' in pitchEl) pitchEl.webkitPreservesPitch = false;
+      }
+      el.src = url;
+
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const done = (err?: unknown) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          el.removeEventListener('canplay', onReady);
+          el.removeEventListener('loadeddata', onReady);
+          el.removeEventListener('error', onErr);
+          if (err) reject(err);
+          else resolve();
+        };
+        const onReady = () => done();
+        const onErr = () => done(new Error('stream_load_failed'));
+        const timer = window.setTimeout(() => done(new Error('stream_timeout')), 8000);
+        el.addEventListener('canplay', onReady);
+        el.addEventListener('loadeddata', onReady);
+        el.addEventListener('error', onErr);
+        el.load();
+      });
+
+      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) {
+        el.pause();
+        el.src = '';
+        return false;
+      }
+
+      const ctx = this.ctx;
+      const now = ctx.currentTime;
+      const srcNode = ctx.createMediaElementSource(el);
+      const deckGain = ctx.createGain();
+      deckGain.gain.setValueAtTime(0.0001, now);
+
+      srcNode.connect(deckGain);
+      deckGain.connect(this.studioBus);
+
+      await el.play();
+
+      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) {
+        el.pause();
+        el.src = '';
+        try {
+          srcNode.disconnect();
+          deckGain.disconnect();
+        } catch {
+          // ignore
+        }
+        return false;
+      }
+
+      const fadeInSec = 1.6;
+      this.clearStudioDeck(fadeInSec);
+      if (this.proceduralMaster && this.cleanSubBus) {
+        this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.55);
+        this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.55);
+      }
+
+      deckGain.gain.exponentialRampToValueAtTime(Math.max(0.1, targetGain), now + fadeInSec);
+
+      this.activeStreamEl = el;
+      this.activeStreamSource = srcNode;
+      this.activeStudioGain = deckGain;
+      this.usingStudioAudio = true;
+      this.usingCustomTrack = isCustom;
+      this.activeTrackName = trackName;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   public async crossfadeToCustomTrack(url: string, label: string): Promise<boolean> {
     if (!this.ctx || !this.studioBus || !this.isPlaying) return false;
     const token = ++this.studioLoadToken;
     this.activeCustomTrack = { url, label };
+    this.carrierMode = 'studio_library';
+    this.stimulusRack.setPureStimulusMode(false);
+
+    // 1. Instant HTTP 206 Range streaming (<0.3s start, zero 100 MB RAM decode delay!)
+    const streamed = await this.playStreamingTrack(url, label, token, 0.96, true);
+    if (streamed) return true;
+    if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return false;
+
+    // 2. Fallback to decoded AudioBuffer if streaming autoplay/CORS ever fails
     const buffer = await this.loadAudioBuffer(url);
     if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !buffer) {
       return false;
     }
     const rmsGain = this.computeRmsGain(buffer);
     this.usingCustomTrack = true;
-    this.carrierMode = 'studio_library';
-    this.stimulusRack.setPureStimulusMode(false);
     this.playStudioBuffer(buffer, label, token, rmsGain, () => {
       if (!this.isPlaying || token !== this.studioLoadToken) return;
       void this.crossfadeToCustomTrack(url, label);
@@ -811,6 +950,13 @@ export class PsychoacousticEngine {
 
     const chosenIdx = this.studioTrackIdx % tracks.length;
     const track = tracks[chosenIdx];
+
+    // 1. Instant HTTP 206 Range streaming (<0.3s start for 8.7 MB Nature & Rain and all studio stems!)
+    const streamed = await this.playStreamingTrack(track.url, track.name, token, 0.96, false);
+    if (streamed) return;
+    if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return;
+
+    // 2. Fallback to decoded AudioBuffer
     const buffer = await this.loadAudioBuffer(track.url);
     if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !buffer) {
       return;
@@ -821,11 +967,6 @@ export class PsychoacousticEngine {
       this.studioTrackIdx = tracks.length > 1 ? chosenIdx + 1 : 0;
       void this.activateStudioForGenre(genre);
     });
-
-    if (tracks.length > 1 && this.bufferCache.size < this.maxCachedBuffers) {
-      const nextTrack = tracks[(chosenIdx + 1) % tracks.length];
-      void this.loadAudioBuffer(nextTrack.url);
-    }
   }
 
   private scheduleDeckCrossfade(delaySec: number, onCrossfade: () => void): void {
@@ -1073,6 +1214,7 @@ export class PsychoacousticEngine {
       const elapsedInDeck = Math.max(0, this.ctx.currentTime - this.studioDeckStartedAtCtx);
       this.studioDeckPausedRemainingSec = Math.max(1.0, this.studioDeckCrossfadeDelaySec - elapsedInDeck);
     }
+    this.activeStreamEl?.pause();
     this.audioEl?.pause();
     await this.ctx.suspend();
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
@@ -1091,6 +1233,7 @@ export class PsychoacousticEngine {
         // ignore
       }
     }
+    await this.activeStreamEl?.play().catch(() => {});
     await this.audioEl?.play().catch(() => {});
     this.isPlaying = true;
     this.composer.resume();

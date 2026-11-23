@@ -16,6 +16,85 @@ export interface SanitizedCustomVibe {
 
 const CORE_GENRE_KEYS = new Set<string>(Object.keys(GENRE_META));
 
+/**
+ * Common non-native / phonetic spellings & typos mapped to canonical instrumental genres
+ * so users typing "reghe", "regee", "clasical", "techo", "bosanova", "ploaie" always hit
+ * the exact right R2 cached track or clean Lyria prompt.
+ */
+const GENRE_TYPO_ALIASES: Record<string, string> = {
+  reghe: 'reggae',
+  regee: 'reggae',
+  regea: 'reggae',
+  regae: 'reggae',
+  regga: 'reggae',
+  reggay: 'reggae',
+  reggie: 'reggae',
+  raggae: 'reggae',
+  'chill reghe': 'chill reggae',
+  'dub reghe': 'dub reggae',
+  bosanova: 'bossa nova',
+  'bosa nova': 'bossa nova',
+  techo: 'techno',
+  tekno: 'techno',
+  tehno: 'techno',
+  clasical: 'classical',
+  clasic: 'classical',
+  clasica: 'classical',
+  sintwave: 'synthwave',
+  sinthwave: 'synthwave',
+  synth: 'synthwave',
+  hiphop: 'hip hop',
+  'hip-hop': 'hip hop',
+  jaz: 'jazz',
+  acustic: 'acoustic',
+  acustica: 'acoustic',
+  rok: 'rock',
+  lofi: 'lo-fi',
+  'lo fi': 'lo-fi',
+  ploaie: 'nature rain',
+  'sunet de ploaie': 'nature rain',
+  'sunete de ploaie': 'nature rain',
+  'rain sounds': 'nature rain',
+};
+
+/**
+ * If a user types a built-in Studio R2 genre (e.g. "rain", "ploaie", "nature rain", "lo-fi")
+ * into the Custom Vibe field, map it straight to our instant Studio R2 genre instead of wasting
+ * a custom AI generation slot.
+ */
+export function matchCoreGenreAlias(rawInput: string | undefined | null): ResolvedGenre | null {
+  if (!rawInput) return null;
+  const norm = rawInput
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s&-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!norm) return null;
+  const canonical = GENRE_TYPO_ALIASES[norm] ?? norm;
+
+  if (/^(rain|nature|nature rain|nature & rain|nature and rain|soft rain|rain piano|rain & piano|ploaie)$/.test(canonical)) {
+    return 'nature_rain';
+  }
+  if (/^(lo-fi|lofi|lofi keys|lo-fi keys|lo-fi warm keys|chill lofi|chill lo-fi)$/.test(canonical)) {
+    return 'lofi_keys';
+  }
+  if (/^(deep electronic|electronic|upbeat electronic)$/.test(canonical)) {
+    return 'deep_electronic';
+  }
+  if (/^(jazz rhodes|rhodes|warm jazz)$/.test(canonical)) {
+    return 'jazz_rhodes';
+  }
+  if (/^(acoustic pluck|acoustic guitar|warm guitar|warm acoustic)$/.test(canonical)) {
+    return 'acoustic_pluck';
+  }
+  if (/^(cinematic strings|cinematic)$/.test(canonical)) {
+    return 'cinematic_strings';
+  }
+  return null;
+}
+
 const FORBIDDEN_PATTERNS = [
   /\b(lyrics?|vocals?|singing|singer|rap|rapper|spoken\s*word|speech|choir|chant|scream|shout)\b/i,
   /\b(ignore\s+previous|system\s+prompt|jailbreak|override|http:\/\/|https:\/\/)\b/i,
@@ -31,12 +110,12 @@ function toTitleCase(text: string): string {
 }
 
 /**
- * Sanitizes and canonicalizes any free-form user vibe (e.g., "chill reggae" -> "chill_reggae").
- * Rejects vocal/lyric requests, prompt injections, and artist names for copyright & science hygiene.
+ * Sanitizes and canonicalizes any free-form user vibe (e.g., "chill reggae" -> "chill_reggae",
+ * "reghe" -> "reggae"). Rejects vocal/lyric requests, prompt injections, and artist names.
  */
 export function sanitizeCustomVibe(rawInput: string | undefined | null): SanitizedCustomVibe | null {
   if (!rawInput) return null;
-  const cleaned = rawInput
+  const cleanedRaw = rawInput
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-zA-Z0-9\s&-]/g, ' ')
@@ -44,7 +123,10 @@ export function sanitizeCustomVibe(rawInput: string | undefined | null): Sanitiz
     .trim()
     .slice(0, 48);
 
-  if (cleaned.length < 2) return null;
+  if (cleanedRaw.length < 2) return null;
+
+  const lower = cleanedRaw.toLowerCase();
+  const cleaned = GENRE_TYPO_ALIASES[lower] ?? cleanedRaw;
 
   for (const rx of FORBIDDEN_PATTERNS) {
     if (rx.test(cleaned)) {

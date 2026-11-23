@@ -39,7 +39,7 @@ interface ProtocolRevealViewProps {
   mood: FieldMood;
   customLiveGenAvailable?: boolean;
   onSwapGenre: (genre: ResolvedGenre) => void;
-  onSwapCustomVibe: (customLabel: string) => void;
+  onSwapCustomVibe: (customLabel: string) => void | Promise<void>;
   onLaunchAudio: () => void;
   onOpenStudyLab?: () => void;
   onBack: () => void;
@@ -368,15 +368,25 @@ export function ProtocolRevealView({
   const landingMin = Math.max(1, Math.round(recommendation.plannedDurationMin * 0.12));
   const peakMin = Math.max(1, recommendation.plannedDurationMin - entryMin - landingMin);
 
-  const applyCustomSwap = () => {
+  const applyCustomSwap = async (): Promise<boolean> => {
     const check = sanitizeCustomVibe(customDraft);
     if (!check || check.rejectedReason) {
       setCustomError(check?.rejectedReason ?? 'Enter a valid instrumental genre (e.g., chill reggae).');
-      return;
+      return false;
     }
     setCustomError(null);
-    onSwapCustomVibe(check.displayLabel);
+    await onSwapCustomVibe(check.displayLabel);
     setShowCustomSwap(false);
+    setCustomDraft('');
+    return true;
+  };
+
+  const handleLaunchClick = async () => {
+    if (showCustomSwap && customDraft.trim()) {
+      const ok = await applyCustomSwap();
+      if (!ok) return;
+    }
+    onLaunchAudio();
   };
 
   return (
@@ -729,14 +739,14 @@ export function ProtocolRevealView({
                     setCustomError(null);
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') applyCustomSwap();
+                    if (e.key === 'Enter') void applyCustomSwap();
                   }}
-                  placeholder="e.g. chill reggae, synthwave, bossa nova..."
+                  placeholder="e.g. reggae, synthwave, bossa nova, rain..."
                   className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-fuchsia-400 focus:outline-none"
                 />
                 <button
                   type="button"
-                  onClick={applyCustomSwap}
+                  onClick={() => void applyCustomSwap()}
                   className="rounded-xl border border-fuchsia-400/50 bg-fuchsia-500/20 px-4 py-2 text-xs font-semibold text-fuchsia-100 hover:bg-fuchsia-500/30"
                 >
                   Apply Vibe
@@ -768,7 +778,7 @@ export function ProtocolRevealView({
           </button>
           <button
             type="button"
-            onClick={onLaunchAudio}
+            onClick={() => void handleLaunchClick()}
             className="btn-aurora flex flex-1 w-full items-center justify-center gap-2.5 rounded-2xl px-6 py-4 text-base font-bold text-slate-950"
           >
             <Play className="h-5 w-5 fill-slate-950" />

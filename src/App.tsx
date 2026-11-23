@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { sanitizeCustomVibe } from '../shared/promptComposer';
+import { matchCoreGenreAlias, sanitizeCustomVibe } from '../shared/promptComposer';
 import { formatCohortLabel, swapRecommendationGenre } from '../shared/protocols';
 import {
   formatProfileSummary,
@@ -430,6 +430,11 @@ export default function App() {
   const handleSwapCustomVibe = useCallback(
     async (customLabel: string) => {
       if (!activeRec) return;
+      const coreAlias = matchCoreGenreAlias(customLabel);
+      if (coreAlias) {
+        handleSwapRevealGenre(coreAlias);
+        return;
+      }
       const sanitized = sanitizeCustomVibe(customLabel);
       if (!sanitized || sanitized.rejectedReason || !sanitized.slug) return;
 
@@ -466,7 +471,7 @@ export default function App() {
         return updated;
       });
     },
-    [activeRec, runtimeConfig, profile]
+    [activeRec, runtimeConfig, profile, handleSwapRevealGenre]
   );
 
   const handleFinishToDebrief = useCallback(
@@ -846,7 +851,7 @@ export default function App() {
             mood={fieldMood}
             customLiveGenAvailable={runtimeConfig?.customLiveGenAvailable}
             onSwapGenre={handleSwapRevealGenre}
-            onSwapCustomVibe={(label) => void handleSwapCustomVibe(label)}
+            onSwapCustomVibe={(label) => handleSwapCustomVibe(label)}
             onLaunchAudio={() => setScreen('player')}
             onOpenStudyLab={() => {
               setFieldMood('focus');

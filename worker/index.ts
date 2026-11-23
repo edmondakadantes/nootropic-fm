@@ -2,6 +2,7 @@ import { parseNaturalCheckIn } from '../shared/parser';
 import {
   composeScientificMusicPrompt,
   getGenreDisplayMeta,
+  matchCoreGenreAlias,
   sanitizeCustomVibe,
 } from '../shared/promptComposer';
 import {
@@ -1135,8 +1136,11 @@ export default {
         return json({ tracksByGenre, customTracks }, 200, request);
       }
 
-      // GET /api/audio/stream/* — Streams studio & custom R2 stems with HTTP Range (206) support ($0 egress!)
-      if (url.pathname.startsWith('/api/audio/stream/') && request.method === 'GET') {
+      // GET / HEAD /api/audio/stream/* — Streams studio & custom R2 stems with HTTP Range (206) support ($0 egress!)
+      if (
+        url.pathname.startsWith('/api/audio/stream/') &&
+        (request.method === 'GET' || request.method === 'HEAD')
+      ) {
         if (!env.AUDIO_BUCKET) {
           return json({ error: 'Audio bucket not configured' }, 404, request);
         }
@@ -1145,6 +1149,27 @@ export default {
           .split('/')
           .map((seg) => decodeURIComponent(seg))
           .join('/');
+
+        if (request.method === 'HEAD') {
+          const headObj = await env.AUDIO_BUCKET.head(key);
+          if (!headObj) {
+            return json({ error: 'Audio track not found' }, 404, request);
+          }
+          const headers = new Headers(corsHeaders(request));
+          headObj.writeHttpMetadata?.(headers);
+          if (!headers.get('content-type')) {
+            if (key.endsWith('.mp3')) headers.set('content-type', 'audio/mpeg');
+            else if (key.endsWith('.ogg') || key.endsWith('.opus')) headers.set('content-type', 'audio/ogg');
+            else if (key.endsWith('.m4a')) headers.set('content-type', 'audio/mp4');
+            else if (key.endsWith('.wav')) headers.set('content-type', 'audio/wav');
+            else headers.set('content-type', 'application/octet-stream');
+          }
+          headers.set('etag', headObj.etag);
+          headers.set('accept-ranges', 'bytes');
+          headers.set('content-length', String(headObj.size));
+          headers.set('cache-control', 'public, max-age=31536000, immutable');
+          return new Response(null, { status: 200, headers });
+        }
 
         const rangeHeader = request.headers.get('range');
         let r2Range: { offset: number; length?: number } | undefined;
@@ -1555,7 +1580,14 @@ export default {
         const energyTier = resolveEnergyTier(effectiveTarget, body.environment, body.currentState);
         const cohortKey = buildCohortKey(profile.ageBand, body.environment, effectiveTarget);
 
-        const sanitizedCustom = sanitizeCustomVibe(body.customGenreInput);
+        // Map core genre aliases typed as custom text (e.g. "rain", "ploaie", "lo-fi") straight to instant Studio R2!
+        const coreAliasFromCustom = matchCoreGenreAlias(body.customGenreInput);
+        const effectiveRequestedGenre: MusicGenreChoice | undefined =
+          coreAliasFromCustom ?? body.requestedGenre;
+
+        const sanitizedCustom = coreAliasFromCustom
+          ? null
+          : sanitizeCustomVibe(body.customGenreInput);
         if (sanitizedCustom?.rejectedReason) {
           return json({ error: sanitizedCustom.rejectedReason }, 400, request);
         }
@@ -1703,7 +1735,7 @@ export default {
             environment: body.environment,
             device: body.device,
             durationMin: Math.max(5, Math.min(120, Number(body.durationMin ?? 30))),
-            requestedGenre: body.requestedGenre,
+            requestedGenre: effectiveRequestedGenre,
             customGenreInput: validCustom?.displayLabel,
             cachedCustomTrackUrl: cachedCustom?.url,
             liveGenAvailable,
@@ -1790,19 +1822,22 @@ export default {
         const energyTier: EnergyTier =
           body.energyTier === 'calm' || body.energyTier === 'drive' ? body.energyTier : 'focus';
 
-        // 1. Check R2 Community Cache FIRST ($0.00!)
+        // 1. Check R2 Community Cache FIRST ($0.00!) — exact energy tier first, then any ready track for this genre!
         const existingTracksRes = await env.DB.prepare(
-          `SELECT * FROM custom_tracks WHERE genre_slug = ? AND energy_tier = ? AND status = 'ready'`
+          `SELECT * FROM custom_tracks WHERE genre_slug = ? AND status = 'ready'
+           ORDER BY CASE WHEN energy_tier = ? THEN 0 ELSE 1 END, play_count DESC`
         )
           .bind(sanitized.slug, energyTier)
           .all<Record<string, unknown>>();
 
         const existingTracks = existingTracksRes.results;
-        const totalPlays = existingTracks.reduce((acc, r) => acc + Number(r.play_count ?? 0), 0);
+        const exactTierTracks = existingTracks.filter((r) => String(r.energy_tier) === energyTier);
+        const totalPlays = exactTierTracks.reduce((acc, r) => acc + Number(r.play_count ?? 0), 0);
 
-        // Serve from cache unless 1 track exists AND play_count >= 5 (unlocks 2nd variation!)
-        if (existingTracks.length >= 2 || (existingTracks.length === 1 && totalPlays < 5)) {
-          const picked = existingTracks[Math.floor(Math.random() * existingTracks.length)];
+        // Serve immediately from R2 cache if any ready track already exists for this genre!
+        if (exactTierTracks.length >= 2 || (exactTierTracks.length === 1 && totalPlays < 5) || existingTracks.length > 0) {
+          const pool = exactTierTracks.length > 0 ? exactTierTracks : existingTracks;
+          const picked = pool[Math.floor(Math.random() * pool.length)];
           const r2Key = String(picked.r2_key);
           const encoded = r2Key
             .split('/')
@@ -1816,7 +1851,7 @@ export default {
                 id: String(picked.id),
                 genreSlug: sanitized.slug,
                 displayLabel: String(picked.display_label),
-                energyTier,
+                energyTier: String(picked.energy_tier) as EnergyTier,
                 url: `/api/audio/stream/${encoded}`,
                 provider: String(picked.provider),
                 bpm: Number(picked.bpm ?? 92),
@@ -1839,12 +1874,12 @@ export default {
           );
         }
 
-        const perIpOk = await checkDailyRateLimit(env.DB, request, 'music_gen', 2);
+        const perIpOk = await checkDailyRateLimit(env.DB, request, 'music_gen', 6);
         if (!perIpOk) {
           return json(
             {
               status: 'rate_limited',
-              message: 'Daily per-listener custom generation limit (2/day) reached. Studio & cached vibes remain unlimited.',
+              message: 'Daily per-listener custom generation limit (6/day) reached. Studio & cached vibes remain unlimited.',
             },
             429,
             request

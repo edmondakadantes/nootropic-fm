@@ -31,7 +31,7 @@ import {
   parseOnboardingAnswers,
   parseProfileSentence,
 } from '../../shared/parser';
-import { sanitizeCustomVibe } from '../../shared/promptComposer';
+import { matchCoreGenreAlias, sanitizeCustomVibe } from '../../shared/promptComposer';
 import {
   DEVICE_LABELS,
   GENDER_LABELS,
@@ -507,13 +507,20 @@ export function CheckInView({
     const activeCoords = neuralCoords ?? { energy: activeMicro.energy, clarity: activeMicro.clarity };
 
     let validatedCustom: string | undefined = undefined;
-    if (showCustomInput && customVibeText.trim()) {
-      const check = sanitizeCustomVibe(customVibeText);
-      if (check?.rejectedReason) {
-        setCustomVibeError(check.rejectedReason);
-        return;
+    let resolvedRequestedGenre: MusicGenreChoice = genreChoice;
+    if (customVibeText.trim()) {
+      const coreAlias = matchCoreGenreAlias(customVibeText);
+      if (coreAlias) {
+        resolvedRequestedGenre = coreAlias;
+      } else {
+        const check = sanitizeCustomVibe(customVibeText);
+        if (check?.rejectedReason) {
+          setShowCustomInput(true);
+          setCustomVibeError(check.rejectedReason);
+          return;
+        }
+        validatedCustom = check?.displayLabel;
       }
-      validatedCustom = check?.displayLabel;
     }
     setCustomVibeError(null);
 
@@ -583,7 +590,7 @@ export function CheckInView({
         device: effectiveDevice,
         durationMin,
         ageOverride: effectiveAge,
-        requestedGenre: validatedCustom ? 'auto' : genreChoice,
+        requestedGenre: validatedCustom ? 'auto' : resolvedRequestedGenre,
         customGenreInput: validatedCustom,
       });
     } finally {
@@ -1323,33 +1330,68 @@ export function CheckInView({
                   setGenreChoice('auto');
                 }}
                 className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
-                  !showCustomInput && genreChoice === 'auto'
-                    ? 'border-cyan-400 bg-cyan-400/18 text-white shadow-[0_0_16px_rgba(34,211,238,0.22)]'
+                  !customVibeText.trim() && !showCustomInput && genreChoice === 'auto'
+                    ? 'border-cyan-400 bg-cyan-400/20 text-white shadow-[0_0_16px_rgba(34,211,238,0.28)]'
                     : 'subtle-chip'
                 }`}
               >
+                {!customVibeText.trim() && !showCustomInput && genreChoice === 'auto' ? '✓ ' : ''}
                 Auto (Best for my brain)
               </button>
 
-              {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => {
-                    setShowCustomInput(false);
-                    setCustomVibeText('');
-                    setCustomVibeError(null);
-                    setGenreChoice(g);
-                  }}
-                  className={`rounded-full border px-3.5 py-2 text-xs font-medium transition ${
-                    !showCustomInput && genreChoice === g
-                      ? 'border-indigo-400 bg-indigo-500/22 text-white shadow-[0_0_16px_rgba(129,140,248,0.24)]'
-                      : 'subtle-chip'
-                  }`}
-                >
-                  {GENRE_META[g].label}
-                </button>
-              ))}
+              {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
+                const isSelected = !customVibeText.trim() && !showCustomInput && genreChoice === g;
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => {
+                      setShowCustomInput(false);
+                      setCustomVibeText('');
+                      setCustomVibeError(null);
+                      setGenreChoice(g);
+                    }}
+                    className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
+                      isSelected
+                        ? 'border-cyan-400 bg-cyan-400/22 text-white shadow-[0_0_18px_rgba(34,211,238,0.3)]'
+                        : 'subtle-chip'
+                    }`}
+                  >
+                    {isSelected ? '✓ ' : ''}
+                    {GENRE_META[g].label}
+                  </button>
+                );
+              })}
+
+              {/* Instant R2 Cached Community Genres (e.g. Reggae) surfaced directly for 1-tap selection */}
+              {popularCustom
+                .filter(
+                  (v, idx, arr) => arr.findIndex((x) => x.genreSlug === v.genreSlug) === idx
+                )
+                .slice(0, 4)
+                .map((v) => {
+                  const isSelected =
+                    customVibeText.trim().toLowerCase() === v.displayLabel.toLowerCase();
+                  return (
+                    <button
+                      key={v.genreSlug}
+                      type="button"
+                      onClick={() => {
+                        setCustomVibeText(v.displayLabel);
+                        setCustomVibeError(null);
+                        setShowCustomInput(true);
+                      }}
+                      className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
+                        isSelected
+                          ? 'border-fuchsia-400 bg-fuchsia-500/25 text-white shadow-[0_0_18px_rgba(217,70,239,0.3)]'
+                          : 'border-fuchsia-400/35 bg-fuchsia-500/10 text-fuchsia-100 hover:border-fuchsia-400/70'
+                      }`}
+                    >
+                      {isSelected ? '✓ ' : ''}
+                      {v.displayLabel}
+                    </button>
+                  );
+                })}
 
               <button
                 type="button"
@@ -1361,7 +1403,7 @@ export function CheckInView({
                 }`}
               >
                 <Plus className="h-3.5 w-3.5" />
-                Custom vibe (any genre)
+                Type any genre
               </button>
             </div>
 
@@ -1430,9 +1472,24 @@ export function CheckInView({
               <Sparkles className="h-5 w-5" />
               {starting
                 ? 'Building your custom sound...'
-                : profile?.planTier === 'pro'
-                  ? `Craft My Sound · ${durationMin} min`
-                  : `Build My Sound · 5 Min Free Preview`}
+                : (() => {
+                    const alias = customVibeText.trim()
+                      ? matchCoreGenreAlias(customVibeText)
+                      : null;
+                    const sanitized = !alias && customVibeText.trim()
+                      ? sanitizeCustomVibe(customVibeText)
+                      : null;
+                    const activeMusicName = alias
+                      ? GENRE_META[alias].label
+                      : sanitized?.displayLabel
+                        ? sanitized.displayLabel
+                        : genreChoice !== 'auto'
+                          ? GENRE_META[genreChoice].label
+                          : 'Auto Music';
+                    return profile?.planTier === 'pro'
+                      ? `Craft My Sound · ${activeMusicName}`
+                      : `Play ${activeMusicName} · 5 Min Free`;
+                  })()}
             </button>
           </div>
 
