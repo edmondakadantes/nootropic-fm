@@ -629,7 +629,7 @@ export function PlayerView({
                 </span>
               ) : telemetry.carrierMode === 'pure_stimulus' ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/45 bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
-                  Pure Clinical Signal
+                  Pure Acoustic Signal
                 </span>
               ) : telemetry.usingCustomTrack || audioSource === 'community_cache' ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-fuchsia-400/40 bg-fuchsia-500/15 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-200">
@@ -712,7 +712,7 @@ export function PlayerView({
               : telemetry.usingRealSamples
                 ? 'Live Studio Sampler'
                 : telemetry.carrierMode === 'pure_stimulus'
-                  ? 'Pure Clinical'
+                  ? 'Pure Acoustic'
                   : telemetry.carrierMode === 'lyria_realtime'
                     ? 'Lyria RealTime AI'
                     : 'Live Synth'
@@ -865,11 +865,11 @@ export function PlayerView({
           </div>
         )}
 
-        {/* Live Synthesis Carrier Engine Switcher (Study-Locked Generative $0 / Studio R2 / Pure Clinical / Lyria AI) */}
+        {/* Live Synthesis Carrier Engine Switcher (Study-Locked Generative $0 / Studio R2 / Pure Acoustic / Lyria AI) */}
         <div className="space-y-2 rounded-2xl border border-cyan-400/20 bg-slate-950/60 p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="font-semibold text-cyan-200">
-              Audio Synthesis Mode (Medical Stimulus Stays 100% Locked)
+              Audio Synthesis Mode (Acoustic Modulation Stays 100% Locked)
             </span>
             <span className="font-mono-tech text-[10px] text-slate-400">
               {telemetry.stimulusCarrierLabel}
@@ -900,7 +900,7 @@ export function PlayerView({
                           : m === 'studio_library'
                             ? 'Studio R2 Stems'
                             : m === 'pure_stimulus'
-                              ? 'Pure Clinical Signal'
+                              ? 'Pure Acoustic Signal'
                               : connectingLyria
                                 ? 'Connecting Lyria…'
                                 : lyriaRealtimeAvailable
@@ -964,7 +964,7 @@ export function PlayerView({
         {/* Acoustic DNA Telemetry Grid */}
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
           <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Medical Signal</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Acoustic Signal</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-cyan-300">
               {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz` : `A=${telemetry.tuningA4Hz} Hz`}
             </div>

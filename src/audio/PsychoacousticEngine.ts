@@ -127,7 +127,7 @@ function buildFallbackStudySpec(params: AcousticParams, durationMin: number): Ex
       authors: 'nootropic.fm',
       year: String(new Date().getFullYear()),
       journal: 'Peer-Reviewed Baseline',
-      url: 'https://nootropic.fm',
+      url: 'https://app.nootropic.fm',
       source: 'core',
     },
     abstractExcerpt: '',

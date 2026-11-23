@@ -228,7 +228,7 @@ export class LyriaRealtimeClient {
               }
               if (this.status !== 'streaming') {
                 window.clearTimeout(timeout);
-                this.setStatus('streaming', 'Google Lyria RealTime AI streaming live through Medical DSP');
+                this.setStatus('streaming', 'Google Lyria RealTime AI streaming live through 3-Band LR4 DSP');
                 this.outputGain?.gain.exponentialRampToValueAtTime(0.92, opts.ctx.currentTime + 1.5);
                 finish(true);
               }

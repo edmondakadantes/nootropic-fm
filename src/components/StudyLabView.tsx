@@ -53,9 +53,9 @@ interface SearchHit {
 
 const EXAMPLE_QUERIES = [
   '40 Hz gamma auditory stimulation attention',
-  'binaural beats 10 Hz anxiety pink noise',
-  'music 60 bpm cortisol stress recovery',
-  'white noise stochastic resonance memory ADHD',
+  'binaural beats 10 Hz calm pink noise',
+  'music 60 bpm stress recovery relaxation',
+  'white noise stochastic resonance memory focus',
   '432 Hz music heart rate variability',
 ];
 
@@ -151,7 +151,7 @@ export function StudyLabView({ defaultDevice = 'headphones', onExecuteRecommenda
           Study-to-Sound Executable Engine · Live As-We-Go Synthesis ($0)
         </div>
         <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-          Execute Any <span className="text-aurora">Medical Study</span> in Real-Time Sound
+          Turn Published <span className="text-aurora">Acoustic Studies</span> Into Live Sound
         </h1>
         <p className="mx-auto max-w-2xl text-sm leading-relaxed text-slate-400">
           Paste any <strong className="text-slate-200">PubMed URL / PMID / DOI / ClinicalTrials NCT ID</strong>,
@@ -461,7 +461,7 @@ export function StudyLabView({ defaultDevice = 'headphones', onExecuteRecommenda
         <div className="flex flex-wrap items-center justify-between gap-2 px-1">
           <div>
             <h2 className="text-sm font-bold text-white">
-              Verified Landmark Clinical Protocols (1-Tap Execution)
+              Verified Landmark Acoustic Protocols (1-Tap Execution)
             </h2>
             <p className="text-xs text-slate-400">
               100% ground-truth peer-reviewed studies pre-compiled into exact mathematical DSP &amp; live generative rules.

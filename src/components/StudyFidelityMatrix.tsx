@@ -83,7 +83,7 @@ export function StudyFidelityMatrix({ spec, compact = false }: StudyFidelityMatr
       {/* Executed Signal Summary Strip */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-2.5">
-          <div className="text-[10px] uppercase tracking-wider text-slate-500">Medical Stimulus</div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500">Acoustic Modulation</div>
           <div className="font-mono-tech mt-0.5 text-xs font-bold text-cyan-300">
             {spec.entrainment.frequencyHz > 0
               ? `${spec.entrainment.frequencyHz} Hz`

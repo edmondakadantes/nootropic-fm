@@ -67,7 +67,7 @@ const SOURCE_BADGES = {
     cls: 'border-purple-400/45 bg-purple-500/15 text-purple-100',
   },
   pure_stimulus: {
-    label: 'Pure Clinical Signal · Zero Music',
+    label: 'Pure Acoustic Signal · Zero Music',
     cls: 'border-amber-400/40 bg-amber-500/15 text-amber-100',
   },
   procedural_fallback: {
@@ -221,7 +221,7 @@ export function ProtocolRevealView({
             ? `Found ${totalFound} verified peer-reviewed studies (${coreStudies.length} core DSP DOIs${
                 livePapers.length > 0 ? ` + ${livePapers.length} live PubMed/OpenAlex papers` : ''
               })`
-            : 'Scanning clinical neuroscience archives for real DOI & PubMed mechanisms...',
+            : 'Scanning peer-reviewed acoustic archives for real DOI & PubMed mechanisms...',
       },
       {
         idx: 2,

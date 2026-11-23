@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import {
   BarChart3,
   Download,
@@ -32,24 +32,43 @@ import {
 import { AmbientField, type FieldMood } from './components/AmbientField';
 import { CheckInView } from './components/CheckInView';
 import { DebriefView } from './components/DebriefView';
-import { InsightsView } from './components/InsightsView';
+import { HeroLandingView } from './components/HeroLandingView';
 import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFingerprintPass';
 import { OnboardingView } from './components/OnboardingView';
 import { PlayerView } from './components/PlayerView';
 import { ProtocolRevealView } from './components/ProtocolRevealView';
-import { StudyLabView } from './components/StudyLabView';
 import {
   api,
   clearStoredProfileAuth,
   getStoredProfileAuth,
   saveStoredProfileAuth,
 } from './lib/api';
+import { buildInstantQuickTryRecommendation, type QuickTryId } from './lib/quickTryProtocols';
 
-type Screen = 'onboarding' | 'checkin' | 'studylab' | 'reveal' | 'player' | 'debrief' | 'insights';
+const StudyLabView = lazy(() =>
+  import('./components/StudyLabView').then((m) => ({ default: m.StudyLabView }))
+);
+const InsightsView = lazy(() =>
+  import('./components/InsightsView').then((m) => ({ default: m.InsightsView }))
+);
+
+type Screen =
+  | 'landing'
+  | 'onboarding'
+  | 'checkin'
+  | 'studylab'
+  | 'reveal'
+  | 'player'
+  | 'debrief'
+  | 'insights';
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('checkin');
-  const [booting, setBooting] = useState(true);
+  const hasInitialHashSync =
+    typeof window !== 'undefined' && /^#sync=([A-Za-z0-9-]+)$/i.test(window.location.hash);
+  const hasInitialStoredProfile = Boolean(getStoredProfileAuth()?.profileId);
+
+  const [screen, setScreen] = useState<Screen>(hasInitialStoredProfile ? 'checkin' : 'landing');
+  const [booting, setBooting] = useState(hasInitialHashSync);
   const [runtimeConfig, setRuntimeConfig] = useState<AppRuntimeConfig | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [syncCode, setSyncCode] = useState<string | null>(null);
@@ -142,9 +161,8 @@ export default function App() {
 
       const stored = getStoredProfileAuth();
       if (!stored?.profileId) {
-        await configPromise;
+        void configPromise;
         setBooting(false);
-        setScreen('checkin');
         return;
       }
 
@@ -166,13 +184,11 @@ export default function App() {
         }
         setProfile(res.profile);
         setPendingDebrief(res.pendingDebrief);
-        setScreen('checkin');
       } catch {
         clearStoredProfileAuth();
         setSyncCode(null);
-        setScreen('checkin');
       } finally {
-        await configPromise;
+        void configPromise;
         setBooting(false);
       }
     };
@@ -186,6 +202,17 @@ export default function App() {
     if (target === 'sleep_winddown') return 'sleep';
     return 'focus';
   }, []);
+
+  const handleQuickTry = useCallback(
+    (id: QuickTryId) => {
+      setErrorBanner(null);
+      const rec = buildInstantQuickTryRecommendation(id);
+      setActiveRec(rec);
+      setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+      setScreen('player');
+    },
+    [moodFromTarget]
+  );
 
   const startSession = useCallback(
     async (payload: {
@@ -484,7 +511,7 @@ export default function App() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5 sm:px-6">
           <button
             type="button"
-            onClick={() => setScreen('checkin')}
+            onClick={() => setScreen(profile ? 'checkin' : 'landing')}
             className="group flex items-center gap-2.5 text-left"
           >
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-400/10 text-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.18)] transition group-hover:scale-105 group-hover:border-cyan-300/60">
@@ -543,7 +570,7 @@ export default function App() {
                   ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/40'
                   : 'text-slate-300 hover:bg-white/[0.05] hover:text-cyan-200'
               }`}
-              title="Compile & execute any PubMed / DOI / ClinicalTrials medical study directly in live sound"
+              title="Compile & execute published acoustic studies directly in live sound"
             >
               <FlaskConical className="h-3.5 w-3.5 text-emerald-300" />
               <span>Study Lab</span>
@@ -622,13 +649,26 @@ export default function App() {
 
         {booting ? (
           <div className="py-28 text-center font-mono-tech text-xs uppercase tracking-[0.25em] text-cyan-300/70">
-            Calibrating neural audio field...
+            Restoring your Neural Sync Pass...
           </div>
+        ) : screen === 'landing' ? (
+          <HeroLandingView
+            onQuickTry={handleQuickTry}
+            onStartCustomize={() => setScreen('checkin')}
+            onOpenStudyLab={() => {
+              setFieldMood('focus');
+              setScreen('studylab');
+            }}
+            onOpenIdentityModal={() => {
+              setIdentityStatus(null);
+              setShowIdentityModal(true);
+            }}
+          />
         ) : screen === 'onboarding' ? (
           <OnboardingView
             initialProfile={profile}
             onComplete={handleSaveProfile}
-            onCancel={() => setScreen('checkin')}
+            onCancel={() => setScreen(profile ? 'checkin' : 'landing')}
             onMoodChange={setFieldMood}
           />
         ) : screen === 'checkin' ? (
@@ -647,15 +687,23 @@ export default function App() {
             onLaunchUnifiedSession={handleLaunchUnifiedSession}
           />
         ) : screen === 'studylab' ? (
-          <StudyLabView
-            defaultDevice={profile?.defaultDevice ?? 'headphones'}
-            onExecuteRecommendation={(rec, directPlay) => {
-              setErrorBanner(null);
-              setActiveRec(rec);
-              setFieldMood(moodFromTarget(rec.environment, rec.targetState));
-              setScreen(directPlay ? 'player' : 'reveal');
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-cyan-300/70">
+                Loading Study-to-Sound Lab...
+              </div>
+            }
+          >
+            <StudyLabView
+              defaultDevice={profile?.defaultDevice ?? 'headphones'}
+              onExecuteRecommendation={(rec, directPlay) => {
+                setErrorBanner(null);
+                setActiveRec(rec);
+                setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+                setScreen(directPlay ? 'player' : 'reveal');
+              }}
+            />
+          </Suspense>
         ) : screen === 'reveal' ? (
           <ProtocolRevealView
             loading={researching}
@@ -687,7 +735,7 @@ export default function App() {
             {...debriefContext}
             onStartNew={() => {
               setDebriefContext(null);
-              setScreen('checkin');
+              setScreen(profile ? 'checkin' : 'landing');
             }}
             onViewInsights={() => {
               setDebriefContext(null);
@@ -696,7 +744,15 @@ export default function App() {
             }}
           />
         ) : (
-          <InsightsView profileId={profile?.id} />
+          <Suspense
+            fallback={
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-cyan-300/70">
+                Loading Research Brain...
+              </div>
+            }
+          >
+            <InsightsView profileId={profile?.id} />
+          </Suspense>
         )}
       </main>
 
@@ -864,8 +920,9 @@ export default function App() {
       <footer className="relative z-10 border-t border-white/[0.05] px-4 py-5 text-center text-[11px] text-slate-500">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
           <span>
-            nootropic.fm · Tune your mind · Open Research Beta (18+ · Year 1 Free) · Psychoacoustic
-            cognitive wellness audio, not a medical device.
+            nootropic.fm · Tune your mind · Psychoacoustic cognitive wellness, focus, and relaxation
+            audio — not a medical device. Not intended to diagnose, treat, cure, or prevent any
+            medical condition. Listeners 18+.
           </span>
           <span className="text-slate-600">
             Samples: Salamander Grand Piano &amp; FluidR3 GM (CC-BY 3.0)

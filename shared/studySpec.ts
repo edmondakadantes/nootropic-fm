@@ -328,11 +328,11 @@ export const CARRIER_MODE_LABELS: Record<CarrierEngineMode, { label: string; sho
   },
   studio_library: {
     label: 'Studio R2 Library',
-    shortDesc: 'Pre-mastered R2 stems routed through the exact medical DSP rack',
+    shortDesc: 'Pre-mastered R2 stems routed through the exact psychoacoustic DSP rack',
   },
   pure_stimulus: {
-    label: 'Pure Clinical Signal',
-    shortDesc: 'Raw study stimulus & calibrated noise floor (zero background music)',
+    label: 'Pure Acoustic Signal',
+    shortDesc: 'Raw study modulation & calibrated noise floor (zero background music)',
   },
   lyria_realtime: {
     label: 'Google Lyria RealTime AI',

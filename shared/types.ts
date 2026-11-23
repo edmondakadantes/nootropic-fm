@@ -443,7 +443,7 @@ export const GENRE_META: Record<
   lofi_keys: {
     label: 'Lo-Fi Warm Keys',
     shortDesc: 'Dusty Rhodes chords & laid-back beat',
-    vibeTag: 'Warm · Study · ADHD',
+    vibeTag: 'Warm · Study · Deep Focus',
   },
   deep_electronic: {
     label: 'Deep Electronic',

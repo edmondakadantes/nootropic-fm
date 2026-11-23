@@ -70,18 +70,20 @@ export function LiveEnvelopeProof({
         ctx.stroke();
       }
 
-      // 2. Exact Mathematical Clinical Stimulus Envelope Overlay (emerald/amber crisp trace)
+      // 2. Reference Modulation Pattern Overlay (flat baseline when modulation is off, e.g. pure A=432 Hz)
+      const modActive = entrainmentType !== 'none' && depth > 0.001;
       const displayCycles =
         entrainmentType === 'gamma_40hz_clicks'
           ? 12
           : entrainmentType === 'hrv_breathing_swell'
             ? 1.5
             : Math.max(3, Math.min(10, Math.round((frequencyHz || 10) / 2)));
-      const amp = Math.max(0.18, Math.min(0.42, (depth || 0.25) * 0.9));
+      const amp = modActive ? Math.max(0.14, Math.min(0.42, depth * 0.9)) : 0;
       const speed = isPlaying ? (entrainmentType === 'hrv_breathing_swell' ? 0.35 : 2.2) : 0;
 
-      ctx.strokeStyle =
-        entrainmentType === 'gamma_40hz_clicks'
+      ctx.strokeStyle = !modActive
+        ? 'rgba(148, 163, 184, 0.55)'
+        : entrainmentType === 'gamma_40hz_clicks'
           ? '#fbbf24'
           : entrainmentType === 'hrv_breathing_swell'
             ? '#34d399'
@@ -90,14 +92,20 @@ export function LiveEnvelopeProof({
       ctx.beginPath();
 
       for (let px = 0; px <= w; px += 2) {
+        if (!modActive) {
+          const y = h / 2;
+          if (px === 0) ctx.moveTo(px, y);
+          else ctx.lineTo(px, y);
+          continue;
+        }
         const u = px / w;
         const phase = (u * displayCycles - elapsed * speed) % 1;
         const normPhase = phase < 0 ? phase + 1 : phase;
         let val = 0;
 
         if (entrainmentType === 'gamma_40hz_clicks') {
-          // Crisp 1 ms raised-cosine burst spike inside each 25 ms cycle
-          val = normPhase < 0.14 ? Math.sin((normPhase / 0.14) * Math.PI) : 0;
+          // Crisp raised-cosine burst spike inside each 25 ms cycle
+          val = normPhase < 0.1 ? Math.sin((normPhase / 0.1) * Math.PI) : 0;
           val = val * 0.85 - 0.35;
         } else if (entrainmentType === 'isochronic_pulse') {
           val = normPhase < 0.5 ? 0.7 : -0.7;
