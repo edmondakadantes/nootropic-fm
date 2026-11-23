@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   BarChart3,
@@ -92,6 +92,11 @@ export function DebriefView({
   } | null>(null);
 
   const isStudyLabTrial = sessionId.startsWith('eph_study_');
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+  }, [sessionId, ephemeralCompleted, learningUpdate]);
   const deltaPreview = postScore - baselineScore;
   const pvtDeltaMs =
     typeof pvtPreMs === 'number' && typeof pvtPostMs === 'number' ? pvtPostMs - pvtPreMs : null;

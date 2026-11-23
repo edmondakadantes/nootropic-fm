@@ -233,6 +233,13 @@ export function CheckInView({
 
   // Sync beat when user logs out / switches identity or restores identity
   useEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    const raf = window.requestAnimationFrame(() => window.scrollTo(0, 0));
+    return () => window.cancelAnimationFrame(raf);
+  }, [beat]);
+
+  useEffect(() => {
     if (profile) {
       setDisplayName(profile.displayName ?? '');
       setAgeInput(String(Math.max(18, profile.age)));
@@ -432,9 +439,29 @@ export function CheckInView({
     recognition.start();
   };
 
-  const handleAdvanceFromBeat1 = () => {
+  const validateBeat1 = (): string | null => {
     if (!Number.isFinite(parsedAge) || parsedAge < 18 || parsedAge > 95) {
-      setAgeError('Please enter your age (18+ required to continue).');
+      return 'Please enter your age (18–95 required to continue).';
+    }
+    if (!gender) {
+      return 'Please select your gender (you can pick "Prefer not to say").';
+    }
+    if (!role) {
+      return 'Please choose what best describes your day.';
+    }
+    if (role === 'other' && occupationLabel.trim().length < 2) {
+      return 'Please type your profession or craft to continue.';
+    }
+    if (!researchConsent) {
+      return 'Please check "Save my anonymous profile & QR Sync Code" to continue.';
+    }
+    return null;
+  };
+
+  const handleAdvanceFromBeat1 = () => {
+    const err = validateBeat1();
+    if (err) {
+      setAgeError(err);
       return;
     }
     setAgeError(null);
@@ -463,7 +490,14 @@ export function CheckInView({
   };
 
   const handleLaunch = async () => {
-    if (!Number.isFinite(parsedAge) || parsedAge < 18 || parsedAge > 95) {
+    if (isFirstVisit) {
+      const err = validateBeat1();
+      if (err) {
+        setBeat(1);
+        setAgeError(err);
+        return;
+      }
+    } else if (!Number.isFinite(parsedAge) || parsedAge < 18 || parsedAge > 95) {
       setBeat(1);
       setAgeError('Please enter your age (18+ required to continue).');
       return;
@@ -858,7 +892,7 @@ export function CheckInView({
 
             <div className="sm:col-span-4">
               <label className="mb-1 block text-[11px] font-medium text-slate-400">
-                Age <span className="text-cyan-300">(18+)</span>
+                Age <span className="text-cyan-300">(18+ · required)</span>
               </label>
               <input
                 type="number"
@@ -870,25 +904,27 @@ export function CheckInView({
                 onChange={(e) => {
                   const rawVal = e.target.value;
                   setAgeInput(rawVal);
-                  const n = Number(rawVal);
-                  if (rawVal.trim() !== '' && n >= 18 && n <= 95) setAgeError(null);
+                  setAgeError(null);
                 }}
                 className="font-mono-tech w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
               />
             </div>
           </div>
 
-          {/* Gender (optional — starts unselected until user taps!) */}
+          {/* Gender (required — includes "Prefer not to say") */}
           <div className="space-y-1.5">
             <div className="text-[11px] font-medium text-slate-400">
-              Gender <span className="text-slate-500">(optional — helps cohort research)</span>
+              Gender <span className="text-cyan-300">(required)</span>
             </div>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {(['male', 'female', 'non_binary', 'prefer_not_to_say'] as UserGender[]).map((g) => (
                 <button
                   key={g}
                   type="button"
-                  onClick={() => setGender((prev) => (prev === g ? null : g))}
+                  onClick={() => {
+                    setGender(g);
+                    setAgeError(null);
+                  }}
                   className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
                     gender === g
                       ? 'border-cyan-400/70 bg-cyan-400/15 text-white'
@@ -901,10 +937,10 @@ export function CheckInView({
             </div>
           </div>
 
-          {/* Primary Work / Archetype (starts unselected until user taps!) */}
+          {/* Primary Work / Archetype (required) */}
           <div className="space-y-2">
             <div className="text-[11px] font-medium text-slate-400">
-              What best describes your day? <span className="text-slate-500">(optional)</span>
+              What best describes your day? <span className="text-cyan-300">(required)</span>
             </div>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {(Object.keys(ROLE_SHORT_LABELS) as UserRole[]).map((r) => (
@@ -912,13 +948,13 @@ export function CheckInView({
                   key={r}
                   type="button"
                   onClick={() => {
-                    const next = role === r ? null : r;
-                    setRole(next);
-                    if (next === 'driver') {
+                    setRole(r);
+                    setAgeError(null);
+                    if (r === 'driver') {
                       setEnvironment('driving');
                       setDevice('car_audio');
                     } else if (environment === 'driving') {
-                      setEnvironment(next === 'student' ? 'study' : 'office');
+                      setEnvironment(r === 'student' ? 'study' : 'office');
                       setDevice('headphones');
                     }
                   }}
@@ -933,18 +969,21 @@ export function CheckInView({
               ))}
             </div>
 
-            {/* Dedicated Profession Input — prominently highlighted when "Other" is selected! */}
+            {/* Dedicated Profession Input — required when "Other" is selected */}
             {role === 'other' ? (
               <div className="animate-step rounded-2xl border border-indigo-400/40 bg-indigo-500/[0.08] p-3 space-y-1.5">
                 <label className="block text-[11px] font-semibold text-indigo-200">
-                  Type your profession or craft:
+                  Type your profession or craft <span className="text-cyan-300">(required)</span>:
                 </label>
                 <input
                   type="text"
                   autoFocus
                   maxLength={40}
                   value={occupationLabel}
-                  onChange={(e) => setOccupationLabel(e.target.value)}
+                  onChange={(e) => {
+                    setOccupationLabel(e.target.value);
+                    setAgeError(null);
+                  }}
                   placeholder="e.g. Architect, Surgeon, Pilot, Chef, Trader, Musician, Therapist..."
                   className="w-full rounded-xl border border-indigo-400/35 bg-slate-950/90 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
                 />
@@ -973,14 +1012,14 @@ export function CheckInView({
             )}
           </div>
 
-          {ageError && <p className="text-xs font-medium text-rose-300">{ageError}</p>}
-
-          {/* Clear, plain-English Privacy & Profile Sync Opt-In (no jargon, GDPR-compliant) */}
+          {/* Required Anonymous Profile & QR Sync Opt-In */}
           <label
             className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-3.5 py-3 text-[11px] leading-relaxed transition ${
               researchConsent
-                ? 'border-emerald-400/35 bg-emerald-500/[0.08] text-slate-200'
-                : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-700'
+                ? 'border-emerald-400/45 bg-emerald-500/[0.10] text-slate-200'
+                : ageError && !researchConsent
+                  ? 'border-rose-400/70 bg-rose-500/10 text-rose-100'
+                  : 'border-slate-700 bg-slate-950/70 text-slate-300 hover:border-cyan-400/40'
             }`}
           >
             <input
@@ -989,17 +1028,26 @@ export function CheckInView({
               onChange={(e) => {
                 setConsentTouched(true);
                 setResearchConsent(e.target.checked);
+                if (e.target.checked) setAgeError(null);
               }}
               className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-600 bg-slate-900 accent-emerald-400"
             />
             <span>
               <strong className="inline-flex items-center gap-1 text-emerald-300">
-                <ShieldCheck className="h-3.5 w-3.5" /> Save my anonymous profile &amp; QR Sync Code (optional)
+                <ShieldCheck className="h-3.5 w-3.5" /> Save my anonymous profile &amp; QR Sync Code{' '}
+                <span className="text-cyan-300">(required)</span>
               </strong>{' '}
-              — creates a private QR code (no email, no password) so nootropic.fm remembers what
-              sounds work best for you across visits. Leave unchecked for 100% local-only mode.
+              — creates a private anonymous Sync Pass (no email, no password) so your sound adapts
+              to you and contributes anonymously to cohort outcomes. You can erase it anytime in
+              Privacy.
             </span>
           </label>
+
+          {ageError && (
+            <div className="rounded-xl border border-rose-500/40 bg-rose-500/12 px-3.5 py-2.5 text-xs font-medium text-rose-200">
+              {ageError}
+            </div>
+          )}
 
           <button
             type="button"

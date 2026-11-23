@@ -135,6 +135,9 @@ export default function App() {
 
   useEffect(() => {
     window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    const raf = window.requestAnimationFrame(() => window.scrollTo(0, 0));
+    return () => window.cancelAnimationFrame(raf);
   }, [screen]);
 
   useEffect(() => {

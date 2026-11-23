@@ -200,6 +200,11 @@ export function PlayerView({
   pvtPreRef.current = { medianMs: pvtPreMs, lapses: pvtLapsesPre };
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+  }, [recommendation.sessionId]);
+
+  useEffect(() => {
     setLiveSessionId(recommendation.sessionId);
     setIsEphemeral(Boolean(recommendation.ephemeralMode));
     setClaimedSyncCode(null);

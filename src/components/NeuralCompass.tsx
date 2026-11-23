@@ -101,7 +101,7 @@ export function NeuralCompassSelector({
         <span className="text-[10px] text-slate-500">Russell Circumplex (Arousal × Clarity)</span>
       </div>
 
-      {/* Interactive 2D Bioluminescent Radar Field */}
+      {/* Interactive 2D Bioluminescent Radar Field (Spacious & Easy to Tap) */}
       <div
         ref={padRef}
         onPointerDown={handlePointerDown}
@@ -110,7 +110,7 @@ export function NeuralCompassSelector({
         onPointerCancel={handlePointerUp}
         role="application"
         aria-label="Interactive 2D Neural State Compass"
-        className="relative h-64 w-full touch-none select-none overflow-hidden rounded-2xl border border-slate-700/80 bg-[#040711] cursor-crosshair sm:h-72"
+        className="relative h-[400px] w-full touch-none select-none overflow-hidden rounded-2xl border border-slate-700/80 bg-[#040711] cursor-crosshair sm:h-[460px]"
       >
         {/* 4 Subtle Quadrant Ambiance Gradients */}
         <div
@@ -160,16 +160,16 @@ export function NeuralCompassSelector({
         </svg>
 
         {/* Biological Axis Edge Labels (kept flush to edges so cursor never collides) */}
-        <div className="pointer-events-none absolute left-1/2 top-1.5 z-0 -translate-x-1/2 rounded-full bg-slate-950/70 px-2.5 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.14em] text-slate-300/80">
+        <div className="pointer-events-none absolute left-1/2 top-2 z-0 -translate-x-1/2 rounded-full bg-slate-950/75 px-3 py-0.5 font-mono-tech text-[10px] uppercase tracking-[0.14em] text-slate-300/85">
           ▲ High Energy · Wired
         </div>
-        <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-0 -translate-x-1/2 rounded-full bg-slate-950/70 px-2.5 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.14em] text-slate-300/80">
+        <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2 rounded-full bg-slate-950/75 px-3 py-0.5 font-mono-tech text-[10px] uppercase tracking-[0.14em] text-slate-300/85">
           ▼ Low Energy · Drained
         </div>
-        <div className="pointer-events-none absolute left-1.5 top-1/2 z-0 -translate-y-1/2 rounded bg-slate-950/55 px-1.5 py-0.5 font-mono-tech text-[8px] uppercase tracking-wider text-slate-500">
+        <div className="pointer-events-none absolute left-2 top-1/2 z-0 -translate-y-1/2 rounded bg-slate-950/65 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-slate-400">
           Tense / Fog
         </div>
-        <div className="pointer-events-none absolute right-1.5 top-1/2 z-0 -translate-y-1/2 rounded bg-slate-950/55 px-1.5 py-0.5 font-mono-tech text-[8px] uppercase tracking-wider text-slate-500">
+        <div className="pointer-events-none absolute right-2 top-1/2 z-0 -translate-y-1/2 rounded bg-slate-950/65 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-slate-400">
           Clear / Open
         </div>
 
@@ -186,20 +186,20 @@ export function NeuralCompassSelector({
                 left: `${st.clarity}%`,
                 top: `${100 - st.energy}%`,
               }}
-              className="group absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5 p-1.5 focus:outline-none"
+              className="group absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 p-2 focus:outline-none"
             >
               <span
-                className={`h-2 w-2 rounded-full transition-all ${
+                className={`h-2.5 w-2.5 rounded-full transition-all ${
                   isSelected
                     ? 'opacity-0'
-                    : 'bg-slate-400/70 group-hover:scale-125 group-hover:bg-cyan-300'
+                    : 'bg-slate-300/80 group-hover:scale-125 group-hover:bg-cyan-300'
                 }`}
               />
               <span
-                className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[9px] font-medium transition ${
+                className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium transition ${
                   isSelected
-                    ? 'translate-y-3.5 bg-slate-950/95 text-white ring-1 ring-white/20'
-                    : 'text-slate-400/90 group-hover:bg-slate-950/85 group-hover:text-cyan-200'
+                    ? 'translate-y-4 bg-slate-950/95 text-white ring-1 ring-white/25'
+                    : 'text-slate-300/90 group-hover:bg-slate-950/90 group-hover:text-cyan-200'
                 }`}
               >
                 {st.shortLabel}
@@ -223,18 +223,18 @@ export function NeuralCompassSelector({
               style={{ backgroundColor: cursorColor }}
             />
             <span
-              className="relative flex h-6 w-6 items-center justify-center rounded-full border-2 border-white shadow-lg"
+              className="relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-white shadow-lg"
               style={{
                 backgroundColor: cursorColor,
                 boxShadow: `0 0 22px ${cursorColor}`,
               }}
             >
-              <Crosshair className="h-3 w-3 text-slate-950" />
+              <Crosshair className="h-3.5 w-3.5 text-slate-950" />
             </span>
           </div>
         ) : (
-          <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400/30 bg-slate-950/85 px-3 py-1 text-[10px] font-medium text-cyan-200/90 backdrop-blur-sm">
-            Tap anywhere on the map
+          <div className="pointer-events-none absolute left-1/2 top-9 z-10 -translate-x-1/2 rounded-full border border-cyan-400/35 bg-slate-950/85 px-3.5 py-1 text-[11px] font-medium text-cyan-200/95 backdrop-blur-sm">
+            Tap or drag anywhere on the map
           </div>
         )}
       </div>
