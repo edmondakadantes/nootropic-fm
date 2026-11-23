@@ -31,7 +31,7 @@ import {
   type UserProfile,
 } from '../shared/types';
 import { AmbientField, type FieldMood } from './components/AmbientField';
-import { CheckInView } from './components/CheckInView';
+import { CheckInView, type MoodPresetSelection } from './components/CheckInView';
 import { DebriefView } from './components/DebriefView';
 import { HeroLandingView } from './components/HeroLandingView';
 import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFingerprintPass';
@@ -45,7 +45,42 @@ import {
   getStoredProfileAuth,
   saveStoredProfileAuth,
 } from './lib/api';
-import { buildInstantQuickTryRecommendation, type QuickTryId } from './lib/quickTryProtocols';
+import type { QuickTryId } from './lib/quickTryProtocols';
+
+const HERO_MOOD_PRESETS: Record<QuickTryId, MoodPresetSelection> = {
+  focus_lofi: {
+    id: 'focus_lofi',
+    label: 'Distracted → Focused',
+    microStateId: 'distracted_scattered',
+    targetState: 'deep_flow',
+    requestedGenre: 'lofi_keys',
+    durationMin: 35,
+  },
+  mood_uplift: {
+    id: 'mood_uplift',
+    label: 'Sad → Happy',
+    microStateId: 'low_mood',
+    targetState: 'energy_lift',
+    requestedGenre: 'acoustic_pluck',
+    durationMin: 20,
+  },
+  calm_rain: {
+    id: 'calm_rain',
+    label: 'Stressed → Calm',
+    microStateId: 'overwhelmed',
+    targetState: 'calm_reset',
+    requestedGenre: 'nature_rain',
+    durationMin: 20,
+  },
+  energy_electronic: {
+    id: 'energy_electronic',
+    label: 'Tired → Awake',
+    microStateId: 'sleep_deprived',
+    targetState: 'energy_lift',
+    requestedGenre: 'deep_electronic',
+    durationMin: 20,
+  },
+};
 
 const StudyLabView = lazy(() =>
   import('./components/StudyLabView').then((m) => ({ default: m.StudyLabView }))
@@ -75,6 +110,7 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [syncCode, setSyncCode] = useState<string | null>(null);
   const [pendingDebrief, setPendingDebrief] = useState<SessionRecord | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<MoodPresetSelection | null>(null);
   const [activeRec, setActiveRec] = useState<ProtocolRecommendation | null>(null);
   const [researching, setResearching] = useState(false);
   const [fieldMood, setFieldMood] = useState<FieldMood>('default');
@@ -237,15 +273,31 @@ export default function App() {
     return 'focus';
   }, []);
 
-  const handleQuickTry = useCallback(
+  const handleSelectMoodPreset = useCallback(
     (id: QuickTryId) => {
       setErrorBanner(null);
-      const rec = buildInstantQuickTryRecommendation(id);
-      setActiveRec(rec);
-      setFieldMood(moodFromTarget(rec.environment, rec.targetState));
-      setScreen('player');
+      const preset = HERO_MOOD_PRESETS[id];
+      setSelectedPreset(preset);
+      setFieldMood(moodFromTarget('office', preset.targetState));
+      setScreen('checkin');
     },
     [moodFromTarget]
+  );
+
+  const handleStartDirectCheckout = useCallback(
+    async (plan: 'annual' | 'monthly') => {
+      const res = await api.createStripeCheckout({
+        plan,
+        profileId: profile?.id,
+      });
+      if (res.profile && res.profileToken) {
+        saveStoredProfileAuth(res.profile.id, res.profileToken, res.syncCode);
+        setProfile(res.profile);
+        if (res.syncCode) setSyncCode(res.syncCode);
+      }
+      window.location.href = res.url;
+    },
+    [profile?.id]
   );
 
   const startSession = useCallback(
@@ -541,32 +593,35 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-dvh flex flex-col bg-[#05070d]">
+    <div className="relative min-h-dvh flex flex-col overflow-x-hidden bg-[#05070d]">
       {/* Full-bleed 60fps interactive bioluminescent soundwave & neural particle canvas */}
       <AmbientField mood={fieldMood} activePulse={audioActive} />
 
-      {/* Floating Glass Header */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#05070d]/65 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5 sm:px-6">
+      {/* Floating Glass Header (single crisp horizontal row on mobile & desktop) */}
+      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#05070d]/70 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-2.5 sm:px-6 sm:py-3.5">
           <button
             type="button"
-            onClick={() => setScreen(profile ? 'checkin' : 'landing')}
-            className="group flex items-center gap-2.5 text-left"
+            onClick={() => {
+              setSelectedPreset(null);
+              setScreen(profile ? 'checkin' : 'landing');
+            }}
+            className="group flex shrink-0 items-center gap-2 text-left sm:gap-2.5"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-400/10 text-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.18)] transition group-hover:scale-105 group-hover:border-cyan-300/60">
-              <Radio className="h-5 w-5" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-400/10 text-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.18)] transition group-hover:scale-105 group-hover:border-cyan-300/60 sm:h-9 sm:w-9">
+              <Radio className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
-            <div>
-              <div className="font-display text-base font-bold tracking-tight text-white leading-none">
+            <div className="whitespace-nowrap">
+              <div className="font-display text-sm font-bold tracking-tight text-white leading-none sm:text-base">
                 nootropic<span className="text-cyan-400">.fm</span>
               </div>
-              <div className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
+              <div className="mt-0.5 hidden text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400 sm:block">
                 Tune your mind
               </div>
             </div>
           </button>
 
-          <nav className="flex items-center gap-1.5">
+          <nav className="flex shrink-0 items-center gap-1 sm:gap-1.5">
             {installPrompt && (
               <button
                 type="button"
@@ -575,11 +630,11 @@ export default function App() {
                   await installPrompt.userChoice;
                   setInstallPrompt(null);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/35 bg-emerald-500/12 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-400/35 bg-emerald-500/12 px-2.5 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20 sm:px-3"
                 title="Install nootropic.fm as an app"
               >
-                <Download className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Install App</span>
+                <Download className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden md:inline">Install App</span>
               </button>
             )}
 
@@ -587,14 +642,15 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setScreen(activeRec ? 'player' : 'checkin')}
-                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
+                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 py-2 text-xs font-medium transition sm:px-3 ${
                   screen === 'checkin' || screen === 'reveal' || screen === 'player' || screen === 'debrief'
                     ? 'bg-cyan-400/15 text-cyan-200 border border-cyan-400/35'
                     : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
                 }`}
+                title="Active Session"
               >
-                <Sparkles className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Session</span>
+                <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden md:inline">Session</span>
               </button>
             )}
 
@@ -604,15 +660,15 @@ export default function App() {
                 setFieldMood('focus');
                 setScreen('studylab');
               }}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 py-2 text-xs font-semibold transition sm:px-3 ${
                 screen === 'studylab'
                   ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/40'
                   : 'text-slate-300 hover:bg-white/[0.05] hover:text-cyan-200'
               }`}
-              title="Compile & execute published acoustic studies directly in live sound"
+              title="Browse & play published science studies"
             >
-              <FlaskConical className="h-3.5 w-3.5 text-emerald-300" />
-              <span>Study Lab</span>
+              <FlaskConical className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+              <span className="hidden sm:inline">Study Lab</span>
             </button>
 
             <button
@@ -621,20 +677,22 @@ export default function App() {
                 setFieldMood('flow');
                 setScreen('insights');
               }}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition ${
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 py-2 text-xs font-medium transition sm:px-3 ${
                 screen === 'insights'
                   ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/35'
                   : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
               }`}
+              title="Research Brain & Live Outcomes"
             >
-              <BarChart3 className="h-3.5 w-3.5" />
-              <span>Research Brain</span>
+              <BarChart3 className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden md:inline">Research Brain</span>
+              <span className="hidden sm:inline md:hidden">Research</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShowProModal(true)}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold transition ${
+              className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-xs font-bold transition sm:gap-1.5 sm:px-3 ${
                 profile?.planTier === 'pro'
                   ? 'border border-emerald-400/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25'
                   : 'border border-amber-400/45 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25'
@@ -645,7 +703,7 @@ export default function App() {
                   : 'Upgrade to nootropic.fm Pro'
               }
             >
-              <Crown className="h-3.5 w-3.5" />
+              <Crown className="h-3.5 w-3.5 shrink-0" />
               <span>{profile?.planTier === 'pro' ? 'PRO' : 'Go Pro'}</span>
             </button>
 
@@ -655,7 +713,7 @@ export default function App() {
                 setIdentityStatus(null);
                 setShowIdentityModal(true);
               }}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium transition ${
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-1.5 text-xs font-medium transition sm:px-2.5 ${
                 profile
                   ? 'border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/18'
                   : 'border border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:text-white'
@@ -665,13 +723,13 @@ export default function App() {
               {profile ? (
                 <>
                   <NeuralFingerprintSigil seed={syncCode || profile.id} size={22} />
-                  <span className="hidden sm:inline">
+                  <span className="hidden lg:inline">
                     {profile.displayName ? `${profile.displayName} · ${profile.age}` : `Pass · ${profile.age}`}
                   </span>
                 </>
               ) : (
                 <>
-                  <KeyRound className="h-3.5 w-3.5 text-cyan-300" />
+                  <KeyRound className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
                   <span className="hidden sm:inline">Sync QR</span>
                 </>
               )}
@@ -710,8 +768,11 @@ export default function App() {
           </div>
         ) : screen === 'landing' ? (
           <HeroLandingView
-            onQuickTry={handleQuickTry}
-            onStartCustomize={() => setScreen('checkin')}
+            onSelectMoodPreset={handleSelectMoodPreset}
+            onStartCustomize={() => {
+              setSelectedPreset(null);
+              setScreen('checkin');
+            }}
             onOpenStudyLab={() => {
               setFieldMood('focus');
               setScreen('studylab');
@@ -730,10 +791,13 @@ export default function App() {
           />
         ) : screen === 'checkin' ? (
           <CheckInView
+            key={selectedPreset?.id ?? 'default'}
             profile={profile}
             syncCode={syncCode}
             runtimeConfig={runtimeConfig}
             pendingDebrief={pendingDebrief}
+            initialPreset={selectedPreset}
+            onClearPreset={() => setSelectedPreset(null)}
             onOpenPendingDebrief={handleOpenPendingDebrief}
             onDismissPending={() => void handleDismissPending()}
             onOpenIdentityModal={() => {
@@ -784,6 +848,10 @@ export default function App() {
           <PlayerView
             recommendation={activeRec}
             lyriaRealtimeAvailable={runtimeConfig?.lyriaRealtimeAvailable}
+            isPro={profile?.planTier === 'pro'}
+            stripeAvailable={runtimeConfig?.stripeBillingAvailable ?? false}
+            onUpgradePro={() => setShowProModal(true)}
+            onStartDirectCheckout={handleStartDirectCheckout}
             onPlayingChange={setAudioActive}
             onSessionClaimed={(claimed) => {
               setProfile(claimed.profile);

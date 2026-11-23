@@ -57,11 +57,22 @@ import { NeuralCompassSelector, NeuralTrajectoryPreview } from './NeuralCompass'
 import { NeuralFingerprintSigil } from './NeuralFingerprintPass';
 import { SonicOrb } from './SonicOrb';
 
+export interface MoodPresetSelection {
+  id: string;
+  label: string;
+  microStateId: string;
+  targetState: TargetState;
+  requestedGenre: MusicGenreChoice;
+  durationMin: number;
+}
+
 interface CheckInViewProps {
   profile: UserProfile | null;
   syncCode: string | null;
   runtimeConfig: AppRuntimeConfig | null;
   pendingDebrief: SessionRecord | null;
+  initialPreset?: MoodPresetSelection | null;
+  onClearPreset?: () => void;
   onOpenPendingDebrief: () => void;
   onDismissPending: () => void;
   onOpenIdentityModal: () => void;
@@ -151,6 +162,8 @@ export function CheckInView({
   syncCode,
   runtimeConfig,
   pendingDebrief,
+  initialPreset = null,
+  onClearPreset,
   onOpenPendingDebrief,
   onDismissPending,
   onOpenIdentityModal,
@@ -158,7 +171,12 @@ export function CheckInView({
   onLaunchUnifiedSession,
 }: CheckInViewProps) {
   const isFirstVisit = !profile;
-  const [beat, setBeat] = useState<1 | 2 | 3 | 4>(profile ? 2 : 1);
+  const presetMicro = initialPreset
+    ? NEURAL_MICRO_STATES.find((s) => s.id === initialPreset.microStateId) ?? null
+    : null;
+  const [beat, setBeat] = useState<1 | 2 | 3 | 4>(
+    profile ? (initialPreset ? 4 : 2) : 1
+  );
 
   // Beat 1: Neural Identity & Demographics (ZERO pre-filled or pre-selected fields on first visit!)
   const [introText, setIntroText] = useState('');
@@ -177,18 +195,24 @@ export function CheckInView({
   const [researchConsent, setResearchConsent] = useState<boolean>(defaultConsent);
   const [consentTouched, setConsentTouched] = useState(false);
 
-  // Beat 2: Continuous 2D Neural Compass (ZERO pre-selected state until user taps/drags/types!)
+  // Beat 2: Continuous 2D Neural Compass (pre-filled if user tapped a quick goal on Hero)
   const [feelingText, setFeelingText] = useState('');
-  const [neuralCoords, setNeuralCoords] = useState<NeuralCoords | null>(null);
-  const [selectedMicroState, setSelectedMicroState] = useState<NeuralMicroState | null>(null);
-  const [currentState, setCurrentState] = useState<CurrentState>('calm_neutral');
-  const [baselineScore, setBaselineScore] = useState<number>(3);
+  const [neuralCoords, setNeuralCoords] = useState<NeuralCoords | null>(
+    presetMicro ? { energy: presetMicro.energy, clarity: presetMicro.clarity } : null
+  );
+  const [selectedMicroState, setSelectedMicroState] = useState<NeuralMicroState | null>(presetMicro);
+  const [currentState, setCurrentState] = useState<CurrentState>(
+    presetMicro?.coreState ?? 'calm_neutral'
+  );
+  const [baselineScore, setBaselineScore] = useState<number>(presetMicro?.defaultBaseline ?? 3);
   const [stateError, setStateError] = useState<string | null>(null);
 
   // Beat 3: Target state, duration & output
   const [goalText, setGoalText] = useState('');
-  const [targetState, setTargetState] = useState<TargetState>('energy_lift');
-  const [durationMin, setDurationMin] = useState<number>(20);
+  const [targetState, setTargetState] = useState<TargetState>(
+    initialPreset?.targetState ?? 'energy_lift'
+  );
+  const [durationMin, setDurationMin] = useState<number>(initialPreset?.durationMin ?? 20);
   const [environment, setEnvironment] = useState<SessionEnvironment>(
     profile?.role === 'driver' ? 'driving' : 'office'
   );
@@ -197,7 +221,9 @@ export function CheckInView({
   );
 
   // Beat 4: Preferred Music Layer (6 studio + Auto + Custom Vibe)
-  const [genreChoice, setGenreChoice] = useState<MusicGenreChoice>('auto');
+  const [genreChoice, setGenreChoice] = useState<MusicGenreChoice>(
+    initialPreset?.requestedGenre ?? 'auto'
+  );
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customVibeText, setCustomVibeText] = useState('');
   const [customVibeError, setCustomVibeError] = useState<string | null>(null);
@@ -412,7 +438,7 @@ export function CheckInView({
       return;
     }
     setAgeError(null);
-    setBeat(2);
+    setBeat(initialPreset && selectedMicroState && neuralCoords ? 4 : 2);
   };
 
   const handleAdvanceFromBeat2 = () => {
@@ -541,6 +567,31 @@ export function CheckInView({
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center space-y-5">
+      {/* Selected Mood Goal Pill (when arriving from one of the 4 Hero quick shifts) */}
+      {initialPreset && (
+        <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-400/35 bg-emerald-500/[0.08] px-4 py-2.5 text-xs text-emerald-100 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+            <span>
+              Selected shift: <strong className="text-white">{initialPreset.label}</strong>
+              {beat === 1
+                ? ' · Quick profile, then pick your music'
+                : ' · Pick or type your favorite music below'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onClearPreset?.();
+              setBeat(2);
+            }}
+            className="text-[11px] font-semibold text-emerald-300 underline-offset-2 hover:text-white hover:underline"
+          >
+            Edit mood
+          </button>
+        </div>
+      )}
+
       {/* Returning Listener Neural Fingerprint Identity Bar */}
       {profile && (
         <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.06] px-4 py-2.5 backdrop-blur-md">
@@ -1330,8 +1381,10 @@ export function CheckInView({
             >
               <Sparkles className="h-5 w-5" />
               {starting
-                ? 'Searching peer-reviewed science...'
-                : `Search Science & Craft My Sound · ${durationMin} min`}
+                ? 'Building your custom sound...'
+                : profile?.planTier === 'pro'
+                  ? `Craft My Sound · ${durationMin} min`
+                  : `Build My Sound · 5 Min Free Preview`}
             </button>
           </div>
 

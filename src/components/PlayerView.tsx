@@ -2,10 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   BookOpen,
+  Check,
   CheckCircle2,
+  Clock,
+  CreditCard,
+  Crown,
   ExternalLink,
   FlaskConical,
   Loader2,
+  Lock,
   Music2,
   Pause,
   Play,
@@ -39,9 +44,15 @@ import { NeuralVisualizer } from './NeuralVisualizer';
 import { PvtBenchmarkModal } from './PvtBenchmarkModal';
 import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
+const FREE_PREVIEW_LIMIT_SEC = 300; // 5 minutes free preview before Pro unlock
+
 interface PlayerViewProps {
   recommendation: ProtocolRecommendation;
   lyriaRealtimeAvailable?: boolean;
+  isPro?: boolean;
+  stripeAvailable?: boolean;
+  onUpgradePro?: () => void;
+  onStartDirectCheckout?: (plan: 'annual' | 'monthly') => Promise<void>;
   onPlayingChange?: (playing: boolean) => void;
   onSessionClaimed?: (claimed: {
     profile: UserProfile;
@@ -68,6 +79,10 @@ function formatTimer(sec: number): string {
 export function PlayerView({
   recommendation,
   lyriaRealtimeAvailable = false,
+  isPro = false,
+  stripeAvailable = false,
+  onUpgradePro,
+  onStartDirectCheckout,
   onPlayingChange,
   onSessionClaimed,
   onFinishToDebrief,
@@ -116,6 +131,10 @@ export function PlayerView({
   const [showPrePvt, setShowPrePvt] = useState(false);
   const [pvtPreMs, setPvtPreMs] = useState<number | null>(null);
   const [pvtLapsesPre, setPvtLapsesPre] = useState<number | null>(null);
+  const [previewLocked, setPreviewLocked] = useState(false);
+  const [selectedPaywallPlan, setSelectedPaywallPlan] = useState<'annual' | 'monthly'>('annual');
+  const [unlockingCheckout, setUnlockingCheckout] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
 
   // Live session promotion (lets 1-Click Quick-Try listeners claim a 5s anonymous profession profile without audio stutter!)
   const [liveSessionId, setLiveSessionId] = useState<string>(recommendation.sessionId);
@@ -183,8 +202,16 @@ export function PlayerView({
     setIsEphemeral(Boolean(recommendation.ephemeralMode));
     setClaimedSyncCode(null);
     setClaimError(null);
+    setPreviewLocked(false);
+    setUnlockError(null);
     milestonesSentRef.current = new Set();
   }, [recommendation.sessionId, recommendation.ephemeralMode]);
+
+  useEffect(() => {
+    if (isPro && previewLocked) {
+      setPreviewLocked(false);
+    }
+  }, [isPro, previewLocked]);
 
   useEffect(() => {
     onPlayingChange?.(isPlaying);
@@ -437,6 +464,24 @@ export function PlayerView({
             .catch(() => {});
         }
 
+        // 5-Minute Free Preview Gate for non-Pro listeners (smooth 2-second fade-out -> Stripe Unlock)
+        if (!isPro && next >= FREE_PREVIEW_LIMIT_SEC && plannedSec > FREE_PREVIEW_LIMIT_SEC) {
+          window.clearInterval(id);
+          setIsPlaying(false);
+          setPreviewLocked(true);
+          void engineRef.current?.fadeOutAndPause(2.0);
+          if (!isEphemeral) {
+            void api
+              .saveProgress({
+                sessionId: liveSessionId,
+                actualDurationSec: next,
+                liveAdjustments: adjustmentsRef.current,
+              })
+              .catch(() => {});
+          }
+          return next;
+        }
+
         if (next >= plannedSec) {
           window.clearInterval(id);
           endedByUserRef.current = true;
@@ -456,9 +501,12 @@ export function PlayerView({
     }, 1000);
 
     return () => window.clearInterval(id);
-  }, [isPlaying, plannedSec, liveSessionId, isEphemeral, onFinishToDebrief]);
+  }, [isPlaying, isPro, plannedSec, liveSessionId, isEphemeral, onFinishToDebrief]);
 
   const togglePlay = async () => {
+    if (!isPro && previewLocked) {
+      return;
+    }
     if (!audioStarted) {
       await engineRef.current?.start(
         recommendation.params,
@@ -753,13 +801,30 @@ export function PlayerView({
             </p>
           </div>
 
-          <div className="text-right">
+          <div className="text-right space-y-1">
             <div className="font-mono-tech text-3xl font-bold tracking-tight text-white sm:text-4xl">
               {formatTimer(elapsedSec)}
             </div>
             <div className="font-mono-tech text-xs text-slate-400">
               of {recommendation.plannedDurationMin}:00 min
             </div>
+            {!isPro && plannedSec > FREE_PREVIEW_LIMIT_SEC && (
+              <button
+                type="button"
+                onClick={() => onUpgradePro?.()}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
+                  FREE_PREVIEW_LIMIT_SEC - elapsedSec <= 30
+                    ? 'border-amber-400/60 bg-amber-400/20 text-amber-200 animate-pulse'
+                    : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
+                }`}
+                title="Free preview lasts 5 minutes. Upgrade to Pro for unlimited full sessions."
+              >
+                <Clock className="h-3 w-3" />
+                {previewLocked
+                  ? 'Preview ended · Unlock'
+                  : `Free preview · ${formatTimer(Math.max(0, FREE_PREVIEW_LIMIT_SEC - elapsedSec))} left`}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1264,6 +1329,138 @@ export function PlayerView({
           </div>
         )}
       </div>
+
+      {/* 5-Minute Free Preview Complete -> Stripe Pro Unlock Overlay */}
+      {previewLocked && !isPro && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/82 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-3xl border border-amber-400/40 p-5 sm:p-7 space-y-5">
+            <div className="space-y-2 text-center">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/45 bg-amber-400/15 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-200">
+                <Lock className="h-3.5 w-3.5" />
+                5-Minute Free Preview Complete
+              </div>
+              <h2 className="font-display text-2xl font-bold text-white sm:text-[1.65rem] leading-tight">
+                Keep this feeling going —{' '}
+                <span className="text-aurora">unlock the full session.</span>
+              </h2>
+              <p className="text-xs leading-relaxed text-slate-300 sm:text-sm">
+                Your custom <strong className="text-white">{activeVibeDisplay.label}</strong> +{' '}
+                <strong className="text-cyan-200">{recommendation.arm.name}</strong> mix is tuned
+                for your full {recommendation.plannedDurationMin}-minute session.
+              </p>
+            </div>
+
+            {/* Annual vs Monthly Plan Picker */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPaywallPlan('annual')}
+                className={`relative rounded-2xl border p-4 text-left transition ${
+                  selectedPaywallPlan === 'annual'
+                    ? 'border-amber-400 bg-amber-400/12 shadow-[0_0_24px_rgba(251,191,36,0.18)]'
+                    : 'border-slate-800 bg-slate-950/70 hover:border-slate-600'
+                }`}
+              >
+                <span className="absolute -top-2.5 right-3 rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-950">
+                  Save 50%
+                </span>
+                <div className="text-xs font-semibold text-amber-200">Annual Pro</div>
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span className="font-mono-tech text-2xl font-bold text-white">$59</span>
+                  <span className="text-xs text-slate-400">/ year</span>
+                </div>
+                <div className="mt-1 text-[11px] text-slate-400">$4.92/mo · billed yearly</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedPaywallPlan('monthly')}
+                className={`rounded-2xl border p-4 text-left transition ${
+                  selectedPaywallPlan === 'monthly'
+                    ? 'border-cyan-400 bg-cyan-400/12 shadow-[0_0_24px_rgba(34,211,238,0.18)]'
+                    : 'border-slate-800 bg-slate-950/70 hover:border-slate-600'
+                }`}
+              >
+                <div className="text-xs font-semibold text-cyan-200">Monthly Pro</div>
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span className="font-mono-tech text-2xl font-bold text-white">$9.99</span>
+                  <span className="text-xs text-slate-400">/ month</span>
+                </div>
+                <div className="mt-1 text-[11px] text-slate-400">Cancel anytime in 1 click</div>
+              </button>
+            </div>
+
+            <ul className="space-y-1.5 rounded-2xl border border-slate-800/90 bg-slate-950/65 p-3.5 text-xs text-slate-200">
+              <li className="flex items-start gap-2">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <span>Unlimited full-length sessions (15, 30, 45, 60 min — zero cutoffs)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <span>Any music style you type (Reggae, Rock, Jazz, Lo-Fi, Classical) + live AI</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <span>Full Science Study Lab + reaction speed tracking across devices</span>
+              </li>
+            </ul>
+
+            {unlockError && (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-500/12 px-3 py-2 text-xs text-rose-200">
+                {unlockError}
+              </div>
+            )}
+
+            <button
+              type="button"
+              disabled={unlockingCheckout}
+              onClick={async () => {
+                setUnlockError(null);
+                if (!stripeAvailable || !onStartDirectCheckout) {
+                  onUpgradePro?.();
+                  return;
+                }
+                setUnlockingCheckout(true);
+                try {
+                  await onStartDirectCheckout(selectedPaywallPlan);
+                } catch (err) {
+                  setUnlockError(
+                    err instanceof Error ? err.message : 'Unable to open Stripe Checkout right now.'
+                  );
+                  setUnlockingCheckout(false);
+                }
+              }}
+              className="btn-aurora flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 disabled:opacity-60 sm:text-base"
+            >
+              {unlockingCheckout ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CreditCard className="h-4 w-4" />
+              )}
+              {unlockingCheckout
+                ? 'Opening Secure Stripe Checkout...'
+                : selectedPaywallPlan === 'annual'
+                  ? 'Unlock Full Session · $59/year'
+                  : 'Unlock Full Session · $9.99/month'}
+            </button>
+
+            <div className="flex flex-col items-center gap-2 pt-0.5 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Secured by Stripe · Instant unlock · Cancel anytime</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleEndSession}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 underline-offset-2 transition hover:text-cyan-200 hover:underline"
+              >
+                <Crown className="h-3 w-3 opacity-60" />
+                Not now — end preview &amp; rate how I feel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showPrePvt && (
         <PvtBenchmarkModal

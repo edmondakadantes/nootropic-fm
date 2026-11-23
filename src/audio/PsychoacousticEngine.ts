@@ -1047,6 +1047,22 @@ export class PsychoacousticEngine {
     }
   }
 
+  public async fadeOutAndPause(durationSec = 2.0): Promise<void> {
+    if (!this.ctx || !this.isPlaying) return;
+    if (this.masterGain) {
+      try {
+        const now = this.ctx.currentTime;
+        this.masterGain.gain.cancelScheduledValues(now);
+        this.masterGain.gain.setValueAtTime(Math.max(0.0001, this.masterGain.gain.value), now);
+        this.masterGain.gain.exponentialRampToValueAtTime(0.0001, now + durationSec);
+      } catch {
+        // ignore
+      }
+      await new Promise((r) => window.setTimeout(r, Math.round(durationSec * 1000)));
+    }
+    await this.pause();
+  }
+
   public async pause(): Promise<void> {
     if (!this.ctx || !this.isPlaying) return;
     this.isPlaying = false;
@@ -1066,6 +1082,15 @@ export class PsychoacousticEngine {
   public async resume(): Promise<void> {
     if (!this.ctx || this.isPlaying) return;
     await this.ctx.resume();
+    if (this.masterGain) {
+      try {
+        const now = this.ctx.currentTime;
+        this.masterGain.gain.cancelScheduledValues(now);
+        this.masterGain.gain.setTargetAtTime(Math.max(0.0001, this.volume * 0.82), now, 0.25);
+      } catch {
+        // ignore
+      }
+    }
     await this.audioEl?.play().catch(() => {});
     this.isPlaying = true;
     this.composer.resume();
