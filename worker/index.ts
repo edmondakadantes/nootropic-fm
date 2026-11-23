@@ -46,6 +46,9 @@ import {
 import type { D1Database, Env, ExecutionContext } from './env';
 import { fetchVerifiedLiveLiterature } from './literature';
 import { resolveMusicProvider } from './musicProviders';
+import { compileMedicalStudy, searchLiveMedicalStudies } from './studyCompiler';
+import { buildRecommendationFromStudySpec } from '../shared/studyCompilerCore';
+import { VERIFIED_STUDY_PRESETS } from '../shared/studyPresets';
 
 const EEA_UK_CH_COUNTRIES = new Set([
   'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE',
@@ -727,10 +730,12 @@ export default {
         return json(
           {
             ok: true,
-            version: '2.0',
+            version: '3.0',
             mode: env.APP_ENV ?? 'open-research-beta',
             hasGemini: env.ENABLE_LLM_PARSE === 'true' && Boolean(env.GEMINI_API_KEY),
             hasLiveMusicGen: Boolean(provider),
+            hasLyriaRealtime: Boolean(env.GEMINI_MUSIC_API_KEY?.trim()),
+            hasWorkersAi: Boolean(env.AI),
             musicProvider: provider?.id ?? 'none',
             exportProtected: Boolean(env.ADMIN_EXPORT_KEY),
             hasAudioBucket: Boolean(env.AUDIO_BUCKET),
@@ -768,6 +773,8 @@ export default {
           regionRequiresOptIn,
           countryCode: cfCountry,
           customLiveGenAvailable: Boolean(provider) && usedToday < dailyCapMax,
+          lyriaRealtimeAvailable: Boolean(env.GEMINI_MUSIC_API_KEY?.trim()) && usedToday < dailyCapMax,
+          workersAiCompilerAvailable: Boolean(env.AI),
           musicProvider: provider?.id ?? 'cache_only',
           dailyCapMax,
           dailyCapRemaining: Math.max(0, dailyCapMax - usedToday),
@@ -779,6 +786,193 @@ export default {
           })),
         };
         return json({ config }, 200, request);
+      }
+
+      // GET /api/studies/presets — Verified Ground-Truth Clinical Executable Study Presets ($0)
+      if (url.pathname === '/api/studies/presets' && request.method === 'GET') {
+        return json({ presets: VERIFIED_STUDY_PRESETS }, 200, request);
+      }
+
+      // POST /api/studies/search — Live search across Europe PMC (PubMed/OA abstracts) & ClinicalTrials.gov v2 ($0)
+      if (url.pathname === '/api/studies/search' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'study_search', 60);
+        if (!allowed) {
+          return json({ error: 'Daily study search limit reached. Please try again tomorrow.' }, 429, request);
+        }
+        const body = (await request.json().catch(() => ({}))) as { query?: string };
+        const q = String(body.query ?? '').trim();
+        if (q.length < 2) {
+          return json({ results: [] }, 200, request);
+        }
+        const results = await searchLiveMedicalStudies(env, q);
+        return json({ results }, 200, request);
+      }
+
+      // POST /api/studies/compile — Compiles ANY PubMed/DOI/NCT/Topic/Abstract into an ExecutableStudySpec + Recommendation
+      if (url.pathname === '/api/studies/compile' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'study_compile', 40);
+        if (!allowed) {
+          return json({ error: 'Daily study compilation limit reached. Please try again tomorrow.' }, 429, request);
+        }
+        const body = (await request.json().catch(() => ({}))) as {
+          queryOrText?: string;
+          presetId?: string;
+          pmid?: string;
+          doi?: string;
+          nctId?: string;
+          abstractOverride?: string;
+          titleOverride?: string;
+          device?: OutputDevice;
+          environment?: SessionEnvironment;
+          preferredGenre?: ResolvedGenre;
+          profileId?: string;
+          ephemeralMode?: boolean;
+        };
+
+        const device: OutputDevice =
+          body.device === 'speakers' || body.device === 'car_audio' ? body.device : 'headphones';
+        const environment: SessionEnvironment =
+          body.environment === 'driving' ||
+          body.environment === 'office' ||
+          body.environment === 'study' ||
+          body.environment === 'home_relax' ||
+          body.environment === 'transit'
+            ? body.environment
+            : device === 'car_audio'
+              ? 'driving'
+              : 'study';
+
+        const { spec, fromCache } = await compileMedicalStudy(env, {
+          queryOrText: String(body.queryOrText ?? ''),
+          presetId: body.presetId,
+          pmid: body.pmid,
+          doi: body.doi,
+          nctId: body.nctId,
+          abstractOverride: body.abstractOverride,
+          titleOverride: body.titleOverride,
+          device,
+          environment,
+          preferredGenre: body.preferredGenre,
+        });
+
+        const sessionId = `eph_study_${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}`;
+        const recommendation = buildRecommendationFromStudySpec({
+          spec,
+          sessionId,
+          device,
+          environment,
+          preferredGenre: body.preferredGenre,
+          ephemeralMode: true,
+        });
+
+        return json({ spec: recommendation.executableSpec ?? spec, recommendation, fromCache }, 200, request);
+      }
+
+      // POST /api/music/realtime-token — Plug-and-play Google Lyria RealTime ephemeral token minter
+      if (url.pathname === '/api/music/realtime-token' && request.method === 'POST') {
+        const apiKey = env.GEMINI_MUSIC_API_KEY?.trim();
+        if (!apiKey) {
+          return json(
+            {
+              available: false,
+              reason: 'Live Lyria RealTime API key not configured; running on $0 Live Generative Composer.',
+            },
+            200,
+            request
+          );
+        }
+        const allowed = await checkDailyRateLimit(env.DB, request, 'lyria_realtime_token', 3);
+        if (!allowed) {
+          return json(
+            {
+              available: false,
+              reason: 'Daily per-listener Lyria RealTime quota reached; continuing seamlessly on $0 Live Generative Composer.',
+            },
+            200,
+            request
+          );
+        }
+
+        const dailyCapMax = Math.max(0, Number(env.MUSIC_GEN_DAILY_CAP ?? '3'));
+        const today = new Date().toISOString().slice(0, 10);
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO api_usage_daily (day, gemini_calls, music_gen_calls, music_gen_cost_cents)
+           VALUES (?, 0, 0, 0)`
+        )
+          .bind(today)
+          .run();
+        const usageRow = await env.DB.prepare('SELECT music_gen_calls FROM api_usage_daily WHERE day = ?')
+          .bind(today)
+          .first<{ music_gen_calls?: number }>();
+        if (Number(usageRow?.music_gen_calls ?? 0) >= dailyCapMax) {
+          return json(
+            {
+              available: false,
+              reason: 'Daily community Lyria budget reached; continuing seamlessly on $0 Live Generative Composer.',
+            },
+            200,
+            request
+          );
+        }
+
+        try {
+          const expireTime = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+          const newSessionExpireTime = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+          const tokenRes = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
+            body: JSON.stringify({
+              uses: 1,
+              expireTime,
+              newSessionExpireTime,
+            }),
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!tokenRes.ok) {
+            return json(
+              {
+                available: false,
+                reason: `Lyria RealTime auth unavailable (${tokenRes.status}); using $0 Live Generative Composer.`,
+              },
+              200,
+              request
+            );
+          }
+          const tokenData = (await tokenRes.json()) as { name?: string };
+          if (!tokenData.name) {
+            return json({ available: false, reason: 'Invalid token response.' }, 200, request);
+          }
+
+          await env.DB.prepare(
+            `UPDATE api_usage_daily SET music_gen_calls = music_gen_calls + 1 WHERE day = ?`
+          )
+            .bind(today)
+            .run()
+            .catch(() => {});
+
+          return json(
+            {
+              available: true,
+              token: tokenData.name,
+              expiresAt: expireTime,
+              model: 'models/lyria-realtime-exp',
+            },
+            200,
+            request
+          );
+        } catch {
+          return json(
+            {
+              available: false,
+              reason: 'Lyria RealTime service unreachable; using $0 Live Generative Composer.',
+            },
+            200,
+            request
+          );
+        }
       }
 
       // GET /api/audio/catalog — Core Studio Stems + Community R2 Custom Tracks
@@ -1401,10 +1595,10 @@ export default {
               target_state, environment, device, safety_mode, planned_duration_min,
               actual_duration_sec, completion_ratio, arm_id, arm_name, is_exploration,
               is_control_trial, energy_tier, music_genre, initial_music_genre,
-              custom_genre_slug, audio_source,
+              custom_genre_slug, audio_source, study_spec_id,
               acoustic_params_json, cited_study_ids_json, live_adjustments_json,
               time_of_day_bucket, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, 'active', ?)`
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, 'active', ?)`
           )
             .bind(
               sessionId,
@@ -1427,6 +1621,7 @@ export default {
               finalGenreKey,
               recommendation.customGenreSlug ?? null,
               recommendation.audioSource,
+              recommendation.executableSpec?.id ?? null,
               JSON.stringify(recommendation.params),
               JSON.stringify(recommendation.arm.studyIds),
               getTimeOfDayBucket(),

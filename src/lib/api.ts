@@ -1,3 +1,4 @@
+import type { ExecutableStudySpec } from '../../shared/studySpec';
 import type {
   AcousticParams,
   AppRuntimeConfig,
@@ -297,4 +298,62 @@ export const api = {
       >;
       customTracks?: CustomTrackInfo[];
     }>('/api/audio/catalog'),
+
+  getStudyPresets: () =>
+    apiFetch<{ presets: ExecutableStudySpec[] }>('/api/studies/presets'),
+
+  searchMedicalStudies: (query: string) =>
+    apiFetch<{
+      results: Array<{
+        id: string;
+        source: 'core' | 'pubmed' | 'europepmc' | 'clinicaltrials';
+        title: string;
+        authors: string;
+        journal: string;
+        year: string;
+        url: string;
+        doi?: string;
+        pmid?: string;
+        pmcid?: string;
+        nctId?: string;
+        abstractText: string;
+        hasFullAbstract: boolean;
+      }>;
+    }>('/api/studies/search', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    }),
+
+  compileMedicalStudy: (payload: {
+    queryOrText: string;
+    presetId?: string;
+    pmid?: string;
+    doi?: string;
+    nctId?: string;
+    abstractOverride?: string;
+    titleOverride?: string;
+    device?: OutputDevice;
+    environment?: SessionEnvironment;
+    preferredGenre?: ResolvedGenre;
+  }) =>
+    apiFetch<{
+      spec: ExecutableStudySpec;
+      recommendation: ProtocolRecommendation;
+      fromCache: boolean;
+    }>('/api/studies/compile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getLyriaRealtimeToken: () =>
+    apiFetch<{
+      available: boolean;
+      token?: string;
+      expiresAt?: string;
+      model?: string;
+      reason?: string;
+    }>('/api/music/realtime-token', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
 };

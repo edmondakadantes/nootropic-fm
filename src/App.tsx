@@ -3,6 +3,7 @@ import {
   BarChart3,
   Download,
   Fingerprint,
+  FlaskConical,
   KeyRound,
   LogOut,
   Radio,
@@ -36,6 +37,7 @@ import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFinge
 import { OnboardingView } from './components/OnboardingView';
 import { PlayerView } from './components/PlayerView';
 import { ProtocolRevealView } from './components/ProtocolRevealView';
+import { StudyLabView } from './components/StudyLabView';
 import {
   api,
   clearStoredProfileAuth,
@@ -43,7 +45,7 @@ import {
   saveStoredProfileAuth,
 } from './lib/api';
 
-type Screen = 'onboarding' | 'checkin' | 'reveal' | 'player' | 'debrief' | 'insights';
+type Screen = 'onboarding' | 'checkin' | 'studylab' | 'reveal' | 'player' | 'debrief' | 'insights';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('checkin');
@@ -515,6 +517,23 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                setFieldMood('focus');
+                setScreen('studylab');
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                screen === 'studylab'
+                  ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/40'
+                  : 'text-slate-300 hover:bg-white/[0.05] hover:text-cyan-200'
+              }`}
+              title="Compile & execute any PubMed / DOI / ClinicalTrials medical study directly in live sound"
+            >
+              <FlaskConical className="h-3.5 w-3.5 text-emerald-300" />
+              <span>Study Lab</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 setFieldMood('flow');
                 setScreen('insights');
               }}
@@ -609,6 +628,16 @@ export default function App() {
             onMoodChange={setFieldMood}
             onLaunchUnifiedSession={handleLaunchUnifiedSession}
           />
+        ) : screen === 'studylab' ? (
+          <StudyLabView
+            defaultDevice={profile?.defaultDevice ?? 'headphones'}
+            onExecuteRecommendation={(rec, directPlay) => {
+              setErrorBanner(null);
+              setActiveRec(rec);
+              setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+              setScreen(directPlay ? 'player' : 'reveal');
+            }}
+          />
         ) : screen === 'reveal' ? (
           <ProtocolRevealView
             loading={researching}
@@ -619,6 +648,10 @@ export default function App() {
             onSwapGenre={handleSwapRevealGenre}
             onSwapCustomVibe={(label) => void handleSwapCustomVibe(label)}
             onLaunchAudio={() => setScreen('player')}
+            onOpenStudyLab={() => {
+              setFieldMood('focus');
+              setScreen('studylab');
+            }}
             onBack={() => {
               setActiveRec(null);
               setScreen('checkin');
@@ -627,6 +660,7 @@ export default function App() {
         ) : screen === 'player' && activeRec ? (
           <PlayerView
             recommendation={activeRec}
+            lyriaRealtimeAvailable={runtimeConfig?.lyriaRealtimeAvailable}
             onPlayingChange={setAudioActive}
             onFinishToDebrief={handleFinishToDebrief}
           />

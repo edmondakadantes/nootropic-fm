@@ -67,9 +67,14 @@ export interface ExecutionContext {
   passThroughOnException(): void;
 }
 
+export interface WorkersAiBinding {
+  run(model: string, input: Record<string, unknown>): Promise<unknown>;
+}
+
 export interface Env {
   DB: D1Database;
   AUDIO_BUCKET?: R2Bucket;
+  AI?: WorkersAiBinding;
   APP_ENV?: string;
   ENABLE_LLM_PARSE?: string;
   GEMINI_API_KEY?: string;

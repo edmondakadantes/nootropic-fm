@@ -18,6 +18,11 @@ import {
   Waves,
 } from 'lucide-react';
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
+import {
+  CARRIER_MODE_LABELS,
+  ENTRAINMENT_LABELS,
+  type CarrierEngineMode,
+} from '../../shared/studySpec';
 import type {
   AudioSourceType,
   LiveAdjustment,
@@ -28,9 +33,11 @@ import { DEVICE_LABELS, ENERGY_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS }
 import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
 import { API_BASE, api } from '../lib/api';
 import { NeuralVisualizer } from './NeuralVisualizer';
+import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
 interface PlayerViewProps {
   recommendation: ProtocolRecommendation;
+  lyriaRealtimeAvailable?: boolean;
   onPlayingChange?: (playing: boolean) => void;
   onFinishToDebrief: (stats: {
     actualDurationSec: number;
@@ -46,6 +53,7 @@ function formatTimer(sec: number): string {
 
 export function PlayerView({
   recommendation,
+  lyriaRealtimeAvailable = false,
   onPlayingChange,
   onFinishToDebrief,
 }: PlayerViewProps) {
@@ -53,6 +61,13 @@ export function PlayerView({
   if (!engineRef.current) {
     engineRef.current = new PsychoacousticEngine();
   }
+
+  const initialCarrier: CarrierEngineMode =
+    recommendation.audioSource === 'pure_stimulus'
+      ? 'pure_stimulus'
+      : recommendation.audioSource === 'studio_library' || recommendation.audioSource === 'community_cache'
+        ? 'studio_library'
+        : 'generative_live';
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioStarted, setAudioStarted] = useState(false);
@@ -64,8 +79,11 @@ export function PlayerView({
   const [genre, setGenre] = useState<ResolvedGenre>(
     recommendation.params.genre ?? 'deep_electronic'
   );
+  const [carrierMode, setCarrierMode] = useState<CarrierEngineMode>(initialCarrier);
+  const [lyriaNotice, setLyriaNotice] = useState<string | null>(null);
+  const [connectingLyria, setConnectingLyria] = useState(false);
   const [audioSource, setAudioSource] = useState<AudioSourceType>(
-    recommendation.audioSource ?? 'studio_library'
+    recommendation.audioSource ?? 'generative_live'
   );
   const [activeCustomLabel, setActiveCustomLabel] = useState<string | null>(
     recommendation.customGenreLabel ?? null
@@ -79,23 +97,37 @@ export function PlayerView({
   );
   const [customGenNotice, setCustomGenNotice] = useState<string | null>(null);
 
+  const spec = recommendation.executableSpec;
   const [telemetry, setTelemetry] = useState<EngineTelemetry>({
     phase: 'entry',
-    phaseLabel: 'Entry & Alignment (Iso-Adaptive)',
+    phaseLabel: 'Entry & Iso-Alignment',
     progressRatio: 0,
-    currentModHz: recommendation.params.modulationHz,
-    currentModDepth: Number((recommendation.params.modulationDepth * 0.48).toFixed(2)),
-    crossoverHz: recommendation.params.crossoverHz ?? 190,
-    upperCrossoverHz: recommendation.params.upperCrossoverHz ?? 4500,
+    currentModHz: spec?.entrainment.frequencyHz ?? recommendation.params.modulationHz,
+    currentModDepth: Number((recommendation.params.modulationDepth * 0.55).toFixed(2)),
+    crossoverHz: spec?.entrainment.modulationBandHz[0] ?? recommendation.params.crossoverHz ?? 190,
+    upperCrossoverHz: spec?.entrainment.modulationBandHz[1] ?? recommendation.params.upperCrossoverHz ?? 4500,
     stereoAmActive: Boolean(recommendation.params.stereoAmSpread && !recommendation.params.speakerSafeEQ),
     energyTier: recommendation.params.energyTier ?? 'focus',
-    currentBpm: recommendation.params.bpm,
+    currentBpm: spec?.music.bpmRamp?.start ?? spec?.music.bpm ?? recommendation.params.bpm,
     antiMonotonyActive: false,
     genre: recommendation.params.genre ?? 'deep_electronic',
     backgroundAudioActive: false,
     usingStudioAudio: false,
     usingCustomTrack: false,
     activeTrackName: null,
+    carrierMode: initialCarrier,
+    entrainmentType: spec?.entrainment.type ?? 'amplitude_modulation',
+    stimulusCarrierLabel: spec
+      ? ENTRAINMENT_LABELS[spec.entrainment.type]
+      : `${recommendation.params.modulationHz} Hz LR4 AM`,
+    tuningA4Hz: spec?.music.tuningA4Hz ?? 440,
+    tonalMode: spec?.music.tonalMode ?? 'suspended',
+    noiseColor: spec?.noise.color ?? recommendation.params.noiseColor,
+    noiseSnrDb: spec?.noise.snrDb ?? -20,
+    hrvActive: Boolean(spec?.entrainment.hrvBreathHz || spec?.entrainment.type === 'hrv_breathing_swell'),
+    hrvBreathPhase: null,
+    hrvBreathProgress: 0,
+    lyriaStatus: 'idle',
   });
 
   const plannedSec = recommendation.plannedDurationMin * 60;
@@ -166,7 +198,9 @@ export function PlayerView({
           recommendation.params,
           recommendation.plannedDurationMin,
           `${recommendation.arm.name} · ${titleLabel}`,
-          recommendation.isControlTrial
+          recommendation.isControlTrial,
+          recommendation.executableSpec,
+          initialCarrier
         );
 
         if (!mounted) return;
@@ -381,7 +415,9 @@ export function PlayerView({
         recommendation.params,
         recommendation.plannedDurationMin,
         recommendation.arm.name,
-        recommendation.isControlTrial
+        recommendation.isControlTrial,
+        recommendation.executableSpec,
+        carrierMode
       );
       setAudioStarted(true);
       setIsPlaying(true);
@@ -394,6 +430,44 @@ export function PlayerView({
       await engineRef.current?.resume();
       setIsPlaying(true);
     }
+  };
+
+  const handleCarrierSwitch = async (nextMode: CarrierEngineMode) => {
+    setLyriaNotice(null);
+    if (nextMode === 'lyria_realtime') {
+      setConnectingLyria(true);
+      try {
+        const res = await api.getLyriaRealtimeToken();
+        if (!res.available || !res.token) {
+          setLyriaNotice(
+            res.reason ??
+              'Lyria RealTime API key not configured yet — continuing seamlessly on $0 Live Generative Composer.'
+          );
+          setConnectingLyria(false);
+          return;
+        }
+        const ok = await engineRef.current?.activateLyriaRealtime(
+          res.token,
+          res.model ?? 'models/lyria-realtime-exp',
+          (_status, note) => {
+            if (note) setLyriaNotice(note);
+          }
+        );
+        if (ok) {
+          setCarrierMode('lyria_realtime');
+          setAudioSource('lyria_realtime');
+        }
+      } catch {
+        setLyriaNotice('Lyria RealTime temporarily unreachable — continuing on $0 Live Generative Composer.');
+      } finally {
+        setConnectingLyria(false);
+      }
+      return;
+    }
+
+    setCarrierMode(nextMode);
+    setAudioSource(nextMode);
+    engineRef.current?.setCarrierMode(nextMode);
   };
 
   const handleVolume = (v: number) => {
@@ -419,9 +493,13 @@ export function PlayerView({
     switchedAwayRef.current = true;
     setGenre(style);
     setActiveCustomLabel(null);
-    setAudioSource('studio_library');
     setCustomGenState('idle');
     setCustomGenNotice(null);
+    if (carrierMode === 'pure_stimulus') {
+      setCarrierMode('generative_live');
+      setAudioSource('generative_live');
+      engineRef.current?.setCarrierMode('generative_live');
+    }
     engineRef.current?.setGenre(style);
     setAdjustments((prev) => [
       ...prev,
@@ -433,7 +511,7 @@ export function PlayerView({
           sessionId: recommendation.sessionId,
           genre: style,
           customGenreSlug: null,
-          audioSource: 'studio_library',
+          audioSource: carrierMode === 'studio_library' ? 'studio_library' : 'generative_live',
           atSec: elapsedRef.current,
         })
         .catch(() => {});
@@ -521,7 +599,16 @@ export function PlayerView({
               <span className="inline-flex items-center gap-1 rounded-full border border-indigo-400/35 bg-indigo-500/12 px-2.5 py-1 text-[11px] font-medium text-indigo-200">
                 {ENERGY_LABELS[telemetry.energyTier].label}
               </span>
-              {telemetry.usingCustomTrack || audioSource === 'community_cache' ? (
+              {telemetry.carrierMode === 'lyria_realtime' ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-purple-400/45 bg-purple-500/18 px-2.5 py-1 text-[11px] font-semibold text-purple-200">
+                  <Sparkles className="h-3 w-3" />
+                  Google Lyria RealTime AI
+                </span>
+              ) : telemetry.carrierMode === 'pure_stimulus' ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/45 bg-amber-500/15 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+                  Pure Clinical Signal
+                </span>
+              ) : telemetry.usingCustomTrack || audioSource === 'community_cache' ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-fuchsia-400/40 bg-fuchsia-500/15 px-2.5 py-1 text-[11px] font-semibold text-fuchsia-200">
                   <Sparkles className="h-3 w-3" />
                   Community R2 Cache · {activeVibeDisplay.label}
@@ -530,7 +617,12 @@ export function PlayerView({
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/14 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
                   Studio Library · {telemetry.activeTrackName}
                 </span>
-              ) : null}
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/40 bg-cyan-400/12 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
+                  <Sparkles className="h-3 w-3" />
+                  Live As-We-Go Composer ($0)
+                </span>
+              )}
               <span
                 className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
                   recommendation.isExploration
@@ -677,6 +769,83 @@ export function PlayerView({
           </div>
         </div>
 
+        {/* Synchronized 0.1 Hz HRV Vagal Breath Pacer (when study includes autonomic breathing tide) */}
+        {telemetry.hrvActive && telemetry.hrvBreathPhase && (
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/[0.08] px-4 py-3 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-emerald-200">
+                0.10 Hz HRV Vagal Resonance Pacer ·{' '}
+                <span className="uppercase tracking-wider text-white">
+                  {telemetry.hrvBreathPhase === 'inhale' ? 'Inhale Slowly (5s)' : 'Exhale Smoothly (5s)'}
+                </span>
+              </span>
+              <span className="font-mono-tech text-[11px] text-emerald-300">6 breaths/min</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-900">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-300 transition-all duration-300"
+                style={{ width: `${Math.max(8, Math.round(telemetry.hrvBreathProgress * 100))}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Live Synthesis Carrier Engine Switcher (Study-Locked Generative $0 / Studio R2 / Pure Clinical / Lyria AI) */}
+        <div className="space-y-2 rounded-2xl border border-cyan-400/20 bg-slate-950/60 p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-semibold text-cyan-200">
+              Audio Synthesis Mode (Medical Stimulus Stays 100% Locked)
+            </span>
+            <span className="font-mono-tech text-[10px] text-slate-400">
+              {telemetry.stimulusCarrierLabel}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {(['generative_live', 'studio_library', 'pure_stimulus', 'lyria_realtime'] as CarrierEngineMode[]).map(
+              (m) => {
+                const active = carrierMode === m;
+                const info = CARRIER_MODE_LABELS[m];
+                const isLyria = m === 'lyria_realtime';
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    disabled={isLyria && connectingLyria}
+                    onClick={() => void handleCarrierSwitch(m)}
+                    className={`rounded-xl border px-2.5 py-2 text-left transition ${
+                      active
+                        ? 'border-cyan-400/70 bg-cyan-400/18 text-white shadow-[0_0_16px_rgba(34,211,238,0.18)]'
+                        : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-600 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[11px] font-semibold leading-tight">
+                        {m === 'generative_live'
+                          ? 'Live As-We-Go ($0)'
+                          : m === 'studio_library'
+                            ? 'Studio R2 Stems'
+                            : m === 'pure_stimulus'
+                              ? 'Pure Clinical Signal'
+                              : connectingLyria
+                                ? 'Connecting Lyria…'
+                                : lyriaRealtimeAvailable
+                                  ? 'Lyria RealTime AI'
+                                  : 'Lyria AI (API Key)'}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 line-clamp-1 text-[9px] text-slate-400">{info.shortDesc}</div>
+                  </button>
+                );
+              }
+            )}
+          </div>
+          {lyriaNotice && (
+            <div className="rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-1.5 text-[11px] text-indigo-200">
+              {lyriaNotice}
+            </div>
+          )}
+        </div>
+
         {/* Live Music Layer (Genre Carrier) Switcher — zero dropout, keeps Multiband AM active */}
         <div className="space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -720,30 +889,45 @@ export function PlayerView({
         {/* Acoustic DNA Telemetry Grid */}
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
           <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Multiband AM</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Medical Signal</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-cyan-300">
-              {telemetry.currentModHz} Hz
+              {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz` : `A=${telemetry.tuningA4Hz} Hz`}
             </div>
-            <div className="font-mono-tech text-[10px] text-slate-500">
-              {telemetry.crossoverHz}–{telemetry.upperCrossoverHz}Hz · sub clean
+            <div className="truncate font-mono-tech text-[10px] text-slate-500">
+              {ENTRAINMENT_LABELS[telemetry.entrainmentType].split(' ')[0]} · {telemetry.crossoverHz}–{telemetry.upperCrossoverHz}Hz
             </div>
           </div>
           <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">AM Depth</div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Signal Depth</div>
             <div className="font-mono-tech mt-1 text-base font-semibold text-indigo-300">
               {Math.round(telemetry.currentModDepth * 100)}%
             </div>
-          </div>
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Pulse Tempo</div>
-            <div className="font-mono-tech mt-1 text-base font-semibold text-white">
-              {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Ambient'}
+            <div className="font-mono-tech text-[10px] text-slate-500 capitalize">
+              {telemetry.tonalMode} · A={telemetry.tuningA4Hz}
             </div>
           </div>
           <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Colored Noise</div>
-            <div className="font-mono-tech mt-1 text-base font-semibold text-slate-200">
-              {recommendation.params.noiseColor} ({Math.round(recommendation.params.noiseLevel * 100)}%)
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Live Tempo</div>
+            <div className="font-mono-tech mt-1 text-base font-semibold text-white">
+              {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Beatless'}
+            </div>
+            <div className="font-mono-tech text-[10px] text-slate-500">
+              {telemetry.carrierMode === 'generative_live'
+                ? 'Live Composer'
+                : telemetry.carrierMode === 'pure_stimulus'
+                  ? 'Pure Signal'
+                  : telemetry.carrierMode === 'lyria_realtime'
+                    ? 'Lyria Live'
+                    : 'Studio R2'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Stochastic Noise</div>
+            <div className="font-mono-tech mt-1 text-base font-semibold text-slate-200 capitalize">
+              {telemetry.noiseColor === 'none' ? 'Off' : telemetry.noiseColor.replace('_', ' ')}
+            </div>
+            <div className="font-mono-tech text-[10px] text-slate-500">
+              {telemetry.noiseColor === 'none' ? 'Clean bed' : `${telemetry.noiseSnrDb} dB SNR`}
             </div>
           </div>
           <div className="col-span-2 rounded-xl border border-slate-800/80 bg-slate-900/55 p-3 sm:col-span-1">
@@ -787,6 +971,11 @@ export function PlayerView({
         </div>
 
         <p className="text-sm leading-relaxed text-slate-300">{recommendation.rationale}</p>
+
+        {/* Live Study-to-Sound Fidelity Matrix */}
+        {recommendation.executableSpec && (
+          <StudyFidelityMatrix spec={recommendation.executableSpec} />
+        )}
 
         {/* Core Acoustic DSP Studies */}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

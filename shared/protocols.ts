@@ -6,6 +6,8 @@ import {
   sanitizeCustomVibe,
 } from './promptComposer';
 import { getStudiesByIds } from './studies';
+import { buildCheckInExecutableSpec } from './studyPresets';
+import { resolvedGenreToPalette } from './studySpec';
 import type {
   AcousticParams,
   AgeBand,
@@ -598,8 +600,10 @@ export function swapRecommendationGenre(
       ? 'community_cache'
       : customVibe.liveGenAvailable
         ? 'live_generating'
-        : 'studio_library'
-    : 'studio_library';
+        : 'generative_live'
+    : rec.audioSource === 'studio_library'
+      ? 'studio_library'
+      : 'generative_live';
 
   const composedMusicPrompt = customVibe
     ? composeScientificMusicPrompt({
@@ -611,9 +615,20 @@ export function swapRecommendationGenre(
       })
     : undefined;
 
+  const updatedExecSpec = rec.executableSpec
+    ? {
+        ...rec.executableSpec,
+        music: {
+          ...rec.executableSpec.music,
+          instrumentPalette: resolvedGenreToPalette(fallbackCore),
+        },
+      }
+    : undefined;
+
   return {
     ...rec,
     params: nextParams,
+    executableSpec: updatedExecSpec,
     genreAdaptationNote,
     audioSource,
     fallbackCoreGenre: fallbackCore,
@@ -836,8 +851,8 @@ export function selectProtocolRecommendation(input: {
       ? 'community_cache'
       : input.liveGenAvailable
         ? 'live_generating'
-        : 'studio_library'
-    : 'studio_library';
+        : 'generative_live'
+    : 'generative_live';
 
   const composedMusicPrompt = validCustom
     ? composeScientificMusicPrompt({
@@ -891,6 +906,21 @@ export function selectProtocolRecommendation(input: {
     ? ' (Includes a controlled exploration trial so the engine can test whether a slightly different acoustic profile works even better for you.)'
     : '';
 
+  const executableSpec = buildCheckInExecutableSpec({
+    armId: chosen.arm.id,
+    targetState: effectiveTarget,
+    bpm: params.bpm,
+    modulationHz: params.modulationHz,
+    modulationDepth: params.modulationDepth,
+    noiseColor: params.noiseColor,
+    noiseLevel: params.noiseLevel,
+    genre: params.genre,
+    durationMin: input.durationMin,
+    device: effectiveDevice,
+    environment: input.environment,
+    microStateId: microState?.id ?? input.microStateId,
+  });
+
   return {
     sessionId: input.sessionId,
     cohortKey,
@@ -913,6 +943,7 @@ export function selectProtocolRecommendation(input: {
     formulaIngredients,
     rationale: `${chosen.arm.description} ${evidenceNote}${explorationNote}`,
     studies: getStudiesByIds(chosen.arm.studyIds),
+    executableSpec,
     confidencePct,
     cohortTrials: chosen.cohortTrials,
     profileTrials: chosen.profileTrials,

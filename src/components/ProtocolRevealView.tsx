@@ -30,6 +30,7 @@ import {
 } from '../../shared/types';
 import type { FieldMood } from './AmbientField';
 import { SonicOrb } from './SonicOrb';
+import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
 interface ProtocolRevealViewProps {
   loading: boolean;
@@ -40,10 +41,15 @@ interface ProtocolRevealViewProps {
   onSwapGenre: (genre: ResolvedGenre) => void;
   onSwapCustomVibe: (customLabel: string) => void;
   onLaunchAudio: () => void;
+  onOpenStudyLab?: () => void;
   onBack: () => void;
 }
 
 const SOURCE_BADGES = {
+  generative_live: {
+    label: 'Live Generative · Study-Locked ($0)',
+    cls: 'border-cyan-400/45 bg-cyan-400/14 text-cyan-100',
+  },
   studio_library: {
     label: 'Instant Studio Library · R2 ($0)',
     cls: 'border-emerald-400/35 bg-emerald-500/12 text-emerald-200',
@@ -55,6 +61,14 @@ const SOURCE_BADGES = {
   live_generating: {
     label: '2-Speed · Instant Start → Custom Crossfade',
     cls: 'border-fuchsia-400/40 bg-fuchsia-500/15 text-fuchsia-200',
+  },
+  lyria_realtime: {
+    label: 'Google Lyria RealTime · Live WebSocket',
+    cls: 'border-purple-400/45 bg-purple-500/15 text-purple-100',
+  },
+  pure_stimulus: {
+    label: 'Pure Clinical Signal · Zero Music',
+    cls: 'border-amber-400/40 bg-amber-500/15 text-amber-100',
   },
   procedural_fallback: {
     label: 'Real-Time DSP Fallback',
@@ -124,6 +138,7 @@ export function ProtocolRevealView({
   onSwapGenre,
   onSwapCustomVibe,
   onLaunchAudio,
+  onOpenStudyLab,
   onBack,
 }: ProtocolRevealViewProps) {
   const [showCustomSwap, setShowCustomSwap] = useState(false);
@@ -497,6 +512,25 @@ export function ProtocolRevealView({
                 </a>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Executable Study-to-Sound Fidelity Matrix */}
+        {recommendation.executableSpec && (
+          <div className="space-y-2.5 border-t border-slate-800/80 pt-3.5">
+            <StudyFidelityMatrix spec={recommendation.executableSpec} compact />
+            {onOpenStudyLab && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={onOpenStudyLab}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/30 bg-cyan-400/8 px-3 py-1.5 text-[11px] font-semibold text-cyan-200 transition hover:border-cyan-400/55 hover:bg-cyan-400/16"
+                >
+                  <FlaskConical className="h-3.5 w-3.5" />
+                  <span>Want to execute a different PubMed / DOI study? Open Study Lab →</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

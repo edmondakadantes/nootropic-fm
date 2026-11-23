@@ -1,10 +1,20 @@
+import {
+  resolvedGenreToPalette,
+  type CarrierEngineMode,
+  type EntrainmentType,
+  type ExecutableStudySpec,
+  type StudyMusicSpec,
+  type TonalMode,
+} from '../../shared/studySpec';
 import type {
   AcousticParams,
   EnergyTier,
-  HarmonicMode,
   NoiseColor,
   ResolvedGenre,
 } from '../../shared/types';
+import { GenerativeComposer } from './GenerativeComposer';
+import { LyriaRealtimeClient, type LyriaRealtimeStatus } from './LyriaRealtimeClient';
+import { createCalibratedNoiseBuffer, MedicalStimulusRack } from './MedicalStimulusRack';
 
 export type SessionPhase = 'entry' | 'plateau' | 'landing';
 
@@ -32,44 +42,18 @@ export interface EngineTelemetry {
   usingStudioAudio: boolean;
   usingCustomTrack?: boolean;
   activeTrackName: string | null;
-}
-
-const CHORD_PROGRESSIONS: Record<HarmonicMode, number[][]> = {
-  bright_maj9: [
-    [0, 7, 11, 14, 16],
-    [5, 12, 16, 19, 21],
-    [9, 12, 16, 19, 23],
-    [7, 12, 14, 19, 21],
-  ],
-  warm_min9: [
-    [0, 7, 10, 14, 15],
-    [8, 12, 15, 19, 22],
-    [5, 10, 12, 17, 19],
-    [7, 10, 14, 17, 19],
-  ],
-  suspended_open: [
-    [0, 7, 14, 19, 24],
-    [5, 12, 17, 19, 24],
-    [9, 14, 16, 21, 23],
-    [7, 14, 19, 21, 26],
-  ],
-  deep_drone: [
-    [0, 7, 12, 14],
-    [0, 5, 12, 17],
-    [0, 7, 12, 19],
-  ],
-};
-
-// Lush extended Jazz chord voicings (ii11 -> V13 -> Imaj9 -> VI9)
-const JAZZ_VOICINGS: number[][] = [
-  [2, 5, 9, 12, 16],
-  [7, 11, 16, 17, 21],
-  [0, 4, 7, 11, 14],
-  [9, 12, 16, 19, 23],
-];
-
-function semitoneRatio(semitones: number): number {
-  return Math.pow(2, semitones / 12);
+  // v3.0 Study-to-Sound & Live As-We-Go Telemetry
+  carrierMode: CarrierEngineMode;
+  entrainmentType: EntrainmentType;
+  stimulusCarrierLabel: string;
+  tuningA4Hz: 440 | 432;
+  tonalMode: TonalMode;
+  noiseColor: NoiseColor;
+  noiseSnrDb: number;
+  hrvActive: boolean;
+  hrvBreathPhase: 'inhale' | 'exhale' | null;
+  hrvBreathProgress: number;
+  lyriaStatus: LyriaRealtimeStatus;
 }
 
 /**
@@ -95,72 +79,8 @@ function createStudioReverbIR(ctx: AudioContext, durationSec = 2.4): AudioBuffer
   return ir;
 }
 
-function createColoredNoiseBuffer(ctx: AudioContext, color: NoiseColor, durationSec = 6): AudioBuffer {
-  const sampleRate = ctx.sampleRate;
-  const length = sampleRate * durationSec;
-  const buffer = ctx.createBuffer(2, length, sampleRate);
-
-  for (let ch = 0; ch < 2; ch++) {
-    const out = buffer.getChannelData(ch);
-    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-    let lastBrown = 0;
-
-    for (let i = 0; i < length; i++) {
-      const white = Math.random() * 2 - 1;
-      if (color === 'brown') {
-        lastBrown = (lastBrown + 0.02 * white) / 1.02;
-        out[i] = lastBrown * 3.2;
-      } else {
-        b0 = 0.99886 * b0 + white * 0.0555179;
-        b1 = 0.99332 * b1 + white * 0.0750759;
-        b2 = 0.96900 * b2 + white * 0.1538520;
-        b3 = 0.86650 * b3 + white * 0.3104856;
-        b4 = 0.55000 * b4 + white * 0.5329522;
-        b5 = -0.7616 * b5 - white * 0.0168980;
-        const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.045;
-        b6 = white * 0.115926;
-        out[i] =
-          color === 'soft_rain'
-            ? pink * (0.72 + 0.28 * Math.sin(i / 18000 + ch * 1.4))
-            : pink;
-      }
-    }
-
-    const fade = Math.min(2048, Math.floor(length / 8));
-    for (let i = 0; i < fade; i++) {
-      const t = i / fade;
-      const tailIdx = length - fade + i;
-      const blended = out[i] * t + out[tailIdx] * (1 - t);
-      out[i] = blended;
-      out[tailIdx] = blended;
-    }
-  }
-
-  return buffer;
-}
-
-/**
- * Generates subtle warm vinyl crackle/dust texture for Lo-Fi Warm Keys.
- */
-function createVinylDustBuffer(ctx: AudioContext, durationSec = 5): AudioBuffer {
-  const rate = ctx.sampleRate;
-  const len = rate * durationSec;
-  const buf = ctx.createBuffer(2, len, rate);
-  for (let ch = 0; ch < 2; ch++) {
-    const out = buf.getChannelData(ch);
-    for (let i = 0; i < len; i++) {
-      const hiss = (Math.random() * 2 - 1) * 0.012;
-      const pop = Math.random() < 0.00018 ? (Math.random() * 2 - 1) * 0.26 : 0;
-      out[i] = hiss + pop;
-    }
-  }
-  return buf;
-}
-
 /**
  * Phase-Coherent 3-Band Linkwitz-Riley (LR4, 24 dB/oct) Crossover helpers.
- * Two cascaded Butterworth (Q = 1/sqrt(2)) biquads sum to exact 0 dB flat magnitude
- * with 0° phase difference at the crossover point (zero 190 Hz / 4.5 kHz dip!).
  */
 function createLR4Filter(
   ctx: AudioContext,
@@ -179,67 +99,132 @@ function createLR4Filter(
   return { input: f1, output: f2 };
 }
 
-/**
- * Generates a phase-shifted sine PeriodicWave (e.g. +32° for Right-channel organic AM shimmer).
- */
 function createPhaseShiftedSineWave(ctx: AudioContext, phaseDeg: number): PeriodicWave {
   const rad = (phaseDeg * Math.PI) / 180;
-  // Web Audio PeriodicWave: sum(real[n]*cos(n*w*t) + imag[n]*sin(n*w*t))
-  // sin(w*t + rad) = sin(rad)*cos(w*t) + cos(rad)*sin(w*t)
   const real = new Float32Array([0, Math.sin(rad)]);
   const imag = new Float32Array([0, Math.cos(rad)]);
   return ctx.createPeriodicWave(real, imag, { disableNormalization: true });
 }
 
+function buildFallbackStudySpec(params: AcousticParams, durationMin: number): ExecutableStudySpec {
+  const tonalMap: Record<AcousticParams['harmonicMode'], TonalMode> = {
+    bright_maj9: 'major',
+    warm_min9: 'minor',
+    suspended_open: 'suspended',
+    deep_drone: 'drone',
+  };
+  const rootMidi = Math.max(
+    38,
+    Math.min(64, Math.round(69 + 12 * Math.log2(Math.max(60, params.rootNoteHz) / 440)))
+  );
+  return {
+    id: 'protocol-fallback',
+    shortLabel: 'Adaptive Protocol',
+    studyRef: {
+      title: 'Adaptive Psychoacoustic Protocol',
+      authors: 'nootropic.fm',
+      year: String(new Date().getFullYear()),
+      journal: 'Peer-Reviewed Baseline',
+      url: 'https://nootropic.fm',
+      source: 'core',
+    },
+    abstractExcerpt: '',
+    compilerMode: 'deterministic_parser',
+    compliancePct: 80,
+    evidenceMap: [],
+    entrainment: {
+      type:
+        params.binauralOffsetHz > 0 && !params.speakerSafeEQ && params.modulationDepth <= 0.05
+          ? 'binaural_beat'
+          : params.modulationHz > 0
+            ? 'amplitude_modulation'
+            : 'none',
+      frequencyHz: params.modulationHz,
+      modulationBandHz: [params.crossoverHz || 190, params.upperCrossoverHz || 4500],
+      modulationDepth: params.modulationDepth,
+      waveform: 'sine',
+      phaseOffsetDeg: params.stereoAmSpread ? 32 : 0,
+    },
+    music: {
+      defaultCarrierMode: 'generative_live',
+      bpm: params.bpm,
+      tonalMode: tonalMap[params.harmonicMode] ?? 'suspended',
+      tuningA4Hz: 440,
+      rootMidi,
+      percussion:
+        params.bpm === 0 || params.pulseIntensity < 0.15
+          ? 'none'
+          : params.pulseIntensity < 0.45
+            ? 'minimal_soft'
+            : 'steady_pulse',
+      density: Math.max(0.22, Math.min(0.75, params.pulseIntensity || 0.42)),
+      brightness: Math.max(0.22, Math.min(0.8, (params.filterCutoffHz || 1500) / 3000)),
+      spectralLowPassHz: params.filterCutoffHz || 1650,
+      instrumentPalette: resolvedGenreToPalette(params.genre),
+      vibeTags: ['lyric-free', 'adaptive'],
+      lyriaWeightedPrompts: [],
+    },
+    noise: {
+      color: params.noiseColor,
+      snrDb:
+        params.noiseColor === 'none' || params.noiseLevel <= 0.005
+          ? -36
+          : Math.round(20 * Math.log10(Math.max(0.015, params.noiseLevel / 0.48))),
+    },
+    protocol: {
+      recommendedDurationMin: durationMin,
+      targetState: 'alert_focus',
+      requiresHeadphones: false,
+      drivingSafe: params.speakerSafeEQ,
+      safetyNotes: [],
+    },
+  };
+}
+
 /**
- * 3-Band Linkwitz-Riley (LR4) Phase-Coherent Neuro-DSP + Dual-Deck Studio Stem Engine.
- *
- * Signal topology:
- *   [Music Mix Bus (R2 Studio Stems or Procedural Fallback)]
- *     ├── Band 1 (<190 Hz, LR4 LP + AP@4.5kHz) ─────────────────────────────────────┐ (100% clean sub-bass)
- *     └── LR4 HP (>190 Hz)
- *           ├── Band 2 (190 Hz–4.5 kHz, LR4 LP) ──▶ [Iso-Adaptive Cortical AM L/R] ─┼──▶ [Master Compressor]
- *           └── Band 3 (>4.5 kHz, LR4 HP) ──────────────────────────────────────────┘ (100% clean air & sparkle)
+ * nootropic.fm v3.0 Study-to-Sound Audio Engine.
+ * Unifies:
+ *   - Layer 1: Precision MedicalStimulusRack (3-Band LR4 AM, 40 Hz GENUS, Isochronic, Binaural, Monaural, 0.1 Hz HRV, SNR Noise)
+ *   - Layer 2A: GenerativeComposer (Live "As We Go" $0 study-locked composer obeying exact BPM/ramps/key/432Hz/percussion)
+ *   - Layer 2B: Dual-Deck Cloudflare R2 Studio Stems + Custom Lyria 3.5 Crossfade
+ *   - Layer 2C: Plug-and-Play Google Lyria RealTime WebSocket AI Streaming
+ *   - Layer 2D: Pure Clinical Signal mode (audition exact medical signal without background music)
  */
 export class PsychoacousticEngine {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private masterGain: GainNode | null = null;
 
-  // 3-Band LR4 music buses
+  // Core routing buses
   private cleanSubBus: GainNode | null = null;
   private proceduralMaster: GainNode | null = null;
   private studioBus: GainNode | null = null;
-  private padBus: GainNode | null = null;
-  private padFilter: BiquadFilterNode | null = null;
+  private pureAmCarrierGain: GainNode | null = null;
+  private pureAmCarrierSrc: AudioBufferSourceNode | null = null;
+
+  // 3-Band LR4 Cortical AM nodes
   private amGainL: GainNode | null = null;
   private amGainR: GainNode | null = null;
   private amLfoL: OscillatorNode | null = null;
   private amLfoR: OscillatorNode | null = null;
   private amDepthGainL: GainNode | null = null;
   private amDepthGainR: GainNode | null = null;
-  private noiseGain: GainNode | null = null;
-  private noiseSource: AudioBufferSourceNode | null = null;
-  private rainGain: GainNode | null = null;
-  private rainSource: AudioBufferSourceNode | null = null;
-  private vinylGain: GainNode | null = null;
-  private vinylSource: AudioBufferSourceNode | null = null;
-  private pulseBus: GainNode | null = null;
-  private reverbSend: GainNode | null = null;
-  private binauralNodes: AudioNode[] = [];
-  private activePadOscs: OscillatorNode[] = [];
-  private activePadGains: GainNode[] = [];
-  private lfoFilter: OscillatorNode | null = null;
 
+  // Modular sub-engines
+  private composer = new GenerativeComposer();
+  private stimulusRack = new MedicalStimulusRack();
+  private lyriaClient = new LyriaRealtimeClient();
+
+  // Mobile background bridge & wake lock
   private audioEl: HTMLAudioElement | null = null;
   private backgroundAudioActive = false;
   private wakeLock: { release: () => Promise<void> } | null = null;
   private visibilityHandler: (() => void) | null = null;
 
-  // Dual-Deck Gapless Studio Stem Engine (Cloudflare R2 -> 3-Band LR4 AM)
+  // Dual-Deck Gapless Studio Stem Engine (Cloudflare R2)
   private studioCatalog: Partial<Record<ResolvedGenre, StudioTrackRef[]>> = {};
   private bufferCache = new Map<string, AudioBuffer>();
-  private readonly maxCachedBuffers = 3; // Protects iOS Safari PCM RAM ceiling
+  private readonly maxCachedBuffers = 3;
   private activeStudioSource: AudioBufferSourceNode | null = null;
   private activeStudioGain: GainNode | null = null;
   private studioCrossfadeTimer: number | null = null;
@@ -254,38 +239,40 @@ export class PsychoacousticEngine {
   private activeCustomTrack: { url: string; label: string } | null = null;
   private activeTrackName: string | null = null;
 
+  // Active state
   private params: AcousticParams | null = null;
+  private studySpec: ExecutableStudySpec | null = null;
+  private carrierMode: CarrierEngineMode = 'generative_live';
   private genre: ResolvedGenre = 'deep_electronic';
   private isControlTrial = false;
   private isPlaying = false;
   private volume = 0.74;
   private intensityMultiplier = 1.0;
   private modDepthMultiplier = 1.0;
-
-  private chordIndex = 0;
-  private chordTimer: number | null = null;
-  private pulseTimer: number | null = null;
-  private nextStepTime = 0;
-  private stepCount = 0;
   private elapsedSec = 0;
-  private plannedSec = 2400;
+  private plannedSec = 1500;
+  private lyriaStatus: LyriaRealtimeStatus = 'idle';
 
   public async start(
     params: AcousticParams,
     plannedDurationMin: number,
     title = 'nootropic.fm',
-    isControlTrial = false
+    isControlTrial = false,
+    executableSpec?: ExecutableStudySpec,
+    initialCarrierMode?: CarrierEngineMode
   ): Promise<void> {
     this.stopImmediate();
     this.params = { ...params };
+    this.studySpec = executableSpec
+      ? structuredClone(executableSpec)
+      : buildFallbackStudySpec(params, plannedDurationMin);
     this.genre = params.genre ?? 'deep_electronic';
     this.isControlTrial = isControlTrial;
     this.plannedSec = Math.max(60, plannedDurationMin * 60);
     this.elapsedSec = 0;
-    this.chordIndex = 0;
-    this.stepCount = 0;
     this.intensityMultiplier = 1.0;
     this.modDepthMultiplier = 1.0;
+    this.carrierMode = initialCarrierMode ?? this.studySpec.music.defaultCarrierMode ?? 'generative_live';
 
     const AudioCtx =
       window.AudioContext ||
@@ -296,7 +283,6 @@ export class PsychoacousticEngine {
     }
     this.ctx = ctx;
 
-    // Mobile / iOS lock-screen auto-recovery
     ctx.addEventListener('statechange', () => {
       if (this.isPlaying && this.ctx === ctx && ctx.state === 'suspended') {
         void ctx.resume().catch(() => {});
@@ -304,28 +290,27 @@ export class PsychoacousticEngine {
     });
     this.visibilityHandler = () => {
       if (document.visibilityState === 'visible' && this.isPlaying && this.ctx) {
-        if (this.ctx.state === 'suspended') {
-          void this.ctx.resume().catch(() => {});
-        }
-        if (this.audioEl && this.audioEl.paused) {
-          void this.audioEl.play().catch(() => {});
-        }
+        if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {});
+        if (this.audioEl && this.audioEl.paused) void this.audioEl.play().catch(() => {});
         void this.requestWakeLock();
       }
     };
     document.addEventListener('visibilitychange', this.visibilityHandler);
 
-    // Master Chain (transparent studio peak control)
+    // Master Peak Limiter / Studio Compressor
     const compressor = ctx.createDynamicsCompressor();
-    compressor.threshold.value = -13;
+    compressor.threshold.value = -12;
     compressor.knee.value = 18;
-    compressor.ratio.value = 3.0;
-    compressor.attack.value = 0.015;
-    compressor.release.value = 0.24;
+    compressor.ratio.value = 3.2;
+    compressor.attack.value = 0.012;
+    compressor.release.value = 0.22;
 
     const masterGain = ctx.createGain();
     masterGain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    masterGain.gain.exponentialRampToValueAtTime(Math.max(0.05, this.volume * 0.84), ctx.currentTime + 2.0);
+    masterGain.gain.exponentialRampToValueAtTime(
+      Math.max(0.05, this.volume * 0.84),
+      ctx.currentTime + 1.8
+    );
 
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
@@ -360,31 +345,64 @@ export class PsychoacousticEngine {
     this.masterGain = masterGain;
     this.analyser = analyser;
 
-    // ─── 3-BAND LINKWITZ-RILEY (LR4) PHASE-COHERENT CROSSOVER ───
-    const lowerHz = params.crossoverHz || 190;
-    const upperHz = params.upperCrossoverHz || 4500;
+    // ─── LAYER 1A: PRECISION MEDICAL STIMULUS RACK (40 Hz GENUS, Isochronic, Binaural, Monaural, HRV, SNR Noise) ───
+    const { hrvBusInput } = this.stimulusRack.start({
+      ctx,
+      spec: this.studySpec,
+      masterDestination: compressor,
+      speakerSafeEQ: params.speakerSafeEQ,
+      isControlTrial: this.isControlTrial,
+      pureStimulusMode: this.carrierMode === 'pure_stimulus',
+    });
+
+    // ─── LAYER 1B: 3-BAND LINKWITZ-RILEY (LR4) PHASE-COHERENT CORTICAL AM MATRIX ───
+    const lowerHz = this.studySpec.entrainment.modulationBandHz[0] || params.crossoverHz || 190;
+    const upperHz = this.studySpec.entrainment.modulationBandHz[1] || params.upperCrossoverHz || 4500;
+
+    const preHrvBus = ctx.createGain();
+    preHrvBus.gain.value = 1.0;
     const musicMixBus = ctx.createGain();
     musicMixBus.gain.value = 1.0;
 
-    // Master envelope for procedural synth (smoothly ducks when R2 Studio Stems fade in)
+    if (hrvBusInput) {
+      preHrvBus.connect(hrvBusInput);
+      hrvBusInput.connect(musicMixBus);
+    } else {
+      preHrvBus.connect(musicMixBus);
+    }
+
+    const startWithMusic = this.carrierMode === 'generative_live';
     const proceduralMaster = ctx.createGain();
-    proceduralMaster.gain.setValueAtTime(1.0, ctx.currentTime);
-    proceduralMaster.connect(musicMixBus);
+    proceduralMaster.gain.setValueAtTime(startWithMusic ? 1.0 : 0.0001, ctx.currentTime);
+    proceduralMaster.connect(preHrvBus);
     this.proceduralMaster = proceduralMaster;
 
-    // Dedicated Studio Stem Bus (R2 MP3/Opus stems route directly into 3-Band LR4!)
     const studioBus = ctx.createGain();
     studioBus.gain.setValueAtTime(0.98, ctx.currentTime);
-    studioBus.connect(musicMixBus);
+    studioBus.connect(preHrvBus);
     this.studioBus = studioBus;
 
-    // Dedicated Clean Sub-Bass Bus (< 190 Hz -> bypasses AM completely!)
     const cleanSubBus = ctx.createGain();
-    cleanSubBus.gain.value = 0.9;
+    cleanSubBus.gain.setValueAtTime(startWithMusic ? 0.9 : 0.0001, ctx.currentTime);
     cleanSubBus.connect(compressor);
     this.cleanSubBus = cleanSubBus;
 
-    // BAND 1: Clean Sub-Bass (<190 Hz, LR4 LP + Allpass phase alignment at 4.5 kHz)
+    // Gentle pink carrier specifically for Pure Clinical Signal auditing of Amplitude Modulation (AM) studies
+    const pureAmBuf = createCalibratedNoiseBuffer(ctx, 'pink', 6);
+    const pureAmSrc = ctx.createBufferSource();
+    pureAmSrc.buffer = pureAmBuf;
+    pureAmSrc.loop = true;
+    const pureAmGain = ctx.createGain();
+    const needsPureAmCarrier =
+      this.carrierMode === 'pure_stimulus' && this.studySpec.entrainment.type === 'amplitude_modulation';
+    pureAmGain.gain.setValueAtTime(needsPureAmCarrier ? 0.32 : 0.0001, ctx.currentTime);
+    pureAmSrc.connect(pureAmGain);
+    pureAmGain.connect(musicMixBus);
+    pureAmSrc.start();
+    this.pureAmCarrierSrc = pureAmSrc;
+    this.pureAmCarrierGain = pureAmGain;
+
+    // BAND 1: Clean Sub-Bass (< lowerHz)
     const lowBand = createLR4Filter(ctx, 'lowpass', lowerHz);
     const lowPhaseAlign = ctx.createBiquadFilter();
     lowPhaseAlign.type = 'allpass';
@@ -394,30 +412,37 @@ export class PsychoacousticEngine {
     lowBand.output.connect(lowPhaseAlign);
     lowPhaseAlign.connect(compressor);
 
-    // UPPER SPLIT (>190 Hz, LR4 HP) -> splits into Band 2 (Cortical AM) & Band 3 (Clean Air)
+    // UPPER SPLIT (> lowerHz)
     const aboveLow = createLR4Filter(ctx, 'highpass', lowerHz);
     musicMixBus.connect(aboveLow.input);
 
-    // BAND 3: Clean Air & Sparkle (>4.5 kHz, LR4 HP -> 0% AM so cymbals & acoustic sheen stay pristine!)
+    // BAND 3: Clean Air (> upperHz)
     const airBand = createLR4Filter(ctx, 'highpass', upperHz);
     aboveLow.output.connect(airBand.input);
     airBand.output.connect(compressor);
 
-    // BAND 2: Cortical AM Entrainment Band (190 Hz – 4.5 kHz, LR4 LP)
+    // BAND 2: Cortical AM Entrainment Band (lowerHz – upperHz)
     const midBand = createLR4Filter(ctx, 'lowpass', upperHz);
     aboveLow.output.connect(midBand.input);
 
-    // Iso-Adaptive entry starts ultra-organic (~48% of target depth -> ~12% shimmer),
-    // ramping cleanly up to Peak depth during the session. Blind Control trials hold strictly 0%.
+    const amActiveForSpec =
+      this.studySpec.entrainment.type === 'amplitude_modulation' &&
+      this.studySpec.entrainment.frequencyHz > 0;
+    const amStartHz = this.studySpec.entrainment.startFrequencyHz ?? this.studySpec.entrainment.frequencyHz;
+    const targetAmDepth = amActiveForSpec ? this.studySpec.entrainment.modulationDepth : 0;
     const initialDepth = this.isControlTrial
       ? 0
-      : Math.min(0.42, Math.max(0, params.modulationDepth * 0.48 * this.modDepthMultiplier));
+      : Math.min(0.72, Math.max(0, targetAmDepth * 0.55 * this.modDepthMultiplier));
 
-    const useStereoSpread = Boolean(params.stereoAmSpread && !params.speakerSafeEQ);
+    const useStereoSpread = Boolean(
+      amActiveForSpec &&
+        (this.studySpec.entrainment.phaseOffsetDeg ?? 0) > 0 &&
+        !params.speakerSafeEQ
+    );
 
     const amLfoL = ctx.createOscillator();
     amLfoL.type = 'sine';
-    amLfoL.frequency.setValueAtTime(params.modulationHz, ctx.currentTime);
+    amLfoL.frequency.setValueAtTime(Math.max(0.5, amStartHz || 16), ctx.currentTime);
 
     const amDepthGainL = ctx.createGain();
     amDepthGainL.gain.setValueAtTime(initialDepth / 2, ctx.currentTime);
@@ -432,13 +457,14 @@ export class PsychoacousticEngine {
     let midOutput: AudioNode = amGainL;
 
     if (useStereoSpread) {
-      // Organic Stereo Shimmer AM (Headphones only): Right channel uses a +32° phase-shifted LFO
       const splitter = ctx.createChannelSplitter(2);
       const merger = ctx.createChannelMerger(2);
 
       const amLfoR = ctx.createOscillator();
-      amLfoR.setPeriodicWave(createPhaseShiftedSineWave(ctx, 32));
-      amLfoR.frequency.setValueAtTime(params.modulationHz, ctx.currentTime);
+      amLfoR.setPeriodicWave(
+        createPhaseShiftedSineWave(ctx, this.studySpec.entrainment.phaseOffsetDeg ?? 32)
+      );
+      amLfoR.frequency.setValueAtTime(Math.max(0.5, amStartHz || 16), ctx.currentTime);
 
       const amDepthGainR = ctx.createGain();
       amDepthGainR.gain.setValueAtTime(initialDepth / 2, ctx.currentTime);
@@ -461,14 +487,12 @@ export class PsychoacousticEngine {
       this.amDepthGainR = amDepthGainR;
       midOutput = merger;
     } else {
-      // Mono-coherent AM on Band 2 (Car speakers / room speakers -> zero cabin phase cancellation)
       midBand.output.connect(amGainL);
       this.amGainR = null;
       this.amLfoR = null;
       this.amDepthGainR = null;
     }
 
-    // Optional Driving Safety EQ (preserves 800–3500 Hz for traffic sirens & horns)
     if (params.speakerSafeEQ) {
       const safetyNotch = ctx.createBiquadFilter();
       safetyNotch.type = 'peaking';
@@ -485,9 +509,9 @@ export class PsychoacousticEngine {
     this.amLfoL = amLfoL;
     this.amDepthGainL = amDepthGainL;
 
-    // Studio Hall Convolution Reverb Send -> feeds into musicMixBus so reverb tail joins Multiband AM smoothly
+    // ─── STUDIO HALL CONVOLUTION REVERB + STEREO PING-PONG DELAY FOR LIVE COMPOSER ───
     const reverbSend = ctx.createGain();
-    reverbSend.gain.value = this.getGenreReverbLevel(this.genre);
+    reverbSend.gain.value = 0.42;
     const convolver = ctx.createConvolver();
     convolver.buffer = createStudioReverbIR(ctx, 2.4);
     const reverbHP = ctx.createBiquadFilter();
@@ -500,12 +524,10 @@ export class PsychoacousticEngine {
     reverbSend.connect(convolver);
     convolver.connect(reverbHP);
     reverbHP.connect(reverbLP);
-    reverbLP.connect(musicMixBus);
-    this.reverbSend = reverbSend;
+    reverbLP.connect(proceduralMaster);
 
-    // Stereo Ping-Pong Delay -> feeds musicMixBus
     const delaySend = ctx.createGain();
-    delaySend.gain.value = 0.2;
+    delaySend.gain.value = 0.18;
     const delayL = ctx.createDelay(1.0);
     const delayR = ctx.createDelay(1.0);
     delayL.delayTime.value = 0.28;
@@ -514,7 +536,7 @@ export class PsychoacousticEngine {
     delayFilter.type = 'lowpass';
     delayFilter.frequency.value = 1350;
     const feedback = ctx.createGain();
-    feedback.gain.value = 0.24;
+    feedback.gain.value = 0.22;
     const panL = ctx.createStereoPanner();
     const panR = ctx.createStereoPanner();
     panL.pan.value = -0.45;
@@ -525,167 +547,123 @@ export class PsychoacousticEngine {
     delayFilter.connect(delayR);
     delayL.connect(panL);
     delayR.connect(panR);
-    panL.connect(musicMixBus);
-    panR.connect(musicMixBus);
+    panL.connect(proceduralMaster);
+    panR.connect(proceduralMaster);
     delayR.connect(feedback);
     feedback.connect(delayL);
 
-    // Pad Filter + Slow Breathing LFO
-    const padFilter = ctx.createBiquadFilter();
-    padFilter.type = 'lowpass';
-    padFilter.frequency.setValueAtTime(this.getGenreFilterCutoff(this.genre), ctx.currentTime);
-    padFilter.Q.value = this.genre === 'cinematic_strings' ? 1.15 : 0.65;
-
-    const lfoFilter = ctx.createOscillator();
-    lfoFilter.type = 'sine';
-    lfoFilter.frequency.value = 0.068;
-    const lfoFilterGain = ctx.createGain();
-    lfoFilterGain.gain.value = Math.min(320, params.filterCutoffHz * 0.18);
-    lfoFilter.connect(lfoFilterGain);
-    lfoFilterGain.connect(padFilter.frequency);
-    lfoFilter.start();
-    this.lfoFilter = lfoFilter;
-
-    const padBus = ctx.createGain();
-    padBus.gain.value = this.getGenrePadLevel(this.genre);
-    padBus.connect(padFilter);
-    padFilter.connect(proceduralMaster);
-    padFilter.connect(reverbSend);
-
-    this.padBus = padBus;
-    this.padFilter = padFilter;
-
-    // Spawn Genre-aware Harmonic Bed
-    this.spawnChord(0);
-    this.chordTimer = window.setInterval(() => {
-      if (!this.isPlaying || !this.params) return;
-      this.chordIndex = (this.chordIndex + 1) % 4;
-      this.spawnChord(this.chordIndex);
-    }, this.genre === 'cinematic_strings' ? 14000 : 16000);
-
-    // Calibrated Stochastic Noise Layer
-    if (params.noiseColor !== 'none' && params.noiseLevel > 0.005) {
-      const noiseBuf = createColoredNoiseBuffer(ctx, params.noiseColor, 6);
-      const noiseSrc = ctx.createBufferSource();
-      noiseSrc.buffer = noiseBuf;
-      noiseSrc.loop = true;
-
-      const noiseFilter = ctx.createBiquadFilter();
-      noiseFilter.type = 'lowpass';
-      noiseFilter.frequency.value = params.speakerSafeEQ
-        ? 680
-        : params.noiseColor === 'brown'
-          ? 500
-          : 1850;
-
-      const noiseGain = ctx.createGain();
-      const safeNoiseCap = params.speakerSafeEQ ? Math.min(0.06, params.noiseLevel) : params.noiseLevel;
-      noiseGain.gain.setValueAtTime(safeNoiseCap * 0.48, ctx.currentTime);
-
-      noiseSrc.connect(noiseFilter);
-      noiseFilter.connect(noiseGain);
-      noiseGain.connect(compressor);
-      noiseSrc.start();
-
-      this.noiseSource = noiseSrc;
-      this.noiseGain = noiseGain;
-    }
-
-    // Dedicated Soft Rain Layer (fades in smoothly for Nature & Rain genre)
-    const rainBuf = createColoredNoiseBuffer(ctx, 'soft_rain', 6);
-    const rainSrc = ctx.createBufferSource();
-    rainSrc.buffer = rainBuf;
-    rainSrc.loop = true;
-    const rainBand = ctx.createBiquadFilter();
-    rainBand.type = 'bandpass';
-    rainBand.frequency.value = params.speakerSafeEQ ? 680 : 1250;
-    rainBand.Q.value = 0.55;
-    const rainGain = ctx.createGain();
-    rainGain.gain.setValueAtTime(
-      this.genre === 'nature_rain' ? (params.speakerSafeEQ ? 0.065 : 0.24) : 0.0001,
-      ctx.currentTime
-    );
-    rainSrc.connect(rainBand);
-    rainBand.connect(rainGain);
-    rainGain.connect(compressor);
-    rainSrc.start();
-    this.rainSource = rainSrc;
-    this.rainGain = rainGain;
-
-    // Dedicated Subtle Warm Vinyl Dust Layer (fades in softly for Lo-Fi Warm Keys)
-    const vinylBuf = createVinylDustBuffer(ctx, 5);
-    const vinylSrc = ctx.createBufferSource();
-    vinylSrc.buffer = vinylBuf;
-    vinylSrc.loop = true;
-    const vinylBP = ctx.createBiquadFilter();
-    vinylBP.type = 'bandpass';
-    vinylBP.frequency.value = 1800;
-    vinylBP.Q.value = 0.8;
-    const vinylGain = ctx.createGain();
-    vinylGain.gain.setValueAtTime(
-      this.genre === 'lofi_keys' && !params.speakerSafeEQ ? 0.14 : 0.0001,
-      ctx.currentTime
-    );
-    vinylSrc.connect(vinylBP);
-    vinylBP.connect(vinylGain);
-    vinylGain.connect(compressor);
-    vinylSrc.start();
-    this.vinylSource = vinylSrc;
-    this.vinylGain = vinylGain;
-
-    // Subtle Binaural Layer ONLY when headphones & non-driving
-    if (!params.speakerSafeEQ && params.binauralOffsetHz > 0) {
-      const leftOsc = ctx.createOscillator();
-      const rightOsc = ctx.createOscillator();
-      leftOsc.type = 'sine';
-      rightOsc.type = 'sine';
-      leftOsc.frequency.value = params.rootNoteHz * 1.5;
-      rightOsc.frequency.value = params.rootNoteHz * 1.5 + params.binauralOffsetHz;
-
-      const panLeft = ctx.createStereoPanner();
-      const panRight = ctx.createStereoPanner();
-      panLeft.pan.value = -1;
-      panRight.pan.value = 1;
-
-      const binGain = ctx.createGain();
-      binGain.gain.value = 0.028;
-
-      leftOsc.connect(panLeft);
-      rightOsc.connect(panRight);
-      panLeft.connect(binGain);
-      panRight.connect(binGain);
-      binGain.connect(compressor);
-
-      leftOsc.start();
-      rightOsc.start();
-      this.binauralNodes = [leftOsc, rightOsc, panLeft, panRight, binGain];
-    }
-
-    // Melodic & Groove Pulse Bus -> routes into proceduralMaster (joins Multiband AM) + Delay + Reverb
-    const pulseBus = ctx.createGain();
-    pulseBus.gain.value = this.getGenrePulseLevel(this.genre);
-    pulseBus.connect(proceduralMaster);
-    pulseBus.connect(delaySend);
-    pulseBus.connect(reverbSend);
-    this.pulseBus = pulseBus;
-
-    this.nextStepTime = ctx.currentTime + 0.35;
-    this.pulseTimer = window.setInterval(() => this.scheduleGenreSteps(), 45);
+    // ─── LAYER 2A: LIVE ADAPTIVE "AS WE GO" GENERATIVE COMPOSER ($0, 100% STUDY-LOCKED) ───
+    const musicSpec: StudyMusicSpec = {
+      ...this.studySpec.music,
+      instrumentPalette: this.studySpec.music.instrumentPalette || resolvedGenreToPalette(this.genre),
+    };
+    this.composer.start({
+      ctx,
+      musicSpec,
+      proceduralMaster,
+      cleanSubBus,
+      reverbSend,
+      delaySend,
+      speakerSafeEQ: params.speakerSafeEQ,
+    });
 
     this.isPlaying = true;
     this.setupMediaSession(title);
     void this.requestWakeLock();
-    void this.activateStudioForGenre(this.genre);
-  }
 
-  public setStudioCatalog(catalog: Partial<Record<ResolvedGenre, StudioTrackRef[]>>): void {
-    this.studioCatalog = catalog;
-    if (this.isPlaying && this.ctx) {
+    if (this.carrierMode === 'studio_library') {
       void this.activateStudioForGenre(this.genre);
     }
   }
 
-  private clearStudioDeck(fadeSec = 1.6): void {
+  /**
+   * Live mid-session Carrier Engine Switcher:
+   * Switch seamlessly between Live Generative ($0 Study-Locked), Studio R2 Library, or Pure Clinical Signal
+   * while keeping Layer 1 Medical DSP 100% uninterrupted!
+   */
+  public setCarrierMode(mode: CarrierEngineMode): void {
+    this.carrierMode = mode;
+    if (!this.ctx || !this.proceduralMaster || !this.cleanSubBus) return;
+    const now = this.ctx.currentTime;
+
+    if (mode !== 'lyria_realtime') {
+      this.lyriaClient.stop();
+      this.lyriaStatus = 'idle';
+    }
+
+    if (mode === 'generative_live') {
+      this.clearStudioDeck(1.4);
+      this.usingStudioAudio = false;
+      this.usingCustomTrack = false;
+      this.activeTrackName = null;
+      this.stimulusRack.setPureStimulusMode(false);
+      this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, now, 0.4);
+      this.proceduralMaster.gain.setTargetAtTime(1.0, now, 0.65);
+      this.cleanSubBus.gain.setTargetAtTime(0.9, now, 0.65);
+    } else if (mode === 'pure_stimulus') {
+      this.clearStudioDeck(1.2);
+      this.usingStudioAudio = false;
+      this.usingCustomTrack = false;
+      this.activeTrackName = null;
+      this.stimulusRack.setPureStimulusMode(true);
+      this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.45);
+      this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.45);
+      const needsPureAm = this.studySpec?.entrainment.type === 'amplitude_modulation';
+      this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureAm ? 0.34 : 0.0001, now, 0.45);
+    } else if (mode === 'studio_library') {
+      this.stimulusRack.setPureStimulusMode(false);
+      this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, now, 0.4);
+      void this.activateStudioForGenre(this.genre);
+    }
+  }
+
+  /**
+   * Plug-and-Play Google Lyria RealTime AI Activation (when ephemeral token is minted by server).
+   */
+  public async activateLyriaRealtime(
+    token: string,
+    model: string,
+    onStatus?: (status: LyriaRealtimeStatus, note?: string) => void
+  ): Promise<boolean> {
+    if (!this.ctx || !this.studioBus || !this.studySpec || !this.isPlaying) return false;
+    this.clearStudioDeck(1.2);
+    this.stimulusRack.setPureStimulusMode(false);
+    this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.4);
+
+    const ok = await this.lyriaClient.connect({
+      ctx: this.ctx,
+      destinationBus: this.studioBus,
+      token,
+      model,
+      spec: this.studySpec,
+      onStatusChange: (st, note) => {
+        this.lyriaStatus = st;
+        onStatus?.(st, note);
+        if (st === 'streaming' && this.ctx && this.proceduralMaster && this.cleanSubBus) {
+          const now = this.ctx.currentTime;
+          this.carrierMode = 'lyria_realtime';
+          this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.85);
+          this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.85);
+        } else if ((st === 'error' || st === 'unavailable') && this.carrierMode === 'lyria_realtime') {
+          this.setCarrierMode('generative_live');
+        }
+      },
+    });
+    return ok;
+  }
+
+  public getCarrierMode(): CarrierEngineMode {
+    return this.carrierMode;
+  }
+
+  public setStudioCatalog(catalog: Partial<Record<ResolvedGenre, StudioTrackRef[]>>): void {
+    this.studioCatalog = catalog;
+    if (this.isPlaying && this.ctx && this.carrierMode === 'studio_library') {
+      void this.activateStudioForGenre(this.genre);
+    }
+  }
+
+  private clearStudioDeck(fadeSec = 1.4): void {
     if (this.studioCrossfadeTimer !== null) {
       window.clearTimeout(this.studioCrossfadeTimer);
       this.studioCrossfadeTimer = null;
@@ -722,10 +700,6 @@ export class PsychoacousticEngine {
     }
   }
 
-  /**
-   * Client-side RMS loudness matcher targeting our -14 LUFS (~0.19 RMS) studio stem baseline
-   * so freshly generated AI tracks crossfade with zero volume jump (Workers have no ffmpeg).
-   */
   private computeRmsGain(buffer: AudioBuffer): number {
     const chCount = Math.min(2, buffer.numberOfChannels);
     const len = buffer.length;
@@ -743,15 +717,13 @@ export class PsychoacousticEngine {
     }
     const rms = Math.sqrt(sumSq / Math.max(1, count));
     if (rms < 0.005) return 0.96;
-    const targetRms = 0.19;
-    return Number(Math.max(0.45, Math.min(1.55, (targetRms / rms) * 0.96)).toFixed(3));
+    return Number(Math.max(0.45, Math.min(1.55, (0.19 / rms) * 0.96)).toFixed(3));
   }
 
   private async loadAudioBuffer(url: string): Promise<AudioBuffer | null> {
     if (!this.ctx) return null;
     const cached = this.bufferCache.get(url);
     if (cached) {
-      // Refresh LRU recency
       this.bufferCache.delete(url);
       this.bufferCache.set(url, cached);
       return cached;
@@ -763,7 +735,6 @@ export class PsychoacousticEngine {
       if (!this.ctx) return null;
       const decoded = await this.ctx.decodeAudioData(arr);
 
-      // Strict LRU eviction to cap decoded PCM memory on mobile Safari
       while (this.bufferCache.size >= this.maxCachedBuffers) {
         const oldestKey = this.bufferCache.keys().next().value;
         if (oldestKey) this.bufferCache.delete(oldestKey);
@@ -776,10 +747,6 @@ export class PsychoacousticEngine {
     }
   }
 
-  /**
-   * 2-Speed Seamless Crossfade into a freshly generated or Community R2 Cached Custom Vibe MP3
-   * while keeping 3-Band LR4 AM (190 Hz–4.5 kHz) and Driving Safety EQ 100% locked!
-   */
   public async crossfadeToCustomTrack(url: string, label: string): Promise<boolean> {
     if (!this.ctx || !this.studioBus || !this.isPlaying) return false;
     const token = ++this.studioLoadToken;
@@ -790,17 +757,12 @@ export class PsychoacousticEngine {
     }
     const rmsGain = this.computeRmsGain(buffer);
     this.usingCustomTrack = true;
-    this.playStudioBuffer(
-      buffer,
-      label,
-      token,
-      rmsGain,
-      () => {
-        if (!this.isPlaying || token !== this.studioLoadToken) return;
-        // Seamless single-track overlap loop back into the same custom buffer
-        void this.crossfadeToCustomTrack(url, label);
-      }
-    );
+    this.carrierMode = 'studio_library';
+    this.stimulusRack.setPureStimulusMode(false);
+    this.playStudioBuffer(buffer, label, token, rmsGain, () => {
+      if (!this.isPlaying || token !== this.studioLoadToken) return;
+      void this.crossfadeToCustomTrack(url, label);
+    });
     return true;
   }
 
@@ -808,11 +770,8 @@ export class PsychoacousticEngine {
     const all = this.studioCatalog[genre] ?? [];
     if (all.length === 0) return [];
     const targetEnergy: EnergyTier = this.params?.energyTier ?? 'focus';
-
     const exact = all.filter((t) => t.energy === targetEnergy);
     if (exact.length > 0) return exact;
-
-    // Graceful nearest-energy fallback so a missing bucket still plays real studio audio
     const fallbackOrder: Record<EnergyTier, EnergyTier[]> = {
       calm: ['focus', 'drive'],
       focus: ['calm', 'drive'],
@@ -832,7 +791,7 @@ export class PsychoacousticEngine {
     const tracks = this.selectTracksForGenreAndEnergy(genre);
 
     if (tracks.length === 0 || !this.ctx || !this.studioBus) {
-      this.clearStudioDeck(1.5);
+      this.clearStudioDeck(1.2);
       this.usingStudioAudio = false;
       this.activeTrackName = null;
       if (this.ctx && this.proceduralMaster && this.cleanSubBus) {
@@ -851,12 +810,11 @@ export class PsychoacousticEngine {
     }
 
     this.playStudioBuffer(buffer, track.name, token, 0.96, () => {
-      if (!this.isPlaying || token !== this.studioLoadToken) return;
+      if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
       this.studioTrackIdx = tracks.length > 1 ? chosenIdx + 1 : 0;
       void this.activateStudioForGenre(genre);
     });
 
-    // Lazy pre-fetch next track only when <= 2 buffers cached (keeps mobile RAM lean!)
     if (tracks.length > 1 && this.bufferCache.size < this.maxCachedBuffers) {
       const nextTrack = tracks[(chosenIdx + 1) % tracks.length];
       void this.loadAudioBuffer(nextTrack.url);
@@ -888,13 +846,12 @@ export class PsychoacousticEngine {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
-    const fadeInSec = 2.6;
+    const fadeInSec = 2.4;
 
-    // Smoothly crossfade out previous studio deck (if any) & duck procedural synth
     this.clearStudioDeck(fadeInSec);
     if (this.proceduralMaster && this.cleanSubBus) {
-      this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.85);
-      this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.85);
+      this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.8);
+      this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.8);
     }
 
     const src = ctx.createBufferSource();
@@ -912,75 +869,23 @@ export class PsychoacousticEngine {
     this.usingStudioAudio = true;
     this.activeTrackName = trackName;
 
-    // Pause-aware seamless equal-power crossfade ~6-7s before track ends
     const crossfadeLeadSec = Math.min(7, Math.max(2.5, buffer.duration * 0.16));
     const delaySec = Math.max(1.5, buffer.duration - crossfadeLeadSec);
     this.scheduleDeckCrossfade(delaySec, onCrossfade);
   }
 
-  private getGenreReverbLevel(g: ResolvedGenre): number {
-    if (g === 'cinematic_strings') return 0.62;
-    if (g === 'nature_rain') return 0.54;
-    if (g === 'acoustic_pluck') return 0.42;
-    if (g === 'jazz_rhodes') return 0.32;
-    if (g === 'lofi_keys') return 0.28;
-    return 0.24; // deep_electronic
-  }
-
-  private getGenrePadLevel(g: ResolvedGenre): number {
-    if (g === 'cinematic_strings') return 0.52;
-    if (g === 'nature_rain') return 0.26;
-    if (g === 'deep_electronic') return 0.34;
-    return 0.38;
-  }
-
-  private getGenrePulseLevel(g: ResolvedGenre): number {
-    const base = Math.max(0.22, Math.min(1, this.params?.pulseIntensity ?? 0.45));
-    if (g === 'cinematic_strings') return 0.24 * this.intensityMultiplier;
-    if (g === 'nature_rain') return 0.3 * this.intensityMultiplier;
-    if (g === 'deep_electronic') return Math.min(0.88, base * 0.72 * this.intensityMultiplier);
-    return Math.min(0.76, base * 0.58 * this.intensityMultiplier);
-  }
-
-  private getGenreFilterCutoff(g: ResolvedGenre): number {
-    const base = this.params?.filterCutoffHz ?? 1500;
-    if (g === 'lofi_keys') return Math.min(base, 1180);
-    if (g === 'cinematic_strings') return Math.min(base * 1.05, 1950);
-    if (g === 'jazz_rhodes') return Math.min(base, 1380);
-    if (g === 'deep_electronic') return Math.min(base * 1.12, 2100);
-    return base;
-  }
-
   public setGenre(style: ResolvedGenre): void {
     this.genre = style;
-    if (!this.ctx || !this.params) return;
-    const now = this.ctx.currentTime;
-
-    this.reverbSend?.gain.setTargetAtTime(this.getGenreReverbLevel(style), now, 0.45);
-    this.padBus?.gain.setTargetAtTime(this.getGenrePadLevel(style), now, 0.45);
-    this.pulseBus?.gain.setTargetAtTime(this.getGenrePulseLevel(style), now, 0.35);
-
-    if (this.padFilter) {
-      this.padFilter.frequency.setTargetAtTime(this.getGenreFilterCutoff(style), now, 0.45);
-      this.padFilter.Q.setTargetAtTime(style === 'cinematic_strings' ? 1.15 : 0.65, now, 0.4);
+    const nextPalette = resolvedGenreToPalette(style);
+    if (this.studySpec) {
+      this.studySpec.music.instrumentPalette = nextPalette;
     }
+    this.composer.setPalette(nextPalette);
 
-    if (this.rainGain) {
-      const targetRain =
-        style === 'nature_rain' ? (this.params.speakerSafeEQ ? 0.065 : 0.24) : 0.0001;
-      this.rainGain.gain.setTargetAtTime(targetRain, now, 0.6);
+    if (this.carrierMode === 'studio_library') {
+      this.studioTrackIdx = 0;
+      void this.activateStudioForGenre(style);
     }
-
-    if (this.vinylGain) {
-      const targetVinyl =
-        style === 'lofi_keys' && !this.params.speakerSafeEQ ? 0.14 : 0.0001;
-      this.vinylGain.gain.setTargetAtTime(targetVinyl, now, 0.6);
-    }
-
-    // Gently crossfade chord bed into new genre's timbre & activate R2 studio stems if uploaded
-    this.spawnChord(this.chordIndex);
-    this.studioTrackIdx = 0;
-    void this.activateStudioForGenre(style);
   }
 
   public getGenre(): ResolvedGenre {
@@ -991,391 +896,6 @@ export class PsychoacousticEngine {
     return this.activeCustomTrack;
   }
 
-  private getActiveChord(): number[] {
-    if (this.genre === 'jazz_rhodes') {
-      return JAZZ_VOICINGS[this.chordIndex % JAZZ_VOICINGS.length];
-    }
-    const mode = this.params?.harmonicMode ?? 'bright_maj9';
-    const prog = CHORD_PROGRESSIONS[mode];
-    return prog[this.chordIndex % prog.length];
-  }
-
-  private spawnChord(index: number): void {
-    if (!this.ctx || !this.padBus || !this.params) return;
-    const ctx = this.ctx;
-    const now = ctx.currentTime;
-    this.chordIndex = index;
-    const intervals = this.getActiveChord();
-
-    const prevOscs = this.activePadOscs;
-    const prevGains = this.activePadGains;
-    for (const g of prevGains) {
-      try {
-        g.gain.cancelScheduledValues(now);
-        g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), now);
-        g.gain.exponentialRampToValueAtTime(0.0001, now + 3.8);
-      } catch {
-        // ignore
-      }
-    }
-    window.setTimeout(() => {
-      for (const osc of prevOscs) {
-        try {
-          osc.stop();
-          osc.disconnect();
-        } catch {
-          // ignore
-        }
-      }
-    }, 4100);
-
-    const nextOscs: OscillatorNode[] = [];
-    const nextGains: GainNode[] = [];
-    const isStrings = this.genre === 'cinematic_strings';
-
-    intervals.forEach((semi, voiceIdx) => {
-      const freq = this.params!.rootNoteHz * semitoneRatio(semi);
-      const detunes = voiceIdx === 0 ? [0] : isStrings ? [-7, 0, 7] : [-3.5, 3.5];
-
-      detunes.forEach((detune, dIdx) => {
-        const osc = ctx.createOscillator();
-        osc.type =
-          voiceIdx === 0
-            ? 'sine'
-            : isStrings
-              ? 'sawtooth'
-              : dIdx === 0
-                ? 'triangle'
-                : 'sine';
-        osc.frequency.setValueAtTime(freq, now);
-        osc.detune.setValueAtTime(detune, now);
-
-        const gain = ctx.createGain();
-        const targetAmp =
-          voiceIdx === 0 ? 0.21 : isStrings ? 0.042 : 0.075;
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(targetAmp, now + (isStrings ? 5.0 : 3.5));
-
-        const panner = ctx.createStereoPanner();
-        panner.pan.value =
-          voiceIdx === 0 ? 0 : (voiceIdx % 2 === 0 ? -0.45 : 0.45) * (dIdx % 2 === 0 ? 1 : -0.6);
-
-        osc.connect(gain);
-        gain.connect(panner);
-        // Root sub-tone goes to cleanSubBus so low-end stays rock-solid & unmodulated!
-        if (voiceIdx === 0 && this.cleanSubBus && freq < 185) {
-          panner.connect(this.cleanSubBus);
-        } else {
-          panner.connect(this.padBus!);
-        }
-        osc.start(now);
-
-        nextOscs.push(osc);
-        nextGains.push(gain);
-      });
-    });
-
-    this.activePadOscs = nextOscs;
-    this.activePadGains = nextGains;
-  }
-
-  private scheduleGenreSteps(): void {
-    if (!this.ctx || !this.pulseBus || !this.params || !this.isPlaying) return;
-    const ctx = this.ctx;
-
-    // Genre-calibrated tempo ceiling (honors target BPM while staying faithful to genre feel)
-    const rawBpm = this.getEffectiveBpm();
-    const effectiveBpm =
-      rawBpm > 0
-        ? this.genre === 'lofi_keys'
-          ? Math.min(rawBpm, 88)
-          : this.genre === 'jazz_rhodes'
-            ? Math.min(rawBpm, 96)
-            : rawBpm
-        : this.genre === 'nature_rain' || this.genre === 'cinematic_strings'
-          ? 70
-          : 0;
-
-    if (effectiveBpm <= 0) return;
-
-    const eighthDur = 60 / effectiveBpm / 2;
-    const lookahead = 0.16;
-
-    while (this.nextStepTime < ctx.currentTime + lookahead) {
-      const step = this.stepCount % 16;
-      // Subtle jazz/lo-fi swing on odd 8th steps
-      const swingOffset =
-        (this.genre === 'lofi_keys' || this.genre === 'jazz_rhodes') && step % 2 === 1
-          ? eighthDur * 0.14
-          : 0;
-      const t = this.nextStepTime + swingOffset;
-      const lift = this.isAntiMonotonyPulseActive() ? 1.24 : 1.0;
-
-      if (this.genre === 'deep_electronic') {
-        // Steady 4-on-floor clean sub-kick + rolling bass + muted air hats + hypnotic synth arp
-        if (step % 4 === 0) this.triggerCleanSubKick(t, step === 0 ? 0.56 : 0.42);
-        if (step % 2 === 1) this.triggerSoftAirTick(t, step % 4 === 3 ? 0.045 : 0.025);
-        if (step === 2 || step === 6 || step === 10 || step === 14) {
-          this.triggerElectronicArp(t, step, 0.17 * lift);
-        }
-        if (step === 0 || step === 6 || step === 8 || step === 14) {
-          this.triggerCleanBassNote(t, step === 14 ? 7 : 0, 0.24, eighthDur * 1.4);
-        }
-      } else if (this.genre === 'lofi_keys') {
-        // Laid-back boom-bap soft kick + warm muffled brush + Dusty Rhodes chord comping
-        if (step === 0 || step === 10) this.triggerCleanSubKick(t, 0.48);
-        if (step === 4 || step === 12) this.triggerLoFiBrushSnare(t, 0.11);
-        if (step === 0 || step === 6 || step === 12) {
-          this.triggerRhodesBellChord(t, step === 0 ? 0.12 : 0.08 * lift);
-        }
-      } else if (this.genre === 'jazz_rhodes') {
-        // Syncopated Jazz Rhodes stabs + walking clean upright bass + soft swung brush ride
-        if (step % 2 === 0 || step === 7 || step === 15) {
-          this.triggerSoftAirTick(t, step % 4 === 0 ? 0.032 : 0.02);
-        }
-        if (step % 4 === 0) {
-          const walkSemi = [0, 4, 7, 5][(step / 4) % 4];
-          this.triggerCleanBassNote(t, walkSemi, 0.22, eighthDur * 1.8);
-        }
-        if (step === 0 || step === 5 || step === 11) {
-          this.triggerRhodesBellChord(t, 0.11 * lift);
-        }
-      } else if (this.genre === 'acoustic_pluck') {
-        // Organic nylon guitar / harp fingerpicked arpeggio pattern
-        if (step === 0 || step === 8) this.triggerCleanSubKick(t, 0.22);
-        if (step % 2 === 0 || step === 7 || step === 15) {
-          this.triggerAcousticPluck(t, step, 0.16 * lift);
-        }
-      } else if (this.genre === 'cinematic_strings') {
-        // Spacious orchestral pulse + occasional resonant bell swell
-        if (step === 0) this.triggerCleanSubKick(t, 0.34);
-        if (step === 0 || step === 10) {
-          this.triggerGlassChime(t, step, 0.11 * lift);
-        }
-      } else if (this.genre === 'nature_rain') {
-        // Gentle floating water/glass chimes inside stereo rain
-        if (step === 0 || step === 7 || step === 12) {
-          this.triggerGlassChime(t, step, 0.14 * lift);
-        }
-      }
-
-      this.nextStepTime += eighthDur;
-      this.stepCount++;
-    }
-  }
-
-  private triggerCleanSubKick(time: number, amp: number): void {
-    if (!this.ctx || !this.cleanSubBus) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(94, time);
-    osc.frequency.exponentialRampToValueAtTime(42, time + 0.15);
-
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp * this.intensityMultiplier, time + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.25);
-
-    osc.connect(gain);
-    gain.connect(this.cleanSubBus);
-    osc.start(time);
-    osc.stop(time + 0.28);
-  }
-
-  private triggerCleanBassNote(time: number, semiOffset: number, amp: number, dur: number): void {
-    if (!this.ctx || !this.cleanSubBus || !this.params) return;
-    const chord = this.getActiveChord();
-    const rootSemi = chord[0] + semiOffset - 12; // one octave below pad root
-    const freq = Math.max(48, Math.min(165, this.params.rootNoteHz * semitoneRatio(rootSemi)));
-
-    const osc = this.ctx.createOscillator();
-    const lp = this.ctx.createBiquadFilter();
-    const gain = this.ctx.createGain();
-    osc.type = this.genre === 'deep_electronic' ? 'triangle' : 'sine';
-    osc.frequency.setValueAtTime(freq, time);
-    lp.type = 'lowpass';
-    lp.frequency.value = 180;
-
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp * this.intensityMultiplier, time + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + Math.max(0.18, dur));
-
-    osc.connect(lp);
-    lp.connect(gain);
-    gain.connect(this.cleanSubBus);
-    osc.start(time);
-    osc.stop(time + dur + 0.05);
-  }
-
-  private triggerLoFiBrushSnare(time: number, amp: number): void {
-    if (!this.ctx || !this.pulseBus) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    const bp = this.ctx.createBiquadFilter();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(220, time);
-    osc.frequency.exponentialRampToValueAtTime(110, time + 0.09);
-    bp.type = 'bandpass';
-    bp.frequency.value = 540;
-    bp.Q.value = 0.9;
-
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp * this.intensityMultiplier, time + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.12);
-
-    osc.connect(bp);
-    bp.connect(gain);
-    gain.connect(this.pulseBus);
-    osc.start(time);
-    osc.stop(time + 0.14);
-  }
-
-  private triggerRhodesBellChord(time: number, amp: number): void {
-    if (!this.ctx || !this.pulseBus || !this.params) return;
-    const chord = this.getActiveChord().slice(1, 4); // lush upper 3 voices
-    chord.forEach((semi, idx) => {
-      const freq = this.params!.rootNoteHz * semitoneRatio(semi + 12);
-      const osc = this.ctx!.createOscillator();
-      const overtone = this.ctx!.createOscillator();
-      const gain = this.ctx!.createGain();
-      const otGain = this.ctx!.createGain();
-      const pan = this.ctx!.createStereoPanner();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, time + idx * 0.018);
-      overtone.type = 'sine';
-      overtone.frequency.setValueAtTime(freq * 2, time + idx * 0.018); // Rhodes bell shimmer
-
-      gain.gain.setValueAtTime(0.0001, time + idx * 0.018);
-      gain.gain.linearRampToValueAtTime(amp, time + idx * 0.018 + 0.018);
-      gain.gain.exponentialRampToValueAtTime(0.0001, time + 1.15);
-
-      otGain.gain.setValueAtTime(0.0001, time + idx * 0.018);
-      otGain.gain.linearRampToValueAtTime(amp * 0.22, time + idx * 0.018 + 0.01);
-      otGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.28);
-
-      pan.pan.value = (idx - 1) * 0.34;
-      osc.connect(gain);
-      overtone.connect(otGain);
-      otGain.connect(gain);
-      gain.connect(pan);
-      pan.connect(this.pulseBus!);
-
-      osc.start(time + idx * 0.018);
-      overtone.start(time + idx * 0.018);
-      osc.stop(time + 1.25);
-      overtone.stop(time + 0.35);
-    });
-  }
-
-  private triggerElectronicArp(time: number, step: number, amp: number): void {
-    if (!this.ctx || !this.pulseBus || !this.params) return;
-    const chord = this.getActiveChord();
-    const noteSemi = chord[(step / 2) % chord.length] + 12;
-    const freq = this.params.rootNoteHz * semitoneRatio(noteSemi);
-
-    const osc = this.ctx.createOscillator();
-    const filter = this.ctx.createBiquadFilter();
-    const gain = this.ctx.createGain();
-    const pan = this.ctx.createStereoPanner();
-
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(freq, time);
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(Math.min(1900, this.params.filterCutoffHz * 1.15), time);
-    filter.frequency.exponentialRampToValueAtTime(340, time + 0.28);
-    filter.Q.value = 2.2;
-
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp * 0.65 * this.intensityMultiplier, time + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.32);
-
-    pan.pan.value = step % 4 === 2 ? -0.35 : 0.35;
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(pan);
-    pan.connect(this.pulseBus);
-    osc.start(time);
-    osc.stop(time + 0.35);
-  }
-
-  private triggerAcousticPluck(time: number, step: number, amp: number): void {
-    if (!this.ctx || !this.pulseBus || !this.params) return;
-    const chord = this.getActiveChord();
-    const noteSemi = chord[step % chord.length] + 12;
-    const freq = this.params.rootNoteHz * semitoneRatio(noteSemi);
-
-    const osc = this.ctx.createOscillator();
-    const filter = this.ctx.createBiquadFilter();
-    const gain = this.ctx.createGain();
-    const pan = this.ctx.createStereoPanner();
-
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(freq, time);
-
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(Math.min(2200, this.params.filterCutoffHz * 1.2), time);
-    filter.frequency.exponentialRampToValueAtTime(480, time + 0.55);
-
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp * this.intensityMultiplier, time + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.72);
-
-    pan.pan.value = step % 4 === 0 ? -0.3 : 0.3;
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(pan);
-    pan.connect(this.pulseBus);
-    osc.start(time);
-    osc.stop(time + 0.78);
-  }
-
-  private triggerSoftAirTick(time: number, amp: number): void {
-    if (!this.ctx || !this.pulseBus || !this.params) return;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(this.params.speakerSafeEQ ? 640 : 1380, time);
-    filter.type = 'bandpass';
-    filter.frequency.value = this.params.speakerSafeEQ ? 680 : 2500;
-    filter.Q.value = 1.6;
-
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp * this.intensityMultiplier, time + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.045);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.pulseBus);
-    osc.start(time);
-    osc.stop(time + 0.055);
-  }
-
-  private triggerGlassChime(time: number, step: number, amp: number): void {
-    if (!this.ctx || !this.pulseBus || !this.params) return;
-    const chord = this.getActiveChord();
-    const noteSemi = chord[(step + this.chordIndex) % chord.length] + 12;
-    const freq = this.params.rootNoteHz * semitoneRatio(noteSemi);
-
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    const pan = this.ctx.createStereoPanner();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, time);
-
-    gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp, time + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 1.65);
-
-    pan.pan.value = step % 2 === 0 ? -0.4 : 0.4;
-    osc.connect(gain);
-    gain.connect(pan);
-    pan.connect(this.pulseBus);
-    osc.start(time);
-    osc.stop(time + 1.75);
-  }
-
   private isAntiMonotonyPulseActive(): boolean {
     if (!this.params || this.params.antiMonotonyCycleMin <= 0) return false;
     const cycleSec = this.params.antiMonotonyCycleMin * 60;
@@ -1383,58 +903,59 @@ export class PsychoacousticEngine {
     return pos > cycleSec - 25;
   }
 
-  private getEffectiveBpm(): number {
-    if (!this.params || this.params.bpm <= 0) return 0;
-    const ratio = Math.min(1, this.elapsedSec / this.plannedSec);
-    let factor = 1.0;
-    if (ratio < 0.15) factor = 0.94 + (ratio / 0.15) * 0.06;
-    else if (ratio > 0.88) factor = 1.0 - ((ratio - 0.88) / 0.12) * 0.07;
-    return Math.round(this.params.bpm * factor);
-  }
-
   public updateElapsed(elapsedSec: number): EngineTelemetry {
     this.elapsedSec = elapsedSec;
     const progressRatio = Math.min(1, Math.max(0, elapsedSec / this.plannedSec));
     let phase: SessionPhase = 'plateau';
-    let phaseLabel = 'Cognitive Performance Plateau';
+    let phaseLabel = 'Study Protocol Plateau';
     let phaseModFactor = 1.0;
 
-    // Iso-Adaptive Organic Curve: starts silky (~48% of target depth -> ~12%) so music hooks you immediately,
-    // ramps smoothly into Peak cortical entrainment (100%), then eases gently in Landing.
     if (progressRatio < 0.15) {
       phase = 'entry';
-      phaseLabel = 'Entry & Alignment (Iso-Adaptive)';
-      phaseModFactor = 0.48 + (progressRatio / 0.15) * 0.52;
+      phaseLabel = 'Entry & Iso-Alignment';
+      phaseModFactor = 0.55 + (progressRatio / 0.15) * 0.45;
     } else if (progressRatio > 0.88) {
       phase = 'landing';
       phaseLabel = 'Gentle Landing';
-      phaseModFactor = 1.0 - ((progressRatio - 0.88) / 0.12) * 0.5;
+      phaseModFactor = 1.0 - ((progressRatio - 0.88) / 0.12) * 0.45;
     }
 
     const antiMonotonyActive = this.isAntiMonotonyPulseActive();
-    const baseDepth = this.params?.modulationDepth ?? 0.24;
-    const nominalDepth = Math.min(0.42, Math.max(0, baseDepth * this.modDepthMultiplier * phaseModFactor));
+    this.composer.updateProgress(progressRatio, antiMonotonyActive);
+
+    const spec = this.studySpec;
+    const amActive = spec?.entrainment.type === 'amplitude_modulation' && spec.entrainment.frequencyHz > 0;
+    const baseDepth = amActive ? spec.entrainment.modulationDepth : 0;
+    const nominalDepth = Math.min(0.75, Math.max(0, baseDepth * this.modDepthMultiplier * phaseModFactor));
     const effectiveDepth = this.isControlTrial ? 0 : nominalDepth;
 
-    if (this.ctx && this.amGainL && this.amDepthGainL && this.padFilter && this.params) {
+    // Iso-Principle live frequency ramp (startFrequencyHz -> target frequencyHz during entry)
+    let liveAmHz = spec?.entrainment.frequencyHz ?? this.params?.modulationHz ?? 16;
+    if (amActive && spec?.entrainment.startFrequencyHz !== undefined) {
+      const rampRatio = Math.min(1, progressRatio / 0.25);
+      liveAmHz = Number(
+        (
+          spec.entrainment.startFrequencyHz +
+          (spec.entrainment.frequencyHz - spec.entrainment.startFrequencyHz) * rampRatio
+        ).toFixed(2)
+      );
+    }
+
+    if (this.ctx && this.amGainL && this.amDepthGainL && this.amLfoL) {
       const now = this.ctx.currentTime;
       this.amGainL.gain.setTargetAtTime(1 - effectiveDepth / 2, now, 0.35);
       this.amDepthGainL.gain.setTargetAtTime(effectiveDepth / 2, now, 0.35);
-
-      if (this.amGainR && this.amDepthGainR) {
-        this.amGainR.gain.setTargetAtTime(1 - effectiveDepth / 2, now, 0.35);
-        this.amDepthGainR.gain.setTargetAtTime(effectiveDepth / 2, now, 0.35);
+      if (amActive) {
+        this.amLfoL.frequency.setTargetAtTime(Math.max(0.5, liveAmHz), now, 0.5);
       }
 
-      const targetCutoff =
-        this.getGenreFilterCutoff(this.genre) *
-        (0.86 + 0.24 * this.intensityMultiplier) *
-        (antiMonotonyActive ? 1.15 : 1.0);
-      this.padFilter.frequency.setTargetAtTime(
-        Math.min(2500, Math.max(440, targetCutoff)),
-        now,
-        0.6
-      );
+      if (this.amGainR && this.amDepthGainR && this.amLfoR) {
+        this.amGainR.gain.setTargetAtTime(1 - effectiveDepth / 2, now, 0.35);
+        this.amDepthGainR.gain.setTargetAtTime(effectiveDepth / 2, now, 0.35);
+        if (amActive) {
+          this.amLfoR.frequency.setTargetAtTime(Math.max(0.5, liveAmHz), now, 0.5);
+        }
+      }
     }
 
     if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function') {
@@ -1449,49 +970,63 @@ export class PsychoacousticEngine {
       }
     }
 
+    const stim = this.stimulusRack.getTelemetry(elapsedSec);
     return {
       phase,
       phaseLabel,
       progressRatio,
-      currentModHz: this.params?.modulationHz ?? 16,
-      currentModDepth: Number(nominalDepth.toFixed(2)),
-      crossoverHz: this.params?.crossoverHz ?? 190,
-      upperCrossoverHz: this.params?.upperCrossoverHz ?? 4500,
+      currentModHz: amActive ? liveAmHz : stim.activeHz,
+      currentModDepth: Number(
+        (amActive ? nominalDepth : (spec?.entrainment.modulationDepth ?? 0) * this.modDepthMultiplier).toFixed(2)
+      ),
+      crossoverHz: spec?.entrainment.modulationBandHz[0] ?? this.params?.crossoverHz ?? 190,
+      upperCrossoverHz: spec?.entrainment.modulationBandHz[1] ?? this.params?.upperCrossoverHz ?? 4500,
       stereoAmActive: Boolean(this.amGainR),
       energyTier: this.params?.energyTier ?? 'focus',
-      currentBpm: this.getEffectiveBpm(),
+      currentBpm: this.composer.getCurrentBpm(),
       antiMonotonyActive,
       genre: this.genre,
       backgroundAudioActive: this.backgroundAudioActive,
       usingStudioAudio: this.usingStudioAudio,
       usingCustomTrack: this.usingCustomTrack,
       activeTrackName: this.activeTrackName,
+      carrierMode: this.carrierMode,
+      entrainmentType: stim.entrainmentType,
+      stimulusCarrierLabel: stim.carrierLabel,
+      tuningA4Hz: spec?.music.tuningA4Hz ?? 440,
+      tonalMode: spec?.music.tonalMode ?? 'suspended',
+      noiseColor: stim.noiseColor,
+      noiseSnrDb: stim.noiseSnrDb,
+      hrvActive: stim.hrvActive,
+      hrvBreathPhase: stim.hrvBreathPhase,
+      hrvBreathProgress: stim.hrvBreathProgress,
+      lyriaStatus: this.lyriaStatus,
     };
   }
 
   public setVolume(vol: number): void {
     this.volume = Math.max(0, Math.min(1, vol));
     if (this.ctx && this.masterGain) {
-      this.masterGain.gain.setTargetAtTime(Math.max(0.0001, this.volume * 0.82), this.ctx.currentTime, 0.12);
+      this.masterGain.gain.setTargetAtTime(
+        Math.max(0.0001, this.volume * 0.82),
+        this.ctx.currentTime,
+        0.12
+      );
     }
   }
 
   public adjustIntensity(multiplier: number): void {
     this.intensityMultiplier = Math.max(0.45, Math.min(1.55, multiplier));
-    if (this.ctx && this.pulseBus) {
-      this.pulseBus.gain.setTargetAtTime(this.getGenrePulseLevel(this.genre), this.ctx.currentTime, 0.2);
-    }
-    if (this.ctx && this.noiseGain && this.params && !this.params.speakerSafeEQ) {
-      const targetNoise = Math.max(
-        0.01,
-        Math.min(0.35, this.params.noiseLevel * 0.52 * this.intensityMultiplier)
-      );
-      this.noiseGain.gain.setTargetAtTime(targetNoise, this.ctx.currentTime, 0.25);
+    this.composer.setIntensityMultiplier(this.intensityMultiplier);
+    this.stimulusRack.setIntensityMultiplier(this.intensityMultiplier);
+    if (this.carrierMode === 'lyria_realtime' && this.studySpec) {
+      this.lyriaClient.steer(this.studySpec, this.intensityMultiplier);
     }
   }
 
   public adjustModDepth(multiplier: number): void {
     this.modDepthMultiplier = Math.max(0.0, Math.min(1.65, multiplier));
+    this.stimulusRack.setModMultiplier(this.modDepthMultiplier);
     if (this.isPlaying) {
       this.updateElapsed(this.elapsedSec);
     }
@@ -1500,15 +1035,12 @@ export class PsychoacousticEngine {
   public async pause(): Promise<void> {
     if (!this.ctx || !this.isPlaying) return;
     this.isPlaying = false;
-    // Pause-aware crossfade timer preservation (fixes post-resume silence!)
+    this.composer.pause();
     if (this.studioCrossfadeTimer !== null) {
       window.clearTimeout(this.studioCrossfadeTimer);
       this.studioCrossfadeTimer = null;
       const elapsedInDeck = Math.max(0, this.ctx.currentTime - this.studioDeckStartedAtCtx);
-      this.studioDeckPausedRemainingSec = Math.max(
-        1.0,
-        this.studioDeckCrossfadeDelaySec - elapsedInDeck
-      );
+      this.studioDeckPausedRemainingSec = Math.max(1.0, this.studioDeckCrossfadeDelaySec - elapsedInDeck);
     }
     this.audioEl?.pause();
     await this.ctx.suspend();
@@ -1521,8 +1053,7 @@ export class PsychoacousticEngine {
     await this.ctx.resume();
     await this.audioEl?.play().catch(() => {});
     this.isPlaying = true;
-    this.nextStepTime = this.ctx.currentTime + 0.1;
-    // Re-arm studio crossfade timer cleanly with exact remaining audio time
+    this.composer.resume();
     if (this.studioDeckPausedRemainingSec !== null && this.studioDeckOnCrossfade) {
       const remaining = this.studioDeckPausedRemainingSec;
       const cb = this.studioDeckOnCrossfade;
@@ -1556,40 +1087,28 @@ export class PsychoacousticEngine {
         const now = this.ctx.currentTime;
         this.masterGain.gain.cancelScheduledValues(now);
         this.masterGain.gain.setValueAtTime(Math.max(0.0001, this.masterGain.gain.value), now);
-        this.masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+        this.masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
       } catch {
         // ignore
       }
       const ctxRef = this.ctx;
       const audioElRef = this.audioEl;
       this.isPlaying = false;
-      this.clearTimers();
+      this.composer.stop();
+      this.stimulusRack.stop();
+      this.lyriaClient.stop();
+      this.clearStudioDeck(0.35);
       window.setTimeout(() => {
         audioElRef?.pause();
         if (audioElRef) audioElRef.srcObject = null;
         ctxRef.close().catch(() => {});
-      }, 650);
+      }, 600);
       this.ctx = null;
       this.audioEl = null;
       this.analyser = null;
       return;
     }
     this.stopImmediate();
-  }
-
-  private clearTimers(): void {
-    if (this.chordTimer !== null) {
-      window.clearInterval(this.chordTimer);
-      this.chordTimer = null;
-    }
-    if (this.pulseTimer !== null) {
-      window.clearInterval(this.pulseTimer);
-      this.pulseTimer = null;
-    }
-    if (this.studioCrossfadeTimer !== null) {
-      window.clearTimeout(this.studioCrossfadeTimer);
-      this.studioCrossfadeTimer = null;
-    }
   }
 
   private stopImmediate(): void {
@@ -1601,8 +1120,11 @@ export class PsychoacousticEngine {
     this.activeTrackName = null;
     this.studioDeckPausedRemainingSec = null;
     this.studioDeckOnCrossfade = null;
+    this.lyriaStatus = 'idle';
+    this.composer.stop();
+    this.stimulusRack.stop();
+    this.lyriaClient.stop();
     this.clearStudioDeck(0.1);
-    this.clearTimers();
     if (this.visibilityHandler) {
       document.removeEventListener('visibilitychange', this.visibilityHandler);
       this.visibilityHandler = null;
@@ -1611,16 +1133,7 @@ export class PsychoacousticEngine {
     try {
       this.amLfoL?.stop();
       this.amLfoR?.stop();
-      this.lfoFilter?.stop();
-      this.noiseSource?.stop();
-      this.rainSource?.stop();
-      this.vinylSource?.stop();
-      for (const osc of this.activePadOscs) osc.stop();
-      for (const node of this.binauralNodes) {
-        if ('stop' in node && typeof (node as OscillatorNode).stop === 'function') {
-          (node as OscillatorNode).stop();
-        }
-      }
+      this.pureAmCarrierSrc?.stop();
     } catch {
       // ignore
     }
@@ -1629,19 +1142,14 @@ export class PsychoacousticEngine {
       this.audioEl.srcObject = null;
       this.audioEl = null;
     }
-    this.activePadOscs = [];
-    this.activePadGains = [];
-    this.binauralNodes = [];
     this.amGainL = null;
     this.amGainR = null;
     this.amLfoL = null;
     this.amLfoR = null;
     this.amDepthGainL = null;
     this.amDepthGainR = null;
-    this.noiseGain = null;
-    this.rainGain = null;
-    this.vinylGain = null;
-    this.reverbSend = null;
+    this.pureAmCarrierGain = null;
+    this.pureAmCarrierSrc = null;
     this.cleanSubBus = null;
     this.proceduralMaster = null;
     this.studioBus = null;
@@ -1679,19 +1187,13 @@ export class PsychoacousticEngine {
       try {
         navigator.mediaSession.metadata = new MediaMetadata({
           title,
-          artist: 'nootropic.fm · Open Research Beta',
-          album: 'Psychoacoustic Cognitive Formula',
+          artist: 'nootropic.fm · Study-to-Sound Engine',
+          album: 'Executable Psychoacoustic Protocol',
         });
         navigator.mediaSession.playbackState = 'playing';
-        navigator.mediaSession.setActionHandler('play', () => {
-          void this.resume();
-        });
-        navigator.mediaSession.setActionHandler('pause', () => {
-          void this.pause();
-        });
-        navigator.mediaSession.setActionHandler('stop', () => {
-          this.stop();
-        });
+        navigator.mediaSession.setActionHandler('play', () => void this.resume());
+        navigator.mediaSession.setActionHandler('pause', () => void this.pause());
+        navigator.mediaSession.setActionHandler('stop', () => this.stop());
       } catch {
         // ignore
       }

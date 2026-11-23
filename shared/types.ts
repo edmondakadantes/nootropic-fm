@@ -1,3 +1,5 @@
+import type { ExecutableStudySpec } from './studySpec';
+
 export type AgeBand = '18-24' | '25-34' | '35-44' | '45-54' | '55+';
 
 export type UserGender = 'male' | 'female' | 'non_binary' | 'prefer_not_to_say';
@@ -44,7 +46,7 @@ export type WorkedRating = 'yes' | 'partial' | 'no';
 
 export type TimeOfDayBucket = 'morning' | 'midday' | 'afternoon' | 'evening' | 'night';
 
-export type NoiseColor = 'pink' | 'brown' | 'soft_rain' | 'none';
+export type NoiseColor = 'white' | 'pink' | 'brown' | 'soft_rain' | 'none';
 
 export type HarmonicMode = 'bright_maj9' | 'warm_min9' | 'suspended_open' | 'deep_drone';
 
@@ -62,9 +64,12 @@ export type ResolvedGenre = Exclude<MusicGenreChoice, 'auto'>;
 export type EnergyTier = 'calm' | 'focus' | 'drive';
 
 export type AudioSourceType =
+  | 'generative_live'
   | 'studio_library'
   | 'community_cache'
   | 'live_generating'
+  | 'lyria_realtime'
+  | 'pure_stimulus'
   | 'procedural_fallback';
 
 export interface UserProfile {
@@ -126,13 +131,14 @@ export interface ScientificStudy {
 
 export interface LivePubMedPaper {
   pmid: string;
-  source?: 'pubmed' | 'openalex';
+  source?: 'pubmed' | 'openalex' | 'europepmc' | 'clinicaltrials';
   title: string;
   authors: string;
   journal: string;
   year: string;
   url: string;
   doiUrl?: string;
+  abstractText?: string;
   appliedMechanism?: string;
 }
 
@@ -221,6 +227,7 @@ export interface ProtocolRecommendation {
   rationale: string;
   studies: ScientificStudy[];
   livePubMedPapers?: LivePubMedPaper[];
+  executableSpec?: ExecutableStudySpec;
   confidencePct: number;
   cohortTrials: number;
   profileTrials: number;
@@ -378,6 +385,8 @@ export interface AppRuntimeConfig {
   regionRequiresOptIn: boolean;
   countryCode: string;
   customLiveGenAvailable: boolean;
+  lyriaRealtimeAvailable?: boolean;
+  workersAiCompilerAvailable?: boolean;
   musicProvider: string;
   dailyCapMax: number;
   dailyCapRemaining: number;
