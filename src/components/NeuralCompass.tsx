@@ -11,8 +11,8 @@ import {
 import type { TargetState } from '../../shared/types';
 
 interface NeuralCompassSelectorProps {
-  coords: NeuralCoords;
-  selectedState: NeuralMicroState;
+  coords: NeuralCoords | null;
+  selectedState: NeuralMicroState | null;
   baselineScore: number;
   onChangeCoords: (next: NeuralCoords) => void;
   onSelectMicroState: (state: NeuralMicroState) => void;
@@ -66,13 +66,23 @@ export function NeuralCompassSelector({
   };
 
   const landmarks = NEURAL_MICRO_STATES.filter((s) => s.landmark);
-  const nearby = findNearbyMicroStates(coords.energy, coords.clarity, 5);
-  const cursorLeft = `${coords.clarity}%`;
-  const cursorTop = `${100 - coords.energy}%`;
+  const quickStarterStates = NEURAL_MICRO_STATES.filter((s) =>
+    ['stressed', 'tired_sluggish', 'brain_fog', 'distracted_scattered', 'anxious_racing', 'calm_balanced'].includes(
+      s.id
+    )
+  );
+  const nearbyOther =
+    coords && selectedState
+      ? findNearbyMicroStates(coords.energy, coords.clarity, 6).filter((s) => s.id !== selectedState.id).slice(0, 4)
+      : quickStarterStates;
+
+  const cursorLeft = coords ? `${coords.clarity}%` : '50%';
+  const cursorTop = coords ? `${100 - coords.energy}%` : '50%';
 
   // Dynamic quadrant aura color
-  const cursorColor =
-    coords.clarity < 48 && coords.energy >= 55
+  const cursorColor = !coords
+    ? '#22d3ee'
+    : coords.clarity < 48 && coords.energy >= 55
       ? '#fb7185' // Top-Left: rose/amber tension
       : coords.clarity < 48 && coords.energy < 55
         ? '#818cf8' // Bottom-Left: indigo depleted/fog
@@ -124,25 +134,29 @@ export function NeuralCompassSelector({
           <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(148,163,184,0.15)" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
           <circle cx="50" cy="50" r="18" fill="none" stroke="rgba(148,163,184,0.1)" strokeWidth="0.3" />
           <circle cx="50" cy="50" r="36" fill="none" stroke="rgba(148,163,184,0.08)" strokeWidth="0.3" />
-          {/* Live Crosshair projection lines */}
-          <line
-            x1={coords.clarity}
-            y1="0"
-            x2={coords.clarity}
-            y2="100"
-            stroke={cursorColor}
-            strokeOpacity="0.22"
-            strokeWidth="0.3"
-          />
-          <line
-            x1="0"
-            y1={100 - coords.energy}
-            x2="100"
-            y2={100 - coords.energy}
-            stroke={cursorColor}
-            strokeOpacity="0.22"
-            strokeWidth="0.3"
-          />
+          {/* Live Crosshair projection lines (only once user selects a point!) */}
+          {coords && (
+            <>
+              <line
+                x1={coords.clarity}
+                y1="0"
+                x2={coords.clarity}
+                y2="100"
+                stroke={cursorColor}
+                strokeOpacity="0.24"
+                strokeWidth="0.3"
+              />
+              <line
+                x1="0"
+                y1={100 - coords.energy}
+                x2="100"
+                y2={100 - coords.energy}
+                stroke={cursorColor}
+                strokeOpacity="0.24"
+                strokeWidth="0.3"
+              />
+            </>
+          )}
         </svg>
 
         {/* Biological Axis Edge Labels (kept flush to edges so cursor never collides) */}
@@ -161,7 +175,7 @@ export function NeuralCompassSelector({
 
         {/* Interactive Landmark Constellation Points */}
         {landmarks.map((st) => {
-          const isSelected = selectedState.id === st.id;
+          const isSelected = selectedState?.id === st.id;
           return (
             <button
               key={st.id}
@@ -177,15 +191,15 @@ export function NeuralCompassSelector({
               <span
                 className={`h-2 w-2 rounded-full transition-all ${
                   isSelected
-                    ? 'scale-125 bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)]'
-                    : 'bg-slate-400/65 group-hover:scale-125 group-hover:bg-cyan-300'
+                    ? 'opacity-0'
+                    : 'bg-slate-400/70 group-hover:scale-125 group-hover:bg-cyan-300'
                 }`}
               />
               <span
                 className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[9px] font-medium transition ${
                   isSelected
-                    ? 'bg-slate-950/90 text-white'
-                    : 'text-slate-400/85 group-hover:bg-slate-950/85 group-hover:text-cyan-200'
+                    ? 'translate-y-3.5 bg-slate-950/95 text-white ring-1 ring-white/20'
+                    : 'text-slate-400/90 group-hover:bg-slate-950/85 group-hover:text-cyan-200'
                 }`}
               >
                 {st.shortLabel}
@@ -194,93 +208,118 @@ export function NeuralCompassSelector({
           );
         })}
 
-        {/* Active Draggable Bioluminescent Orb */}
-        <div
-          style={{
-            left: cursorLeft,
-            top: cursorTop,
-            transition: dragging ? 'none' : 'left 220ms ease-out, top 220ms ease-out',
-          }}
-          className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
-        >
-          <span
-            className="absolute -inset-4 rounded-full opacity-35 blur-md"
-            style={{ backgroundColor: cursorColor }}
-          />
-          <span
-            className="relative flex h-6 w-6 items-center justify-center rounded-full border-2 border-white shadow-lg"
+        {/* Active Draggable Bioluminescent Orb (only shown after user taps/drags!) */}
+        {coords ? (
+          <div
             style={{
-              backgroundColor: cursorColor,
-              boxShadow: `0 0 22px ${cursorColor}`,
+              left: cursorLeft,
+              top: cursorTop,
+              transition: dragging ? 'none' : 'left 220ms ease-out, top 220ms ease-out',
             }}
+            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
           >
-            <Crosshair className="h-3 w-3 text-slate-950" />
-          </span>
-        </div>
+            <span
+              className="absolute -inset-4 rounded-full opacity-35 blur-md"
+              style={{ backgroundColor: cursorColor }}
+            />
+            <span
+              className="relative flex h-6 w-6 items-center justify-center rounded-full border-2 border-white shadow-lg"
+              style={{
+                backgroundColor: cursorColor,
+                boxShadow: `0 0 22px ${cursorColor}`,
+              }}
+            >
+              <Crosshair className="h-3 w-3 text-slate-950" />
+            </span>
+          </div>
+        ) : (
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400/30 bg-slate-950/85 px-3 py-1 text-[10px] font-medium text-cyan-200/90 backdrop-blur-sm">
+            Tap anywhere on the map
+          </div>
+        )}
       </div>
 
       {/* Live Neural Readout Card + Nearby Nuanced Micro-States */}
       <div className="rounded-2xl border border-cyan-400/25 bg-slate-950/75 p-3.5 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: cursorColor, boxShadow: `0 0 10px ${cursorColor}` }}
-              />
-              <span className="text-sm font-bold text-white">{selectedState.label}</span>
+        {selectedState && coords ? (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: cursorColor, boxShadow: `0 0 10px ${cursorColor}` }}
+                  />
+                  <span className="text-sm font-bold text-white">{selectedState.label}</span>
+                </div>
+                <div className="font-mono-tech text-[10px] text-slate-400">
+                  Energy <span className="text-cyan-300">{coords.energy}%</span> · Clarity{' '}
+                  <span className="text-indigo-300">{coords.clarity}%</span>
+                </div>
+              </div>
+
+              {/* Compact Auto-Calibrated Baseline 1-5 (editable with 1 tap) */}
+              <div className="flex items-center gap-1">
+                <span className="mr-1 text-[10px] text-slate-400">Baseline:</span>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => onChangeBaseline(n)}
+                    className={`h-7 w-7 rounded-lg border font-mono-tech text-[11px] font-bold transition ${
+                      baselineScore === n
+                        ? 'border-cyan-400 bg-cyan-400/20 text-white'
+                        : 'border-slate-800 bg-slate-900/70 text-slate-500 hover:border-slate-600 hover:text-slate-300'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="font-mono-tech text-[10px] text-slate-400">
-              Energy <span className="text-cyan-300">{coords.energy}%</span> · Clarity{' '}
-              <span className="text-indigo-300">{coords.clarity}%</span>
+
+            {/* Subtle DSP preview for this exact state */}
+            <p className="text-[11px] leading-relaxed text-cyan-200/85">
+              <Sparkles className="mr-1 inline h-3 w-3 text-cyan-300" />
+              {selectedState.dspNote}
+            </p>
+          </>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="space-y-0.5">
+              <div className="text-xs font-semibold text-white">No state selected yet</div>
+              <div className="text-[11px] text-slate-400">
+                Tap any point on the 2D map above, describe how you feel, or choose a state below.
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Compact Auto-Calibrated Baseline 1-5 (editable with 1 tap) */}
-          <div className="flex items-center gap-1">
-            <span className="mr-1 text-[10px] text-slate-400">Baseline:</span>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => onChangeBaseline(n)}
-                className={`h-7 w-7 rounded-lg border font-mono-tech text-[11px] font-bold transition ${
-                  baselineScore === n
-                    ? 'border-cyan-400 bg-cyan-400/20 text-white'
-                    : 'border-slate-800 bg-slate-900/70 text-slate-500 hover:border-slate-600 hover:text-slate-300'
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Subtle DSP preview for this exact state */}
-        <p className="text-[11px] leading-relaxed text-cyan-200/85">
-          <Sparkles className="mr-1 inline h-3 w-3 text-cyan-300" />
-          {selectedState.dspNote}
-        </p>
-
-        {/* Nearby Micro-States + 1-Tap Expand All 19 States */}
+        {/* Quick / Nearby Micro-States + 1-Tap Expand All 19 States */}
         <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
           <div className="flex items-center justify-between gap-2 text-[10px]">
             <span className="font-medium text-slate-500">
               {showAllStates
                 ? `All ${NEURAL_MICRO_STATES.length} neural states (tap any):`
-                : 'Closest nuances in this neural zone (tap to refine):'}
+                : selectedState
+                  ? 'Or refine to a nearby nuance:'
+                  : 'Quick states (tap to select):'}
             </span>
             <button
               type="button"
               onClick={() => setShowAllStates((v) => !v)}
               className="font-medium text-cyan-300 hover:text-cyan-200"
             >
-              {showAllStates ? 'Show nearby only' : `Browse all ${NEURAL_MICRO_STATES.length} states`}
+              {showAllStates
+                ? selectedState
+                  ? 'Show nearby only'
+                  : 'Show quick states'
+                : `Browse all ${NEURAL_MICRO_STATES.length} states`}
             </button>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {(showAllStates ? NEURAL_MICRO_STATES : nearby).map((st) => {
-              const active = selectedState.id === st.id;
+            {(showAllStates ? NEURAL_MICRO_STATES : nearbyOther).map((st) => {
+              const active = selectedState?.id === st.id;
               return (
                 <button
                   key={st.id}

@@ -160,13 +160,13 @@ export function CheckInView({
   const isFirstVisit = !profile;
   const [beat, setBeat] = useState<1 | 2 | 3 | 4>(profile ? 2 : 1);
 
-  // Beat 1: Neural Identity & Demographics
+  // Beat 1: Neural Identity & Demographics (ZERO pre-filled or pre-selected fields on first visit!)
   const [introText, setIntroText] = useState('');
   const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
-  const [age, setAge] = useState<number>(Math.max(18, profile?.age ?? 34));
+  const [ageInput, setAgeInput] = useState<string>(profile ? String(Math.max(18, profile.age)) : '');
   const [ageError, setAgeError] = useState<string | null>(null);
-  const [gender, setGender] = useState<UserGender>(profile?.gender ?? 'prefer_not_to_say');
-  const [role, setRole] = useState<UserRole>(profile?.role ?? 'knowledge_worker');
+  const [gender, setGender] = useState<UserGender | null>(profile?.gender ?? null);
+  const [role, setRole] = useState<UserRole | null>(profile?.role ?? null);
   const [occupationLabel, setOccupationLabel] = useState(profile?.occupationLabel ?? '');
   const [noiseSensitivity] = useState<NoiseSensitivity>(profile?.noiseSensitivity ?? 'medium');
 
@@ -177,15 +177,13 @@ export function CheckInView({
   const [researchConsent, setResearchConsent] = useState<boolean>(defaultConsent);
   const [consentTouched, setConsentTouched] = useState(false);
 
-  // Beat 2: Continuous 2D Neural Compass (Russell Circumplex Arousal × Clarity) + 19 Micro-States
+  // Beat 2: Continuous 2D Neural Compass (ZERO pre-selected state until user taps/drags/types!)
   const [feelingText, setFeelingText] = useState('');
-  const [neuralCoords, setNeuralCoords] = useState<NeuralCoords>({
-    energy: DEFAULT_MICRO_STATE.energy,
-    clarity: DEFAULT_MICRO_STATE.clarity,
-  });
-  const [selectedMicroState, setSelectedMicroState] = useState<NeuralMicroState>(DEFAULT_MICRO_STATE);
-  const [currentState, setCurrentState] = useState<CurrentState>(DEFAULT_MICRO_STATE.coreState);
-  const [baselineScore, setBaselineScore] = useState<number>(DEFAULT_MICRO_STATE.defaultBaseline);
+  const [neuralCoords, setNeuralCoords] = useState<NeuralCoords | null>(null);
+  const [selectedMicroState, setSelectedMicroState] = useState<NeuralMicroState | null>(null);
+  const [currentState, setCurrentState] = useState<CurrentState>('calm_neutral');
+  const [baselineScore, setBaselineScore] = useState<number>(3);
+  const [stateError, setStateError] = useState<string | null>(null);
 
   // Beat 3: Target state, duration & output
   const [goalText, setGoalText] = useState('');
@@ -211,8 +209,8 @@ export function CheckInView({
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.displayName ?? '');
-      setAge(Math.max(18, profile.age));
-      setGender(profile.gender ?? 'prefer_not_to_say');
+      setAgeInput(String(Math.max(18, profile.age)));
+      setGender(profile.gender ?? null);
       setRole(profile.role);
       setOccupationLabel(profile.occupationLabel ?? '');
       setResearchConsent(profile.researchConsent);
@@ -224,6 +222,9 @@ export function CheckInView({
       }
       setBeat((prev) => (prev === 1 ? 2 : prev));
     } else {
+      setAgeInput('');
+      setGender(null);
+      setRole(null);
       setBeat(1);
     }
   }, [profile?.id]);
@@ -234,6 +235,11 @@ export function CheckInView({
       setResearchConsent(!browserHasGpc() && !runtimeConfig.regionRequiresOptIn);
     }
   }, [profile, consentTouched, runtimeConfig]);
+
+  const parsedAge = ageInput.trim() === '' ? NaN : Number(ageInput);
+  const effectiveAge = Number.isFinite(parsedAge) && parsedAge >= 18 && parsedAge <= 95 ? Math.round(parsedAge) : 30;
+  const effectiveGender: UserGender = gender ?? 'prefer_not_to_say';
+  const effectiveRole: UserRole = role ?? 'other';
 
   const isDriving = environment === 'driving';
 
@@ -251,12 +257,19 @@ export function CheckInView({
     onMoodChange?.(activeMood);
   }, [activeMood, onMoodChange]);
 
-  const liveProfileSummary = formatProfileSummary({
-    age,
-    gender,
-    role,
-    occupationLabel,
-  });
+  const liveProfileSummary = Number.isFinite(parsedAge) && parsedAge >= 18
+    ? formatProfileSummary({
+        age: Math.round(parsedAge),
+        gender: effectiveGender,
+        role: effectiveRole,
+        occupationLabel,
+      })
+    : [
+        gender && gender !== 'prefer_not_to_say' ? GENDER_LABELS[gender] : null,
+        occupationLabel.trim() || (role ? ROLE_SHORT_LABELS[role] : null),
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'Anonymous Listener';
 
   const handleIntroChange = (text: string) => {
     setIntroText(text);
@@ -264,7 +277,7 @@ export function CheckInView({
     const parsed = parseProfileSentence(text);
     if (parsed.displayName) setDisplayName(parsed.displayName);
     if (parsed.age && parsed.age >= 18) {
-      setAge(parsed.age);
+      setAgeInput(String(parsed.age));
       setAgeError(null);
     }
     if (parsed.gender) setGender(parsed.gender);
@@ -281,6 +294,7 @@ export function CheckInView({
   const applyMicroState = (st: NeuralMicroState, syncCoords = true) => {
     setSelectedMicroState(st);
     setCurrentState(st.coreState);
+    setStateError(null);
     if (syncCoords) {
       setNeuralCoords({ energy: st.energy, clarity: st.clarity });
     }
@@ -294,6 +308,7 @@ export function CheckInView({
 
   const handleCompassCoordsChange = (next: NeuralCoords) => {
     setNeuralCoords(next);
+    setStateError(null);
     const closest = findClosestMicroState(next.energy, next.clarity);
     setSelectedMicroState(closest);
     setCurrentState(closest.coreState);
@@ -309,7 +324,7 @@ export function CheckInView({
     setFeelingText(text);
     if (!text.trim()) return;
     const microMatch = matchMicroStateFromText(text);
-    const parsed = parseNaturalCheckIn(text, { age, role, defaultDevice: device });
+    const parsed = parseNaturalCheckIn(text, { age: effectiveAge, role: effectiveRole, defaultDevice: device });
 
     if (microMatch) {
       applyMicroState(microMatch, true);
@@ -320,6 +335,7 @@ export function CheckInView({
       setSelectedMicroState(fallbackMicro);
       setNeuralCoords({ energy: fallbackMicro.energy, clarity: fallbackMicro.clarity });
       setBaselineScore(fallbackMicro.defaultBaseline);
+      setStateError(null);
       setTargetState(
         isDriving && (fallbackMicro.suggestedTarget === 'calm_reset' || fallbackMicro.suggestedTarget === 'sleep_winddown')
           ? 'alert_focus'
@@ -343,7 +359,7 @@ export function CheckInView({
   const handleGoalChange = (text: string) => {
     setGoalText(text);
     if (!text.trim()) return;
-    const parsed = parseNaturalCheckIn(text, { age, role, defaultDevice: device });
+    const parsed = parseNaturalCheckIn(text, { age: effectiveAge, role: effectiveRole, defaultDevice: device });
     setTargetState(parsed.targetState);
     setDurationMin(parsed.durationMin);
     if (parsed.environment === 'driving') {
@@ -391,12 +407,21 @@ export function CheckInView({
   };
 
   const handleAdvanceFromBeat1 = () => {
-    if (!Number.isFinite(age) || age < 18 || age > 95) {
-      setAgeError('nootropic.fm is restricted to listeners aged 18+.');
+    if (!Number.isFinite(parsedAge) || parsedAge < 18 || parsedAge > 95) {
+      setAgeError('Please enter your age (18+ required to continue).');
       return;
     }
     setAgeError(null);
     setBeat(2);
+  };
+
+  const handleAdvanceFromBeat2 = () => {
+    if (!selectedMicroState || !neuralCoords) {
+      setStateError('Tap anywhere on the 2D map or choose a quick state below to continue.');
+      return;
+    }
+    setStateError(null);
+    setBeat(3);
   };
 
   const handleSelectDevice = (nextDevice: OutputDevice) => {
@@ -412,11 +437,14 @@ export function CheckInView({
   };
 
   const handleLaunch = async () => {
-    if (!Number.isFinite(age) || age < 18 || age > 95) {
+    if (!Number.isFinite(parsedAge) || parsedAge < 18 || parsedAge > 95) {
       setBeat(1);
-      setAgeError('nootropic.fm is restricted to listeners aged 18+.');
+      setAgeError('Please enter your age (18+ required to continue).');
       return;
     }
+
+    const activeMicro = selectedMicroState ?? DEFAULT_MICRO_STATE;
+    const activeCoords = neuralCoords ?? { energy: activeMicro.energy, clarity: activeMicro.clarity };
 
     let validatedCustom: string | undefined = undefined;
     if (showCustomInput && customVibeText.trim()) {
@@ -441,7 +469,7 @@ export function CheckInView({
           ? 'driving'
           : effectiveTarget === 'sleep_winddown' || effectiveTarget === 'calm_reset'
             ? 'home_relax'
-            : role === 'student'
+            : effectiveRole === 'student'
               ? 'study'
               : 'office';
       const ephemeralMode = !researchConsent;
@@ -449,7 +477,7 @@ export function CheckInView({
       const combinedRaw = [
         introText.trim(),
         feelingText.trim() ||
-          `Feeling ${selectedMicroState.label} (Energy ${neuralCoords.energy}%, Clarity ${neuralCoords.clarity}%)`,
+          `Feeling ${activeMicro.label} (Energy ${activeCoords.energy}%, Clarity ${activeCoords.clarity}%)`,
         goalText.trim() || `Want ${TARGET_LABELS[effectiveTarget]} for ${durationMin} min`,
         validatedCustom ? `Music: ${validatedCustom}` : '',
       ]
@@ -461,9 +489,9 @@ export function CheckInView({
         const parsedBase = parseOnboardingAnswers(introText, '');
         profileUpdate = {
           displayName: displayName.trim() || undefined,
-          age: Math.max(18, Math.min(95, age || parsedBase.age)),
-          gender,
-          role: isDriving && role === 'knowledge_worker' ? 'driver' : role,
+          age: Math.max(18, Math.min(95, effectiveAge || parsedBase.age)),
+          gender: effectiveGender,
+          role: isDriving && effectiveRole === 'knowledge_worker' ? 'driver' : effectiveRole,
           occupationLabel: occupationLabel.trim() || undefined,
           texturePref: parsedBase.texturePref,
           noiseSensitivity,
@@ -485,16 +513,16 @@ export function CheckInView({
         ephemeralMode,
         rawInputText: combinedRaw,
         currentState,
-        microStateId: selectedMicroState.id,
-        microStateLabel: selectedMicroState.label,
-        arousalPct: neuralCoords.energy,
-        clarityPct: neuralCoords.clarity,
+        microStateId: activeMicro.id,
+        microStateLabel: activeMicro.label,
+        arousalPct: activeCoords.energy,
+        clarityPct: activeCoords.clarity,
         baselineScore,
         targetState: effectiveTarget,
         environment: effectiveEnv,
         device: effectiveDevice,
         durationMin,
-        ageOverride: age,
+        ageOverride: effectiveAge,
         requestedGenre: validatedCustom ? 'auto' : genreChoice,
         customGenreInput: validatedCustom,
       });
@@ -621,8 +649,9 @@ export function CheckInView({
         {beat === 3 && (
           <>
             <p className="mt-3 text-xs font-medium text-cyan-300/90">
-              Got it — {selectedMicroState.label} (Energy {neuralCoords.energy}% · Clarity{' '}
-              {neuralCoords.clarity}%).
+              Got it — {(selectedMicroState ?? DEFAULT_MICRO_STATE).label} (Energy{' '}
+              {(neuralCoords ?? DEFAULT_MICRO_STATE).energy}% · Clarity{' '}
+              {(neuralCoords ?? DEFAULT_MICRO_STATE).clarity}%).
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl leading-[1.12]">
               What state do you want to reach, <span className="text-aurora">and for how long?</span>
@@ -675,7 +704,7 @@ export function CheckInView({
               {displayName.trim() ? `${displayName.trim()} · ` : ''}
               {liveProfileSummary}
             </button>
-            {beat > 2 && (
+            {beat > 2 && selectedMicroState && neuralCoords && (
               <button
                 type="button"
                 onClick={() => setBeat(2)}
@@ -782,20 +811,23 @@ export function CheckInView({
               </label>
               <input
                 type="number"
+                inputMode="numeric"
                 min={18}
                 max={95}
-                value={age}
+                value={ageInput}
+                placeholder="e.g. 28"
                 onChange={(e) => {
-                  const val = Number(e.target.value);
-                  setAge(val);
-                  if (val >= 18 && val <= 95) setAgeError(null);
+                  const rawVal = e.target.value;
+                  setAgeInput(rawVal);
+                  const n = Number(rawVal);
+                  if (rawVal.trim() !== '' && n >= 18 && n <= 95) setAgeError(null);
                 }}
-                className="font-mono-tech w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+                className="font-mono-tech w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
               />
             </div>
           </div>
 
-          {/* Gender (optional) */}
+          {/* Gender (optional — starts unselected until user taps!) */}
           <div className="space-y-1.5">
             <div className="text-[11px] font-medium text-slate-400">
               Gender <span className="text-slate-500">(optional — helps cohort research)</span>
@@ -805,7 +837,7 @@ export function CheckInView({
                 <button
                   key={g}
                   type="button"
-                  onClick={() => setGender(g)}
+                  onClick={() => setGender((prev) => (prev === g ? null : g))}
                   className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
                     gender === g
                       ? 'border-cyan-400/70 bg-cyan-400/15 text-white'
@@ -818,21 +850,24 @@ export function CheckInView({
             </div>
           </div>
 
-          {/* Primary Work / Archetype + Dedicated Inline Input when "Other" is Selected */}
+          {/* Primary Work / Archetype (starts unselected until user taps!) */}
           <div className="space-y-2">
-            <div className="text-[11px] font-medium text-slate-400">What best describes your day?</div>
+            <div className="text-[11px] font-medium text-slate-400">
+              What best describes your day? <span className="text-slate-500">(optional)</span>
+            </div>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {(Object.keys(ROLE_SHORT_LABELS) as UserRole[]).map((r) => (
                 <button
                   key={r}
                   type="button"
                   onClick={() => {
-                    setRole(r);
-                    if (r === 'driver') {
+                    const next = role === r ? null : r;
+                    setRole(next);
+                    if (next === 'driver') {
                       setEnvironment('driving');
                       setDevice('car_audio');
                     } else if (environment === 'driving') {
-                      setEnvironment(r === 'student' ? 'study' : 'office');
+                      setEnvironment(next === 'student' ? 'study' : 'office');
                       setDevice('headphones');
                     }
                   }}
@@ -878,7 +913,9 @@ export function CheckInView({
                         ? 'Product Designer, Writer'
                         : role === 'entrepreneur'
                           ? 'SaaS Founder, Operations Lead'
-                          : 'Software Programmer, Data Analyst'
+                          : role === 'knowledge_worker'
+                            ? 'Software Programmer, Data Analyst'
+                            : 'Engineer, Designer, Doctor, Student'
                 })`}
                 className="w-full rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 py-2 text-[11px] text-slate-200 placeholder-slate-500 focus:border-cyan-400/60 focus:outline-none"
               />
@@ -887,8 +924,14 @@ export function CheckInView({
 
           {ageError && <p className="text-xs font-medium text-rose-300">{ageError}</p>}
 
-          {/* Privacy & Research Learning Opt-In */}
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.05] px-3.5 py-3 text-[11px] leading-relaxed text-slate-300">
+          {/* Clear, plain-English Privacy & Profile Sync Opt-In (no jargon, GDPR-compliant) */}
+          <label
+            className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-3.5 py-3 text-[11px] leading-relaxed transition ${
+              researchConsent
+                ? 'border-emerald-400/35 bg-emerald-500/[0.08] text-slate-200'
+                : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-700'
+            }`}
+          >
             <input
               type="checkbox"
               checked={researchConsent}
@@ -896,15 +939,14 @@ export function CheckInView({
                 setConsentTouched(true);
                 setResearchConsent(e.target.checked);
               }}
-              className="mt-0.5 h-4 w-4 rounded accent-cyan-400"
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-600 bg-slate-900 accent-emerald-400"
             />
             <span>
               <strong className="inline-flex items-center gap-1 text-emerald-300">
-                <ShieldCheck className="h-3.5 w-3.5" /> Mint my 1-of-1 Neural Fingerprint &amp; QR Pass (18+, optional):
+                <ShieldCheck className="h-3.5 w-3.5" /> Save my anonymous profile &amp; QR Sync Code (optional)
               </strong>{' '}
-              Generates your anonymous acoustic sigil + scannable QR Sync Key (zero email, zero
-              password) so the engine learns from your before → after Δ &amp; listen retention.
-              Leave unchecked for 100% local-only mode.
+              — creates a private QR code (no email, no password) so nootropic.fm remembers what
+              sounds work best for you across visits. Leave unchecked for 100% local-only mode.
             </span>
           </label>
 
@@ -933,7 +975,7 @@ export function CheckInView({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    setBeat(3);
+                    handleAdvanceFromBeat2();
                   }
                 }}
                 placeholder='Describe anything freely — e.g. "Over-caffeinated and jittery", "Brain fog after 5 Zoom calls", "Creative block"...'
@@ -963,6 +1005,8 @@ export function CheckInView({
             onChangeBaseline={setBaselineScore}
           />
 
+          {stateError && <p className="text-xs font-medium text-amber-300">{stateError}</p>}
+
           <div className="flex items-center gap-2.5">
             {isFirstVisit && (
               <button
@@ -976,7 +1020,7 @@ export function CheckInView({
             )}
             <button
               type="button"
-              onClick={() => setBeat(3)}
+              onClick={handleAdvanceFromBeat2}
               className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 sm:text-base"
             >
               Next — Where do you want to go?
@@ -993,8 +1037,8 @@ export function CheckInView({
         <div key="beat-3" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
           {/* Live Iso-Principle Vector Map: Current (X,Y) -> Target (X,Y) */}
           <NeuralTrajectoryPreview
-            fromCoords={neuralCoords}
-            fromLabel={selectedMicroState.shortLabel}
+            fromCoords={neuralCoords ?? { energy: DEFAULT_MICRO_STATE.energy, clarity: DEFAULT_MICRO_STATE.clarity }}
+            fromLabel={(selectedMicroState ?? DEFAULT_MICRO_STATE).shortLabel}
             targetState={targetState}
             durationMin={durationMin}
           />
