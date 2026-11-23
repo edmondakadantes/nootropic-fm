@@ -171,5 +171,12 @@ export function composeScientificMusicPrompt(input: {
             ? 'designed for clean mental alertness and afternoon clarity'
             : 'designed for steady sustained executive attention';
 
-  return `2-minute strictly instrumental ${customGenreLabel} track, ${tempoClause}, ${harmonicDesc}, ${textureClause}, zero vocals, zero lyrics, zero humming, zero choir, zero spoken samples, no abrupt drops or sudden silences, seamless continuous dynamics ideal for looping, ${goalClause}.`;
+  return [
+    `Strictly instrumental ${customGenreLabel} music track. Instrumental only, no vocals, no lyrics.`,
+    `Authentic studio ${customGenreLabel} instrumentation with ${tempoClause}, ${harmonicDesc}, and ${textureClause}.`,
+    `[0:00 - 0:15] Intro: Smooth warm instrumental entrance establishing the authentic ${customGenreLabel} rhythm and bass.`,
+    `[0:15 - 1:45] Main Groove: Cohesive continuous instrumental ${customGenreLabel} arrangement with rich evolving textures, zero abrupt drops or sudden silences, ${goalClause}.`,
+    `[1:45 - 2:00] Outro: Seamless warm instrumental resolution ideal for continuous looping.`,
+    `Instrumental only, strictly no vocals, no singing, no humming, no choir, no spoken words.`,
+  ].join(' ');
 }

@@ -93,45 +93,63 @@ export function extractBase64AudioSlice(rawJson: string): {
 }
 
 /**
- * Post-generation Vocal Guard: inspects Lyria metadata text blocks and rejects tracks
- * if lyrical verses leaked despite our instrumental prompt (protects R2 Community Cache hygiene).
+ * Post-generation Vocal Guard: inspects ONLY Lyria model text output steps (never echoed input/metadata)
+ * and rejects tracks only when genuine multi-line sung lyrics leaked despite our instrumental prompt.
+ * Never false-positives on Lyria 3.5's instrumental arrangement notes like "[Intro] (Warm dub bass & guitar)".
  */
 export function detectVocalLeakage(metadataObj: unknown): boolean {
   const texts: string[] = [];
 
-  const collect = (node: unknown) => {
-    if (typeof node === 'string') {
-      if (node.trim().length > 0) texts.push(node);
-      return;
+  if (metadataObj && typeof metadataObj === 'object') {
+    const root = metadataObj as Record<string, unknown>;
+    const containers = [root.steps, root.outputs];
+    for (const arr of containers) {
+      if (!Array.isArray(arr)) continue;
+      for (const step of arr) {
+        if (!step || typeof step !== 'object') continue;
+        const s = step as Record<string, unknown>;
+        if (s.role === 'user' || s.type === 'user_input' || s.type === 'audio') continue;
+        if (typeof s.text === 'string' && s.text.trim().length > 0) {
+          texts.push(s.text);
+        }
+        if (Array.isArray(s.content)) {
+          for (const part of s.content) {
+            if (part && typeof part === 'object') {
+              const p = part as Record<string, unknown>;
+              if (p.type === 'text' && typeof p.text === 'string' && p.text.trim().length > 0) {
+                texts.push(p.text);
+              }
+            }
+          }
+        }
+      }
     }
-    if (!node || typeof node !== 'object') return;
-    if (Array.isArray(node)) {
-      for (const item of node) collect(item);
-      return;
-    }
-    const rec = node as Record<string, unknown>;
-    if (typeof rec.text === 'string' && rec.text.trim().length > 0) {
-      texts.push(rec.text);
-    }
-    for (const val of Object.values(rec)) {
-      if (val && typeof val === 'object') collect(val);
-    }
-  };
-  collect(metadataObj);
+  }
+
+  const INSTRUMENTAL_NOTE_RX =
+    /\b(instrumental|no\s+vocals?|no\s+lyrics?|guitar|bassline|bass|piano|rhodes|keyboard|organ|drums?|percussion|snare|hi-?hat|kick|synth|synthesizer|pad|strings?|violin|cello|viola|brass|trumpet|saxophone|flute|harp|melody|harmony|chords?|groove|rhythm|tempo|bpm|skank|dub|reverb|delay|fade\s*out|fade\s*in|crescendo|arpeggio|ambient|mix|mastering|dynamics?|loop)\b/i;
 
   for (const raw of texts) {
-    // Strip harmless instrumental structural annotations like "[Instrumental]", "[Intro]", "[Outro]"
-    const cleaned = raw
-      .replace(/\[(instrumental|intro|outro|bridge|verse|chorus|break|solo|fade\s*out|interlude|section|warm|groove)[^\]]*\]/gi, '')
-      .replace(/\b(instrumental|no\s+vocals|no\s+lyrics|beatless|ambient)\b/gi, '')
-      .trim();
+    // Strip [section tags], (instrumental stage directions), timestamps, and metadata headers
+    const withoutDirections = raw
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/^\s*(title|style|genre|mood|tempo|key|instruments?|structure|arrangement|intro|outro|verse|chorus|bridge|groove|solo|breakdown|interlude|section)\s*[:\-–].*$/gim, ' ');
 
-    // If multi-line or long lyrical prose remains, flag as vocal leakage
-    const lines = cleaned
+    const candidateLines = withoutDirections
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter((l) => l.length > 3);
-    if (lines.length >= 2 || cleaned.split(/\s+/).filter(Boolean).length >= 12) {
+      .filter((l) => l.length > 4)
+      // Keep only lines that do NOT read like instrumental production descriptions
+      .filter((l) => !INSTRUMENTAL_NOTE_RX.test(l));
+
+    const wordCount = candidateLines
+      .join(' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 1).length;
+
+    // Flag only genuine multi-line sung verses (e.g. >= 4 lyrical lines & >= 30 non-instrumental words)
+    if (candidateLines.length >= 4 && wordCount >= 30) {
       return true;
     }
   }

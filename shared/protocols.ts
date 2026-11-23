@@ -621,6 +621,21 @@ export function swapRecommendationGenre(
         music: {
           ...rec.executableSpec.music,
           instrumentPalette: resolvedGenreToPalette(fallbackCore),
+          ...(customVibe
+            ? {
+                vibeTags: [customVibe.label.toLowerCase(), 'lyric-free', 'instrumental'],
+                lyriaWeightedPrompts: [
+                  {
+                    text: `Strictly instrumental ${customVibe.label}, authentic studio arrangement, zero vocals, no lyrics`,
+                    weight: 1.5,
+                  },
+                  {
+                    text: `${ENERGY_LABELS[nextParams.energyTier].label} groove, warm analog studio mastering, smooth continuous dynamics`,
+                    weight: 0.85,
+                  },
+                ],
+              }
+            : {}),
         },
       }
     : undefined;
@@ -906,7 +921,7 @@ export function selectProtocolRecommendation(input: {
     ? ' (Includes a controlled exploration trial so the engine can test whether a slightly different acoustic profile works even better for you.)'
     : '';
 
-  const executableSpec = buildCheckInExecutableSpec({
+  const baseExecutableSpec = buildCheckInExecutableSpec({
     armId: chosen.arm.id,
     targetState: effectiveTarget,
     bpm: params.bpm,
@@ -920,6 +935,26 @@ export function selectProtocolRecommendation(input: {
     environment: input.environment,
     microStateId: microState?.id ?? input.microStateId,
   });
+
+  const executableSpec = validCustom
+    ? {
+        ...baseExecutableSpec,
+        music: {
+          ...baseExecutableSpec.music,
+          vibeTags: [validCustom.displayLabel.toLowerCase(), 'lyric-free', 'instrumental'],
+          lyriaWeightedPrompts: [
+            {
+              text: `Strictly instrumental ${validCustom.displayLabel}, authentic studio arrangement, zero vocals, no lyrics`,
+              weight: 1.5,
+            },
+            {
+              text: `${ENERGY_LABELS[energyTier].label} groove, warm analog studio mastering, smooth continuous dynamics`,
+              weight: 0.85,
+            },
+          ],
+        },
+      }
+    : baseExecutableSpec;
 
   return {
     sessionId: input.sessionId,
