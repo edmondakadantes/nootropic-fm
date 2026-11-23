@@ -8,9 +8,11 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Zap,
 } from 'lucide-react';
 import type { LiveAdjustment, WorkedRating } from '../../shared/types';
 import { api } from '../lib/api';
+import { PvtBenchmarkModal } from './PvtBenchmarkModal';
 import { SonicOrb } from './SonicOrb';
 
 interface DebriefViewProps {
@@ -22,6 +24,12 @@ interface DebriefViewProps {
   actualDurationSec: number;
   liveAdjustments: LiveAdjustment[];
   ephemeralMode?: boolean;
+  pvtPreMs?: number | null;
+  pvtLapsesPre?: number | null;
+  studySpecId?: string;
+  studyTitle?: string;
+  entrainmentType?: string;
+  frequencyHz?: number;
   onStartNew: () => void;
   onViewInsights: () => void;
 }
@@ -46,6 +54,12 @@ export function DebriefView({
   actualDurationSec,
   liveAdjustments,
   ephemeralMode = false,
+  pvtPreMs = null,
+  pvtLapsesPre = null,
+  studySpecId,
+  studyTitle,
+  entrainmentType,
+  frequencyHz,
   onStartNew,
   onViewInsights,
 }: DebriefViewProps) {
@@ -55,6 +69,10 @@ export function DebriefView({
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [ephemeralCompleted, setEphemeralCompleted] = useState(false);
+  const [studyOutcomeSaved, setStudyOutcomeSaved] = useState(false);
+  const [showPostPvt, setShowPostPvt] = useState(false);
+  const [pvtPostMs, setPvtPostMs] = useState<number | null>(null);
+  const [pvtLapsesPost, setPvtLapsesPost] = useState<number | null>(null);
   const [learningUpdate, setLearningUpdate] = useState<{
     armName: string;
     cohortLabel: string;
@@ -68,7 +86,10 @@ export function DebriefView({
     preferredModMult: number;
   } | null>(null);
 
+  const isStudyLabTrial = sessionId.startsWith('eph_study_');
   const deltaPreview = postScore - baselineScore;
+  const pvtDeltaMs =
+    typeof pvtPreMs === 'number' && typeof pvtPostMs === 'number' ? pvtPostMs - pvtPreMs : null;
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -77,7 +98,7 @@ export function DebriefView({
   };
 
   const handleSubmit = async () => {
-    if (ephemeralMode || sessionId.startsWith('eph_')) {
+    if ((ephemeralMode || sessionId.startsWith('eph_')) && !isStudyLabTrial) {
       setEphemeralCompleted(true);
       return;
     }
@@ -91,8 +112,25 @@ export function DebriefView({
         feedbackTags: selectedTags,
         liveAdjustments,
         notes,
+        pvtPreMs,
+        pvtPostMs,
+        pvtLapsesPre,
+        pvtLapsesPost,
+        studySpecId,
+        studyTitle,
+        entrainmentType,
+        frequencyHz,
       });
-      setLearningUpdate(res.learningUpdate);
+      if (isStudyLabTrial) {
+        setStudyOutcomeSaved(true);
+        setEphemeralCompleted(true);
+      } else {
+        setLearningUpdate(res.learningUpdate);
+      }
+    } catch {
+      if (isStudyLabTrial) {
+        setEphemeralCompleted(true);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -106,15 +144,25 @@ export function DebriefView({
           <div>
             <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
               <ShieldCheck className="h-3.5 w-3.5" />
-              Local-Only Privacy Mode · Zero Data Stored
+              {studyOutcomeSaved
+                ? 'Published to Open Study Leaderboard · Zero User PII'
+                : 'Local-Only Privacy Mode · Zero Data Stored'}
             </div>
             <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl">
               Your shift: <span className="text-aurora">{baselineScore} → {postScore} (Δ {deltaPreview >= 0 ? `+${deltaPreview}` : deltaPreview})</span>
             </h2>
+            {pvtPostMs !== null && (
+              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-cyan-400/35 bg-cyan-400/10 px-3 py-1 font-mono-tech text-xs font-semibold text-cyan-200">
+                <Zap className="h-3.5 w-3.5 text-cyan-300" />
+                {pvtDeltaMs !== null
+                  ? `Objective PVT: ${pvtPreMs} ms → ${pvtPostMs} ms (${pvtDeltaMs < 0 ? `${Math.abs(pvtDeltaMs)} ms faster` : pvtDeltaMs === 0 ? 'steady' : `+${pvtDeltaMs} ms`})`
+                  : `Post-Session PVT: ${pvtPostMs} ms`}
+              </div>
+            )}
             <p className="mt-2 text-sm text-slate-400">
-              Because research telemetry was opted out, nothing from this session was saved to your
-              browser or to our servers. You can opt in anytime on the next session to unlock
-              personal Bandit adaptation.
+              {studyOutcomeSaved
+                ? 'Your anonymous study efficacy rating has been aggregated into the live Study Lab Empirical Leaderboard with zero personal identity attached.'
+                : 'Because research telemetry was opted out, nothing from this session was saved to your browser or to our servers. You can opt in anytime on the next session to unlock personal Bandit adaptation.'}
             </p>
           </div>
           <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
@@ -216,6 +264,13 @@ export function DebriefView({
                 Personal AM Depth: {Math.round(learningUpdate.preferredModMult * 100)}%
               </span>
             )}
+            {pvtPostMs !== null && (
+              <span className="font-mono-tech rounded-md border border-emerald-400/35 bg-emerald-500/12 px-2 py-0.5 text-[11px] text-emerald-200">
+                {pvtDeltaMs !== null
+                  ? `PVT: ${pvtPreMs}→${pvtPostMs} ms (${pvtDeltaMs < 0 ? `${Math.abs(pvtDeltaMs)} ms faster` : pvtDeltaMs === 0 ? 'steady' : `+${pvtDeltaMs} ms`})`
+                  : `Post-PVT: ${pvtPostMs} ms`}
+              </span>
+            )}
           </div>
 
           <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
@@ -298,6 +353,33 @@ export function DebriefView({
           </div>
         </div>
 
+        {/* Optional 15-Second Objective Post-Session Cognitive Benchmark (PVT ms) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.06] px-4 py-3">
+          <div className="space-y-0.5">
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-200">
+              <Zap className="h-3.5 w-3.5 text-cyan-300" />
+              Objective 15s Post-Session Brain Check (PVT ms · optional)
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {pvtPostMs !== null
+                ? pvtDeltaMs !== null
+                  ? `Measured shift: ${pvtPreMs} ms → ${pvtPostMs} ms (${pvtDeltaMs < 0 ? `${Math.abs(pvtDeltaMs)} ms faster` : pvtDeltaMs === 0 ? 'steady' : `+${pvtDeltaMs} ms`}) · Lapses: ${pvtLapsesPost ?? 0}`
+                  : `Recorded post-session reaction speed: ${pvtPostMs} ms · Lapses: ${pvtLapsesPost ?? 0}`
+                : typeof pvtPreMs === 'number'
+                  ? `Pre-session baseline was ${pvtPreMs} ms — run 5 quick flashes to measure your real ms shift.`
+                  : 'Run 5 quick visual-motor flashes to attach an objective ms reaction benchmark.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPostPvt(true)}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/45 bg-cyan-400/15 px-3.5 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/25"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            {pvtPostMs !== null ? `Retake (${pvtPostMs} ms)` : 'Run 15s PVT Check'}
+          </button>
+        </div>
+
         {/* Worked rating */}
         <div className="grid grid-cols-3 gap-3">
           <button
@@ -375,13 +457,40 @@ export function DebriefView({
           className="btn-aurora flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 disabled:opacity-60"
         >
           <CheckCircle2 className="h-5 w-5" />
-          {ephemeralMode
-            ? 'See Local Session Summary'
-            : submitting
-              ? 'Updating neural model...'
-              : 'Save Feedback & Train Platform'}
+          {isStudyLabTrial
+            ? submitting
+              ? 'Publishing anonymous study outcome...'
+              : 'Submit Anonymous Study Rating (Leaderboard)'
+            : ephemeralMode
+              ? 'See Local Session Summary'
+              : submitting
+                ? 'Updating neural model...'
+                : 'Save Feedback & Train Platform'}
         </button>
       </div>
+
+      {showPostPvt && (
+        <PvtBenchmarkModal
+          phase="post"
+          baselineMs={pvtPreMs}
+          onComplete={(res) => {
+            setPvtPostMs(res.medianMs);
+            setPvtLapsesPost(res.lapses);
+            setShowPostPvt(false);
+            if (!ephemeralMode && !sessionId.startsWith('eph_')) {
+              void api
+                .saveSessionPvt({
+                  sessionId,
+                  phase: 'post',
+                  medianMs: res.medianMs,
+                  lapses: res.lapses,
+                })
+                .catch(() => {});
+            }
+          }}
+          onClose={() => setShowPostPvt(false)}
+        />
+      )}
     </div>
   );
 }

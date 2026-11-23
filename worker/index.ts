@@ -730,7 +730,7 @@ export default {
         return json(
           {
             ok: true,
-            version: '3.0',
+            version: '3.5',
             mode: env.APP_ENV ?? 'open-research-beta',
             hasGemini: env.ENABLE_LLM_PARSE === 'true' && Boolean(env.GEMINI_API_KEY),
             hasLiveMusicGen: Boolean(provider),
@@ -791,6 +791,48 @@ export default {
       // GET /api/studies/presets — Verified Ground-Truth Clinical Executable Study Presets ($0)
       if (url.pathname === '/api/studies/presets' && request.method === 'GET') {
         return json({ presets: VERIFIED_STUDY_PRESETS }, 200, request);
+      }
+
+      // GET /api/studies/leaderboard — Real Anonymized Community Empirical Results per Medical Study
+      if (url.pathname === '/api/studies/leaderboard' && request.method === 'GET') {
+        const res = await env.DB.prepare(
+          `SELECT
+             study_spec_id,
+             MAX(study_title) AS study_title,
+             MAX(entrainment_type) AS entrainment_type,
+             AVG(frequency_hz) AS avg_hz,
+             COUNT(*) AS sessions_n,
+             SUM(CASE WHEN worked_rating = 'yes' OR (worked_rating = 'partial' AND COALESCE(delta_score, 0) > 0) THEN 1 ELSE 0 END) AS pos_n,
+             AVG(delta_score) AS avg_delta,
+             SUM(CASE WHEN pvt_delta_ms IS NOT NULL THEN 1 ELSE 0 END) AS pvt_trials,
+             AVG(pvt_delta_ms) AS avg_pvt_delta_ms
+           FROM study_outcomes
+           WHERE is_control_trial = 0
+           GROUP BY study_spec_id
+           ORDER BY sessions_n DESC, avg_delta DESC
+           LIMIT 30`
+        ).all<Record<string, unknown>>();
+
+        const entries = res.results.map((r) => {
+          const n = Number(r.sessions_n ?? 0);
+          const pvtTrials = Number(r.pvt_trials ?? 0);
+          return {
+            studySpecId: String(r.study_spec_id),
+            studyTitle: String(r.study_title),
+            entrainmentType: String(r.entrainment_type ?? 'amplitude_modulation'),
+            frequencyHz: Number(Number(r.avg_hz ?? 0).toFixed(1)),
+            sessions: n,
+            successRatePct: n > 0 ? Math.round((Number(r.pos_n ?? 0) / n) * 100) : 0,
+            avgDelta: Number(Number(r.avg_delta ?? 0).toFixed(2)),
+            pvtTrials,
+            avgPvtDeltaMs:
+              pvtTrials > 0 && r.avg_pvt_delta_ms !== null && r.avg_pvt_delta_ms !== undefined
+                ? Math.round(Number(r.avg_pvt_delta_ms))
+                : null,
+          };
+        });
+
+        return json({ leaderboard: entries }, 200, request);
       }
 
       // POST /api/studies/search — Live search across Europe PMC (PubMed/OA abstracts) & ClinicalTrials.gov v2 ($0)
@@ -2213,6 +2255,49 @@ export default {
         return json({ ok: true, retentionOutcome, completionRatio }, 200, request);
       }
 
+      // POST /api/session/pvt — Saves optional 15-second objective Psychomotor Vigilance Task (ms)
+      if (url.pathname === '/api/session/pvt' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'session_pvt', 120);
+        if (!allowed) return json({ error: 'Rate limit reached.' }, 429, request);
+
+        const body = (await request.json().catch(() => ({}))) as {
+          sessionId?: string;
+          phase?: 'pre' | 'post';
+          medianMs?: number;
+          lapses?: number;
+        };
+        const medianMs = Number(body.medianMs);
+        if (!Number.isFinite(medianMs) || medianMs < 110 || medianMs > 3000) {
+          return json({ error: 'Invalid reaction time value.' }, 400, request);
+        }
+        const lapses = Math.max(0, Math.min(20, Math.round(Number(body.lapses ?? 0))));
+        if (!body.sessionId || body.sessionId.startsWith('eph_')) {
+          return json({ ok: true, ephemeral: true, medianMs: Math.round(medianMs), lapses }, 200, request);
+        }
+
+        if (body.phase === 'pre') {
+          await env.DB.prepare(
+            `UPDATE sessions SET pvt_pre_ms = ?, pvt_lapses_pre = ? WHERE id = ?`
+          )
+            .bind(Math.round(medianMs), lapses, body.sessionId)
+            .run();
+        } else {
+          const prev = await env.DB.prepare('SELECT pvt_pre_ms FROM sessions WHERE id = ?')
+            .bind(body.sessionId)
+            .first<{ pvt_pre_ms?: number | null }>();
+          const pvtDelta =
+            prev?.pvt_pre_ms !== null && prev?.pvt_pre_ms !== undefined
+              ? Math.round(medianMs - Number(prev.pvt_pre_ms))
+              : null;
+          await env.DB.prepare(
+            `UPDATE sessions SET pvt_post_ms = ?, pvt_lapses_post = ?, pvt_delta_ms = ? WHERE id = ?`
+          )
+            .bind(Math.round(medianMs), lapses, pvtDelta, body.sessionId)
+            .run();
+        }
+        return json({ ok: true, medianMs: Math.round(medianMs), lapses }, 200, request);
+      }
+
       // POST /api/session/debrief — Explicit 10s Debrief (supersedes any prior implicit update via delta-replacement!)
       if (url.pathname === '/api/session/debrief' && request.method === 'POST') {
         const allowed = await checkDailyRateLimit(env.DB, request, 'debrief', 45);
@@ -2220,14 +2305,50 @@ export default {
           return json({ error: 'Daily debrief limit reached. Please try again tomorrow.' }, 429, request);
         }
         const body = (await request.json()) as DebriefPayload;
+        const cleanPvtPre =
+          typeof body.pvtPreMs === 'number' && Number.isFinite(body.pvtPreMs) && body.pvtPreMs >= 110 && body.pvtPreMs <= 3000
+            ? Math.round(body.pvtPreMs)
+            : null;
+        const cleanPvtPost =
+          typeof body.pvtPostMs === 'number' && Number.isFinite(body.pvtPostMs) && body.pvtPostMs >= 110 && body.pvtPostMs <= 3000
+            ? Math.round(body.pvtPostMs)
+            : null;
+        const cleanPvtDelta =
+          cleanPvtPre !== null && cleanPvtPost !== null ? cleanPvtPost - cleanPvtPre : null;
+
         if (!body.sessionId || body.sessionId.startsWith('eph_')) {
+          // Record completely anonymous aggregated Study Lab empirical rating (zero user PII!)
+          if (body.sessionId?.startsWith('eph_study_') && body.studySpecId && body.studyTitle) {
+            await env.DB.prepare(
+              `INSERT INTO study_outcomes (
+                id, study_spec_id, study_title, entrainment_type, frequency_hz,
+                worked_rating, delta_score, pvt_pre_ms, pvt_post_ms, pvt_delta_ms,
+                is_control_trial, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
+            )
+              .bind(
+                `so_${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}`,
+                body.studySpecId.slice(0, 100),
+                body.studyTitle.slice(0, 180),
+                (body.entrainmentType ?? 'amplitude_modulation').slice(0, 40),
+                Number(body.frequencyHz ?? 0),
+                body.workedRating,
+                Math.max(-4, Math.min(4, Number(body.postScore) - 3)),
+                cleanPvtPre,
+                cleanPvtPost,
+                cleanPvtDelta,
+                new Date().toISOString()
+              )
+              .run()
+              .catch(() => {});
+          }
           return json(
             {
               ok: true,
               learningUpdate: {
                 sessionId: body.sessionId,
                 armId: 'ephemeral',
-                armName: 'Local-Only Session',
+                armName: body.studyTitle || 'Local-Only Session',
                 cohortKey: 'local',
                 cohortLabel: 'Local-Only Privacy Mode',
                 delta: body.postScore - 2,
@@ -2277,6 +2398,13 @@ export default {
         const prevImplicitWeight = Number(row.implicit_applied_weight ?? 0);
 
         const now = new Date().toISOString();
+        const finalPvtPre =
+          cleanPvtPre ?? (row.pvt_pre_ms !== null && row.pvt_pre_ms !== undefined ? Number(row.pvt_pre_ms) : null);
+        const finalPvtPost =
+          cleanPvtPost ?? (row.pvt_post_ms !== null && row.pvt_post_ms !== undefined ? Number(row.pvt_post_ms) : null);
+        const finalPvtDelta =
+          finalPvtPre !== null && finalPvtPost !== null ? Math.round(finalPvtPost - finalPvtPre) : null;
+
         await env.DB.prepare(
           `UPDATE sessions SET
             actual_duration_sec = ?,
@@ -2289,6 +2417,11 @@ export default {
             feedback_tags_json = ?,
             reward_score = ?,
             implicit_applied_weight = 0,
+            pvt_pre_ms = COALESCE(?, pvt_pre_ms),
+            pvt_post_ms = COALESCE(?, pvt_post_ms),
+            pvt_delta_ms = COALESCE(?, pvt_delta_ms),
+            pvt_lapses_pre = COALESCE(?, pvt_lapses_pre),
+            pvt_lapses_post = COALESCE(?, pvt_lapses_post),
             notes = ?,
             completed_at = ?
            WHERE id = ?`
@@ -2302,11 +2435,44 @@ export default {
             body.workedRating,
             JSON.stringify(body.feedbackTags ?? []),
             reward,
+            finalPvtPre,
+            finalPvtPost,
+            finalPvtDelta,
+            body.pvtLapsesPre ?? null,
+            body.pvtLapsesPost ?? null,
             (body.notes ?? '').slice(0, 500),
             now,
             body.sessionId
           )
           .run();
+
+        // Feed anonymized study outcome into the open Study Lab Leaderboard!
+        const specId = (row.study_spec_id ? String(row.study_spec_id) : body.studySpecId) || null;
+        if (specId) {
+          await env.DB.prepare(
+            `INSERT INTO study_outcomes (
+              id, study_spec_id, study_title, entrainment_type, frequency_hz,
+              worked_rating, delta_score, pvt_pre_ms, pvt_post_ms, pvt_delta_ms,
+              is_control_trial, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+            .bind(
+              `so_${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}`,
+              specId.slice(0, 100),
+              (body.studyTitle || session.armName).slice(0, 180),
+              (body.entrainmentType ?? 'amplitude_modulation').slice(0, 40),
+              Number(body.frequencyHz ?? session.acousticParams?.modulationHz ?? 0),
+              body.workedRating,
+              delta,
+              finalPvtPre,
+              finalPvtPost,
+              finalPvtDelta,
+              session.isControlTrial ? 1 : 0,
+              now
+            )
+            .run()
+            .catch(() => {});
+        }
 
         let cohortUpdated = { successRatePct: 0, trials: 0 };
         let profileUpdated = { successRatePct: 0, trials: 0 };

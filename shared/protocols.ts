@@ -600,10 +600,10 @@ export function swapRecommendationGenre(
       ? 'community_cache'
       : customVibe.liveGenAvailable
         ? 'live_generating'
-        : 'generative_live'
-    : rec.audioSource === 'studio_library'
-      ? 'studio_library'
-      : 'generative_live';
+        : 'studio_library'
+    : rec.audioSource === 'generative_live' || rec.audioSource === 'pure_stimulus'
+      ? rec.audioSource
+      : 'studio_library';
 
   const composedMusicPrompt = customVibe
     ? composeScientificMusicPrompt({
@@ -851,8 +851,8 @@ export function selectProtocolRecommendation(input: {
       ? 'community_cache'
       : input.liveGenAvailable
         ? 'live_generating'
-        : 'generative_live'
-    : 'generative_live';
+        : 'studio_library'
+    : 'studio_library';
 
   const composedMusicPrompt = validCustom
     ? composeScientificMusicPrompt({

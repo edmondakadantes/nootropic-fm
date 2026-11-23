@@ -803,8 +803,9 @@ export function buildCheckInExecutableSpec(input: {
     template.entrainment.hrvBreathHz = 0.1;
   }
 
-  // Keep studio_library as an instant option on regular Check-In, while generative_live is Study-Locked default!
-  template.music.defaultCarrierMode = 'generative_live';
+  // Standard Check-In defaults to our mastered Studio R2 Library on the 6 core genres
+  // (wrapped in Layer 1 Medical DSP + real 432 Hz detuning if needed), with 1-tap Live Studio Sampler!
+  template.music.defaultCarrierMode = 'studio_library';
 
   return applySafetyAndDeviceGuardrails(template, input.device, input.environment);
 }

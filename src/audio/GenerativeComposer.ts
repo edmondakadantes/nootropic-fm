@@ -5,6 +5,7 @@ import {
   type StudyMusicSpec,
   type TonalMode,
 } from '../../shared/studySpec';
+import { StudioSampler } from './StudioSampler';
 
 interface ChordDegree {
   rootOffset: number; // semitones above key root
@@ -138,6 +139,8 @@ export class GenerativeComposer {
   private filterLfo: OscillatorNode | null = null;
   private chordTimer: number | null = null;
   private stepTimer: number | null = null;
+  private sampler = new StudioSampler();
+  private usingRealSamples = false;
 
   private isPlaying = false;
   private progressRatio = 0;
@@ -159,9 +162,10 @@ export class GenerativeComposer {
     reverbSend: GainNode;
     delaySend: GainNode;
     speakerSafeEQ: boolean;
+    sampleApiBase?: string;
   }): void {
     this.stop();
-    const { ctx, musicSpec, proceduralMaster, cleanSubBus, reverbSend, delaySend, speakerSafeEQ } = opts;
+    const { ctx, musicSpec, proceduralMaster, cleanSubBus, reverbSend, delaySend, speakerSafeEQ, sampleApiBase } = opts;
     this.ctx = ctx;
     this.musicSpec = structuredClone(musicSpec);
     this.palette = musicSpec.instrumentPalette;
@@ -172,7 +176,20 @@ export class GenerativeComposer {
     this.chordIdx = 0;
     this.stepCount = 0;
     this.progressRatio = 0;
+    this.usingRealSamples = false;
     this.isPlaying = true;
+
+    // Attach & preload real studio R2 multi-samples (~180-550 KB per palette, cached forever!)
+    this.sampler.attach(ctx, sampleApiBase ?? '');
+    void this.sampler.preloadPalette(this.palette).then((ready) => {
+      if (ready && this.isPlaying) {
+        this.usingRealSamples = true;
+        // Softly duck synthetic oscillator pad once real recorded studio samples are ready
+        if (this.ctx && this.padBus) {
+          this.padBus.gain.setTargetAtTime(this.getPalettePadGain() * 0.32, this.ctx.currentTime, 0.8);
+        }
+      }
+    });
 
     this.rebuildRhythmPatterns(musicSpec.percussion, musicSpec.density);
 
@@ -267,14 +284,31 @@ export class GenerativeComposer {
     }
   }
 
+  public isUsingRealSamples(): boolean {
+    return this.usingRealSamples;
+  }
+
   public setPalette(palette: InstrumentPalette): void {
     this.palette = palette;
     if (this.musicSpec) {
       this.musicSpec.instrumentPalette = palette;
     }
+    this.usingRealSamples = this.sampler.isPaletteReady(palette);
+    void this.sampler.preloadPalette(palette).then((ready) => {
+      if (ready && this.isPlaying && this.palette === palette) {
+        this.usingRealSamples = true;
+        if (this.ctx && this.padBus) {
+          this.padBus.gain.setTargetAtTime(this.getPalettePadGain() * 0.32, this.ctx.currentTime, 0.8);
+        }
+      }
+    });
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
-    this.padBus?.gain.setTargetAtTime(this.getPalettePadGain(), now, 0.45);
+    this.padBus?.gain.setTargetAtTime(
+      this.getPalettePadGain() * (this.usingRealSamples ? 0.32 : 1.0),
+      now,
+      0.45
+    );
     this.pulseBus?.gain.setTargetAtTime(this.getPalettePulseGain(), now, 0.35);
     this.padFilter?.frequency.setTargetAtTime(this.computeCutoffHz(), now, 0.45);
     this.updateReverbSend();
@@ -504,21 +538,54 @@ export class GenerativeComposer {
     }
   }
 
-  private pickFractalNoteHz(octaveShift = 12): number {
-    if (!this.musicSpec) return 261.63;
+  private pickFractalMidi(octaveShift = 12): number {
+    if (!this.musicSpec) return 60;
     const scale = SCALE_INTERVALS[this.musicSpec.tonalMode] ?? SCALE_INTERVALS.suspended;
     const degree = this.getCurrentChord();
-    const walk = this.fractal.next(); // smooth 0..1
+    const walk = this.fractal.next(); // smooth 0..1 pink-fractal contour
     const idx = Math.min(scale.length - 1, Math.floor(walk * scale.length));
-    const midi = this.musicSpec.rootMidi + degree.rootOffset + scale[idx] + octaveShift;
-    return midiToHz(midi, this.musicSpec.tuningA4Hz);
+    return Math.max(36, Math.min(81, this.musicSpec.rootMidi + degree.rootOffset + scale[idx] + octaveShift));
   }
 
   private triggerMelodicVoice(time: number, step: number, lift: number): void {
     if (!this.ctx || !this.pulseBus || !this.musicSpec) return;
-    const freq = this.pickFractalNoteHz(this.palette === 'ambient_water' ? 24 : 12);
-    const vel = (0.09 + Math.random() * 0.065) * lift * this.intensityMult;
+    const midi = this.pickFractalMidi(this.palette === 'ambient_water' ? 12 : 12);
+    const freq = midiToHz(midi, this.musicSpec.tuningA4Hz);
+    const vel = (0.11 + Math.random() * 0.08) * lift * this.intensityMult;
 
+    // 1. Prefer REAL recorded studio instrument multi-samples from Cloudflare R2!
+    if (this.sampler.isPaletteReady(this.palette)) {
+      const dur =
+        this.palette === 'cinematic_strings'
+          ? 4.2
+          : this.palette === 'felt_piano' || this.palette === 'ambient_water'
+            ? 3.2
+            : 2.2;
+      const cutoff =
+        this.palette === 'felt_piano'
+          ? Math.min(1450, this.computeCutoffHz())
+          : this.palette === 'deep_electronic'
+            ? Math.min(2200, this.computeCutoffHz() * 1.1)
+            : this.computeCutoffHz() * 1.35;
+      const played = this.sampler.playNote({
+        palette: this.palette,
+        midi,
+        time,
+        gain: Math.min(0.42, vel * 1.8),
+        durationSec: dur,
+        attackSec: this.palette === 'cinematic_strings' ? 0.95 : 0.015,
+        pan: (Math.random() - 0.5) * 0.55,
+        tuningA4Hz: this.musicSpec.tuningA4Hz,
+        cutoffHz: cutoff,
+        destination: this.pulseBus,
+      });
+      if (played) {
+        this.usingRealSamples = true;
+        return;
+      }
+    }
+
+    // 2. Zero-latency warm synthesis fallback while R2 samples decode (~150ms)
     if (this.palette === 'felt_piano') {
       this.playFeltPianoNote(time, freq, vel);
     } else if (this.palette === 'warm_rhodes') {
@@ -528,7 +595,6 @@ export class GenerativeComposer {
     } else if (this.palette === 'deep_electronic') {
       this.playElectronicPluck(time, freq, vel * 0.85, step);
     } else {
-      // cinematic_strings & ambient_water: pure shimmering resonant bell/harmonic
       this.playGlassHarmonic(time, freq, vel * 0.8, step);
     }
   }
@@ -537,8 +603,31 @@ export class GenerativeComposer {
     if (!this.ctx || !this.pulseBus || !this.musicSpec) return;
     const degree = this.getCurrentChord();
     const tuning = this.musicSpec.tuningA4Hz;
-    const notes = degree.intervals.slice(1, 4);
-    notes.forEach((semi, idx) => {
+    const notes = degree.intervals.slice(0, 4);
+
+    if (this.sampler.isPaletteReady(this.palette)) {
+      notes.forEach((semi, idx) => {
+        const midi = Math.max(36, Math.min(76, this.musicSpec!.rootMidi + degree.rootOffset + semi + (idx === 0 ? 0 : 12)));
+        const offset = idx * (this.palette === 'nylon_acoustic' ? 0.045 : 0.065);
+        this.sampler.playNote({
+          palette: this.palette,
+          midi,
+          time: time + offset,
+          gain: Math.min(0.32, amp * (idx === 0 ? 1.55 : 1.15)),
+          durationSec: this.palette === 'cinematic_strings' || this.palette === 'deep_electronic' ? 6.5 : 4.2,
+          attackSec:
+            this.palette === 'cinematic_strings' || this.palette === 'deep_electronic' ? 1.3 : 0.025,
+          pan: (idx - 1.5) * 0.28,
+          tuningA4Hz: tuning,
+          cutoffHz: this.computeCutoffHz() * 1.15,
+          destination: this.pulseBus!,
+        });
+      });
+      this.usingRealSamples = true;
+      return;
+    }
+
+    notes.slice(1, 4).forEach((semi, idx) => {
       const freq = midiToHz(this.musicSpec!.rootMidi + degree.rootOffset + semi + 12, tuning);
       const offset = idx * 0.028;
       if (this.palette === 'warm_rhodes') {
@@ -798,6 +887,8 @@ export class GenerativeComposer {
     }
     this.activePadOscs = [];
     this.activePadGains = [];
+    this.sampler.clear();
+    this.usingRealSamples = false;
     this.filterLfo = null;
     this.padBus = null;
     this.padFilter = null;

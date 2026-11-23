@@ -16,6 +16,7 @@ import {
   Sparkles,
   Volume2,
   Waves,
+  Zap,
 } from 'lucide-react';
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
 import {
@@ -32,7 +33,9 @@ import type {
 import { DEVICE_LABELS, ENERGY_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
 import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
 import { API_BASE, api } from '../lib/api';
+import { LiveEnvelopeProof } from './LiveEnvelopeProof';
 import { NeuralVisualizer } from './NeuralVisualizer';
+import { PvtBenchmarkModal } from './PvtBenchmarkModal';
 import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
 interface PlayerViewProps {
@@ -42,6 +45,8 @@ interface PlayerViewProps {
   onFinishToDebrief: (stats: {
     actualDurationSec: number;
     liveAdjustments: LiveAdjustment[];
+    pvtPreMs?: number | null;
+    pvtLapsesPre?: number | null;
   }) => void;
 }
 
@@ -65,7 +70,9 @@ export function PlayerView({
   const initialCarrier: CarrierEngineMode =
     recommendation.audioSource === 'pure_stimulus'
       ? 'pure_stimulus'
-      : recommendation.audioSource === 'studio_library' || recommendation.audioSource === 'community_cache'
+      : recommendation.audioSource === 'studio_library' ||
+          recommendation.audioSource === 'community_cache' ||
+          recommendation.audioSource === 'live_generating'
         ? 'studio_library'
         : 'generative_live';
 
@@ -96,6 +103,9 @@ export function PlayerView({
         : 'idle'
   );
   const [customGenNotice, setCustomGenNotice] = useState<string | null>(null);
+  const [showPrePvt, setShowPrePvt] = useState(false);
+  const [pvtPreMs, setPvtPreMs] = useState<number | null>(null);
+  const [pvtLapsesPre, setPvtLapsesPre] = useState<number | null>(null);
 
   const spec = recommendation.executableSpec;
   const [telemetry, setTelemetry] = useState<EngineTelemetry>({
@@ -128,6 +138,8 @@ export function PlayerView({
     hrvBreathPhase: null,
     hrvBreathProgress: 0,
     lyriaStatus: 'idle',
+    usingRealSamples: false,
+    studioRetuned432: false,
   });
 
   const plannedSec = recommendation.plannedDurationMin * 60;
@@ -137,10 +149,15 @@ export function PlayerView({
   const milestoneSentRef = useRef(false);
   const endedByUserRef = useRef(false);
   const switchedAwayRef = useRef(false);
+  const pvtPreRef = useRef<{ medianMs: number | null; lapses: number | null }>({
+    medianMs: null,
+    lapses: null,
+  });
 
   elapsedRef.current = elapsedSec;
   adjustmentsRef.current = adjustments;
   audioStartedRef.current = audioStarted;
+  pvtPreRef.current = { medianMs: pvtPreMs, lapses: pvtLapsesPre };
 
   useEffect(() => {
     onPlayingChange?.(isPlaying);
@@ -200,7 +217,8 @@ export function PlayerView({
           `${recommendation.arm.name} · ${titleLabel}`,
           recommendation.isControlTrial,
           recommendation.executableSpec,
-          initialCarrier
+          initialCarrier,
+          API_BASE
         );
 
         if (!mounted) return;
@@ -394,6 +412,8 @@ export function PlayerView({
           onFinishToDebrief({
             actualDurationSec: next,
             liveAdjustments: adjustmentsRef.current,
+            pvtPreMs: pvtPreRef.current.medianMs,
+            pvtLapsesPre: pvtPreRef.current.lapses,
           });
         }
         return next;
@@ -417,7 +437,8 @@ export function PlayerView({
         recommendation.arm.name,
         recommendation.isControlTrial,
         recommendation.executableSpec,
-        carrierMode
+        carrierMode,
+        API_BASE
       );
       setAudioStarted(true);
       setIsPlaying(true);
@@ -534,6 +555,8 @@ export function PlayerView({
     onFinishToDebrief({
       actualDurationSec: elapsedRef.current,
       liveAdjustments: adjustmentsRef.current,
+      pvtPreMs: pvtPreRef.current.medianMs,
+      pvtLapsesPre: pvtPreRef.current.lapses,
     });
   };
 
@@ -615,12 +638,14 @@ export function PlayerView({
                 </span>
               ) : telemetry.usingStudioAudio ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/14 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
-                  Studio Library · {telemetry.activeTrackName}
+                  {telemetry.studioRetuned432 ? 'Studio R2 · A=432 Hz' : 'Studio R2'} · {telemetry.activeTrackName}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/40 bg-cyan-400/12 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
                   <Sparkles className="h-3 w-3" />
-                  Live As-We-Go Composer ($0)
+                  {telemetry.usingRealSamples
+                    ? 'Live Studio Sampler ($0)'
+                    : 'Live As-We-Go Composer ($0)'}
                 </span>
               )}
               <span
@@ -670,6 +695,29 @@ export function PlayerView({
           isPlaying={isPlaying}
           safetyMode={recommendation.safetyMode}
           modulationHz={telemetry.currentModHz}
+        />
+
+        {/* Real-Time Laboratory Proof Scope (Live Waveform + Exact Mathematical Stimulus Envelope) */}
+        <LiveEnvelopeProof
+          engine={engineRef.current}
+          isPlaying={isPlaying}
+          entrainmentType={telemetry.entrainmentType}
+          frequencyHz={telemetry.currentModHz}
+          depth={telemetry.currentModDepth}
+          carrierLabel={
+            telemetry.usingStudioAudio
+              ? telemetry.studioRetuned432
+                ? 'Studio R2 · A=432 Hz'
+                : 'Studio R2'
+              : telemetry.usingRealSamples
+                ? 'Live Studio Sampler'
+                : telemetry.carrierMode === 'pure_stimulus'
+                  ? 'Pure Clinical'
+                  : telemetry.carrierMode === 'lyria_realtime'
+                    ? 'Lyria RealTime AI'
+                    : 'Live Synth'
+          }
+          tuningA4Hz={telemetry.tuningA4Hz}
         />
 
         {/* Iso-Principle Session Progression Bar */}
@@ -787,6 +835,33 @@ export function PlayerView({
                 style={{ width: `${Math.max(8, Math.round(telemetry.hrvBreathProgress * 100))}%` }}
               />
             </div>
+          </div>
+        )}
+
+        {/* Optional 15-Second Pre-Session Objective Brain Benchmark (PVT ms, hidden while driving) */}
+        {!recommendation.safetyMode && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.05] px-4 py-3">
+            <div className="space-y-0.5">
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-200">
+                <Zap className="h-3.5 w-3.5 text-cyan-300" />
+                {pvtPreMs !== null
+                  ? `Pre-Session Baseline Locked: ${pvtPreMs} ms`
+                  : 'Optional 15s Pre-Session Brain Check (PVT ms)'}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {pvtPreMs !== null
+                  ? `Lapses (>500ms): ${pvtLapsesPre ?? 0} · Retest at debrief to prove your objective reaction-time shift.`
+                  : 'Tap 5 green flashes now to establish an objective millisecond baseline before the protocol works.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPrePvt(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/25"
+            >
+              <Zap className="h-3.5 w-3.5" />
+              {pvtPreMs !== null ? 'Retake Baseline' : 'Measure Baseline (15s)'}
+            </button>
           </div>
         )}
 
@@ -913,12 +988,16 @@ export function PlayerView({
             </div>
             <div className="font-mono-tech text-[10px] text-slate-500">
               {telemetry.carrierMode === 'generative_live'
-                ? 'Live Composer'
+                ? telemetry.usingRealSamples
+                  ? 'Studio Sampler'
+                  : 'Live Composer'
                 : telemetry.carrierMode === 'pure_stimulus'
                   ? 'Pure Signal'
                   : telemetry.carrierMode === 'lyria_realtime'
                     ? 'Lyria Live'
-                    : 'Studio R2'}
+                    : telemetry.studioRetuned432
+                      ? 'Studio R2 · 432Hz'
+                      : 'Studio R2'}
             </div>
           </div>
           <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
@@ -1045,6 +1124,28 @@ export function PlayerView({
           </div>
         )}
       </div>
+
+      {showPrePvt && (
+        <PvtBenchmarkModal
+          phase="pre"
+          onComplete={(res) => {
+            setPvtPreMs(res.medianMs);
+            setPvtLapsesPre(res.lapses);
+            setShowPrePvt(false);
+            if (!recommendation.ephemeralMode && !recommendation.sessionId.startsWith('eph_')) {
+              void api
+                .saveSessionPvt({
+                  sessionId: recommendation.sessionId,
+                  phase: 'pre',
+                  medianMs: res.medianMs,
+                  lapses: res.lapses,
+                })
+                .catch(() => {});
+            }
+          }}
+          onClose={() => setShowPrePvt(false)}
+        />
+      )}
     </div>
   );
 }

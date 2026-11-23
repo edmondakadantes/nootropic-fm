@@ -16,6 +16,7 @@ import type {
   ResolvedGenre,
   SessionEnvironment,
   SessionRecord,
+  StudyLeaderboardEntry,
   TargetState,
   UserProfile,
 } from '../../shared/types';
@@ -301,6 +302,20 @@ export const api = {
 
   getStudyPresets: () =>
     apiFetch<{ presets: ExecutableStudySpec[] }>('/api/studies/presets'),
+
+  getStudyLeaderboard: () =>
+    apiFetch<{ leaderboard: StudyLeaderboardEntry[] }>('/api/studies/leaderboard'),
+
+  saveSessionPvt: (payload: {
+    sessionId: string;
+    phase: 'pre' | 'post';
+    medianMs: number;
+    lapses: number;
+  }) =>
+    apiFetch<{ ok: boolean; medianMs: number; lapses: number }>('/api/session/pvt', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   searchMedicalStudies: (query: string) =>
     apiFetch<{

@@ -54,6 +54,8 @@ export interface EngineTelemetry {
   hrvBreathPhase: 'inhale' | 'exhale' | null;
   hrvBreathProgress: number;
   lyriaStatus: LyriaRealtimeStatus;
+  usingRealSamples?: boolean;
+  studioRetuned432?: boolean;
 }
 
 /**
@@ -259,7 +261,8 @@ export class PsychoacousticEngine {
     title = 'nootropic.fm',
     isControlTrial = false,
     executableSpec?: ExecutableStudySpec,
-    initialCarrierMode?: CarrierEngineMode
+    initialCarrierMode?: CarrierEngineMode,
+    sampleApiBase = ''
   ): Promise<void> {
     this.stopImmediate();
     this.params = { ...params };
@@ -552,7 +555,7 @@ export class PsychoacousticEngine {
     delayR.connect(feedback);
     feedback.connect(delayL);
 
-    // ─── LAYER 2A: LIVE ADAPTIVE "AS WE GO" GENERATIVE COMPOSER ($0, 100% STUDY-LOCKED) ───
+    // ─── LAYER 2A: LIVE ADAPTIVE "AS WE GO" STUDIO SAMPLER COMPOSER ($0, 100% STUDY-LOCKED) ───
     const musicSpec: StudyMusicSpec = {
       ...this.studySpec.music,
       instrumentPalette: this.studySpec.music.instrumentPalette || resolvedGenreToPalette(this.genre),
@@ -565,6 +568,7 @@ export class PsychoacousticEngine {
       reverbSend,
       delaySend,
       speakerSafeEQ: params.speakerSafeEQ,
+      sampleApiBase,
     });
 
     this.isPlaying = true;
@@ -856,6 +860,12 @@ export class PsychoacousticEngine {
 
     const src = ctx.createBufferSource();
     src.buffer = buffer;
+
+    // Futuristic Studio Retuning: mathematically detune real R2 studio tracks to exact A=432 Hz (-31.77 cents) when study requires it!
+    if (this.studySpec?.music.tuningA4Hz === 432) {
+      src.playbackRate.setValueAtTime(432 / 440, now);
+    }
+
     const deckGain = ctx.createGain();
     deckGain.gain.setValueAtTime(0.0001, now);
     deckGain.gain.exponentialRampToValueAtTime(Math.max(0.1, targetGain), now + fadeInSec);
@@ -1001,6 +1011,8 @@ export class PsychoacousticEngine {
       hrvBreathPhase: stim.hrvBreathPhase,
       hrvBreathProgress: stim.hrvBreathProgress,
       lyriaStatus: this.lyriaStatus,
+      usingRealSamples: this.composer.isUsingRealSamples(),
+      studioRetuned432: this.usingStudioAudio && spec?.music.tuningA4Hz === 432,
     };
   }
 

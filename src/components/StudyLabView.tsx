@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   BookOpen,
@@ -11,8 +11,10 @@ import {
   Play,
   Search,
   Sparkles,
+  Trophy,
   Volume2,
   Waves,
+  Zap,
 } from 'lucide-react';
 import { VERIFIED_STUDY_PRESETS } from '../../shared/studyPresets';
 import {
@@ -23,6 +25,7 @@ import type {
   OutputDevice,
   ProtocolRecommendation,
   SessionEnvironment,
+  StudyLeaderboardEntry,
 } from '../../shared/types';
 import { api } from '../lib/api';
 import { StudyFidelityMatrix } from './StudyFidelityMatrix';
@@ -71,6 +74,26 @@ export function StudyLabView({ defaultDevice = 'headphones', onExecuteRecommenda
     fromCache: boolean;
   } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [leaderboard, setLeaderboard] = useState<StudyLeaderboardEntry[]>([]);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    void api
+      .getStudyLeaderboard()
+      .then((res) => {
+        if (active) setLeaderboard(res.leaderboard ?? []);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingLeaderboard(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const leaderboardBySpecId = new Map(leaderboard.map((row) => [row.studySpecId, row]));
 
   const handleDevicePick = (nextDevice: OutputDevice) => {
     setDevice(nextDevice);
@@ -362,6 +385,77 @@ export function StudyLabView({ defaultDevice = 'headphones', onExecuteRecommenda
         </div>
       )}
 
+      {/* Live Community Empirical Study Leaderboard (Real Anonymized Outcomes + Objective PVT ms) */}
+      <div className="glass-card rounded-3xl border border-emerald-400/20 p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Trophy className="h-4 w-4 text-emerald-300" />
+            <div>
+              <h2 className="text-sm font-bold text-white">
+                Open Community Empirical Study Leaderboard
+              </h2>
+              <p className="text-xs text-slate-400">
+                Live anonymized outcomes from real listeners testing peer-reviewed protocols — including optional 15s objective PVT reaction time (ms).
+              </p>
+            </div>
+          </div>
+          <span className="font-mono-tech text-[10px] uppercase tracking-wider text-emerald-300/90">
+            100% Real D1 Trials · Zero Fake Data
+          </span>
+        </div>
+
+        {loadingLeaderboard ? (
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-300" />
+            Loading live empirical study outcomes…
+          </div>
+        ) : leaderboard.length > 0 ? (
+          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+            {leaderboard.slice(0, 6).map((row, idx) => (
+              <div
+                key={row.studySpecId}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800/90 bg-slate-950/65 px-4 py-3"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono-tech text-[10px] font-bold text-emerald-300">
+                      #{idx + 1}
+                    </span>
+                    <span className="truncate text-xs font-semibold text-white">
+                      {row.studyTitle}
+                    </span>
+                  </div>
+                  <div className="font-mono-tech text-[10px] text-slate-400">
+                    {row.frequencyHz > 0 ? `${row.frequencyHz} Hz` : 'Acoustic'} · {row.sessions}{' '}
+                    {row.sessions === 1 ? 'trial' : 'trials'} · avg Δ{' '}
+                    {row.avgDelta >= 0 ? `+${row.avgDelta}` : row.avgDelta}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="font-mono-tech text-sm font-bold text-emerald-300">
+                    {row.successRatePct}% worked
+                  </div>
+                  {row.avgPvtDeltaMs !== null && row.pvtTrials > 0 && (
+                    <div className="inline-flex items-center gap-1 font-mono-tech text-[10px] text-cyan-300">
+                      <Zap className="h-2.5 w-2.5" />
+                      {row.avgPvtDeltaMs < 0
+                        ? `${Math.abs(row.avgPvtDeltaMs)} ms faster`
+                        : `${row.avgPvtDeltaMs > 0 ? `+${row.avgPvtDeltaMs}` : '0'} ms`}{' '}
+                      ({row.pvtTrials} PVT)
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-slate-800/80 bg-slate-950/55 px-4 py-3 text-xs text-slate-400">
+            No community Study Lab trials rated yet — run any verified protocol below, optionally take the{' '}
+            <strong className="text-cyan-200">15s Pre/Post PVT reaction benchmark (ms)</strong>, and submit your debrief to publish the first real empirical result.
+          </div>
+        )}
+      </div>
+
       {/* Ground-Truth Landmark Clinical Protocols (1-Tap Execution) */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2 px-1">
@@ -381,6 +475,7 @@ export function StudyLabView({ defaultDevice = 'headphones', onExecuteRecommenda
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {VERIFIED_STUDY_PRESETS.map((preset) => {
             const isBusy = compilingId === preset.id;
+            const empirical = leaderboardBySpecId.get(preset.id);
             const tempoLabel = preset.music.bpmRamp
               ? `${preset.music.bpmRamp.start}→${preset.music.bpmRamp.end} BPM`
               : preset.music.bpm > 0
@@ -402,6 +497,19 @@ export function StudyLabView({ defaultDevice = 'headphones', onExecuteRecommenda
                       {tempoLabel} · {preset.protocol.recommendedDurationMin}m
                     </span>
                   </div>
+
+                  {empirical && (
+                    <div className="inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 font-mono-tech text-[10px] font-semibold text-emerald-200">
+                      <span>
+                        {empirical.sessions} {empirical.sessions === 1 ? 'trial' : 'trials'} · {empirical.successRatePct}% worked
+                      </span>
+                      {empirical.avgPvtDeltaMs !== null && empirical.pvtTrials > 0 && (
+                        <span className="text-cyan-200">
+                          · {empirical.avgPvtDeltaMs < 0 ? `${Math.abs(empirical.avgPvtDeltaMs)}ms faster` : `${empirical.avgPvtDeltaMs > 0 ? `+${empirical.avgPvtDeltaMs}` : '0'}ms`}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   <h3 className="text-sm font-bold leading-snug text-white">
                     {preset.shortLabel}

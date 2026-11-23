@@ -98,6 +98,12 @@ export default function App() {
     actualDurationSec: number;
     liveAdjustments: LiveAdjustment[];
     ephemeralMode?: boolean;
+    pvtPreMs?: number | null;
+    pvtLapsesPre?: number | null;
+    studySpecId?: string;
+    studyTitle?: string;
+    entrainmentType?: string;
+    frequencyHz?: number;
   } | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
@@ -344,8 +350,14 @@ export default function App() {
   );
 
   const handleFinishToDebrief = useCallback(
-    (stats: { actualDurationSec: number; liveAdjustments: LiveAdjustment[] }) => {
+    (stats: {
+      actualDurationSec: number;
+      liveAdjustments: LiveAdjustment[];
+      pvtPreMs?: number | null;
+      pvtLapsesPre?: number | null;
+    }) => {
       if (!activeRec) return;
+      const spec = activeRec.executableSpec;
       setDebriefContext({
         sessionId: activeRec.sessionId,
         armName: activeRec.arm.name,
@@ -355,6 +367,12 @@ export default function App() {
         actualDurationSec: stats.actualDurationSec,
         liveAdjustments: stats.liveAdjustments,
         ephemeralMode: activeRec.ephemeralMode,
+        pvtPreMs: stats.pvtPreMs ?? null,
+        pvtLapsesPre: stats.pvtLapsesPre ?? null,
+        studySpecId: spec?.id,
+        studyTitle: spec?.shortLabel || spec?.studyRef.title,
+        entrainmentType: spec?.entrainment.type,
+        frequencyHz: spec?.entrainment.frequencyHz ?? activeRec.params.modulationHz,
       });
       setActiveRec(null);
       setAudioActive(false);
@@ -806,6 +824,11 @@ export default function App() {
                 token + hashed Sync Key (90-day local TTL) and are never exposed in public Research
                 Brain feeds.
               </p>
+              <p>
+                <strong>Open Audio Credits (CC-BY 3.0):</strong> Real studio multi-samples in Live
+                As-We-Go Composer are courtesy of Salamander Grand Piano (Alexander Holm) &amp;
+                FluidR3 GM SoundFont, hosted on Cloudflare R2.
+              </p>
             </div>
 
             {privacyStatus && (
@@ -844,6 +867,9 @@ export default function App() {
             nootropic.fm · Tune your mind · Open Research Beta (18+ · Year 1 Free) · Psychoacoustic
             cognitive wellness audio, not a medical device.
           </span>
+          <span className="text-slate-600">
+            Samples: Salamander Grand Piano &amp; FluidR3 GM (CC-BY 3.0)
+          </span>
           <button
             type="button"
             onClick={() => {
@@ -853,7 +879,7 @@ export default function App() {
             className="inline-flex items-center gap-1 font-medium text-cyan-400/90 underline-offset-2 hover:text-cyan-300 hover:underline"
           >
             <ShieldCheck className="h-3 w-3" />
-            Privacy &amp; Delete My Data
+            Privacy, Credits &amp; Delete My Data
           </button>
         </div>
       </footer>

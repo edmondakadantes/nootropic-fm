@@ -291,6 +291,26 @@ export interface DebriefPayload {
   feedbackTags: string[];
   liveAdjustments: LiveAdjustment[];
   notes?: string;
+  pvtPreMs?: number | null;
+  pvtPostMs?: number | null;
+  pvtLapsesPre?: number | null;
+  pvtLapsesPost?: number | null;
+  studySpecId?: string;
+  studyTitle?: string;
+  entrainmentType?: string;
+  frequencyHz?: number;
+}
+
+export interface StudyLeaderboardEntry {
+  studySpecId: string;
+  studyTitle: string;
+  entrainmentType: string;
+  frequencyHz: number;
+  sessions: number;
+  successRatePct: number;
+  avgDelta: number;
+  pvtTrials: number;
+  avgPvtDeltaMs: number | null;
 }
 
 export interface ArmPerformance {
