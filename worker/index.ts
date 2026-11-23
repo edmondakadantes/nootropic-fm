@@ -53,6 +53,13 @@ import type { D1Database, Env, ExecutionContext } from './env';
 import { fetchVerifiedLiveLiterature } from './literature';
 import { resolveMusicProvider } from './musicProviders';
 import { compileMedicalStudy, searchLiveMedicalStudies } from './studyCompiler';
+import {
+  createStripeCheckoutSession,
+  createStripePortalSession,
+  retrieveStripeCheckoutSession,
+  verifyStripeWebhookSignature,
+  type BillingPlanCycle,
+} from './stripeBilling';
 import { buildRecommendationFromStudySpec } from '../shared/studyCompilerCore';
 import { VERIFIED_STUDY_PRESETS } from '../shared/studyPresets';
 
@@ -277,6 +284,10 @@ function json(data: unknown, status = 200, request?: Request): Response {
 }
 
 function mapProfileRow(row: Record<string, unknown>, sessionCount?: number): UserProfile {
+  const rawPlan = String(row.plan_tier ?? 'free').toLowerCase();
+  const proUntil = row.pro_until ? String(row.pro_until) : null;
+  const isProActive =
+    rawPlan === 'pro' && (!proUntil || Number.isNaN(Date.parse(proUntil)) || Date.parse(proUntil) > Date.now());
   return {
     id: String(row.id),
     displayName: row.display_name ? String(row.display_name) : undefined,
@@ -294,6 +305,8 @@ function mapProfileRow(row: Record<string, unknown>, sessionCount?: number): Use
       row.preferred_mod_mult === null || row.preferred_mod_mult === undefined
         ? 1.0
         : Number(row.preferred_mod_mult),
+    planTier: isProActive ? 'pro' : 'free',
+    proUntil,
     ...(typeof sessionCount === 'number' ? { sessionCount } : {}),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
@@ -784,12 +797,13 @@ export default {
         return json(
           {
             ok: true,
-            version: '4.0',
+            version: '4.1',
             mode: env.APP_ENV ?? 'open-research-beta',
             hasGemini: env.ENABLE_LLM_PARSE === 'true' && Boolean(env.GEMINI_API_KEY),
             hasLiveMusicGen: Boolean(provider),
             hasLyriaRealtime: Boolean(env.GEMINI_MUSIC_API_KEY?.trim()),
             hasWorkersAi: Boolean(env.AI),
+            hasStripe: Boolean(env.STRIPE_SECRET_KEY?.trim()),
             musicProvider: provider?.id ?? 'none',
             exportProtected: Boolean(env.ADMIN_EXPORT_KEY),
             hasAudioBucket: Boolean(env.AUDIO_BUCKET),
@@ -829,6 +843,7 @@ export default {
           customLiveGenAvailable: Boolean(provider) && usedToday < dailyCapMax,
           lyriaRealtimeAvailable: Boolean(env.GEMINI_MUSIC_API_KEY?.trim()),
           workersAiCompilerAvailable: Boolean(env.AI),
+          stripeBillingAvailable: Boolean(env.STRIPE_SECRET_KEY?.trim()),
           musicProvider: provider?.id ?? 'cache_only',
           dailyCapMax,
           dailyCapRemaining: Math.max(0, dailyCapMax - usedToday),
@@ -1300,9 +1315,13 @@ export default {
           )
           .run();
 
+        const savedRow = await env.DB.prepare('SELECT * FROM profiles WHERE id = ?')
+          .bind(profile.id)
+          .first<Record<string, unknown>>();
+
         return json(
           {
-            profile,
+            profile: savedRow ? mapProfileRow(savedRow) : { ...profile, planTier: 'free', proUntil: null },
             ...(profileToken ? { profileToken } : {}),
             ...(syncCode ? { syncCode } : {}),
           },
@@ -3344,6 +3363,320 @@ export default {
           `SELECT * FROM dataset_inquiries ORDER BY created_at DESC LIMIT 200`
         ).all<Record<string, unknown>>();
         return json({ count: rows.results.length, inquiries: rows.results }, 200, request);
+      }
+
+      // POST /api/billing/checkout — Creates a Stripe Subscription Checkout Session ($9.99/mo or $59/yr)
+      if (url.pathname === '/api/billing/checkout' && request.method === 'POST') {
+        const stripeKey = env.STRIPE_SECRET_KEY?.trim();
+        if (!stripeKey) {
+          return json(
+            { error: 'Stripe billing is not activated yet on this deployment.' },
+            503,
+            request
+          );
+        }
+        const allowed = await checkDailyRateLimit(env.DB, request, 'billing_checkout', 20);
+        if (!allowed) return json({ error: 'Rate limit reached. Please try again shortly.' }, 429, request);
+
+        const body = (await request.json().catch(() => ({}))) as {
+          plan?: BillingPlanCycle;
+          profileId?: string;
+          email?: string;
+        };
+        const plan: BillingPlanCycle = body.plan === 'monthly' ? 'monthly' : 'annual';
+
+        let targetProfileId = body.profileId?.trim() || '';
+        let createdAuth:
+          | { profile: UserProfile; profileToken: string; syncCode: string }
+          | undefined;
+
+        if (targetProfileId) {
+          const check = await verifyProfileAccess(env.DB, targetProfileId, request);
+          if (!check.ok || !check.row) {
+            targetProfileId = '';
+          }
+        }
+
+        if (!targetProfileId) {
+          // Automatically mint an anonymous profile + Sync Key so subscription attaches cleanly with zero passwords
+          const now = new Date().toISOString();
+          targetProfileId = `anon_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+          const profileToken = generateProfileToken();
+          const tokenHash = await sha256Hex(profileToken);
+          const syncCode = generateSyncCode();
+          const syncCodeHash = await sha256Hex(syncCode);
+          const newProfile: UserProfile = {
+            id: targetProfileId,
+            age: 30,
+            ageBand: '25-34',
+            gender: 'prefer_not_to_say',
+            role: 'other',
+            texturePref: 'warm_organic',
+            noiseSensitivity: 'medium',
+            defaultDevice: 'headphones',
+            primaryChallenge: 'distraction',
+            researchConsent: true,
+            preferredModMult: 1.0,
+            planTier: 'free',
+            proUntil: null,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          await env.DB.prepare(
+            `INSERT INTO profiles (id, display_name, age, age_band, gender, role, occupation_label, texture_pref, noise_sensitivity, default_device, primary_challenge, research_consent, token_hash, sync_code_hash, created_at, updated_at)
+             VALUES (?, '', 30, '25-34', 'prefer_not_to_say', 'other', '', 'warm_organic', 'medium', 'headphones', 'distraction', 1, ?, ?, ?, ?)`
+          )
+            .bind(targetProfileId, tokenHash, syncCodeHash, now, now)
+            .run();
+
+          createdAuth = { profile: newProfile, profileToken, syncCode };
+        }
+
+        const originHeader = request.headers.get('origin') || url.origin;
+        const safeOrigin = ALLOWED_ORIGINS.has(originHeader)
+          ? originHeader
+          : url.origin;
+
+        const session = await createStripeCheckoutSession({
+          secretKey: stripeKey,
+          plan,
+          profileId: targetProfileId,
+          successUrl: `${safeOrigin}/?billing=success&session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${safeOrigin}/?billing=canceled`,
+          email: body.email,
+          priceMonthly: env.STRIPE_PRICE_MONTHLY,
+          priceAnnual: env.STRIPE_PRICE_ANNUAL,
+        });
+
+        return json(
+          {
+            url: session.url,
+            checkoutSessionId: session.id,
+            ...(createdAuth ?? {}),
+          },
+          200,
+          request
+        );
+      }
+
+      // POST /api/billing/verify — Verifies a completed Stripe Checkout Session on redirect return & activates Pro immediately
+      if (url.pathname === '/api/billing/verify' && request.method === 'POST') {
+        const stripeKey = env.STRIPE_SECRET_KEY?.trim();
+        if (!stripeKey) {
+          return json({ error: 'Stripe billing not configured.' }, 503, request);
+        }
+        const body = (await request.json().catch(() => ({}))) as { checkoutSessionId?: string };
+        const checkoutSessionId = String(body.checkoutSessionId ?? '').trim();
+        if (!checkoutSessionId || !checkoutSessionId.startsWith('cs_')) {
+          return json({ error: 'Invalid checkout session ID.' }, 400, request);
+        }
+
+        const verified = await retrieveStripeCheckoutSession(stripeKey, checkoutSessionId);
+        if (!verified.paid || !verified.profileId) {
+          return json(
+            { ok: true, paid: false, planTier: 'free', proUntil: null, profile: null },
+            200,
+            request
+          );
+        }
+
+        const now = new Date().toISOString();
+        await env.DB.prepare(
+          `UPDATE profiles
+           SET plan_tier = 'pro',
+               pro_until = ?,
+               stripe_customer_id = COALESCE(?, stripe_customer_id),
+               stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+               billing_email = COALESCE(?, billing_email),
+               updated_at = ?
+           WHERE id = ?`
+        )
+          .bind(
+            verified.proUntilIso,
+            verified.customerId,
+            verified.subscriptionId,
+            verified.customerEmail,
+            now,
+            verified.profileId
+          )
+          .run();
+
+        const updatedRow = await env.DB.prepare('SELECT * FROM profiles WHERE id = ?')
+          .bind(verified.profileId)
+          .first<Record<string, unknown>>();
+
+        return json(
+          {
+            ok: true,
+            paid: true,
+            planTier: 'pro',
+            proUntil: verified.proUntilIso,
+            profile: updatedRow ? mapProfileRow(updatedRow) : null,
+          },
+          200,
+          request
+        );
+      }
+
+      // POST /api/billing/portal — Opens Stripe Customer Billing Portal for active Pro subscribers
+      if (url.pathname === '/api/billing/portal' && request.method === 'POST') {
+        const stripeKey = env.STRIPE_SECRET_KEY?.trim();
+        if (!stripeKey) {
+          return json({ error: 'Stripe billing not configured.' }, 503, request);
+        }
+        const body = (await request.json().catch(() => ({}))) as { profileId?: string };
+        const profileId = String(body.profileId ?? '').trim();
+        if (!profileId) return json({ error: 'Missing profileId' }, 400, request);
+
+        const access = await verifyProfileAccess(env.DB, profileId, request);
+        if (!access.ok || !access.row) {
+          return json({ error: 'Unauthorized profile access.' }, 403, request);
+        }
+        const customerId = access.row.stripe_customer_id ? String(access.row.stripe_customer_id) : '';
+        if (!customerId) {
+          return json({ error: 'No active Stripe billing account linked to this profile.' }, 404, request);
+        }
+
+        const originHeader = request.headers.get('origin') || url.origin;
+        const safeOrigin = ALLOWED_ORIGINS.has(originHeader) ? originHeader : url.origin;
+        const portalUrl = await createStripePortalSession(stripeKey, customerId, safeOrigin);
+        return json({ url: portalUrl }, 200, request);
+      }
+
+      // POST /api/billing/webhook — Official Stripe Webhook receiver (HMAC-SHA256 verified & idempotent)
+      if (url.pathname === '/api/billing/webhook' && request.method === 'POST') {
+        const webhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim();
+        if (!webhookSecret) {
+          return json({ error: 'Stripe webhook secret not configured.' }, 503, request);
+        }
+        const rawBody = await request.text();
+        const sigHeader = request.headers.get('stripe-signature');
+        const valid = await verifyStripeWebhookSignature(rawBody, sigHeader, webhookSecret);
+        if (!valid) {
+          return json({ error: 'Invalid Stripe webhook signature.' }, 400, request);
+        }
+
+        const evt = JSON.parse(rawBody) as {
+          id?: string;
+          type?: string;
+          data?: {
+            object?: Record<string, unknown>;
+          };
+        };
+        const eventId = String(evt.id ?? '');
+        const eventType = String(evt.type ?? '');
+        const obj = evt.data?.object ?? {};
+
+        if (eventId) {
+          const seen = await env.DB.prepare('SELECT id FROM billing_events WHERE id = ?')
+            .bind(eventId)
+            .first();
+          if (seen) {
+            return json({ received: true, duplicate: true }, 200, request);
+          }
+        }
+
+        const now = new Date().toISOString();
+        const meta = (obj.metadata as Record<string, string> | undefined) ?? {};
+        let profileId = meta.profile_id || (obj.client_reference_id ? String(obj.client_reference_id) : '');
+        const customerId = obj.customer ? String(obj.customer) : null;
+        const subId =
+          eventType.startsWith('customer.subscription.')
+            ? (obj.id ? String(obj.id) : null)
+            : (obj.subscription ? String(obj.subscription) : null);
+
+        if (!profileId && (customerId || subId)) {
+          const found = await env.DB.prepare(
+            `SELECT id FROM profiles WHERE stripe_customer_id = ? OR stripe_subscription_id = ? LIMIT 1`
+          )
+            .bind(customerId ?? '__none__', subId ?? '__none__')
+            .first<{ id?: string }>();
+          if (found?.id) profileId = found.id;
+        }
+
+        if (profileId) {
+          if (eventType === 'checkout.session.completed') {
+            const email =
+              (obj.customer_details as { email?: string } | undefined)?.email ||
+              (obj.customer_email ? String(obj.customer_email) : null);
+            const fallbackDays = meta.plan === 'annual' ? 370 : 35;
+            const fallbackUntil = new Date(
+              Date.now() + fallbackDays * 24 * 60 * 60 * 1000
+            ).toISOString();
+            await env.DB.prepare(
+              `UPDATE profiles
+               SET plan_tier = 'pro',
+                   pro_until = COALESCE(pro_until, ?),
+                   stripe_customer_id = COALESCE(?, stripe_customer_id),
+                   stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+                   billing_email = COALESCE(?, billing_email),
+                   updated_at = ?
+               WHERE id = ?`
+            )
+              .bind(fallbackUntil, customerId, subId, email, now, profileId)
+              .run();
+          } else if (
+            eventType === 'customer.subscription.created' ||
+            eventType === 'customer.subscription.updated'
+          ) {
+            const status = String(obj.status ?? '');
+            const active = status === 'active' || status === 'trialing';
+            const subItems = (
+              obj.items as { data?: Array<{ current_period_end?: number }> } | undefined
+            )?.data;
+            const periodEnd = Number(
+              obj.current_period_end ?? subItems?.[0]?.current_period_end ?? 0
+            );
+            const proUntil =
+              periodEnd > 0 ? new Date(periodEnd * 1000).toISOString() : null;
+            await env.DB.prepare(
+              `UPDATE profiles
+               SET plan_tier = ?,
+                   pro_until = COALESCE(?, pro_until),
+                   stripe_customer_id = COALESCE(?, stripe_customer_id),
+                   stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+                   updated_at = ?
+               WHERE id = ?`
+            )
+              .bind(active ? 'pro' : 'free', proUntil, customerId, subId, now, profileId)
+              .run();
+          } else if (eventType === 'customer.subscription.deleted') {
+            await env.DB.prepare(
+              `UPDATE profiles SET plan_tier = 'free', updated_at = ? WHERE id = ?`
+            )
+              .bind(now, profileId)
+              .run();
+          } else if (eventType === 'invoice.paid') {
+            const lines = (obj.lines as { data?: Array<{ period?: { end?: number } }> } | undefined)?.data;
+            const periodEnd = Number(lines?.[0]?.period?.end ?? 0);
+            const proUntil =
+              periodEnd > 0
+                ? new Date(periodEnd * 1000).toISOString()
+                : new Date(Date.now() + 35 * 24 * 60 * 60 * 1000).toISOString();
+            await env.DB.prepare(
+              `UPDATE profiles
+               SET plan_tier = 'pro', pro_until = ?, updated_at = ?
+               WHERE id = ?`
+            )
+              .bind(proUntil, now, profileId)
+              .run();
+          }
+        }
+
+        if (eventId) {
+          const amountCents = Number(obj.amount_paid ?? obj.amount_total ?? 0);
+          const currency = String(obj.currency ?? 'usd');
+          await env.DB.prepare(
+            `INSERT OR IGNORE INTO billing_events (id, event_type, profile_id, stripe_customer_id, stripe_subscription_id, amount_cents, currency, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'processed', ?)`
+          )
+            .bind(eventId, eventType, profileId || null, customerId, subId, amountCents, currency, now)
+            .run()
+            .catch(() => {});
+        }
+
+        return json({ received: true }, 200, request);
       }
 
       // GET /api/dataset/export — Admin-Protected Anonymized Research Dataset (JSON or CSV)

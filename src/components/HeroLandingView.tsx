@@ -29,17 +29,17 @@ const STATE_SHIFT_PILLS: Array<{
 }> = [
   {
     id: 'focus_lofi',
-    from: 'Foggy',
-    to: 'Locked In',
-    sub: 'Lo-Fi Keys · 16 Hz Focus',
+    from: 'Distracted',
+    to: 'Focused',
+    sub: 'Chill Lo-Fi · Deep Focus',
     accent:
       'border-cyan-400/40 bg-cyan-400/10 text-cyan-100 hover:border-cyan-300 hover:bg-cyan-400/20',
   },
   {
     id: 'mood_uplift',
-    from: 'Down',
-    to: 'Uplifted',
-    sub: 'Warm Acoustic · Major Lift',
+    from: 'Sad',
+    to: 'Happy',
+    sub: 'Warm Guitar · Good Mood',
     accent:
       'border-amber-400/40 bg-amber-400/10 text-amber-100 hover:border-amber-300 hover:bg-amber-400/20',
   },
@@ -47,15 +47,15 @@ const STATE_SHIFT_PILLS: Array<{
     id: 'calm_rain',
     from: 'Stressed',
     to: 'Calm',
-    sub: 'Rain & Piano · 0.1 Hz Breath',
+    sub: 'Soft Rain & Piano · Relax',
     accent:
       'border-emerald-400/40 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300 hover:bg-emerald-500/20',
   },
   {
     id: 'energy_electronic',
     from: 'Tired',
-    to: 'Energized',
-    sub: 'Deep Electronic · 18 Hz Drive',
+    to: 'Awake',
+    sub: 'Upbeat Electronic · Energy',
     accent:
       'border-indigo-400/40 bg-indigo-500/12 text-indigo-100 hover:border-indigo-300 hover:bg-indigo-500/22',
   },
@@ -75,7 +75,7 @@ export function HeroLandingView({
 
         <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/35 bg-cyan-400/[0.09] px-3.5 py-1 text-[11px] font-semibold tracking-wide text-cyan-200">
           <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.9)] animate-pulse" />
-          Open Beta · Science-Engineered Music
+          Science-Backed Music · Open Beta
         </div>
 
         <h1 className="max-w-3xl font-display text-3xl font-bold tracking-tight text-white sm:text-5xl leading-[1.08]">
@@ -84,9 +84,8 @@ export function HeroLandingView({
         </h1>
 
         <p className="max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
-          Stressed to calm. Foggy to locked in. Down to uplifted. We translate published acoustic
-          science into precision soundwaves—and fuse them into{' '}
-          <strong className="text-white">your favorite music genre</strong>.
+          Stressed to calm. Distracted to focused. Sad to happy. We turn real sound science into
+          music tailored to <strong className="text-white">your favorite style</strong>.
         </p>
 
         {/* Primary & Secondary CTAs */}
@@ -97,7 +96,7 @@ export function HeroLandingView({
             className="btn-aurora inline-flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 sm:w-auto sm:min-w-[235px] sm:text-base"
           >
             <SlidersHorizontal className="h-4 w-4" />
-            Tune My State Now
+            Choose My Mood &amp; Music
           </button>
 
           <button
@@ -106,14 +105,14 @@ export function HeroLandingView({
             className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-cyan-400/40 bg-cyan-400/10 px-6 py-4 text-sm font-semibold text-cyan-100 backdrop-blur-md transition hover:border-cyan-300 hover:bg-cyan-400/18 sm:w-auto sm:min-w-[215px] sm:text-base"
           >
             <Play className="h-4 w-4 fill-current" />
-            Instant Preview (3s)
+            Try It Now (3s)
           </button>
         </div>
 
         {/* Zero-Friction Trust Strip */}
         <p className="text-[11px] text-slate-400">
-          Try instantly during Open Beta · No card required · Reggae, Lo-Fi, Electronic, Jazz,
-          Classical &amp; more · 18+
+          Try instantly · No card required · Reggae, Lo-Fi, Electronic, Jazz, Classical &amp; more ·
+          18+
         </p>
       </section>
 
@@ -121,7 +120,7 @@ export function HeroLandingView({
       <section className="animate-step glass-stage w-full rounded-3xl border border-cyan-400/20 p-4 sm:p-5 space-y-3.5">
         <div className="flex flex-wrap items-center justify-between gap-2 px-1">
           <span className="font-mono-tech text-[11px] uppercase tracking-[0.14em] text-cyan-300/90">
-            Tap any shift to hear science + music live right now:
+            Pick how you want to feel — press play now:
           </span>
           <button
             type="button"
@@ -155,13 +154,13 @@ export function HeroLandingView({
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-0.5 text-[11px] text-slate-400">
-          <span>Want to type your exact mood &amp; favorite genre (Reggae, Synthwave, Rock, Bossa Nova)?</span>
+          <span>Want another mood or your own music style (Reggae, Rock, Jazz, Classical)?</span>
           <button
             type="button"
             onClick={onStartCustomize}
             className="inline-flex items-center gap-1 font-semibold text-cyan-300 transition hover:text-cyan-200"
           >
-            Build My Profile &amp; Sound
+            Pick Any Mood &amp; Music
             <ArrowRight className="h-3 w-3" />
           </button>
           <span className="hidden text-slate-700 sm:inline">·</span>
@@ -171,7 +170,7 @@ export function HeroLandingView({
             className="inline-flex items-center gap-1 font-semibold text-emerald-300 transition hover:text-emerald-200"
           >
             <FlaskConical className="h-3 w-3" />
-            Study-to-Sound Lab
+            Browse Science Studies
           </button>
         </div>
       </section>
@@ -181,45 +180,46 @@ export function HeroLandingView({
         <div className="glass-card rounded-2xl border border-white/[0.08] p-4 space-y-1.5">
           <div className="inline-flex items-center gap-2 text-xs font-bold text-white">
             <Compass className="h-4 w-4 text-cyan-300" />
-            1. Tell Us Where You Want to Go
+            1. Pick How You Want to Feel
           </div>
           <p className="text-xs leading-relaxed text-slate-400">
-            Start from any headspace—down, stressed, foggy, or drained—and set your target state,
-            profession profile, and session length.
+            Tell us how you feel right now—stressed, sad, distracted, or tired—and where you want to
+            get.
           </p>
         </div>
 
         <div className="glass-card rounded-2xl border border-white/[0.08] p-4 space-y-1.5">
           <div className="inline-flex items-center gap-2 text-xs font-bold text-white">
             <Waves className="h-4 w-4 text-indigo-300" />
-            2. We Turn Science Into Live Sound
+            2. Science Turned Into Sound
           </div>
           <p className="text-xs leading-relaxed text-slate-400">
-            Our engine compiles published acoustic studies (16 Hz AM, 40 Hz Gamma, 0.1 Hz HRV,
-            major-mode tempo) into real-time 3-Band LR4 DSP—verifiable on a 60fps scope.
+            We turn real sound studies into gentle focus and calm rhythms—and show the live wave
+            working on screen.
           </p>
         </div>
 
         <div className="glass-card rounded-2xl border border-white/[0.08] p-4 space-y-1.5">
           <div className="inline-flex items-center gap-2 text-xs font-bold text-white">
             <Music2 className="h-4 w-4 text-emerald-300" />
-            3. Fused Into Your Favorite Music
+            3. Blended With Music You Love
           </div>
           <p className="text-xs leading-relaxed text-slate-400">
-            No boring monotonous drones. Pick mastered studio tracks, live sampled instruments, or
-            type <span className="text-slate-200">any instrumental genre</span> powered by Lyria AI.
+            No boring background hums. Listen with Lo-Fi, Reggae, Jazz, Classical, Electronic, or{' '}
+            <span className="text-slate-200">any music style you type</span>.
           </p>
         </div>
       </section>
 
-      {/* Blurred B2B Cohort Intelligence Showcase (Explains 100% Free Forever + Monetization Teaser) */}
+      {/* Blurred B2B Cohort Intelligence Showcase */}
       <CohortIntelligenceShowcase mode="compact" />
 
       {/* Subtle Bottom Prompt */}
       <div className="flex items-center gap-2 text-xs text-slate-400">
         <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
         <span>
-          Optional 15-second Pre/Post millisecond reaction benchmark included in every session.
+          Includes an optional 15-second reaction speed test before and after listening so you can
+          see the difference.
         </span>
       </div>
     </div>

@@ -415,4 +415,38 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  createStripeCheckout: (payload: {
+    plan: 'monthly' | 'annual';
+    profileId?: string;
+    email?: string;
+  }) =>
+    apiFetch<{
+      url: string;
+      checkoutSessionId: string;
+      profile?: UserProfile;
+      profileToken?: string;
+      syncCode?: string;
+    }>('/api/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  verifyStripeCheckout: (checkoutSessionId: string) =>
+    apiFetch<{
+      ok: boolean;
+      paid: boolean;
+      planTier: 'free' | 'pro';
+      proUntil: string | null;
+      profile?: UserProfile | null;
+    }>('/api/billing/verify', {
+      method: 'POST',
+      body: JSON.stringify({ checkoutSessionId }),
+    }),
+
+  openStripePortal: (profileId: string) =>
+    apiFetch<{ url: string }>('/api/billing/portal', {
+      method: 'POST',
+      body: JSON.stringify({ profileId }),
+    }),
 };

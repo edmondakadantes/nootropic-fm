@@ -87,6 +87,8 @@ export interface UserProfile {
   researchConsent: boolean;
   preferredModMult?: number;
   sessionCount?: number;
+  planTier?: 'free' | 'pro';
+  proUntil?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -450,6 +452,7 @@ export interface AppRuntimeConfig {
   customLiveGenAvailable: boolean;
   lyriaRealtimeAvailable?: boolean;
   workersAiCompilerAvailable?: boolean;
+  stripeBillingAvailable?: boolean;
   musicProvider: string;
   dailyCapMax: number;
   dailyCapRemaining: number;

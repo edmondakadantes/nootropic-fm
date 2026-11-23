@@ -197,7 +197,7 @@ export function buildInstantQuickTryRecommendation(id: QuickTryId): ProtocolReco
       audioSource: 'studio_library',
       fallbackCoreGenre: 'acoustic_pluck',
       personalizationSummary: [
-        'Instant preview · Down → Uplifted shift (switch to Reggae, Jazz, or any genre anytime)',
+        'Instant preview · Sad → Happy shift (switch to Reggae, Jazz, or any music style anytime)',
         'Major-mode acoustic stems + gentle 12 Hz mid-band clarity AM',
       ],
       formulaIngredients: [

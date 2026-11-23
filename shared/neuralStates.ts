@@ -274,8 +274,8 @@ export const NEURAL_MICRO_STATES: NeuralMicroState[] = [
   },
   {
     id: 'sharp_high_drive',
-    label: 'Alert / Ready to Lock In',
-    shortLabel: 'Locked In',
+    label: 'Alert / Ready to Focus',
+    shortLabel: 'Focused',
     energy: 78,
     clarity: 86,
     coreState: 'calm_neutral',

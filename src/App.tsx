@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import {
   BarChart3,
+  Crown,
   Download,
   Fingerprint,
   FlaskConical,
@@ -37,6 +38,7 @@ import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFinge
 import { OnboardingView } from './components/OnboardingView';
 import { PlayerView } from './components/PlayerView';
 import { ProtocolRevealView } from './components/ProtocolRevealView';
+import { UpgradeProModal } from './components/UpgradeProModal';
 import {
   api,
   clearStoredProfileAuth,
@@ -84,6 +86,7 @@ export default function App() {
   const [privacyStatus, setPrivacyStatus] = useState<string | null>(null);
 
   const [showIdentityModal, setShowIdentityModal] = useState(false);
+  const [showProModal, setShowProModal] = useState(false);
   const [restoreInput, setRestoreInput] = useState('');
   const [restoring, setRestoring] = useState(false);
   const [identityStatus, setIdentityStatus] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
@@ -133,6 +136,35 @@ export default function App() {
         .then((res) => setRuntimeConfig(res.config))
         .catch(() => {});
 
+      // 0. Check Stripe Checkout return (?billing=success&session_id=cs_... or ?billing=canceled)
+      const searchParams = new URLSearchParams(window.location.search);
+      const billingStatus = searchParams.get('billing');
+      const checkoutSessionId = searchParams.get('session_id');
+      if (billingStatus) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+      }
+
+      const verifyBillingIfReturned = async () => {
+        if (
+          billingStatus === 'success' &&
+          checkoutSessionId &&
+          checkoutSessionId.startsWith('cs_')
+        ) {
+          try {
+            const verified = await api.verifyStripeCheckout(checkoutSessionId);
+            if (verified.paid && verified.profile) {
+              setProfile(verified.profile);
+              setQrToast(
+                'Welcome to nootropic.fm Pro! Unlimited music styles & all science studies are now unlocked.'
+              );
+              setScreen('checkin');
+            }
+          } catch {
+            // Webhook will still activate Pro asynchronously if verification timed out
+          }
+        }
+      };
+
       // 1. Magic Scanned QR Auto-Restore via private URL hash (#sync=NFM-XXXX-XXXX)
       // Hash fragments never leave the browser in HTTP logs or Referer headers.
       const hashMatch = window.location.hash.match(/^#sync=([A-Za-z0-9-]+)$/i);
@@ -161,6 +193,7 @@ export default function App() {
 
       const stored = getStoredProfileAuth();
       if (!stored?.profileId) {
+        await verifyBillingIfReturned();
         void configPromise;
         setBooting(false);
         return;
@@ -188,6 +221,7 @@ export default function App() {
         clearStoredProfileAuth();
         setSyncCode(null);
       } finally {
+        await verifyBillingIfReturned();
         void configPromise;
         setBooting(false);
       }
@@ -599,6 +633,24 @@ export default function App() {
 
             <button
               type="button"
+              onClick={() => setShowProModal(true)}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold transition ${
+                profile?.planTier === 'pro'
+                  ? 'border border-emerald-400/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25'
+                  : 'border border-amber-400/45 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25'
+              }`}
+              title={
+                profile?.planTier === 'pro'
+                  ? 'Manage your nootropic.fm Pro subscription'
+                  : 'Upgrade to nootropic.fm Pro'
+              }
+            >
+              <Crown className="h-3.5 w-3.5" />
+              <span>{profile?.planTier === 'pro' ? 'PRO' : 'Go Pro'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => {
                 setIdentityStatus(null);
                 setShowIdentityModal(true);
@@ -742,6 +794,8 @@ export default function App() {
         ) : screen === 'debrief' && debriefContext ? (
           <DebriefView
             {...debriefContext}
+            isPro={profile?.planTier === 'pro'}
+            onUpgradePro={() => setShowProModal(true)}
             onStartNew={() => {
               setDebriefContext(null);
               setScreen(profile ? 'checkin' : 'landing');
@@ -764,6 +818,19 @@ export default function App() {
           </Suspense>
         )}
       </main>
+
+      {/* Stripe Pro Subscription Upgrade / Billing Portal Modal */}
+      {showProModal && (
+        <UpgradeProModal
+          profile={profile}
+          stripeAvailable={runtimeConfig?.stripeBillingAvailable ?? false}
+          onProfileCreated={(saved, issuedCode) => {
+            setProfile(saved);
+            if (issuedCode) setSyncCode(issuedCode);
+          }}
+          onClose={() => setShowProModal(false)}
+        />
+      )}
 
       {/* Futuristic Neural Fingerprint Pass, Scannable QR & Switch Identity Modal */}
       {showIdentityModal && (

@@ -169,7 +169,7 @@ export function DatasetInquiryModal({
                 type="text"
                 value={cohortInterest}
                 onChange={(e) => setCohortInterest(e.target.value)}
-                placeholder="e.g. Stressed Doctors → Calm, Foggy Programmers → Deep Focus"
+                placeholder="e.g. Stressed Doctors → Calm, Distracted Programmers → Deep Focus"
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
               />
             </div>

@@ -87,4 +87,8 @@ export interface Env {
   NCBI_API_KEY?: string;
   OPENALEX_API_KEY?: string;
   ADMIN_EXPORT_KEY?: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  STRIPE_PRICE_MONTHLY?: string;
+  STRIPE_PRICE_ANNUAL?: string;
 }

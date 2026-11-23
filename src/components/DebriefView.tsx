@@ -3,6 +3,7 @@ import {
   ArrowRight,
   BarChart3,
   CheckCircle2,
+  Crown,
   FlaskConical,
   ShieldCheck,
   Sparkles,
@@ -30,6 +31,8 @@ interface DebriefViewProps {
   studyTitle?: string;
   entrainmentType?: string;
   frequencyHz?: number;
+  isPro?: boolean;
+  onUpgradePro?: () => void;
   onStartNew: () => void;
   onViewInsights: () => void;
 }
@@ -60,6 +63,8 @@ export function DebriefView({
   studyTitle,
   entrainmentType,
   frequencyHz,
+  isPro = false,
+  onUpgradePro,
   onStartNew,
   onViewInsights,
 }: DebriefViewProps) {
@@ -183,6 +188,23 @@ export function DebriefView({
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
+
+          {!isPro && onUpgradePro && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/35 bg-amber-400/[0.08] px-4 py-3 text-left">
+              <div className="text-xs text-amber-100">
+                <strong className="text-white">Felt the difference?</strong> Unlock unlimited custom
+                music styles &amp; all science studies with Pro.
+              </div>
+              <button
+                type="button"
+                onClick={onUpgradePro}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-amber-400 px-3.5 py-2 text-xs font-bold text-slate-950 transition hover:bg-amber-300"
+              >
+                <Crown className="h-3.5 w-3.5" />
+                Go Pro
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -291,6 +313,23 @@ export function DebriefView({
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
+
+          {!isPro && onUpgradePro && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/35 bg-amber-400/[0.08] px-4 py-3 text-left">
+              <div className="text-xs text-amber-100">
+                <strong className="text-white">Felt the difference?</strong> Unlock unlimited custom
+                music styles &amp; all science studies with Pro.
+              </div>
+              <button
+                type="button"
+                onClick={onUpgradePro}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-amber-400 px-3.5 py-2 text-xs font-bold text-slate-950 transition hover:bg-amber-300"
+              >
+                <Crown className="h-3.5 w-3.5" />
+                Go Pro
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
