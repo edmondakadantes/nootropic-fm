@@ -216,6 +216,33 @@ function buildFallbackStudySpec(params: AcousticParams, durationMin: number): Ex
   };
 }
 
+function createSilentKeepAliveWavUrl(): string {
+  const sampleRate = 8000;
+  const numSamples = 8000; // 1.0s loop
+  const buffer = new ArrayBuffer(44 + numSamples);
+  const view = new DataView(buffer);
+  const writeStr = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + numSamples, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate, true);
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true); // 8-bit unsigned
+  writeStr(36, 'data');
+  view.setUint32(40, numSamples, true);
+  for (let i = 0; i < numSamples; i++) {
+    view.setUint8(44 + i, i % 2 === 0 ? 128 : 129); // -90 dBFS dither keeps iOS WebKit active
+  }
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+}
+
 /**
  * nootropic.fm v3.0 Study-to-Sound Audio Engine.
  * Unifies:
@@ -260,6 +287,8 @@ export class PsychoacousticEngine {
 
   // Mobile background bridge & wake lock
   private audioEl: HTMLAudioElement | null = null;
+  private keepAliveEl: HTMLAudioElement | null = null;
+  private keepAliveUrl: string | null = null;
   private backgroundAudioActive = false;
   private wakeLock: { release: () => Promise<void> } | null = null;
   private visibilityHandler: (() => void) | null = null;
@@ -699,6 +728,44 @@ export class PsychoacousticEngine {
     this.isPlaying = true;
     this.setupMediaSession(title);
     void this.requestWakeLock();
+
+    // iOS Safari / mobile WebKit background keep-alive anchor + auto-resume guard
+    try {
+      this.keepAliveUrl = createSilentKeepAliveWavUrl();
+      const keepAlive = document.createElement('audio');
+      keepAlive.setAttribute('playsinline', 'true');
+      keepAlive.loop = true;
+      keepAlive.volume = 0.02;
+      keepAlive.src = this.keepAliveUrl;
+      void keepAlive.play().catch(() => {});
+      this.keepAliveEl = keepAlive;
+    } catch {
+      this.keepAliveEl = null;
+      this.keepAliveUrl = null;
+    }
+
+    ctx.onstatechange = () => {
+      if (this.isPlaying && this.ctx && this.ctx.state === 'suspended') {
+        void this.ctx.resume().catch(() => {});
+      }
+    };
+
+    if (this.visibilityHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+    }
+    this.visibilityHandler = () => {
+      if (!this.isPlaying || !this.ctx) return;
+      if (this.ctx.state === 'suspended') {
+        void this.ctx.resume().catch(() => {});
+      }
+      if (this.keepAliveEl && this.keepAliveEl.paused) {
+        void this.keepAliveEl.play().catch(() => {});
+      }
+      if (document.visibilityState === 'visible') {
+        void this.requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', this.visibilityHandler);
 
     if (this.carrierMode === 'studio_library' && !skipInitialStudioDeck) {
       void this.activateStudioForGenre(this.genre);
@@ -1542,6 +1609,7 @@ export class PsychoacousticEngine {
     }
     this.activeStreamEl?.pause();
     this.audioEl?.pause();
+    this.keepAliveEl?.pause();
     await this.ctx.suspend();
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     void this.releaseWakeLock();
@@ -1561,6 +1629,7 @@ export class PsychoacousticEngine {
     }
     await this.activeStreamEl?.play().catch(() => {});
     await this.audioEl?.play().catch(() => {});
+    await this.keepAliveEl?.play().catch(() => {});
     this.isPlaying = true;
     this.composer.resume();
     if (this.studioDeckPausedRemainingSec !== null && this.studioDeckOnCrossfade) {
@@ -1664,6 +1733,8 @@ export class PsychoacousticEngine {
       }
       const ctxRef = this.ctx;
       const audioElRef = this.audioEl;
+      const keepAliveElRef = this.keepAliveEl;
+      const keepAliveUrlRef = this.keepAliveUrl;
       this.isPlaying = false;
       this.composer.stop();
       this.stimulusRack.stop();
@@ -1673,10 +1744,19 @@ export class PsychoacousticEngine {
       window.setTimeout(() => {
         audioElRef?.pause();
         if (audioElRef) audioElRef.srcObject = null;
+        if (keepAliveElRef) {
+          keepAliveElRef.pause();
+          keepAliveElRef.src = '';
+        }
+        if (keepAliveUrlRef) {
+          URL.revokeObjectURL(keepAliveUrlRef);
+        }
         ctxRef.close().catch(() => {});
       }, 600);
       this.ctx = null;
       this.audioEl = null;
+      this.keepAliveEl = null;
+      this.keepAliveUrl = null;
       this.analyser = null;
       this.scopeMasterAnalyser = null;
       this.scopeModAnalyser = null;
@@ -1718,6 +1798,15 @@ export class PsychoacousticEngine {
       this.audioEl.pause();
       this.audioEl.srcObject = null;
       this.audioEl = null;
+    }
+    if (this.keepAliveEl) {
+      this.keepAliveEl.pause();
+      this.keepAliveEl.src = '';
+      this.keepAliveEl = null;
+    }
+    if (this.keepAliveUrl) {
+      URL.revokeObjectURL(this.keepAliveUrl);
+      this.keepAliveUrl = null;
     }
     this.amGainL = null;
     this.amGainR = null;

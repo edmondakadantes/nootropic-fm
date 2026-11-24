@@ -55,8 +55,8 @@ const CHANNEL_PRESETS: Array<{
 ];
 
 /**
- * Interactive Hero Oscilloscope Preview Strip showing live carrier + AM envelope geometry
- * and inviting visitors to unmute the real Web Audio engine in 1 click (<1s TTFV).
+ * Interactive HiDPI Dual-Lane Hero Oscilloscope Preview Strip showing separated CH1 carrier
+ * waveform + CH2 16 Hz AM envelope geometry matching the in-player CRT instrument.
  */
 function HeroScopeStrip({ onStart }: { onStart: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -72,53 +72,123 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
     let rafId = 0;
 
     const draw = () => {
-      const w = canvas.width;
-      const h = canvas.height;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.max(280, Math.floor(rect.width));
+      const h = Math.max(80, Math.floor(rect.height));
+      const targetW = Math.round(w * dpr);
+      const targetH = Math.round(h * dpr);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, w, h);
 
-      // Subtle phosphor graticule
-      ctx.strokeStyle = 'rgba(52, 211, 153, 0.08)';
+      // Recessed dark-phosphor CRT surface
+      ctx.fillStyle = '#030706';
+      ctx.fillRect(0, 0, w, h);
+
+      // CRT graticule (8 vertical x 4 horizontal)
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.13)';
       ctx.lineWidth = 1;
-      for (let gx = 1; gx < 10; gx++) {
-        const x = (gx / 10) * w;
+      for (let gx = 1; gx < 8; gx++) {
+        const x = Math.round((gx / 8) * w) + 0.5;
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, h);
         ctx.stroke();
       }
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      for (let gy = 1; gy < 4; gy++) {
+        const y = Math.round((gy / 4) * h) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // Upper Lane (CH1 Audio Carrier): 0 V reference + green phosphor wave + halo
+      const ch1MidY = h * 0.31;
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.2)';
       ctx.beginPath();
-      ctx.moveTo(0, h / 2);
-      ctx.lineTo(w, h / 2);
+      ctx.moveTo(0, Math.round(ch1MidY) + 0.5);
+      ctx.lineTo(w, Math.round(ch1MidY) + 0.5);
       ctx.stroke();
 
-      // CH1 Preview Trace (Phosphor Green: 16 Hz AM-modulated carrier shape)
-      ctx.strokeStyle = 'rgba(52, 211, 153, 0.86)';
-      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      for (let i = 0; i <= 240; i++) {
-        const norm = i / 240;
+      for (let i = 0; i <= 260; i++) {
+        const norm = i / 260;
         const x = norm * w;
-        const env = 0.72 + 0.28 * Math.sin(norm * Math.PI * 6 - phase * 0.9);
-        const carrier = Math.sin(norm * Math.PI * 38 - phase * 3.1);
-        const y = h / 2 - carrier * env * (h * 0.34);
+        const env = 0.68 + 0.32 * Math.sin(norm * Math.PI * 8 - phase * 0.9);
+        const carrier = Math.sin(norm * Math.PI * 44 - phase * 3.1);
+        const y = ch1MidY - carrier * env * (h * 0.19);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.24)';
+      ctx.lineWidth = 4.2;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.strokeStyle = '#34D399';
+      ctx.lineWidth = 1.9;
       ctx.stroke();
 
-      // CH2 Preview Trace (Tungsten Amber: 16 Hz modulation envelope)
-      ctx.strokeStyle = 'rgba(245, 158, 11, 0.85)';
-      ctx.lineWidth = 1.3;
+      // Dashed horizontal divider at 55% height
+      const divY = Math.round(h * 0.55) + 0.5;
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
       ctx.beginPath();
-      for (let i = 0; i <= 160; i++) {
-        const norm = i / 160;
+      ctx.moveTo(0, divY);
+      ctx.lineTo(w, divY);
+      ctx.stroke();
+      ctx.restore();
+
+      // Lower Lane (CH2 16 Hz Beta Envelope): gradient fill + amber wave + halo
+      const ch2BaseY = h - 6;
+      const ch2SpanH = h * 0.34;
+      const grad = ctx.createLinearGradient(0, ch2BaseY - ch2SpanH, 0, ch2BaseY);
+      grad.addColorStop(0, 'rgba(245, 158, 11, 0.18)');
+      grad.addColorStop(1, 'rgba(245, 158, 11, 0.01)');
+
+      ctx.beginPath();
+      for (let i = 0; i <= 180; i++) {
+        const norm = i / 180;
         const x = norm * w;
-        const y = h / 2 - Math.sin(norm * Math.PI * 6 - phase * 0.9) * (h * 0.28);
+        const pulse = 0.5 + 0.44 * Math.sin(norm * Math.PI * 8 - phase * 0.9);
+        const y = ch2BaseY - pulse * ch2SpanH;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.24)';
+      ctx.lineWidth = 4;
+      ctx.lineJoin = 'round';
       ctx.stroke();
+      ctx.strokeStyle = '#FBBF24';
+      ctx.lineWidth = 1.9;
+      ctx.stroke();
+
+      ctx.lineTo(w, ch2BaseY);
+      ctx.lineTo(0, ch2BaseY);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Crisp in-screen CRT HUD labels
+      ctx.font = '600 9px "JetBrains Mono", monospace';
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#34D399';
+      ctx.fillText('CH1 CARRIER', 8, 5);
+      ctx.fillStyle = '#FBBF24';
+      ctx.fillText('CH2 16 HZ ENVELOPE', 8, divY + 4);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = 'rgba(243, 241, 236, 0.78)';
+      ctx.fillText('CLICK TO UNMUTE', w - 8, 5);
+
+      ctx.restore();
 
       if (!prefersReduced) {
         phase += 0.04;
@@ -134,7 +204,7 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
     <button
       type="button"
       onClick={onStart}
-      className="group w-full max-w-2xl rounded-xl border border-white/10 bg-[#070908] px-4 py-3 text-left transition hover:border-emerald-400/45"
+      className="group w-full max-w-2xl rounded-2xl border border-emerald-400/25 bg-[#080B0A] px-4 py-3 text-left transition hover:border-emerald-400/50 shadow-[0_0_24px_rgba(16,185,129,0.06)]"
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 font-mono-tech text-[10px]">
         <div className="flex flex-wrap items-center gap-3 text-[#A3A39E]">
@@ -142,8 +212,8 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
             <Activity className="h-3 w-3" />
             CH1 AUDIO CARRIER
           </span>
-          <span className="inline-flex items-center gap-1.5 text-[#F59E0B]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#F59E0B]" />
+          <span className="inline-flex items-center gap-1.5 text-[#FBBF24]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#FBBF24]" />
             CH2 16.0 HZ BETA AM
           </span>
         </div>
@@ -155,8 +225,8 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
       <canvas
         ref={canvasRef}
         width={620}
-        height={64}
-        className="h-14 w-full rounded-lg border border-white/[0.06] bg-[#040605]"
+        height={92}
+        className="h-20 sm:h-24 w-full rounded-xl border border-emerald-400/25 bg-[#030706]"
       />
     </button>
   );

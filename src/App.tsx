@@ -30,14 +30,28 @@ import {
   type UserProfile,
 } from '../shared/types';
 import { AmbientField, type FieldMood } from './components/AmbientField';
-import { CheckInView, type MoodPresetSelection } from './components/CheckInView';
-import { DebriefView } from './components/DebriefView';
+import type { MoodPresetSelection } from './components/CheckInView';
 import { HeroLandingView } from './components/HeroLandingView';
 import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFingerprintPass';
-import { OnboardingView } from './components/OnboardingView';
-import { PlayerView } from './components/PlayerView';
-import { ProtocolRevealView } from './components/ProtocolRevealView';
-import { UpgradeProModal } from './components/UpgradeProModal';
+
+const CheckInView = lazy(() =>
+  import('./components/CheckInView').then((m) => ({ default: m.CheckInView }))
+);
+const DebriefView = lazy(() =>
+  import('./components/DebriefView').then((m) => ({ default: m.DebriefView }))
+);
+const OnboardingView = lazy(() =>
+  import('./components/OnboardingView').then((m) => ({ default: m.OnboardingView }))
+);
+const PlayerView = lazy(() =>
+  import('./components/PlayerView').then((m) => ({ default: m.PlayerView }))
+);
+const ProtocolRevealView = lazy(() =>
+  import('./components/ProtocolRevealView').then((m) => ({ default: m.ProtocolRevealView }))
+);
+const UpgradeProModal = lazy(() =>
+  import('./components/UpgradeProModal').then((m) => ({ default: m.UpgradeProModal }))
+);
 import {
   api,
   clearStoredProfileAuth,
@@ -117,6 +131,19 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
+
+  useEffect(() => {
+    const preloadCoreModules = () => {
+      void import('./components/PlayerView');
+      void import('./components/CheckInView');
+    };
+    if (hasInitialStoredProfile) {
+      preloadCoreModules();
+      return;
+    }
+    const timer = window.setTimeout(preloadCoreModules, 80);
+    return () => window.clearTimeout(timer);
+  }, [hasInitialStoredProfile]);
 
   const [debriefContext, setDebriefContext] = useState<{
     sessionId: string;
@@ -761,30 +788,46 @@ export default function App() {
             }}
           />
         ) : screen === 'onboarding' ? (
-          <OnboardingView
-            initialProfile={profile}
-            onComplete={handleSaveProfile}
-            onCancel={() => setScreen(profile ? 'checkin' : 'landing')}
-            onMoodChange={setFieldMood}
-          />
+          <Suspense
+            fallback={
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-[#8E8E88]">
+                Loading Profile Setup...
+              </div>
+            }
+          >
+            <OnboardingView
+              initialProfile={profile}
+              onComplete={handleSaveProfile}
+              onCancel={() => setScreen(profile ? 'checkin' : 'landing')}
+              onMoodChange={setFieldMood}
+            />
+          </Suspense>
         ) : screen === 'checkin' ? (
-          <CheckInView
-            key={selectedPreset?.id ?? 'default'}
-            profile={profile}
-            syncCode={syncCode}
-            runtimeConfig={runtimeConfig}
-            pendingDebrief={pendingDebrief}
-            initialPreset={selectedPreset}
-            onClearPreset={() => setSelectedPreset(null)}
-            onOpenPendingDebrief={handleOpenPendingDebrief}
-            onDismissPending={() => void handleDismissPending()}
-            onOpenIdentityModal={() => {
-              setIdentityStatus(null);
-              setShowIdentityModal(true);
-            }}
-            onMoodChange={setFieldMood}
-            onLaunchUnifiedSession={handleLaunchUnifiedSession}
-          />
+          <Suspense
+            fallback={
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-[#8E8E88]">
+                Loading Calibration Studio...
+              </div>
+            }
+          >
+            <CheckInView
+              key={selectedPreset?.id ?? 'default'}
+              profile={profile}
+              syncCode={syncCode}
+              runtimeConfig={runtimeConfig}
+              pendingDebrief={pendingDebrief}
+              initialPreset={selectedPreset}
+              onClearPreset={() => setSelectedPreset(null)}
+              onOpenPendingDebrief={handleOpenPendingDebrief}
+              onDismissPending={() => void handleDismissPending()}
+              onOpenIdentityModal={() => {
+                setIdentityStatus(null);
+                setShowIdentityModal(true);
+              }}
+              onMoodChange={setFieldMood}
+              onLaunchUnifiedSession={handleLaunchUnifiedSession}
+            />
+          </Suspense>
         ) : screen === 'studylab' ? (
           <Suspense
             fallback={
@@ -806,80 +849,104 @@ export default function App() {
             />
           </Suspense>
         ) : screen === 'reveal' ? (
-          <ProtocolRevealView
-            loading={researching}
-            recommendation={activeRec}
-            profile={profile}
-            mood={fieldMood}
-            customLiveGenAvailable={runtimeConfig?.customLiveGenAvailable}
-            onSwapGenre={handleSwapRevealGenre}
-            onSwapCustomVibe={(label) => handleSwapCustomVibe(label)}
-            onLaunchAudio={() => setScreen('player')}
-            onOpenStudyLab={() => {
-              setFieldMood('focus');
-              setScreen('studylab');
-            }}
-            onBack={() => {
-              setActiveRec(null);
-              setScreen('checkin');
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-[#8E8E88]">
+                Preparing Protocol...
+              </div>
+            }
+          >
+            <ProtocolRevealView
+              loading={researching}
+              recommendation={activeRec}
+              profile={profile}
+              mood={fieldMood}
+              customLiveGenAvailable={runtimeConfig?.customLiveGenAvailable}
+              onSwapGenre={handleSwapRevealGenre}
+              onSwapCustomVibe={(label) => handleSwapCustomVibe(label)}
+              onLaunchAudio={() => setScreen('player')}
+              onOpenStudyLab={() => {
+                setFieldMood('focus');
+                setScreen('studylab');
+              }}
+              onBack={() => {
+                setActiveRec(null);
+                setScreen('checkin');
+              }}
+            />
+          </Suspense>
         ) : screen === 'player' && activeRec ? (
-          <PlayerView
-            recommendation={activeRec}
-            profile={profile}
-            syncCode={syncCode}
-            lyriaRealtimeAvailable={runtimeConfig?.lyriaRealtimeAvailable}
-            isPro={profile?.planTier === 'pro'}
-            stripeAvailable={runtimeConfig?.stripeBillingAvailable ?? false}
-            onUpgradePro={() => setShowProModal(true)}
-            onStartDirectCheckout={handleStartDirectCheckout}
-            onOpenCustomCheckIn={() => {
-              setAudioActive(false);
-              setScreen('checkin');
-            }}
-            onPlayingChange={setAudioActive}
-            onSessionClaimed={(claimed) => {
-              setProfile(claimed.profile);
-              setSyncCode(claimed.syncCode);
-            }}
-            onFinishToDebrief={handleFinishToDebrief}
-          />
+          <Suspense
+            fallback={
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-[#8E8E88]">
+                Initializing Audio Engine...
+              </div>
+            }
+          >
+            <PlayerView
+              recommendation={activeRec}
+              profile={profile}
+              syncCode={syncCode}
+              lyriaRealtimeAvailable={runtimeConfig?.lyriaRealtimeAvailable}
+              isPro={profile?.planTier === 'pro'}
+              stripeAvailable={runtimeConfig?.stripeBillingAvailable ?? false}
+              onUpgradePro={() => setShowProModal(true)}
+              onStartDirectCheckout={handleStartDirectCheckout}
+              onOpenCustomCheckIn={() => {
+                setAudioActive(false);
+                setScreen('checkin');
+              }}
+              onPlayingChange={setAudioActive}
+              onSessionClaimed={(claimed) => {
+                setProfile(claimed.profile);
+                setSyncCode(claimed.syncCode);
+              }}
+              onFinishToDebrief={handleFinishToDebrief}
+            />
+          </Suspense>
         ) : screen === 'debrief' && debriefContext ? (
-          <DebriefView
-            {...debriefContext}
-            profile={profile}
-            syncCode={syncCode}
-            isPro={profile?.planTier === 'pro'}
-            onUpgradePro={() => setShowProModal(true)}
-            onLearningApplied={(update) => {
-              setProfile((prev) => {
-                if (!prev) return prev;
-                const nextFavs =
-                  update.learnedGenre && (update.learnedGenreFitPct ?? 0) >= 58
-                    ? [
-                        update.learnedGenre,
-                        ...(prev.favoriteGenres ?? []).filter((g) => g !== update.learnedGenre),
-                      ].slice(0, 2)
-                    : prev.favoriteGenres;
-                return {
-                  ...prev,
-                  preferredModMult: update.preferredModMult,
-                  favoriteGenres: nextFavs,
-                  sessionCount: (prev.sessionCount ?? 0) + 1,
-                };
-              });
-            }}
-            onStartNew={() => {
-              setDebriefContext(null);
-              setScreen(profile ? 'checkin' : 'landing');
-            }}
-            onViewInsights={() => {
-              setDebriefContext(null);
-              setFieldMood('flow');
-              setScreen('insights');
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-[#8E8E88]">
+                Loading Session Debrief...
+              </div>
+            }
+          >
+            <DebriefView
+              {...debriefContext}
+              profile={profile}
+              syncCode={syncCode}
+              isPro={profile?.planTier === 'pro'}
+              onUpgradePro={() => setShowProModal(true)}
+              onLearningApplied={(update) => {
+                setProfile((prev) => {
+                  if (!prev) return prev;
+                  const nextFavs =
+                    update.learnedGenre && (update.learnedGenreFitPct ?? 0) >= 58
+                      ? [
+                          update.learnedGenre,
+                          ...(prev.favoriteGenres ?? []).filter((g) => g !== update.learnedGenre),
+                        ].slice(0, 2)
+                      : prev.favoriteGenres;
+                  return {
+                    ...prev,
+                    preferredModMult: update.preferredModMult,
+                    favoriteGenres: nextFavs,
+                    sessionCount: (prev.sessionCount ?? 0) + 1,
+                  };
+                });
+              }}
+              onStartNew={() => {
+                setDebriefContext(null);
+                setScreen(profile ? 'checkin' : 'landing');
+              }}
+              onViewInsights={() => {
+                setDebriefContext(null);
+                setFieldMood('flow');
+                setScreen('insights');
+              }}
+            />
+          </Suspense>
         ) : (
           <Suspense
             fallback={
@@ -895,15 +962,17 @@ export default function App() {
 
       {/* Stripe Pro Subscription Upgrade / Billing Portal Modal */}
       {showProModal && (
-        <UpgradeProModal
-          profile={profile}
-          stripeAvailable={runtimeConfig?.stripeBillingAvailable ?? false}
-          onProfileCreated={(saved, issuedCode) => {
-            setProfile(saved);
-            if (issuedCode) setSyncCode(issuedCode);
-          }}
-          onClose={() => setShowProModal(false)}
-        />
+        <Suspense fallback={null}>
+          <UpgradeProModal
+            profile={profile}
+            stripeAvailable={runtimeConfig?.stripeBillingAvailable ?? false}
+            onProfileCreated={(saved, issuedCode) => {
+              setProfile(saved);
+              if (issuedCode) setSyncCode(issuedCode);
+            }}
+            onClose={() => setShowProModal(false)}
+          />
+        </Suspense>
       )}
 
       {/* Identity Pass, Scannable QR & Switch Identity Modal */}
@@ -1000,22 +1069,22 @@ export default function App() {
       {/* Privacy & Delete My Data Modal */}
       {showPrivacyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
-          <div className="animate-step glass-stage w-full max-w-md rounded-3xl p-6 space-y-4">
+          <div className="animate-step glass-stage w-full max-w-md rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-emerald-300">
+              <div className="flex items-center gap-2 text-[#34D399]">
                 <ShieldCheck className="h-5 w-5" />
-                <h3 className="text-base font-semibold text-white">Privacy &amp; Your Data (18+)</h3>
+                <h3 className="text-base font-semibold text-[#F3F1EC]">Privacy &amp; Your Data (18+)</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowPrivacyModal(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="space-y-2 text-xs leading-relaxed text-slate-300">
+            <div className="space-y-2 text-xs leading-relaxed text-[#D4D4CE]">
               <p>
                 <strong>Zero third-party ad trackers or external font CDNs.</strong> All fonts are
                 self-hosted on Cloudflare edge.
@@ -1044,8 +1113,8 @@ export default function App() {
             )}
 
             {profile ? (
-              <div className="space-y-2.5 border-t border-slate-800 pt-3">
-                <div className="text-[11px] text-slate-400">
+              <div className="space-y-2.5 border-t border-white/10 pt-3">
+                <div className="text-[11px] text-[#8E8E88]">
                   Active Neural Identity stored on this device ({formatProfileSummary(profile)}).
                 </div>
                 <button
@@ -1059,7 +1128,7 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2.5 text-xs text-slate-400">
+              <div className="rounded-xl border border-white/10 bg-[#0B0C0E] px-3.5 py-2.5 text-xs text-[#8E8E88]">
                 No personal Neural Identity is currently stored in this browser.
               </div>
             )}

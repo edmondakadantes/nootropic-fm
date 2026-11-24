@@ -72,16 +72,16 @@ export function OnboardingView({
     <div className="mx-auto flex max-w-2xl flex-col items-center space-y-6">
       <div className="animate-rise flex flex-col items-center text-center">
         <SonicOrb mood="focus" size="sm" label="Neural Identity" />
-        <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-          Refine your <span className="text-aurora">Neural Identity</span>
+        <h1 className="mt-4 text-2xl font-bold tracking-tight text-[#F3F1EC] sm:text-3xl">
+          Refine your <span className="text-[#34D399]">Neural Identity</span>
         </h1>
-        <p className="mt-1.5 max-w-md text-xs text-slate-400 sm:text-sm">
+        <p className="mt-1.5 max-w-md text-xs text-[#8E8E88] sm:text-sm">
           Updates apply to future recommendations and keep all your learned Bandit session history intact.
         </p>
       </div>
 
-      <div className="animate-step glass-stage w-full rounded-3xl p-6 sm:p-8 space-y-5">
-        <div className="flex items-center gap-2 text-cyan-300">
+      <div className="animate-step glass-stage w-full rounded-2xl p-6 sm:p-8 space-y-5">
+        <div className="flex items-center gap-2 text-[#34D399]">
           <UserCheck className="h-4 w-4" />
           <span className="font-mono-tech text-[11px] uppercase tracking-[0.16em]">
             Profile Details (18+)
@@ -90,7 +90,7 @@ export function OnboardingView({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
           <div className="sm:col-span-5">
-            <label className="mb-1 block text-[11px] font-medium text-slate-400">
+            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">
               First name / Nickname (optional)
             </label>
             <input
@@ -99,11 +99,11 @@ export function OnboardingView({
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="e.g. Alex"
-              className="w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+              className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
             />
           </div>
           <div className="sm:col-span-3">
-            <label className="mb-1 block text-[11px] font-medium text-slate-400">Age (18+)</label>
+            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">Age (18+)</label>
             <input
               type="number"
               min={18}
@@ -114,11 +114,11 @@ export function OnboardingView({
                 setAge(v);
                 if (v >= 18 && v <= 95) setAgeError(null);
               }}
-              className="font-mono-tech w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+              className="font-mono-tech w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] focus:border-emerald-400 focus:outline-none"
             />
           </div>
           <div className="sm:col-span-4">
-            <label className="mb-1 block text-[11px] font-medium text-slate-400">
+            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">
               Occupation (optional)
             </label>
             <input
@@ -127,13 +127,13 @@ export function OnboardingView({
               value={occupationLabel}
               onChange={(e) => setOccupationLabel(e.target.value)}
               placeholder="e.g. Programmer, Driver"
-              className="w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+              className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
             />
           </div>
         </div>
 
         <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-slate-400">Gender (optional)</div>
+          <div className="text-[11px] font-medium text-[#8E8E88]">Gender (optional)</div>
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
             {(['male', 'female', 'non_binary', 'prefer_not_to_say'] as UserGender[]).map((g) => (
               <button
@@ -142,8 +142,8 @@ export function OnboardingView({
                 onClick={() => setGender(g)}
                 className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
                   gender === g
-                    ? 'border-cyan-400/70 bg-cyan-400/15 text-white'
-                    : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700'
+                    ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
+                    : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
                 }`}
               >
                 {GENDER_LABELS[g]}
@@ -153,7 +153,7 @@ export function OnboardingView({
         </div>
 
         <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-slate-400">Primary Field / Role</div>
+          <div className="text-[11px] font-medium text-[#8E8E88]">Primary Field / Role</div>
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
             {(Object.keys(ROLE_SHORT_LABELS) as UserRole[]).map((r) => (
               <button
@@ -162,8 +162,8 @@ export function OnboardingView({
                 onClick={() => setRole(r)}
                 className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
                   role === r
-                    ? 'border-indigo-400/70 bg-indigo-500/18 text-white'
-                    : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700'
+                    ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
+                    : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
                 }`}
               >
                 {ROLE_SHORT_LABELS[r]}
@@ -171,8 +171,8 @@ export function OnboardingView({
             ))}
           </div>
           {role === 'other' && (
-            <div className="animate-step rounded-xl border border-indigo-400/40 bg-indigo-500/[0.08] p-3 space-y-1.5">
-              <label className="block text-[11px] font-semibold text-indigo-200">
+            <div className="animate-step rounded-xl border border-emerald-400/30 bg-emerald-500/[0.06] p-3 space-y-1.5">
+              <label className="block text-[11px] font-semibold text-[#34D399]">
                 Type your profession or craft:
               </label>
               <input
@@ -182,7 +182,7 @@ export function OnboardingView({
                 value={occupationLabel}
                 onChange={(e) => setOccupationLabel(e.target.value)}
                 placeholder="e.g. Architect, Surgeon, Pilot, Chef, Trader, Musician..."
-                className="w-full rounded-xl border border-indigo-400/35 bg-slate-950/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                className="w-full rounded-xl border border-white/15 bg-[#0B0C0E] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
               />
             </div>
           )}
@@ -190,13 +190,13 @@ export function OnboardingView({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-slate-400">
+            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">
               Default Output
             </label>
             <select
               value={defaultDevice}
               onChange={(e) => setDefaultDevice(e.target.value as OutputDevice)}
-              className="w-full rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+              className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] focus:border-emerald-400 focus:outline-none"
             >
               {(Object.keys(DEVICE_LABELS) as OutputDevice[]).map((d) => (
                 <option key={d} value={d}>
@@ -206,13 +206,13 @@ export function OnboardingView({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-slate-400">
+            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">
               Sound Sensitivity
             </label>
             <select
               value={noiseSensitivity}
               onChange={(e) => setNoiseSensitivity(e.target.value as NoiseSensitivity)}
-              className="w-full rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
+              className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] focus:border-emerald-400 focus:outline-none"
             >
               <option value="low">Low (loves rich pulse)</option>
               <option value="medium">Balanced</option>
@@ -223,15 +223,15 @@ export function OnboardingView({
 
         {ageError && <p className="text-xs text-rose-300">{ageError}</p>}
 
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.05] px-3.5 py-2.5 text-[11px] leading-relaxed text-slate-300">
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.05] px-3.5 py-2.5 text-[11px] leading-relaxed text-[#D4D4CE]">
           <input
             type="checkbox"
             checked={researchConsent}
             onChange={(e) => setResearchConsent(e.target.checked)}
-            className="mt-0.5 h-3.5 w-3.5 rounded accent-cyan-400"
+            className="mt-0.5 h-3.5 w-3.5 rounded accent-emerald-400"
           />
           <span>
-            <strong className="inline-flex items-center gap-1 text-emerald-300">
+            <strong className="inline-flex items-center gap-1 text-[#34D399]">
               <ShieldCheck className="h-3.5 w-3.5" /> Open Research &amp; Retention Learning:
             </strong>{' '}
             Allow this Neural Identity to learn from your explicit debriefs, behavioral listen
@@ -244,7 +244,7 @@ export function OnboardingView({
             <button
               type="button"
               onClick={onCancel}
-              className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3.5 text-xs font-medium text-slate-300 hover:border-slate-600 hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#14161A] px-4 py-3.5 text-xs font-medium text-[#D4D4CE] hover:border-white/25 hover:text-[#F3F1EC]"
             >
               <ArrowLeft className="h-4 w-4" />
               Cancel
@@ -254,7 +254,7 @@ export function OnboardingView({
             type="button"
             disabled={submitting}
             onClick={() => void handleSave()}
-            className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-2xl px-6 py-3.5 text-sm font-bold text-slate-950 disabled:opacity-60"
+            className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold text-[#0A0B0C] disabled:opacity-60"
           >
             <CheckCircle2 className="h-4 w-4" />
             {submitting ? 'Saving Neural Identity...' : 'Save Profile Changes'}

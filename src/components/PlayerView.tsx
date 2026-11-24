@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
 import {
-  CARRIER_MODE_LABELS,
   ENTRAINMENT_LABELS,
   type CarrierEngineMode,
 } from '../../shared/studySpec';
@@ -53,8 +52,10 @@ import { PvtBenchmarkModal } from './PvtBenchmarkModal';
 import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
 const FREE_PREVIEW_LIMIT_SEC = 300; // 5-minute free calibration session (+30 min Share Bonus)
+const FREE_LYRIA_PREVIEW_SEC = 90; // 90-second daily live Endless Stream preview for Free tier
 const SHARE_BONUS_SEC = 1800; // +30 minutes free when sharing your 1-of-1 Neural Fingerprint Card
 const SHARE_BONUS_DAY_KEY = 'nootropic_fm_share_bonus_day_v1';
+const FREE_USAGE_STORAGE_KEY = 'nootropic_fm_free_usage_v1';
 
 function getTodayUtcKey(): string {
   return new Date().toISOString().slice(0, 10);
@@ -65,6 +66,36 @@ function hasClaimedShareBonusToday(): boolean {
     return localStorage.getItem(SHARE_BONUS_DAY_KEY) === getTodayUtcKey();
   } catch {
     return false;
+  }
+}
+
+function readDailyFreeUsage(): { usedSec: number; lyriaSec: number } {
+  try {
+    const raw = localStorage.getItem(FREE_USAGE_STORAGE_KEY);
+    if (!raw) return { usedSec: 0, lyriaSec: 0 };
+    const parsed = JSON.parse(raw) as { day?: string; usedSec?: number; lyriaSec?: number };
+    if (parsed.day !== getTodayUtcKey()) return { usedSec: 0, lyriaSec: 0 };
+    return {
+      usedSec: Math.max(0, Math.floor(Number(parsed.usedSec) || 0)),
+      lyriaSec: Math.max(0, Math.floor(Number(parsed.lyriaSec) || 0)),
+    };
+  } catch {
+    return { usedSec: 0, lyriaSec: 0 };
+  }
+}
+
+function writeDailyFreeUsage(usedSec: number, lyriaSec: number): void {
+  try {
+    localStorage.setItem(
+      FREE_USAGE_STORAGE_KEY,
+      JSON.stringify({
+        day: getTodayUtcKey(),
+        usedSec: Math.max(0, Math.floor(usedSec)),
+        lyriaSec: Math.max(0, Math.floor(lyriaSec)),
+      })
+    );
+  } catch {
+    // ignore storage restrictions
   }
 }
 
@@ -162,8 +193,20 @@ export function PlayerView({
   const [showPrePvt, setShowPrePvt] = useState(false);
   const [pvtPreMs, setPvtPreMs] = useState<number | null>(null);
   const [pvtLapsesPre, setPvtLapsesPre] = useState<number | null>(null);
-  const [previewLocked, setPreviewLocked] = useState(false);
-  const [shareBonusSec, setShareBonusSec] = useState<number>(0);
+  const [previewLocked, setPreviewLocked] = useState<boolean>(() => {
+    if (isPro) return false;
+    const limit = FREE_PREVIEW_LIMIT_SEC + (hasClaimedShareBonusToday() ? SHARE_BONUS_SEC : 0);
+    return readDailyFreeUsage().usedSec >= limit;
+  });
+  const [shareBonusSec, setShareBonusSec] = useState<number>(() =>
+    hasClaimedShareBonusToday() ? SHARE_BONUS_SEC : 0
+  );
+  const [dailyFreeUsedSec, setDailyFreeUsedSec] = useState<number>(
+    () => readDailyFreeUsage().usedSec
+  );
+  const [dailyLyriaUsedSec, setDailyLyriaUsedSec] = useState<number>(
+    () => readDailyFreeUsage().lyriaSec
+  );
   const [shareBonusUsedToday, setShareBonusUsedToday] = useState<boolean>(() =>
     hasClaimedShareBonusToday()
   );
@@ -175,6 +218,7 @@ export function PlayerView({
   const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('tune');
 
   const effectiveFreeLimitSec = FREE_PREVIEW_LIMIT_SEC + shareBonusSec;
+  const remainingFreeSec = Math.max(0, effectiveFreeLimitSec - dailyFreeUsedSec);
   const shareSeed = syncCode || profile?.id || recommendation.sessionId;
 
   // Live session promotion (lets 1-Click Quick-Try listeners claim a 5s anonymous profession profile without audio stutter!)
@@ -233,11 +277,17 @@ export function PlayerView({
     medianMs: null,
     lapses: null,
   });
+  const dailyFreeUsedRef = useRef(dailyFreeUsedSec);
+  const dailyLyriaUsedRef = useRef(dailyLyriaUsedSec);
+  const carrierModeRef = useRef<CarrierEngineMode>(carrierMode);
 
   elapsedRef.current = elapsedSec;
   adjustmentsRef.current = adjustments;
   audioStartedRef.current = audioStarted;
   pvtPreRef.current = { medianMs: pvtPreMs, lapses: pvtLapsesPre };
+  dailyFreeUsedRef.current = dailyFreeUsedSec;
+  dailyLyriaUsedRef.current = dailyLyriaUsedSec;
+  carrierModeRef.current = carrierMode;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -249,11 +299,12 @@ export function PlayerView({
     setIsEphemeral(Boolean(recommendation.ephemeralMode));
     setClaimedSyncCode(null);
     setClaimError(null);
-    setPreviewLocked(false);
+    const limit = FREE_PREVIEW_LIMIT_SEC + (hasClaimedShareBonusToday() ? SHARE_BONUS_SEC : 0);
+    setPreviewLocked(!isPro && readDailyFreeUsage().usedSec >= limit);
     setUnlockError(null);
     setLayerMonitor(initialCarrier === 'pure_stimulus' ? 'science_only' : 'full_mix');
     milestonesSentRef.current = new Set();
-  }, [recommendation.sessionId, recommendation.ephemeralMode, initialCarrier]);
+  }, [recommendation.sessionId, recommendation.ephemeralMode, initialCarrier, isPro]);
 
   useEffect(() => {
     if (isPro && previewLocked) {
@@ -286,6 +337,18 @@ export function PlayerView({
 
     const startAudio = async () => {
       try {
+        const latestUsage = readDailyFreeUsage();
+        const currentLimit =
+          FREE_PREVIEW_LIMIT_SEC + (hasClaimedShareBonusToday() ? SHARE_BONUS_SEC : 0);
+        if (!isPro && latestUsage.usedSec >= currentLimit) {
+          dailyFreeUsedRef.current = latestUsage.usedSec;
+          dailyLyriaUsedRef.current = latestUsage.lyriaSec;
+          setDailyFreeUsedSec(latestUsage.usedSec);
+          setDailyLyriaUsedSec(latestUsage.lyriaSec);
+          setPreviewLocked(true);
+          setIsPlaying(false);
+          return;
+        }
         // Fetch live Cloudflare R2 Studio Stem catalog in parallel so stems fade in seamlessly
         void api
           .getAudioCatalog()
@@ -521,22 +584,47 @@ export function PlayerView({
             .catch(() => {});
         }
 
-        // Free Preview Gate for non-Pro listeners (5 min default, +30 min unlocked after sharing Fingerprint Card!)
-        if (!isPro && next >= effectiveFreeLimitSec && plannedSec > effectiveFreeLimitSec) {
-          window.clearInterval(id);
-          setIsPlaying(false);
-          setPreviewLocked(true);
-          void engineRef.current?.fadeOutAndPause(2.0);
-          if (!isEphemeral) {
-            void api
-              .saveProgress({
-                sessionId: liveSessionId,
-                actualDurationSec: next,
-                liveAdjustments: adjustmentsRef.current,
-              })
-              .catch(() => {});
+        // Daily Free Quota + 90s Endless Stream Preview Gate for non-Pro listeners
+        if (!isPro) {
+          const nextDailyUsed = dailyFreeUsedRef.current + 1;
+          const isStreamingLyria = carrierModeRef.current === 'lyria_realtime';
+          const nextLyriaUsed = isStreamingLyria
+            ? dailyLyriaUsedRef.current + 1
+            : dailyLyriaUsedRef.current;
+
+          dailyFreeUsedRef.current = nextDailyUsed;
+          dailyLyriaUsedRef.current = nextLyriaUsed;
+          setDailyFreeUsedSec(nextDailyUsed);
+          if (isStreamingLyria) {
+            setDailyLyriaUsedSec(nextLyriaUsed);
           }
-          return next;
+          writeDailyFreeUsage(nextDailyUsed, nextLyriaUsed);
+
+          if (isStreamingLyria && nextLyriaUsed >= FREE_LYRIA_PREVIEW_SEC) {
+            engineRef.current?.setCarrierMode('studio_library');
+            setCarrierMode('studio_library');
+            setAudioSource('studio_library');
+            setLyriaNotice(
+              '90s daily Endless Stream preview complete. Playing Studio Mix seamlessly (start your 7-Day Free Trial for unlimited Endless Stream).'
+            );
+          }
+
+          if (nextDailyUsed >= effectiveFreeLimitSec) {
+            window.clearInterval(id);
+            setIsPlaying(false);
+            setPreviewLocked(true);
+            void engineRef.current?.fadeOutAndPause(2.0);
+            if (!isEphemeral) {
+              void api
+                .saveProgress({
+                  sessionId: liveSessionId,
+                  actualDurationSec: next,
+                  liveAdjustments: adjustmentsRef.current,
+                })
+                .catch(() => {});
+            }
+            return next;
+          }
         }
 
         if (next >= plannedSec) {
@@ -561,7 +649,8 @@ export function PlayerView({
   }, [isPlaying, isPro, effectiveFreeLimitSec, plannedSec, liveSessionId, isEphemeral, onFinishToDebrief]);
 
   const togglePlay = async () => {
-    if (!isPro && previewLocked) {
+    if (!isPro && (previewLocked || dailyFreeUsedRef.current >= effectiveFreeLimitSec)) {
+      setPreviewLocked(true);
       return;
     }
     if (!audioStarted) {
@@ -669,6 +758,17 @@ export function PlayerView({
       setLayerMonitor('science_only');
     }
     if (nextMode === 'lyria_realtime') {
+      if (!isPro && dailyLyriaUsedRef.current >= FREE_LYRIA_PREVIEW_SEC) {
+        setLyriaNotice(
+          "You used today's 90s Endless Stream preview. Start your 7-Day Free Trial ($0 today) for unlimited live streaming, or enjoy Studio Mix."
+        );
+        if (carrierMode !== 'studio_library') {
+          setCarrierMode('studio_library');
+          setAudioSource('studio_library');
+          engineRef.current?.setCarrierMode('studio_library');
+        }
+        return;
+      }
       if (connectingLyria) return;
       setConnectingLyria(true);
       try {
@@ -781,17 +881,6 @@ export function PlayerView({
     setIntensityMult(next);
     engineRef.current?.adjustIntensity(next);
     setAdjustments((prev) => [...prev, { atSec: elapsedRef.current, control: 'intensity', delta }]);
-  };
-
-  const tweakModulation = (delta: number) => {
-    const next = Number(Math.max(0.3, Math.min(1.55, modMult + delta)).toFixed(2));
-    setModMult(next);
-    if (layerMonitor === 'music_only') {
-      setLayerMonitor('full_mix');
-      engineRef.current?.setLayerMonitorMode('full_mix');
-    }
-    engineRef.current?.adjustModDepth(next);
-    setAdjustments((prev) => [...prev, { atSec: elapsedRef.current, control: 'modulation', delta }]);
   };
 
   const setDirectModDepth = (targetMult: number) => {
@@ -1038,7 +1127,7 @@ export function PlayerView({
             <div className="font-mono-tech text-[11px] text-[#8E8E88]">
               of {recommendation.plannedDurationMin}:00 min
             </div>
-            {!isPro && plannedSec > effectiveFreeLimitSec && (
+            {!isPro && (
               <div className="flex flex-wrap items-center justify-end gap-1.5">
                 <button
                   type="button"
@@ -1046,22 +1135,22 @@ export function PlayerView({
                   className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
                     shareBonusSec > 0
                       ? 'border-emerald-400/40 bg-emerald-500/12 text-[#34D399] hover:bg-emerald-500/20'
-                      : effectiveFreeLimitSec - elapsedSec <= 45
+                      : remainingFreeSec <= 45
                         ? 'border-amber-400/60 bg-amber-400/18 text-amber-200'
                         : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
                   }`}
                   title={
                     shareBonusSec > 0
                       ? '+30 min Share Bonus active! Upgrade to Pro for unlimited full sessions.'
-                      : 'Free calibration lasts 5 minutes. Share your Neural Fingerprint for +30 min free or try Pro free for 7 days.'
+                      : 'Free daily calibration lasts 5 minutes. Share your Neural Fingerprint for +30 min free or try Pro free for 7 days.'
                   }
                 >
                   <Clock className="h-3 w-3" />
                   {previewLocked
                     ? 'Preview ended'
                     : shareBonusSec > 0
-                      ? `+30m Bonus · ${formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))}`
-                      : `Free · ${formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))}`}
+                      ? `+30m Bonus · ${formatTimer(remainingFreeSec)}`
+                      : `Free · ${formatTimer(remainingFreeSec)}`}
                 </button>
                 {!shareBonusUsedToday && shareBonusSec === 0 && !previewLocked && (
                   <button
@@ -1200,14 +1289,14 @@ export function PlayerView({
               </button>
             </div>
 
-            {!isPro && shareBonusSec === 0 && !shareBonusUsedToday && elapsedSec >= 210 && elapsedSec < 240 && plannedSec > effectiveFreeLimitSec && (
+            {!isPro && shareBonusSec === 0 && !shareBonusUsedToday && remainingFreeSec <= 90 && remainingFreeSec > 60 && (
               <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-[#34D399]">
-                1:30 remaining in your 5-min free calibration · Tap +30m Share above anytime for 30 extra minutes free
+                {formatTimer(remainingFreeSec)} remaining in today&apos;s 5-min free calibration · Tap +30m Share above anytime for 30 extra minutes free
               </div>
             )}
-            {!isPro && shareBonusSec > 0 && elapsedSec >= 300 && elapsedSec < 325 && plannedSec > effectiveFreeLimitSec && (
+            {!isPro && shareBonusSec > 0 && elapsedSec >= 300 && elapsedSec < 325 && remainingFreeSec > 0 && (
               <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-[#34D399]">
-                5:00 Entrainment Phase-Locked · {formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))} remaining in your +30m bonus session
+                5:00 Entrainment Phase-Locked · {formatTimer(remainingFreeSec)} remaining in your +30m bonus session
               </div>
             )}
           </div>
@@ -1291,11 +1380,17 @@ export function PlayerView({
                   ) : carrierMode === 'lyria_realtime' ? (
                     <span className="inline-flex items-center gap-1 rounded border border-emerald-400/45 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-emerald-200">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#34D399] animate-pulse" />
-                      Live
+                      {!isPro
+                        ? `Live · ${Math.max(0, FREE_LYRIA_PREVIEW_SEC - dailyLyriaUsedSec)}s`
+                        : 'Live'}
                     </span>
                   ) : (
                     <span className="rounded border border-white/12 bg-white/[0.05] px-1.5 py-0.5 font-mono-tech text-[9px] font-semibold uppercase tracking-wider text-[#A3A39E]">
-                      No Loops
+                      {!isPro
+                        ? dailyLyriaUsedSec >= FREE_LYRIA_PREVIEW_SEC
+                          ? '90s Used'
+                          : '90s Preview'
+                        : 'No Loops'}
                     </span>
                   )}
                 </div>
@@ -1313,7 +1408,7 @@ export function PlayerView({
               </button>
             </div>
 
-            {lyriaNotice && openDrawer !== 'tune' && (
+            {lyriaNotice && (
               <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
                 {lyriaNotice}
               </div>
@@ -1532,7 +1627,7 @@ export function PlayerView({
         </button>
       </div>
 
-      {/* Collapsible Drawer 1: Live Sound Tweaks, Genre Switcher, Audio Engine & 15s Reaction Test */}
+      {/* Collapsible Drawer 1: Live Sound Balance, Genre Switcher & 15s Reaction Test */}
       {openDrawer === 'tune' && (
         <div className="animate-step glass-card rounded-2xl p-5 sm:p-6 space-y-5">
           {/* Fine Live Tweaks */}
@@ -1557,17 +1652,18 @@ export function PlayerView({
               </button>
               <button
                 type="button"
-                onClick={() => tweakModulation(-0.2)}
-                className="subtle-chip rounded-lg px-3 py-1.5 text-xs font-medium"
+                onClick={() =>
+                  void handleCarrierSwitch(
+                    carrierMode === 'generative_live' ? 'studio_library' : 'generative_live'
+                  )
+                }
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                  carrierMode === 'generative_live'
+                    ? 'border-emerald-400/55 bg-emerald-400/12 text-[#34D399]'
+                    : 'border-white/10 bg-[#14161A] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
+                }`}
               >
-                Wave −
-              </button>
-              <button
-                type="button"
-                onClick={() => tweakModulation(0.2)}
-                className="subtle-chip rounded-lg px-3 py-1.5 text-xs font-medium"
-              >
-                Wave +
+                {carrierMode === 'generative_live' ? '✓ Live Synth' : 'Live Synth'}
               </button>
             </div>
           </div>
@@ -1619,56 +1715,6 @@ export function PlayerView({
                 <div className="mt-0.5 text-[10px] text-[#6E6E68]">More curated genres coming soon</div>
               </div>
             </div>
-          </div>
-
-          {/* Audio Engine Switcher */}
-          <div className="space-y-2 border-t border-white/[0.08] pt-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="font-semibold text-[#F3F1EC]">Audio Engine</span>
-              <span className="font-mono-tech text-[10px] text-[#8E8E88]">
-                {telemetry.stimulusCarrierLabel}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-              {(['generative_live', 'studio_library', 'pure_stimulus', 'lyria_realtime'] as CarrierEngineMode[]).map(
-                (m) => {
-                  const active = carrierMode === m;
-                  const info = CARRIER_MODE_LABELS[m];
-                  const isLyria = m === 'lyria_realtime';
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      disabled={isLyria && connectingLyria}
-                      onClick={() => void handleCarrierSwitch(m)}
-                      className={`rounded-xl border px-2.5 py-2 text-left transition ${
-                        active
-                          ? 'border-emerald-400/55 bg-emerald-400/12 text-[#F3F1EC]'
-                          : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
-                      }`}
-                    >
-                      <div className="text-[11px] font-semibold leading-tight">
-                        {m === 'generative_live'
-                          ? 'Live Synth'
-                          : m === 'studio_library'
-                            ? 'Studio Mix'
-                            : m === 'pure_stimulus'
-                              ? 'Pure Signal'
-                              : connectingLyria
-                                ? 'Syncing…'
-                                : 'Endless Stream'}
-                      </div>
-                      <div className="mt-0.5 line-clamp-1 text-[9px] text-[#7E7E78]">{info.shortDesc}</div>
-                    </button>
-                  );
-                }
-              )}
-            </div>
-            {lyriaNotice && (
-              <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-100">
-                {lyriaNotice}
-              </div>
-            )}
           </div>
 
           {/* Optional 15-Second Reaction Speed Check */}

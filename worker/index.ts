@@ -1106,7 +1106,7 @@ export default {
           env.DB,
           request,
           isProCaller ? 'lyria_realtime_pro' : 'lyria_realtime_token',
-          isProCaller ? 60 : 16
+          isProCaller ? 60 : 4
         );
         if (!allowed) {
           return json(

@@ -105,25 +105,25 @@ export function PvtBenchmarkModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-      <div className="animate-step glass-stage w-full max-w-md rounded-3xl border border-cyan-400/35 p-6 space-y-5">
+      <div className="animate-step glass-stage w-full max-w-md rounded-2xl border border-white/15 p-6 space-y-5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-cyan-300">
+          <div className="flex items-center gap-2 text-[#34D399]">
             <Zap className="h-4 w-4" />
-            <h3 className="text-sm font-bold text-white">
+            <h3 className="text-sm font-bold text-[#F3F1EC]">
               15s Objective Brain Benchmark ({phase === 'pre' ? 'Pre-Session' : 'Post-Session'} PVT)
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+            className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Progress Dots */}
-        <div className="flex items-center justify-between text-[11px] text-slate-400">
+        <div className="flex items-center justify-between text-[11px] text-[#8E8E88]">
           <span>
             Trial {Math.min(TOTAL_TRIALS, trials.length + (stage === 'done' ? 0 : 1))} / {TOTAL_TRIALS}
           </span>
@@ -132,7 +132,7 @@ export function PvtBenchmarkModal({
               <span
                 key={i}
                 className={`h-2 w-6 rounded-full transition ${
-                  i < trials.length ? 'bg-emerald-400' : 'bg-slate-800'
+                  i < trials.length ? 'bg-[#34D399]' : 'bg-white/10'
                 }`}
               />
             ))}
@@ -153,25 +153,25 @@ export function PvtBenchmarkModal({
                 : stage === 'false_start'
                   ? 'border-amber-400/70 bg-amber-500/15'
                   : stage === 'waiting'
-                    ? 'border-slate-700 bg-slate-950/90'
-                    : 'border-cyan-400/45 bg-cyan-400/10 hover:bg-cyan-400/16'
+                    ? 'border-white/15 bg-[#0B0C0E]'
+                    : 'border-emerald-400/40 bg-emerald-400/10 hover:bg-emerald-400/16'
             }`}
           >
             {stage === 'ready' && (
               <div className="space-y-2 px-4 text-center">
-                <Timer className="mx-auto h-9 w-9 text-cyan-300" />
-                <div className="text-base font-bold text-white">Tap Anywhere (or Space) to Start</div>
-                <p className="text-xs text-slate-300">
-                  Wait for the box to flash <strong className="text-emerald-300">GREEN</strong>, then tap as fast as you can (5 quick flashes).
+                <Timer className="mx-auto h-9 w-9 text-[#34D399]" />
+                <div className="text-base font-bold text-[#F3F1EC]">Tap Anywhere (or Space) to Start</div>
+                <p className="text-xs text-[#D4D4CE]">
+                  Wait for the box to flash <strong className="text-[#34D399]">GREEN</strong>, then tap as fast as you can (5 quick flashes).
                 </p>
               </div>
             )}
             {stage === 'waiting' && (
               <div className="space-y-2 text-center">
-                <div className="h-5 w-5 mx-auto rounded-full bg-slate-700 animate-pulse" />
-                <div className="text-sm font-semibold text-slate-300">Hold steady… wait for GREEN</div>
+                <div className="h-5 w-5 mx-auto rounded-full bg-white/20 animate-pulse" />
+                <div className="text-sm font-semibold text-[#D4D4CE]">Hold steady… wait for GREEN</div>
                 {lastMs !== null && (
-                  <div className="font-mono-tech text-xs text-cyan-300">Last: {lastMs} ms</div>
+                  <div className="font-mono-tech text-xs text-[#34D399]">Last: {lastMs} ms</div>
                 )}
               </div>
             )}
@@ -184,21 +184,21 @@ export function PvtBenchmarkModal({
             {stage === 'false_start' && (
               <div className="space-y-1.5 px-4 text-center">
                 <div className="text-base font-bold text-amber-200">Too early!</div>
-                <p className="text-xs text-amber-100/80">Tap to retry this flash — wait until it turns GREEN.</p>
+                <p className="text-xs text-amber-100/80">Tap to retry this flash. Wait until it turns GREEN.</p>
               </div>
             )}
           </button>
         ) : (
           <div className="rounded-2xl border border-emerald-400/35 bg-emerald-500/10 p-5 text-center space-y-3">
-            <CheckCircle2 className="mx-auto h-9 w-9 text-emerald-300" />
+            <CheckCircle2 className="mx-auto h-9 w-9 text-[#34D399]" />
             <div>
               <div className="text-[11px] uppercase tracking-wider text-emerald-200/80">
                 Objective Median Reaction Time
               </div>
-              <div className="font-mono-tech mt-1 text-4xl font-bold text-white">
-                {medianMs} <span className="text-lg text-cyan-300">ms</span>
+              <div className="font-mono-tech mt-1 text-4xl font-bold text-[#F3F1EC]">
+                {medianMs} <span className="text-lg text-[#34D399]">ms</span>
               </div>
-              <div className="mt-1 font-mono-tech text-xs text-slate-300">
+              <div className="mt-1 font-mono-tech text-xs text-[#D4D4CE]">
                 Trials: {trials.map((t) => `${t}ms`).join(' · ')} · Lapses (&gt;500ms): {lapses}
               </div>
             </div>
@@ -209,7 +209,7 @@ export function PvtBenchmarkModal({
                   deltaMs < 0
                     ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-200'
                     : deltaMs === 0
-                      ? 'border-slate-600 bg-slate-800 text-slate-200'
+                      ? 'border-white/15 bg-[#14161A] text-[#D4D4CE]'
                       : 'border-amber-400/40 bg-amber-500/15 text-amber-200'
                 }`}
               >
@@ -224,7 +224,7 @@ export function PvtBenchmarkModal({
             <button
               type="button"
               onClick={() => onComplete({ medianMs, lapses, trials })}
-              className="btn-aurora w-full rounded-xl px-5 py-3 text-sm font-bold text-slate-950"
+              className="btn-aurora w-full rounded-xl px-5 py-3 text-sm font-bold text-[#0A0B0C]"
             >
               Save Objective Benchmark
             </button>

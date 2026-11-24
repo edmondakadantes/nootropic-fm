@@ -213,14 +213,14 @@ export function DebriefView({
               Your shift: <span className="text-aurora">{baselineScore} → {postScore} (Δ {deltaPreview >= 0 ? `+${deltaPreview}` : deltaPreview})</span>
             </h2>
             {pvtPostMs !== null && (
-              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-cyan-400/35 bg-cyan-400/10 px-3 py-1 font-mono-tech text-xs font-semibold text-cyan-200">
-                <Zap className="h-3.5 w-3.5 text-cyan-300" />
+              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/12 px-3 py-1 font-mono-tech text-xs font-semibold text-[#34D399]">
+                <Zap className="h-3.5 w-3.5 text-[#34D399]" />
                 {pvtDeltaMs !== null
                   ? `Objective PVT: ${pvtPreMs} ms → ${pvtPostMs} ms (${pvtDeltaMs < 0 ? `${Math.abs(pvtDeltaMs)} ms faster` : pvtDeltaMs === 0 ? 'steady' : `+${pvtDeltaMs} ms`})`
                   : `Post-Session PVT: ${pvtPostMs} ms`}
               </div>
             )}
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-2 text-sm text-[#8E8E88]">
               {studyOutcomeSaved
                 ? 'Your anonymous study efficacy rating has been aggregated into the live Study Lab Empirical Leaderboard with zero personal identity attached.'
                 : 'Because research telemetry was opted out, nothing from this session was saved to your browser or to our servers. You can opt in anytime on the next session to unlock personal Bandit adaptation.'}
