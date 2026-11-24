@@ -74,23 +74,35 @@ export function matchCoreGenreAlias(rawInput: string | undefined | null): Resolv
   if (!norm) return null;
   const canonical = GENRE_TYPO_ALIASES[norm] ?? norm;
 
-  if (/^(rain|nature|nature rain|nature & rain|nature and rain|soft rain|rain piano|rain & piano|ploaie)$/.test(canonical)) {
+  if (/^(rain|nature|nature rain|nature & rain|nature and rain|soft rain|rain piano|rain & piano|ploaie|soft rain & nature)$/.test(canonical)) {
     return 'nature_rain';
   }
-  if (/^(lo-fi|lofi|lofi keys|lo-fi keys|lo-fi warm keys|chill lofi|chill lo-fi)$/.test(canonical)) {
+  if (/^(lo-fi|lofi|lofi keys|lo-fi keys|lo-fi warm keys|lo-fi beats|lofi beats|chill lofi|chill lo-fi)$/.test(canonical)) {
     return 'lofi_keys';
   }
   if (/^(deep electronic|electronic|upbeat electronic)$/.test(canonical)) {
     return 'deep_electronic';
   }
-  if (/^(jazz rhodes|rhodes|warm jazz)$/.test(canonical)) {
+  if (/^(jazz|jazz rhodes|rhodes|warm jazz|late-night jazz|late night jazz)$/.test(canonical)) {
     return 'jazz_rhodes';
   }
-  if (/^(acoustic pluck|acoustic guitar|warm guitar|warm acoustic)$/.test(canonical)) {
+  if (/^(acoustic|acoustic pluck|acoustic guitar|warm guitar|warm acoustic)$/.test(canonical)) {
     return 'acoustic_pluck';
   }
-  if (/^(cinematic strings|cinematic)$/.test(canonical)) {
+  if (/^(classical|classical & strings|classical strings|cinematic strings|cinematic)$/.test(canonical)) {
     return 'cinematic_strings';
+  }
+  if (/^(reggae|dub reggae|chill reggae|dub)$/.test(canonical)) {
+    return 'dub_reggae';
+  }
+  if (/^(ambient|ambient space|ambient & space|space ambient|deep space|space)$/.test(canonical)) {
+    return 'ambient_space';
+  }
+  if (/^(piano|solo piano|felt piano|solo felt piano|neoclassical piano|classical piano)$/.test(canonical)) {
+    return 'solo_piano';
+  }
+  if (/^(bossa|bossa nova|brazilian jazz)$/.test(canonical)) {
+    return 'bossa_nova';
   }
   return null;
 }
@@ -162,22 +174,34 @@ export function pickClosestCoreGenre(slug: string, energyTier: EnergyTier): Reso
   const s = slug.toLowerCase();
   if (CORE_GENRE_KEYS.has(s)) return s as ResolvedGenre;
 
-  if (/(rain|ocean|forest|nature|water|wind|sleep|zen|meditat|drone|tibetan|bowl|spa)/.test(s)) {
+  if (/(rain|ocean|forest|nature|water|wind)/.test(s)) {
     return 'nature_rain';
+  }
+  if (/(space|ambient|sleep|zen|meditat|drone|tibetan|bowl|spa)/.test(s)) {
+    return 'ambient_space';
+  }
+  if (/(reggae|dub)/.test(s)) {
+    return 'dub_reggae';
+  }
+  if (/(bossa)/.test(s)) {
+    return 'bossa_nova';
+  }
+  if (/(piano|felt_piano|keys)/.test(s)) {
+    return 'solo_piano';
   }
   if (/(synthwave|techno|house|trance|edm|dnb|drum_and_bass|cyberpunk|electro|dubstep|progressive|minimal|vaporwave|retrowave)/.test(s)) {
     return 'deep_electronic';
   }
-  if (/(classical|orchestra|cello|violin|piano|neoclassical|ambient_film|cinematic|epic|baroque|score|strings)/.test(s)) {
+  if (/(classical|orchestra|cello|violin|neoclassical|ambient_film|cinematic|epic|baroque|score|strings)/.test(s)) {
     return 'cinematic_strings';
   }
-  if (/(jazz|bossa|rhodes|soul|funk|neo_soul|lounge|blues|swing|smooth)/.test(s)) {
+  if (/(jazz|rhodes|soul|funk|neo_soul|lounge|blues|swing|smooth)/.test(s)) {
     return 'jazz_rhodes';
   }
   if (/(acoustic|folk|guitar|flamenco|harp|koto|sitar|kalimba|ukulele|indie_folk|celtic|country)/.test(s)) {
     return 'acoustic_pluck';
   }
-  if (/(reggae|dub|chillhop|lofi|lo_fi|hip_hop|boom_bap|downtempo|trip_hop|afrobeat)/.test(s)) {
+  if (/(chillhop|lofi|lo_fi|hip_hop|boom_bap|downtempo|trip_hop|afrobeat)/.test(s)) {
     return energyTier === 'drive' ? 'deep_electronic' : 'lofi_keys';
   }
 

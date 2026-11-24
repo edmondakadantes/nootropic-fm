@@ -638,10 +638,14 @@ async function getCoreStudioCatalog(env: Env) {
     jazz_rhodes: [],
     acoustic_pluck: [],
     nature_rain: [],
+    dub_reggae: [],
+    ambient_space: [],
+    solo_piano: [],
+    bossa_nova: [],
   };
 
   const defaultEnergyForGenre = (g: ResolvedGenre): EnergyTier => {
-    if (g === 'nature_rain') return 'calm';
+    if (g === 'nature_rain' || g === 'ambient_space' || g === 'solo_piano') return 'calm';
     if (g === 'deep_electronic') return 'drive';
     return 'focus';
   };
@@ -987,18 +991,46 @@ export default {
           return json(
             {
               available: false,
-              reason: 'Live Lyria RealTime API key not configured; running on $0 Live Generative Composer.',
+              reason: 'Infinite Live AI is offline right now; continuing smoothly on Studio Audio.',
             },
             200,
             request
           );
         }
-        const allowed = await checkDailyRateLimit(env.DB, request, 'lyria_realtime_token', 12);
+
+        // Pro members get 60 daily live-AI token refreshes (full 60-min multi-session infinite streaming)
+        let isProCaller = false;
+        const providedToken = request.headers.get('x-profile-token')?.trim() ?? '';
+        if (providedToken) {
+          const tokenHash = await sha256Hex(providedToken);
+          const proRow = await env.DB.prepare(
+            `SELECT plan_tier, pro_until, auth_token_hash FROM profiles
+             WHERE plan_tier = 'pro' AND auth_token_hash LIKE ? LIMIT 5`
+          )
+            .bind(`%${tokenHash}%`)
+            .all<Record<string, unknown>>();
+          for (const row of proRow.results) {
+            const stored = String(row.auth_token_hash ?? '');
+            const until = row.pro_until ? String(row.pro_until) : null;
+            const validUntil = !until || Number.isNaN(Date.parse(until)) || Date.parse(until) > Date.now();
+            if (validUntil && tokenHashMatches(tokenHash, stored)) {
+              isProCaller = true;
+              break;
+            }
+          }
+        }
+
+        const allowed = await checkDailyRateLimit(
+          env.DB,
+          request,
+          isProCaller ? 'lyria_realtime_pro' : 'lyria_realtime_token',
+          isProCaller ? 60 : 16
+        );
         if (!allowed) {
           return json(
             {
               available: false,
-              reason: 'Daily per-listener Lyria RealTime quota reached; continuing seamlessly on $0 Live Generative Composer.',
+              reason: 'Daily Infinite Live AI quota reached; continuing seamlessly on Studio Audio.',
             },
             200,
             request
@@ -1012,6 +1044,77 @@ export default {
             token: ticket,
             expiresAt,
             model: 'models/lyria-realtime-exp',
+          },
+          200,
+          request
+        );
+      }
+
+      // POST /api/admin/seed-studio-track — Admin-only curated Studio R2 catalog builder (copy or Lyria 3.5)
+      if (url.pathname === '/api/admin/seed-studio-track' && request.method === 'POST') {
+        if (!isAuthorizedAdmin(request, env)) {
+          return json({ error: 'Unauthorized admin request' }, 401, request);
+        }
+        if (!env.AUDIO_BUCKET) {
+          return json({ error: 'AUDIO_BUCKET not configured' }, 500, request);
+        }
+
+        const body = (await request.json().catch(() => ({}))) as {
+          targetKey?: string;
+          copyFromKey?: string;
+          prompt?: string;
+        };
+        const targetKey = (body.targetKey ?? '').trim().replace(/^\/+/, '');
+        if (!targetKey || !/^[a-z0-9_]+\/(calm|focus|drive)\/[a-z0-9_-]+\.mp3$/i.test(targetKey)) {
+          return json(
+            { error: 'targetKey must match <genre>/(calm|focus|drive)/<filename>.mp3' },
+            400,
+            request
+          );
+        }
+
+        if (body.copyFromKey?.trim()) {
+          const srcObj = await env.AUDIO_BUCKET.get(body.copyFromKey.trim());
+          if (!srcObj) {
+            return json({ error: `Source key not found: ${body.copyFromKey}` }, 404, request);
+          }
+          const bytes = new Uint8Array(await srcObj.arrayBuffer());
+          await env.AUDIO_BUCKET.put(targetKey, bytes, {
+            httpMetadata: {
+              contentType: 'audio/mpeg',
+              cacheControl: 'public, max-age=31536000, immutable',
+            },
+          });
+          coreCatalogCache = null;
+          return json({ ok: true, mode: 'copied', targetKey, sizeBytes: bytes.byteLength }, 200, request);
+        }
+
+        const prompt = (body.prompt ?? '').trim();
+        if (prompt.length < 20) {
+          return json({ error: 'Provide either copyFromKey or a detailed instrumental prompt' }, 400, request);
+        }
+        const provider = resolveMusicProvider(env);
+        if (!provider) {
+          return json({ error: 'Music provider not configured' }, 503, request);
+        }
+
+        const generated = await provider.generate({ prompt });
+        await env.AUDIO_BUCKET.put(targetKey, generated.audioBytes, {
+          httpMetadata: {
+            contentType: generated.contentType || 'audio/mpeg',
+            cacheControl: 'public, max-age=31536000, immutable',
+          },
+        });
+        coreCatalogCache = null;
+        return json(
+          {
+            ok: true,
+            mode: 'generated',
+            targetKey,
+            provider: generated.provider,
+            modelId: generated.modelId,
+            sizeBytes: generated.audioBytes.byteLength,
+            estimatedDurationSec: generated.estimatedDurationSec,
           },
           200,
           request

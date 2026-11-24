@@ -11,7 +11,6 @@ import {
   Mic,
   MicOff,
   Music2,
-  Plus,
   QrCode,
   ShieldCheck,
   Sparkles,
@@ -31,7 +30,6 @@ import {
   parseOnboardingAnswers,
   parseProfileSentence,
 } from '../../shared/parser';
-import { matchCoreGenreAlias, sanitizeCustomVibe } from '../../shared/promptComposer';
 import {
   DEVICE_LABELS,
   GENDER_LABELS,
@@ -220,13 +218,10 @@ export function CheckInView({
     profile?.role === 'driver' ? 'car_audio' : (profile?.defaultDevice ?? 'headphones')
   );
 
-  // Beat 4: Preferred Music Layer (6 studio + Auto + Custom Vibe)
+  // Beat 4: Preferred Music Layer (10 curated studio + infinite AI genres)
   const [genreChoice, setGenreChoice] = useState<MusicGenreChoice>(
     initialPreset?.requestedGenre ?? 'auto'
   );
-  const [showCustomInput, setShowCustomInput] = useState(false);
-  const [customVibeText, setCustomVibeText] = useState('');
-  const [customVibeError, setCustomVibeError] = useState<string | null>(null);
 
   const [listeningBeat, setListeningBeat] = useState<1 | 2 | 3 | null>(null);
   const [starting, setStarting] = useState(false);
@@ -380,11 +375,7 @@ export function CheckInView({
       setEnvironment('driving');
       setDevice('car_audio');
     }
-    if (parsed.extractedCustomGenre) {
-      setShowCustomInput(true);
-      setCustomVibeText(parsed.extractedCustomGenre);
-    } else if (parsed.extractedGenre) {
-      setShowCustomInput(false);
+    if (parsed.extractedGenre) {
       setGenreChoice(parsed.extractedGenre);
     }
   };
@@ -401,11 +392,7 @@ export function CheckInView({
     } else if (parsed.device !== device && /\b(headphones|earbuds|speakers|car)\b/i.test(text)) {
       setDevice(parsed.device);
     }
-    if (parsed.extractedCustomGenre) {
-      setShowCustomInput(true);
-      setCustomVibeText(parsed.extractedCustomGenre);
-    } else if (parsed.extractedGenre) {
-      setShowCustomInput(false);
+    if (parsed.extractedGenre) {
       setGenreChoice(parsed.extractedGenre);
     }
   };
@@ -506,24 +493,6 @@ export function CheckInView({
     const activeMicro = selectedMicroState ?? DEFAULT_MICRO_STATE;
     const activeCoords = neuralCoords ?? { energy: activeMicro.energy, clarity: activeMicro.clarity };
 
-    let validatedCustom: string | undefined = undefined;
-    let resolvedRequestedGenre: MusicGenreChoice = genreChoice;
-    if (customVibeText.trim()) {
-      const coreAlias = matchCoreGenreAlias(customVibeText);
-      if (coreAlias) {
-        resolvedRequestedGenre = coreAlias;
-      } else {
-        const check = sanitizeCustomVibe(customVibeText);
-        if (check?.rejectedReason) {
-          setShowCustomInput(true);
-          setCustomVibeError(check.rejectedReason);
-          return;
-        }
-        validatedCustom = check?.displayLabel;
-      }
-    }
-    setCustomVibeError(null);
-
     setStarting(true);
     try {
       const effectiveTarget: TargetState =
@@ -546,7 +515,6 @@ export function CheckInView({
         feelingText.trim() ||
           `Feeling ${activeMicro.label} (Energy ${activeCoords.energy}%, Clarity ${activeCoords.clarity}%)`,
         goalText.trim() || `Want ${TARGET_LABELS[effectiveTarget]} for ${durationMin} min`,
-        validatedCustom ? `Music: ${validatedCustom}` : '',
       ]
         .filter(Boolean)
         .join(' | ');
@@ -590,15 +558,13 @@ export function CheckInView({
         device: effectiveDevice,
         durationMin,
         ageOverride: effectiveAge,
-        requestedGenre: validatedCustom ? 'auto' : resolvedRequestedGenre,
-        customGenreInput: validatedCustom,
+        requestedGenre: genreChoice,
       });
     } finally {
       setStarting(false);
     }
   };
 
-  const popularCustom = runtimeConfig?.popularCustomVibes ?? [];
   const totalBeats = isFirstVisit ? 4 : 3;
   const visibleStepNum = isFirstVisit ? beat : Math.max(1, beat - 1);
   const presetDurations = [15, 20, 30, 40, 60];
@@ -1307,7 +1273,7 @@ export function CheckInView({
       )}
 
       {/* ===================================================================== */}
-      {/* BEAT 4: PREFERRED MUSIC LAYER (6 Instant R2 + Auto + Custom Vibe)     */}
+      {/* BEAT 4: PREFERRED MUSIC LAYER (10 Curated Studio + Infinite AI + Other) */}
       {/* ===================================================================== */}
       {beat === 4 && (
         <div key="beat-4" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
@@ -1315,42 +1281,32 @@ export function CheckInView({
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
                 <Music2 className="h-4 w-4 text-indigo-400" />
-                Choose the music layer we’ll fuse with your scientific frequencies
+                Choose the music style we’ll blend with your brainwave rhythm
               </span>
-              <span className="text-[11px] text-slate-500">Lyric-free · R2 Studio + Any Genre</span>
+              <span className="text-[11px] text-slate-400">10 curated styles · Lyric-free · Non-repeating</span>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setShowCustomInput(false);
-                  setCustomVibeText('');
-                  setCustomVibeError(null);
-                  setGenreChoice('auto');
-                }}
+                onClick={() => setGenreChoice('auto')}
                 className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
-                  !customVibeText.trim() && !showCustomInput && genreChoice === 'auto'
+                  genreChoice === 'auto'
                     ? 'border-cyan-400 bg-cyan-400/20 text-white shadow-[0_0_16px_rgba(34,211,238,0.28)]'
                     : 'subtle-chip'
                 }`}
               >
-                {!customVibeText.trim() && !showCustomInput && genreChoice === 'auto' ? '✓ ' : ''}
+                {genreChoice === 'auto' ? '✓ ' : ''}
                 Auto (Best for my brain)
               </button>
 
               {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
-                const isSelected = !customVibeText.trim() && !showCustomInput && genreChoice === g;
+                const isSelected = genreChoice === g;
                 return (
                   <button
                     key={g}
                     type="button"
-                    onClick={() => {
-                      setShowCustomInput(false);
-                      setCustomVibeText('');
-                      setCustomVibeError(null);
-                      setGenreChoice(g);
-                    }}
+                    onClick={() => setGenreChoice(g)}
                     className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
                       isSelected
                         ? 'border-cyan-400 bg-cyan-400/22 text-white shadow-[0_0_18px_rgba(34,211,238,0.3)]'
@@ -1363,93 +1319,23 @@ export function CheckInView({
                 );
               })}
 
-              {/* Instant R2 Cached Community Genres (e.g. Reggae) surfaced directly for 1-tap selection */}
-              {popularCustom
-                .filter(
-                  (v, idx, arr) => arr.findIndex((x) => x.genreSlug === v.genreSlug) === idx
-                )
-                .slice(0, 4)
-                .map((v) => {
-                  const isSelected =
-                    customVibeText.trim().toLowerCase() === v.displayLabel.toLowerCase();
-                  return (
-                    <button
-                      key={v.genreSlug}
-                      type="button"
-                      onClick={() => {
-                        setCustomVibeText(v.displayLabel);
-                        setCustomVibeError(null);
-                        setShowCustomInput(true);
-                      }}
-                      className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
-                        isSelected
-                          ? 'border-fuchsia-400 bg-fuchsia-500/25 text-white shadow-[0_0_18px_rgba(217,70,239,0.3)]'
-                          : 'border-fuchsia-400/35 bg-fuchsia-500/10 text-fuchsia-100 hover:border-fuchsia-400/70'
-                      }`}
-                    >
-                      {isSelected ? '✓ ' : ''}
-                      {v.displayLabel}
-                    </button>
-                  );
-                })}
-
-              <button
-                type="button"
-                onClick={() => setShowCustomInput((v) => !v)}
-                className={`inline-flex items-center gap-1 rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
-                  showCustomInput
-                    ? 'border-fuchsia-400 bg-fuchsia-500/20 text-fuchsia-100 shadow-[0_0_16px_rgba(217,70,239,0.25)]'
-                    : 'border-fuchsia-400/35 bg-fuchsia-500/10 text-fuchsia-200 hover:border-fuchsia-400/65'
-                }`}
+              <span
+                aria-disabled="true"
+                title="Custom & additional music styles are coming soon"
+                className="inline-flex cursor-not-allowed select-none items-center gap-1.5 rounded-full border border-dashed border-slate-700/80 bg-slate-900/40 px-3.5 py-2 text-xs font-medium text-slate-500"
               >
-                <Plus className="h-3.5 w-3.5" />
-                Type any genre
-              </button>
+                <span>Other</span>
+                <span className="rounded-full border border-slate-700 bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Coming Soon
+                </span>
+              </span>
             </div>
 
-            {/* Custom Any-Genre Input + Community R2 Cache Chips */}
-            {showCustomInput && (
-              <div className="animate-step space-y-2.5 rounded-2xl border border-fuchsia-400/30 bg-fuchsia-500/[0.06] p-4">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-fuchsia-200">
-                    Type any instrumental genre you feel like right now:
-                  </span>
-                  <span className="font-mono-tech text-[10px] text-fuchsia-300/80">
-                    {runtimeConfig?.customLiveGenAvailable
-                      ? `2-Speed R2 Cache · ${runtimeConfig.dailyCapRemaining} live slots today`
-                      : 'R2 Community Cache + Closest Studio Match'}
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  value={customVibeText}
-                  onChange={(e) => {
-                    setCustomVibeText(e.target.value);
-                    setCustomVibeError(null);
-                  }}
-                  placeholder="e.g. chill reggae, synthwave, bossa nova, ambient techno, acoustic funk..."
-                  className="w-full rounded-xl border border-slate-700/90 bg-slate-950/90 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-fuchsia-400 focus:outline-none"
-                />
-                {customVibeError && <p className="text-[11px] text-rose-300">{customVibeError}</p>}
-
-                {popularCustom.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <span className="text-[10px] text-slate-400">Instant in Community R2 Cache:</span>
-                    {popularCustom.slice(0, 6).map((v) => (
-                      <button
-                        key={`${v.genreSlug}_${v.energyTier}`}
-                        type="button"
-                        onClick={() => {
-                          setCustomVibeText(v.displayLabel);
-                          setCustomVibeError(null);
-                        }}
-                        className="rounded-full border border-fuchsia-400/30 bg-slate-950/80 px-2.5 py-0.5 text-[10px] font-medium text-fuchsia-200 hover:border-fuchsia-300"
-                      >
-                        {v.displayLabel}
-                      </button>
-                    ))}
-                  </div>
-                )}
+            {genreChoice !== 'auto' && (
+              <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.05] px-3.5 py-2 text-[11px] text-slate-300">
+                <strong className="text-cyan-200">{GENRE_META[genreChoice].label}:</strong>{' '}
+                {GENRE_META[genreChoice].shortDesc} ·{' '}
+                <span className="text-slate-400">{GENRE_META[genreChoice].vibeTag}</span>
               </div>
             )}
           </div>
@@ -1471,23 +1357,12 @@ export function CheckInView({
             >
               <Sparkles className="h-5 w-5" />
               {starting
-                ? 'Building your custom sound...'
+                ? 'Building your sound...'
                 : (() => {
-                    const alias = customVibeText.trim()
-                      ? matchCoreGenreAlias(customVibeText)
-                      : null;
-                    const sanitized = !alias && customVibeText.trim()
-                      ? sanitizeCustomVibe(customVibeText)
-                      : null;
-                    const activeMusicName = alias
-                      ? GENRE_META[alias].label
-                      : sanitized?.displayLabel
-                        ? sanitized.displayLabel
-                        : genreChoice !== 'auto'
-                          ? GENRE_META[genreChoice].label
-                          : 'Auto Music';
+                    const activeMusicName =
+                      genreChoice !== 'auto' ? GENRE_META[genreChoice].label : 'Auto Music';
                     return profile?.planTier === 'pro'
-                      ? `Craft My Sound · ${activeMusicName}`
+                      ? `Play ${activeMusicName} · Pro`
                       : `Play ${activeMusicName} · 5 Min Free`;
                   })()}
             </button>

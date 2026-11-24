@@ -257,6 +257,10 @@ export function PlayerView({
               jazz_rhodes: [],
               acoustic_pluck: [],
               nature_rain: [],
+              dub_reggae: [],
+              ambient_space: [],
+              solo_piano: [],
+              bossa_nova: [],
             };
             (Object.keys(tracksByGenre) as ResolvedGenre[]).forEach((g) => {
               resolved[g] = tracksByGenre[g].map((t) => ({
@@ -561,6 +565,16 @@ export function PlayerView({
           res.model ?? 'models/lyria-realtime-exp',
           (_status, note) => {
             if (note) setLyriaNotice(note);
+          },
+          async () => {
+            try {
+              const fresh = await api.getLyriaRealtimeToken();
+              return fresh.available && fresh.token
+                ? { token: fresh.token, model: fresh.model ?? 'models/lyria-realtime-exp' }
+                : null;
+            } catch {
+              return null;
+            }
           }
         );
         if (ok) {
@@ -605,7 +619,8 @@ export function PlayerView({
     setActiveCustomLabel(null);
     setCustomGenState('idle');
     setCustomGenNotice(null);
-    if (carrierMode !== 'studio_library') {
+    const keepLyria = carrierMode === 'lyria_realtime';
+    if (!keepLyria && carrierMode !== 'studio_library') {
       setCarrierMode('studio_library');
       setAudioSource('studio_library');
       engineRef.current?.setCarrierMode('studio_library');
@@ -621,7 +636,7 @@ export function PlayerView({
           sessionId: liveSessionId,
           genre: style,
           customGenreSlug: null,
-          audioSource: 'studio_library',
+          audioSource: keepLyria ? 'lyria_realtime' : 'studio_library',
           atSec: elapsedRef.current,
         })
         .catch(() => {});
@@ -702,7 +717,7 @@ export function PlayerView({
 
   const activeSourceShort =
     telemetry.carrierMode === 'lyria_realtime'
-      ? 'Lyria RealTime AI'
+      ? `${activeVibeDisplay.label} · Infinite AI`
       : telemetry.carrierMode === 'pure_stimulus'
         ? 'Pure Acoustic Signal'
         : telemetry.usingCustomTrack || audioSource === 'community_cache'
@@ -845,6 +860,46 @@ export function PlayerView({
             />
           </div>
         </div>
+
+        {/* 1-Tap Studio Mix vs Infinite Live AI (Never-Repeating) Switch */}
+        {lyriaRealtimeAvailable && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-indigo-400/20 bg-indigo-500/[0.06] px-3.5 py-2.5 text-xs">
+            <div className="flex items-center gap-2 text-slate-300">
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-indigo-300" />
+              <span>
+                {carrierMode === 'lyria_realtime'
+                  ? 'Infinite Live AI active — evolving continuously with zero loops.'
+                  : 'Want music that never repeats on long sessions?'}
+              </span>
+            </div>
+            <div className="inline-flex shrink-0 items-center rounded-xl border border-slate-800 bg-slate-950/90 p-0.5 text-[11px] font-semibold">
+              <button
+                type="button"
+                onClick={() => void handleCarrierSwitch('studio_library')}
+                className={`rounded-lg px-2.5 py-1 transition ${
+                  carrierMode !== 'lyria_realtime'
+                    ? 'bg-cyan-400/20 text-cyan-100'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Studio Mix
+              </button>
+              <button
+                type="button"
+                disabled={connectingLyria}
+                onClick={() => void handleCarrierSwitch('lyria_realtime')}
+                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 transition ${
+                  carrierMode === 'lyria_realtime'
+                    ? 'bg-indigo-500/35 text-indigo-100 shadow-[0_0_12px_rgba(129,140,248,0.3)]'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {connectingLyria ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                {connectingLyria ? 'Starting…' : 'Infinite AI'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Clean Primary Control Dock: Play/Pause + Volume + End & Rate */}
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800/80 bg-slate-950/65 p-3.5 sm:px-5 sm:py-4">
@@ -1061,6 +1116,18 @@ export function PlayerView({
                   </button>
                 );
               })}
+              <div
+                aria-disabled="true"
+                className="cursor-not-allowed select-none rounded-xl border border-dashed border-slate-800/80 bg-slate-900/30 px-3 py-2 text-left opacity-70"
+              >
+                <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-400">
+                  <span>Other Styles</span>
+                  <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-400">
+                    Soon
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[10px] text-slate-500">More curated genres coming soon</div>
+              </div>
             </div>
           </div>
 
@@ -1323,7 +1390,7 @@ export function PlayerView({
               </li>
               <li className="flex items-start gap-2">
                 <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <span>Any music style you type (Reggae, Rock, Jazz, Lo-Fi, Classical) + live AI</span>
+                <span>All 10 curated instrumental styles + Infinite Live AI (never repeats)</span>
               </li>
               <li className="flex items-start gap-2">
                 <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />

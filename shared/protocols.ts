@@ -352,6 +352,10 @@ const ALL_GENRES: ResolvedGenre[] = [
   'jazz_rhodes',
   'acoustic_pluck',
   'nature_rain',
+  'dub_reggae',
+  'ambient_space',
+  'solo_piano',
+  'bossa_nova',
 ];
 
 function getGenrePrior(
@@ -366,36 +370,39 @@ function getGenrePrior(
   const beta = 1.6;
 
   if (targetState === 'sleep_winddown') {
-    if (genre === 'nature_rain') alpha = 3.8;
-    else if (genre === 'cinematic_strings' || genre === 'acoustic_pluck') alpha = 3.1;
-    else if (genre === 'lofi_keys') alpha = 2.4;
+    if (genre === 'nature_rain' || genre === 'ambient_space') alpha = 3.8;
+    else if (genre === 'solo_piano' || genre === 'cinematic_strings' || genre === 'acoustic_pluck') alpha = 3.2;
+    else if (genre === 'lofi_keys') alpha = 2.3;
     else alpha = 1.2;
   } else if (targetState === 'calm_reset') {
-    if (genre === 'nature_rain' || genre === 'acoustic_pluck') alpha = 3.5;
-    else if (genre === 'cinematic_strings' || genre === 'lofi_keys') alpha = 3.0;
+    if (genre === 'nature_rain' || genre === 'ambient_space' || genre === 'solo_piano') alpha = 3.6;
+    else if (genre === 'acoustic_pluck' || genre === 'cinematic_strings' || genre === 'lofi_keys') alpha = 3.1;
+    else if (genre === 'dub_reggae' || genre === 'bossa_nova') alpha = 2.7;
     else alpha = 1.8;
   } else if (isDriving || targetState === 'energy_lift') {
     if (genre === 'deep_electronic') alpha = 3.7;
-    else if (genre === 'jazz_rhodes' || genre === 'lofi_keys') alpha = 3.1;
-    else if (genre === 'acoustic_pluck') alpha = 2.5;
+    else if (genre === 'bossa_nova' || genre === 'dub_reggae' || genre === 'jazz_rhodes' || genre === 'lofi_keys') alpha = 3.2;
+    else if (genre === 'acoustic_pluck') alpha = 2.6;
     else alpha = 1.4;
   } else if (targetState === 'deep_flow') {
-    if (genre === 'lofi_keys' || genre === 'cinematic_strings') alpha = 3.5;
-    else if (genre === 'deep_electronic' || genre === 'jazz_rhodes') alpha = 3.1;
+    if (genre === 'lofi_keys' || genre === 'cinematic_strings' || genre === 'solo_piano') alpha = 3.5;
+    else if (genre === 'deep_electronic' || genre === 'jazz_rhodes' || genre === 'dub_reggae') alpha = 3.1;
+    else if (genre === 'bossa_nova' || genre === 'ambient_space') alpha = 2.8;
     else alpha = 2.3;
   } else {
     // alert_focus
-    if (environment === 'study' && genre === 'lofi_keys') alpha = 3.7;
+    if (environment === 'study' && (genre === 'lofi_keys' || genre === 'solo_piano')) alpha = 3.7;
     else if (currentState === 'fatigued' && genre === 'deep_electronic') alpha = 3.6;
-    else if (genre === 'jazz_rhodes' || genre === 'lofi_keys' || genre === 'deep_electronic') alpha = 3.2;
-    else alpha = 2.4;
+    else if (genre === 'jazz_rhodes' || genre === 'lofi_keys' || genre === 'deep_electronic' || genre === 'bossa_nova') alpha = 3.2;
+    else alpha = 2.5;
   }
 
   // Soft personal texture alignment
-  if (profile.role === 'creative' && genre === 'cinematic_strings') alpha += 0.5;
-  if (profile.texturePref === 'warm_organic' && (genre === 'acoustic_pluck' || genre === 'jazz_rhodes')) alpha += 0.4;
-  if (profile.texturePref === 'minimal_electronic' && genre === 'deep_electronic') alpha += 0.4;
-  if (profile.texturePref === 'nature_drift' && genre === 'nature_rain') alpha += 0.4;
+  if (profile.role === 'creative' && (genre === 'cinematic_strings' || genre === 'bossa_nova')) alpha += 0.5;
+  if (profile.texturePref === 'warm_organic' && (genre === 'acoustic_pluck' || genre === 'jazz_rhodes' || genre === 'solo_piano' || genre === 'bossa_nova')) alpha += 0.4;
+  if (profile.texturePref === 'minimal_electronic' && (genre === 'deep_electronic' || genre === 'ambient_space')) alpha += 0.4;
+  if (profile.texturePref === 'nature_drift' && (genre === 'nature_rain' || genre === 'ambient_space')) alpha += 0.4;
+  if (profile.texturePref === 'rhythmic_pulse' && (genre === 'dub_reggae' || genre === 'deep_electronic')) alpha += 0.4;
 
   return { alpha, beta };
 }
@@ -428,8 +435,8 @@ function resolveGenreLayer(input: {
 
     // Exclude genres that conflict with road safety or sleep wind-down when Science picks Auto
     const eligible = ALL_GENRES.filter((g) => {
-      if (isDriving && g === 'nature_rain') return false;
-      if (input.targetState === 'sleep_winddown' && g === 'deep_electronic') return false;
+      if (isDriving && (g === 'nature_rain' || g === 'ambient_space')) return false;
+      if (input.targetState === 'sleep_winddown' && (g === 'deep_electronic' || g === 'bossa_nova')) return false;
       return true;
     });
 

@@ -57,7 +57,11 @@ export type MusicGenreChoice =
   | 'cinematic_strings'
   | 'jazz_rhodes'
   | 'acoustic_pluck'
-  | 'nature_rain';
+  | 'nature_rain'
+  | 'dub_reggae'
+  | 'ambient_space'
+  | 'solo_piano'
+  | 'bossa_nova';
 
 export type ResolvedGenre = Exclude<MusicGenreChoice, 'auto'>;
 
@@ -487,34 +491,54 @@ export const GENRE_META: Record<
   { label: string; shortDesc: string; vibeTag: string }
 > = {
   lofi_keys: {
-    label: 'Lo-Fi Warm Keys',
+    label: 'Lo-Fi Beats',
     shortDesc: 'Dusty Rhodes chords & laid-back beat',
     vibeTag: 'Warm · Study · Deep Focus',
   },
   deep_electronic: {
     label: 'Deep Electronic',
-    shortDesc: 'Clean sub-bass & hypnotic steady pulse',
+    shortDesc: 'Clean analog synths & steady focus pulse',
     vibeTag: 'Driving · Energy · Code',
   },
   cinematic_strings: {
-    label: 'Cinematic Strings',
-    shortDesc: 'Sweeping wide harmonies & deep resonance',
-    vibeTag: 'Deep Flow · Creative',
+    label: 'Classical & Strings',
+    shortDesc: 'Warm chamber strings & neoclassical flow',
+    vibeTag: 'Deep Flow · Reading',
   },
   jazz_rhodes: {
-    label: 'Jazz Rhodes',
-    shortDesc: 'Warm 9th/11th keys & soft brush groove',
-    vibeTag: 'Long Focus · Smooth',
+    label: 'Late-Night Jazz',
+    shortDesc: 'Warm Rhodes keys, upright bass & soft groove',
+    vibeTag: 'Creative · Smooth',
   },
   acoustic_pluck: {
-    label: 'Acoustic Pluck',
-    shortDesc: 'Organic guitar/harp arpeggios & warmth',
-    vibeTag: 'Reading · Grounded',
+    label: 'Acoustic Guitar',
+    shortDesc: 'Warm fingerstyle guitar & organic uplift',
+    vibeTag: 'Mood Lift · Grounded',
   },
   nature_rain: {
-    label: 'Nature & Rain',
-    shortDesc: 'Soft stereo rainfall & glass chimes',
+    label: 'Soft Rain & Nature',
+    shortDesc: 'Gentle stereo rainfall & warm ambient pads',
     vibeTag: 'Calm · Reset · Sleep',
+  },
+  dub_reggae: {
+    label: 'Dub Reggae',
+    shortDesc: 'Warm dub bass, clean skank guitar & chill groove',
+    vibeTag: 'Good Mood · Relaxed Flow',
+  },
+  ambient_space: {
+    label: 'Ambient & Space',
+    shortDesc: 'Beatless floating celestial pads, zero drums',
+    vibeTag: 'Deep Calm · Sleep · Meditation',
+  },
+  solo_piano: {
+    label: 'Solo Felt Piano',
+    shortDesc: 'Intimate soft neoclassical felt piano keys',
+    vibeTag: 'Focus · Calm · 432 Hz Ready',
+  },
+  bossa_nova: {
+    label: 'Bossa Nova',
+    shortDesc: 'Sunny Brazilian nylon guitar & light groove',
+    vibeTag: 'Uplifting · Cafe Focus',
   },
 };
 

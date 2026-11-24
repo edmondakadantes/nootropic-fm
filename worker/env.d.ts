@@ -44,6 +44,7 @@ export interface R2ObjectInfo {
 
 export interface R2ObjectBody extends R2ObjectInfo {
   body: ReadableStream<Uint8Array>;
+  arrayBuffer(): Promise<ArrayBuffer>;
   writeHttpMetadata(headers: Headers): void;
 }
 

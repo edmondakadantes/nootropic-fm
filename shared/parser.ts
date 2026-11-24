@@ -395,34 +395,40 @@ export function parseNaturalCheckIn(
     extractedRole = occInfo.role;
   }
 
-  // 6. Optional Musical Genre / Custom Vibe detection from free text
+  // 6. Curated Musical Genre detection from free text (maps directly to our 10 verified studio genres)
   let extractedGenre: ResolvedGenre | undefined;
   let extractedCustomGenre: string | undefined;
 
-  const customVibeMatch = norm.match(
-    /\b(chill reggae|dub reggae|reggae|synthwave|retrowave|vaporwave|bossa nova|afrobeat|flamenco|trip hop|post rock|ambient rock|ambient techno|minimal techno|deep house|dub techno|neo soul|funk|baroque|celtic|koto|sitar|kalimba|drum and bass|downtempo|shoegaze|psytrance|classical piano)\b/
-  );
-  if (customVibeMatch) {
-    extractedCustomGenre = customVibeMatch[1];
-    detectedKeywords.push(`Custom Vibe: ${customVibeMatch[1]}`);
+  if (/\b(dub reggae|chill reggae|reggae|reghe|dub)\b/.test(norm)) {
+    extractedGenre = 'dub_reggae';
+    detectedKeywords.push('Genre: Dub Reggae');
+  } else if (/\b(bossa nova|bosanova|bossa|brazilian)\b/.test(norm)) {
+    extractedGenre = 'bossa_nova';
+    detectedKeywords.push('Genre: Bossa Nova');
+  } else if (/\b(solo piano|felt piano|classical piano|piano)\b/.test(norm)) {
+    extractedGenre = 'solo_piano';
+    detectedKeywords.push('Genre: Solo Felt Piano');
+  } else if (/\b(space ambient|ambient space|ambient|space|beatless|meditation|drone)\b/.test(norm)) {
+    extractedGenre = 'ambient_space';
+    detectedKeywords.push('Genre: Ambient & Space');
   } else if (/\b(lofi|lo-fi|lo fi|chillhop|dusty|beats to study)\b/.test(norm)) {
     extractedGenre = 'lofi_keys';
-    detectedKeywords.push('Genre: Lo-Fi Keys');
-  } else if (/\b(electronic|techno|house|trance|edm|club|groove)\b/.test(norm)) {
+    detectedKeywords.push('Genre: Lo-Fi Beats');
+  } else if (/\b(electronic|techno|house|trance|edm|club|groove|synthwave)\b/.test(norm)) {
     extractedGenre = 'deep_electronic';
     detectedKeywords.push('Genre: Deep Electronic');
-  } else if (/\b(cinematic|orchestra|orchestral|interstellar|strings|movie|epic|soundtrack)\b/.test(norm)) {
+  } else if (/\b(classical|cinematic|orchestra|orchestral|interstellar|strings|movie|epic|soundtrack)\b/.test(norm)) {
     extractedGenre = 'cinematic_strings';
-    detectedKeywords.push('Genre: Cinematic Strings');
-  } else if (/\b(jazz|rhodes|soul|lounge|blues|piano)\b/.test(norm)) {
+    detectedKeywords.push('Genre: Classical & Strings');
+  } else if (/\b(jazz|rhodes|soul|lounge|blues)\b/.test(norm)) {
     extractedGenre = 'jazz_rhodes';
-    detectedKeywords.push('Genre: Jazz Rhodes');
+    detectedKeywords.push('Genre: Late-Night Jazz');
   } else if (/\b(acoustic|guitar|harp|folk|indie|instrumental rock|chitara)\b/.test(norm)) {
     extractedGenre = 'acoustic_pluck';
-    detectedKeywords.push('Genre: Acoustic Pluck');
+    detectedKeywords.push('Genre: Acoustic Guitar');
   } else if (/\b(rain|nature|ocean|forest|wind|storm|water|ploaie|natura)\b/.test(norm)) {
     extractedGenre = 'nature_rain';
-    detectedKeywords.push('Genre: Nature & Rain');
+    detectedKeywords.push('Genre: Soft Rain & Nature');
   }
 
   return {

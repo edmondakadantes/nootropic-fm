@@ -230,6 +230,7 @@ export class PsychoacousticEngine {
   private activeStudioSource: AudioBufferSourceNode | null = null;
   private activeStreamEl: HTMLAudioElement | null = null;
   private activeStreamSource: MediaElementAudioSourceNode | null = null;
+  private activeStreamCleanup: (() => void) | null = null;
   private activeStudioGain: GainNode | null = null;
   private studioCrossfadeTimer: number | null = null;
   private studioDeckStartedAtCtx = 0;
@@ -631,11 +632,13 @@ export class PsychoacousticEngine {
 
   /**
    * Plug-and-Play Google Lyria RealTime AI Activation (when ephemeral token is minted by server).
+   * Streams infinite, never-repeating 48 kHz stereo music in the active curated genre through 3-Band LR4 DSP.
    */
   public async activateLyriaRealtime(
     token: string,
     model: string,
-    onStatus?: (status: LyriaRealtimeStatus, note?: string) => void
+    onStatus?: (status: LyriaRealtimeStatus, note?: string) => void,
+    fetchFreshToken?: () => Promise<{ token: string; model?: string } | null>
   ): Promise<boolean> {
     if (!this.ctx || !this.studioBus || !this.studySpec || !this.isPlaying) return false;
     this.clearStudioDeck(1.2);
@@ -648,17 +651,21 @@ export class PsychoacousticEngine {
       token,
       model,
       spec: this.studySpec,
+      genre: this.genre,
       apiBase: this.sampleApiBase,
+      fetchFreshToken,
       onStatusChange: (st, note) => {
         this.lyriaStatus = st;
         onStatus?.(st, note);
         if (st === 'streaming' && this.ctx && this.proceduralMaster && this.cleanSubBus) {
           const now = this.ctx.currentTime;
           this.carrierMode = 'lyria_realtime';
+          this.usingStudioAudio = false;
+          this.usingCustomTrack = false;
           this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.85);
           this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.85);
         } else if ((st === 'error' || st === 'unavailable') && this.carrierMode === 'lyria_realtime') {
-          this.setCarrierMode('generative_live');
+          this.setCarrierMode('studio_library');
         }
       },
     });
@@ -687,6 +694,14 @@ export class PsychoacousticEngine {
     if (this.studioCrossfadeTimer !== null) {
       window.clearTimeout(this.studioCrossfadeTimer);
       this.studioCrossfadeTimer = null;
+    }
+    if (this.activeStreamCleanup) {
+      try {
+        this.activeStreamCleanup();
+      } catch {
+        // ignore
+      }
+      this.activeStreamCleanup = null;
     }
     const prevSrc = this.activeStudioSource;
     const prevStreamEl = this.activeStreamEl;
@@ -795,14 +810,16 @@ export class PsychoacousticEngine {
     trackName: string,
     token: number,
     targetGain: number,
-    isCustom: boolean
+    isCustom: boolean,
+    onCrossfade?: () => void,
+    fadeInSec = 1.8
   ): Promise<boolean> {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return false;
     try {
       const el = new Audio();
       el.crossOrigin = 'anonymous';
       el.preload = 'auto';
-      el.loop = true;
+      el.loop = !onCrossfade;
       (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
       if (this.studySpec?.music.tuningA4Hz === 432) {
         el.playbackRate = 432 / 440;
@@ -865,7 +882,6 @@ export class PsychoacousticEngine {
         return false;
       }
 
-      const fadeInSec = 1.6;
       this.clearStudioDeck(fadeInSec);
       if (this.proceduralMaster && this.cleanSubBus) {
         this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.55);
@@ -874,8 +890,38 @@ export class PsychoacousticEngine {
 
       deckGain.gain.exponentialRampToValueAtTime(Math.max(0.1, targetGain), now + fadeInSec);
 
+      // Dual-Deck Gapless Crossfade Watcher (tracks playback smoothly across pauses, zero abrupt loop cuts!)
+      let cleanupListeners: (() => void) | null = null;
+      if (onCrossfade) {
+        let crossfadeTriggered = false;
+        const triggerOnce = () => {
+          if (crossfadeTriggered) return;
+          crossfadeTriggered = true;
+          cleanupListeners?.();
+          onCrossfade();
+        };
+        const onTimeUpdate = () => {
+          if (
+            !crossfadeTriggered &&
+            Number.isFinite(el.duration) &&
+            el.duration > 12 &&
+            el.currentTime >= el.duration - 4.2
+          ) {
+            triggerOnce();
+          }
+        };
+        const onEnded = () => triggerOnce();
+        el.addEventListener('timeupdate', onTimeUpdate);
+        el.addEventListener('ended', onEnded);
+        cleanupListeners = () => {
+          el.removeEventListener('timeupdate', onTimeUpdate);
+          el.removeEventListener('ended', onEnded);
+        };
+      }
+
       this.activeStreamEl = el;
       this.activeStreamSource = srcNode;
+      this.activeStreamCleanup = cleanupListeners;
       this.activeStudioGain = deckGain;
       this.usingStudioAudio = true;
       this.usingCustomTrack = isCustom;
@@ -886,15 +932,26 @@ export class PsychoacousticEngine {
     }
   }
 
-  public async crossfadeToCustomTrack(url: string, label: string): Promise<boolean> {
+  public async crossfadeToCustomTrack(url: string, label: string, fadeSec = 1.8): Promise<boolean> {
     if (!this.ctx || !this.studioBus || !this.isPlaying) return false;
     const token = ++this.studioLoadToken;
     this.activeCustomTrack = { url, label };
     this.carrierMode = 'studio_library';
     this.stimulusRack.setPureStimulusMode(false);
 
-    // 1. Instant HTTP 206 Range streaming (<0.3s start, zero 100 MB RAM decode delay!)
-    const streamed = await this.playStreamingTrack(url, label, token, 0.96, true);
+    // 1. Instant HTTP 206 Range streaming (<0.3s start) with smooth 4s Dual-Deck crossfade
+    const streamed = await this.playStreamingTrack(
+      url,
+      label,
+      token,
+      0.96,
+      true,
+      () => {
+        if (!this.isPlaying || token !== this.studioLoadToken) return;
+        void this.crossfadeToCustomTrack(url, label, 4.0);
+      },
+      fadeSec
+    );
     if (streamed) return true;
     if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return false;
 
@@ -907,7 +964,7 @@ export class PsychoacousticEngine {
     this.usingCustomTrack = true;
     this.playStudioBuffer(buffer, label, token, rmsGain, () => {
       if (!this.isPlaying || token !== this.studioLoadToken) return;
-      void this.crossfadeToCustomTrack(url, label);
+      void this.crossfadeToCustomTrack(url, label, 4.0);
     });
     return true;
   }
@@ -930,11 +987,20 @@ export class PsychoacousticEngine {
     return all;
   }
 
-  private async activateStudioForGenre(genre: ResolvedGenre): Promise<void> {
+  private async activateStudioForGenre(genre: ResolvedGenre, fadeSec = 1.8): Promise<void> {
     const token = ++this.studioLoadToken;
     this.usingCustomTrack = false;
     this.activeCustomTrack = null;
-    const tracks = this.selectTracksForGenreAndEnergy(genre);
+    // Prefer all tracks in the genre (energy-matched first) so 2-track genres always alternate smoothly!
+    const allGenreTracks = this.studioCatalog[genre] ?? [];
+    const energyMatched = this.selectTracksForGenreAndEnergy(genre);
+    const tracks =
+      energyMatched.length >= 2
+        ? energyMatched
+        : [
+            ...energyMatched,
+            ...allGenreTracks.filter((t) => !energyMatched.some((e) => e.key === t.key)),
+          ];
 
     if (tracks.length === 0 || !this.ctx || !this.studioBus) {
       this.clearStudioDeck(1.2);
@@ -951,8 +1017,20 @@ export class PsychoacousticEngine {
     const chosenIdx = this.studioTrackIdx % tracks.length;
     const track = tracks[chosenIdx];
 
-    // 1. Instant HTTP 206 Range streaming (<0.3s start for 8.7 MB Nature & Rain and all studio stems!)
-    const streamed = await this.playStreamingTrack(track.url, track.name, token, 0.96, false);
+    // 1. Instant HTTP 206 Range streaming (<0.3s start) with smooth 4s Dual-Deck rotation across tracks!
+    const streamed = await this.playStreamingTrack(
+      track.url,
+      track.name,
+      token,
+      0.96,
+      false,
+      () => {
+        if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
+        this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
+        void this.activateStudioForGenre(genre, 4.0);
+      },
+      fadeSec
+    );
     if (streamed) return;
     if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return;
 
@@ -964,8 +1042,8 @@ export class PsychoacousticEngine {
 
     this.playStudioBuffer(buffer, track.name, token, 0.96, () => {
       if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
-      this.studioTrackIdx = tracks.length > 1 ? chosenIdx + 1 : 0;
-      void this.activateStudioForGenre(genre);
+      this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
+      void this.activateStudioForGenre(genre, 4.0);
     });
   }
 
@@ -1036,7 +1114,9 @@ export class PsychoacousticEngine {
     }
     this.composer.setPalette(nextPalette);
 
-    if (this.carrierMode === 'studio_library') {
+    if (this.carrierMode === 'lyria_realtime' && this.studySpec) {
+      this.lyriaClient.setGenre(style, this.studySpec, this.intensityMultiplier);
+    } else if (this.carrierMode === 'studio_library') {
       this.studioTrackIdx = 0;
       void this.activateStudioForGenre(style);
     }
@@ -1176,7 +1256,7 @@ export class PsychoacousticEngine {
     this.composer.setIntensityMultiplier(this.intensityMultiplier);
     this.stimulusRack.setIntensityMultiplier(this.intensityMultiplier);
     if (this.carrierMode === 'lyria_realtime' && this.studySpec) {
-      this.lyriaClient.steer(this.studySpec, this.intensityMultiplier);
+      this.lyriaClient.steer(this.studySpec, this.intensityMultiplier, this.genre);
     }
   }
 

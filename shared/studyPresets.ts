@@ -1,6 +1,6 @@
 import type { ExecutableStudySpec } from './studySpec';
 import { applySafetyAndDeviceGuardrails } from './studyCompilerCore';
-import type { OutputDevice, SessionEnvironment } from './types';
+import type { OutputDevice, ResolvedGenre, SessionEnvironment } from './types';
 
 /**
  * Ground-Truth Verified Clinical Executable Protocols.
@@ -755,7 +755,7 @@ export function buildCheckInExecutableSpec(input: {
   modulationDepth: number;
   noiseColor: ExecutableStudySpec['noise']['color'];
   noiseLevel: number;
-  genre: 'lofi_keys' | 'deep_electronic' | 'cinematic_strings' | 'jazz_rhodes' | 'acoustic_pluck' | 'nature_rain';
+  genre: ResolvedGenre;
   durationMin: number;
   device: OutputDevice;
   environment: SessionEnvironment;
@@ -795,6 +795,10 @@ export function buildCheckInExecutableSpec(input: {
     cinematic_strings: 'cinematic_strings',
     nature_rain: 'ambient_water',
     deep_electronic: 'deep_electronic',
+    dub_reggae: 'warm_rhodes',
+    ambient_space: 'ambient_water',
+    solo_piano: 'felt_piano',
+    bossa_nova: 'nylon_acoustic',
   };
   template.music.instrumentPalette = paletteMap[input.genre];
 

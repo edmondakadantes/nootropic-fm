@@ -123,7 +123,7 @@ export async function createStripeCheckoutSession(opts: {
     );
     form.set(
       'line_items[0][price_data][product_data][description]',
-      'Unlimited full sessions, any music style you type (Reggae, Lo-Fi, Jazz, Rock & more), live AI streaming & all science studies.'
+      'Unlimited full sessions (15–60 min), all 10 curated instrumental styles, infinite live AI streaming & full science study lab.'
     );
     form.set(
       'line_items[0][price_data][product_data][images][0]',

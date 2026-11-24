@@ -20,10 +20,10 @@ interface UpgradeProModalProps {
 }
 
 const PRO_BENEFITS = [
-  'Unlimited custom music styles (Reggae, Rock, Jazz, Classical — anything you type)',
-  'Live real-time AI music streaming tuned to your mood & pace',
-  'Full access to all Science Studies & custom study builder',
-  'Personal reaction-speed progress & instant QR sync across phone and laptop',
+  'Unlimited full sessions (15, 30, 45, 60 min — zero 5-minute cutoffs)',
+  'All 10 curated instrumental styles (Lo-Fi, Electronic, Classical, Jazz, Dub Reggae, Piano, Bossa Nova, Acoustic, Ambient, Rain)',
+  'Infinite Live AI music streaming — never repeats on long sessions',
+  'Full Science Study Lab + reaction-speed tracking & instant QR sync across devices',
 ];
 
 export function UpgradeProModal({
@@ -88,7 +88,7 @@ export function UpgradeProModal({
                 {isPro ? 'Pro Membership Active' : 'nootropic.fm Pro'}
               </div>
               <h3 className="text-base font-bold text-white sm:text-lg leading-tight">
-                {isPro ? 'Your Pro Subscription Is Active' : 'Unlock Any Music Style & Full Science Lab'}
+                {isPro ? 'Your Pro Subscription Is Active' : 'Unlock Full Sessions & Infinite Live AI'}
               </h3>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import { buildLyriaRealtimeConfig, type ExecutableStudySpec } from '../../shared/studySpec';
+import type { ResolvedGenre } from '../../shared/types';
 
 export type LyriaRealtimeStatus = 'idle' | 'connecting' | 'streaming' | 'unavailable' | 'error';
 
@@ -96,6 +97,14 @@ export class LyriaRealtimeClient {
   private outputGain: GainNode | null = null;
   private status: LyriaRealtimeStatus = 'idle';
   private onStatusChange?: (status: LyriaRealtimeStatus, note?: string) => void;
+  private intentionalStop = false;
+  private activeGenre: ResolvedGenre | undefined;
+  private activeSpec: ExecutableStudySpec | null = null;
+  private activeCtx: AudioContext | null = null;
+  private activeApiBase = '';
+  private fetchFreshToken?: () => Promise<{ token: string; model?: string } | null>;
+  private reconnectCount = 0;
+  private reconnectTimer: number | null = null;
 
   public async connect(opts: {
     ctx: AudioContext;
@@ -103,15 +112,24 @@ export class LyriaRealtimeClient {
     token: string;
     model: string;
     spec: ExecutableStudySpec;
+    genre?: ResolvedGenre;
     apiBase?: string;
+    fetchFreshToken?: () => Promise<{ token: string; model?: string } | null>;
     onStatusChange?: (status: LyriaRealtimeStatus, note?: string) => void;
   }): Promise<boolean> {
     this.stop();
+    this.intentionalStop = false;
+    this.reconnectCount = 0;
+    this.activeCtx = opts.ctx;
+    this.activeSpec = opts.spec;
+    this.activeGenre = opts.genre;
+    this.activeApiBase = opts.apiBase ?? '';
+    this.fetchFreshToken = opts.fetchFreshToken;
     this.onStatusChange = opts.onStatusChange;
-    this.setStatus('connecting', 'Connecting to Google Lyria RealTime stream...');
+    this.setStatus('connecting', 'Connecting to Infinite Live AI stream...');
 
     if (!opts.ctx.audioWorklet) {
-      this.setStatus('unavailable', 'AudioWorklet unsupported in this browser; using Live Generative Composer.');
+      this.setStatus('unavailable', 'AudioWorklet unsupported in this browser; using Studio Audio.');
       return false;
     }
 
@@ -137,136 +155,210 @@ export class LyriaRealtimeClient {
       this.workletNode = workletNode;
       this.outputGain = outGain;
 
-      const httpBase = (opts.apiBase || window.location.origin).replace(/\/+$/, '');
-      const wsBase = httpBase.replace(/^http/i, 'ws');
-      const wsUrl = `${wsBase}/api/music/realtime-ws?ticket=${encodeURIComponent(opts.token)}`;
-      const ws = new WebSocket(wsUrl);
-      this.ws = ws;
-
-      const lyriaCfg = buildLyriaRealtimeConfig(opts.spec);
-
-      return await new Promise<boolean>((resolve) => {
-        let settled = false;
-        let sentStart = false;
-        const finish = (ok: boolean) => {
-          if (settled) return;
-          settled = true;
-          resolve(ok);
-        };
-
-        const timeout = window.setTimeout(() => {
-          if (!settled) {
-            this.setStatus('error', 'Lyria RealTime handshake timed out — using Live Generative Composer.');
-            this.stop();
-            finish(false);
-          }
-        }, 10000);
-
-        ws.onopen = () => {
-          // 1. Setup model first; wait for server's setupComplete before steering & PLAY
-          ws.send(JSON.stringify({ setup: { model: opts.model || 'models/lyria-realtime-exp' } }));
-        };
-
-        ws.onmessage = async (evt) => {
-          try {
-            let raw: string;
-            if (typeof evt.data === 'string') {
-              raw = evt.data;
-            } else if (evt.data instanceof ArrayBuffer) {
-              raw = new TextDecoder().decode(evt.data);
-            } else if (evt.data instanceof Blob) {
-              raw = await evt.data.text();
-            } else {
-              raw = String(evt.data);
-            }
-            const msg = JSON.parse(raw) as {
-              setupComplete?: Record<string, unknown>;
-              serverContent?: {
-                audioChunks?: Array<{ data?: string }>;
-              };
-            };
-
-            if (msg.setupComplete && !sentStart) {
-              sentStart = true;
-              // 2. Send weighted prompts from ExecutableStudySpec
-              ws.send(
-                JSON.stringify({
-                  clientContent: {
-                    weightedPrompts: lyriaCfg.weightedPrompts,
-                  },
-                })
-              );
-              // 3. Send exact study BPM, scale, density, brightness, muteDrums lock
-              ws.send(
-                JSON.stringify({
-                  musicGenerationConfig: {
-                    bpm: lyriaCfg.config.bpm,
-                    density: lyriaCfg.config.density,
-                    brightness: lyriaCfg.config.brightness,
-                    scale: lyriaCfg.config.scale,
-                    muteBass: lyriaCfg.config.muteBass,
-                    muteDrums: lyriaCfg.config.muteDrums,
-                    guidance: lyriaCfg.config.guidance,
-                    temperature: 1.0,
-                  },
-                })
-              );
-              // 4. Start live streaming playback
-              ws.send(JSON.stringify({ playbackControl: 'PLAY' }));
-              return;
-            }
-
-            const chunks = msg.serverContent?.audioChunks ?? [];
-            if (chunks.length > 0 && this.workletNode) {
-              for (const ch of chunks) {
-                if (!ch.data) continue;
-                const { left, right } = decodeBase64Pcm16Stereo(ch.data);
-                this.workletNode.port.postMessage(
-                  { type: 'pcm', left, right },
-                  [left.buffer, right.buffer]
-                );
-              }
-              if (this.status !== 'streaming') {
-                window.clearTimeout(timeout);
-                this.setStatus('streaming', 'Google Lyria RealTime AI streaming live through 3-Band LR4 DSP');
-                this.outputGain?.gain.exponentialRampToValueAtTime(0.92, opts.ctx.currentTime + 1.5);
-                finish(true);
-              }
-            }
-          } catch {
-            // ignore non-audio control frames
-          }
-        };
-
-        ws.onerror = () => {
-          window.clearTimeout(timeout);
-          this.setStatus('error', 'Lyria RealTime stream error — falling back cleanly to Live Generative Composer.');
-          finish(false);
-        };
-
-        ws.onclose = () => {
-          window.clearTimeout(timeout);
-          if (this.status === 'connecting') {
-            this.setStatus('unavailable', 'Lyria RealTime closed — running on $0 Live Generative Composer.');
-            finish(false);
-          }
-        };
-      });
+      return await this.openSocket(opts.token, opts.model);
     } catch {
-      this.setStatus('error', 'Could not initialize Lyria RealTime — using Live Generative Composer.');
+      this.setStatus('error', 'Could not initialize Infinite Live AI — continuing smoothly on Studio Audio.');
       this.stop();
       return false;
+    }
+  }
+
+  private async openSocket(token: string, model: string): Promise<boolean> {
+    if (!this.activeCtx || !this.activeSpec || this.intentionalStop) return false;
+
+    const httpBase = (this.activeApiBase || window.location.origin).replace(/\/+$/, '');
+    const wsBase = httpBase.replace(/^http/i, 'ws');
+    const wsUrl = `${wsBase}/api/music/realtime-ws?ticket=${encodeURIComponent(token)}`;
+    const ws = new WebSocket(wsUrl);
+    this.ws = ws;
+
+    const lyriaCfg = buildLyriaRealtimeConfig(this.activeSpec, this.activeGenre);
+
+    return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      let sentStart = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+
+      const timeout = window.setTimeout(() => {
+        if (!settled) {
+          this.setStatus('error', 'Infinite Live AI handshake timed out — continuing on Studio Audio.');
+          this.stop();
+          finish(false);
+        }
+      }, 10000);
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ setup: { model: model || 'models/lyria-realtime-exp' } }));
+      };
+
+      ws.onmessage = async (evt) => {
+        try {
+          let raw: string;
+          if (typeof evt.data === 'string') {
+            raw = evt.data;
+          } else if (evt.data instanceof ArrayBuffer) {
+            raw = new TextDecoder().decode(evt.data);
+          } else if (evt.data instanceof Blob) {
+            raw = await evt.data.text();
+          } else {
+            raw = String(evt.data);
+          }
+          const msg = JSON.parse(raw) as {
+            setupComplete?: Record<string, unknown>;
+            serverContent?: {
+              audioChunks?: Array<{ data?: string }>;
+            };
+          };
+
+          if (msg.setupComplete && !sentStart) {
+            sentStart = true;
+            ws.send(
+              JSON.stringify({
+                clientContent: {
+                  weightedPrompts: lyriaCfg.weightedPrompts,
+                },
+              })
+            );
+            ws.send(
+              JSON.stringify({
+                musicGenerationConfig: {
+                  bpm: lyriaCfg.config.bpm,
+                  density: lyriaCfg.config.density,
+                  brightness: lyriaCfg.config.brightness,
+                  scale: lyriaCfg.config.scale,
+                  muteBass: lyriaCfg.config.muteBass,
+                  muteDrums: lyriaCfg.config.muteDrums,
+                  guidance: lyriaCfg.config.guidance,
+                  temperature: 1.0,
+                },
+              })
+            );
+            ws.send(JSON.stringify({ playbackControl: 'PLAY' }));
+            return;
+          }
+
+          const chunks = msg.serverContent?.audioChunks ?? [];
+          if (chunks.length > 0 && this.workletNode && this.activeCtx) {
+            for (const ch of chunks) {
+              if (!ch.data) continue;
+              const { left, right } = decodeBase64Pcm16Stereo(ch.data);
+              this.workletNode.port.postMessage(
+                { type: 'pcm', left, right },
+                [left.buffer, right.buffer]
+              );
+            }
+            if (this.status !== 'streaming') {
+              window.clearTimeout(timeout);
+              this.reconnectCount = 0;
+              this.setStatus('streaming', 'Infinite Live AI streaming continuously through 3-Band LR4 DSP');
+              this.outputGain?.gain.exponentialRampToValueAtTime(0.92, this.activeCtx.currentTime + 1.5);
+              finish(true);
+            }
+          }
+        } catch {
+          // ignore non-audio control frames
+        }
+      };
+
+      ws.onerror = () => {
+        window.clearTimeout(timeout);
+        if (!settled) {
+          this.setStatus('error', 'Infinite Live AI stream error — continuing seamlessly on Studio Audio.');
+          finish(false);
+        }
+      };
+
+      ws.onclose = () => {
+        window.clearTimeout(timeout);
+        if (this.intentionalStop) {
+          finish(false);
+          return;
+        }
+        if (!settled) {
+          this.setStatus('unavailable', 'Infinite Live AI unavailable — continuing on Studio Audio.');
+          finish(false);
+          return;
+        }
+        // Seamless auto-reconnect for 30–60 min long sessions (Google WS sessions can refresh every ~10-15 min)
+        if (this.status === 'streaming' && this.fetchFreshToken && this.reconnectCount < 6) {
+          this.reconnectCount++;
+          this.setStatus('connecting', 'Refreshing Infinite Live AI stream seamlessly...');
+          this.reconnectTimer = window.setTimeout(() => {
+            this.reconnectTimer = null;
+            if (this.intentionalStop || !this.fetchFreshToken) return;
+            void this.fetchFreshToken()
+              .then((fresh) => {
+                if (this.intentionalStop) return;
+                if (fresh?.token) {
+                  void this.openSocket(fresh.token, fresh.model ?? 'models/lyria-realtime-exp');
+                } else {
+                  this.setStatus('unavailable', 'Continuing smoothly on Studio Audio.');
+                }
+              })
+              .catch(() => {
+                if (!this.intentionalStop) {
+                  this.setStatus('unavailable', 'Continuing smoothly on Studio Audio.');
+                }
+              });
+          }, 900);
+        } else if (this.status === 'streaming') {
+          this.setStatus('unavailable', 'Infinite Live AI session ended — continuing smoothly on Studio Audio.');
+        }
+      };
+    });
+  }
+
+  /**
+   * Smoothly morphs the active live Infinite AI stream to a new curated genre in <2 seconds.
+   */
+  public setGenre(genre: ResolvedGenre, spec: ExecutableStudySpec, intensityMult = 1.0): void {
+    this.activeGenre = genre;
+    this.activeSpec = spec;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const cfg = buildLyriaRealtimeConfig(spec, genre);
+    const density = Math.max(0.15, Math.min(0.92, cfg.config.density * intensityMult));
+    const brightness = Math.max(0.18, Math.min(0.92, cfg.config.brightness * (0.85 + 0.15 * intensityMult)));
+    try {
+      this.ws.send(
+        JSON.stringify({
+          clientContent: {
+            weightedPrompts: cfg.weightedPrompts,
+          },
+        })
+      );
+      this.ws.send(
+        JSON.stringify({
+          musicGenerationConfig: {
+            bpm: cfg.config.bpm,
+            density: Number(density.toFixed(2)),
+            brightness: Number(brightness.toFixed(2)),
+            scale: cfg.config.scale,
+            muteBass: cfg.config.muteBass,
+            muteDrums: cfg.config.muteDrums,
+            guidance: cfg.config.guidance,
+            temperature: 1.0,
+          },
+        })
+      );
+    } catch {
+      // ignore transient ws error
     }
   }
 
   /**
    * Steers live Lyria RealTime density & brightness as user adjusts controls mid-session.
    */
-  public steer(spec: ExecutableStudySpec, intensityMult: number): void {
+  public steer(spec: ExecutableStudySpec, intensityMult: number, genre?: ResolvedGenre): void {
+    this.activeSpec = spec;
+    if (genre) this.activeGenre = genre;
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    const cfg = buildLyriaRealtimeConfig(spec);
-    const density = Math.max(0.1, Math.min(0.95, cfg.config.density * intensityMult));
-    const brightness = Math.max(0.1, Math.min(0.95, cfg.config.brightness * (0.85 + 0.15 * intensityMult)));
+    const cfg = buildLyriaRealtimeConfig(spec, this.activeGenre);
+    const density = Math.max(0.15, Math.min(0.92, cfg.config.density * intensityMult));
+    const brightness = Math.max(0.18, Math.min(0.92, cfg.config.brightness * (0.85 + 0.15 * intensityMult)));
     try {
       this.ws.send(
         JSON.stringify({
@@ -297,6 +389,11 @@ export class LyriaRealtimeClient {
   }
 
   public stop(): void {
+    this.intentionalStop = true;
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
       try {
         if (this.ws.readyState === WebSocket.OPEN) {

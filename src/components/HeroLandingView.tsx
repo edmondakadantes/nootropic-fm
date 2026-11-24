@@ -102,8 +102,7 @@ export function HeroLandingView({
 
         {/* Zero-Friction Trust Strip */}
         <p className="max-w-lg text-[11px] leading-relaxed text-slate-400">
-          First 5 minutes free · No card required · Reggae, Lo-Fi, Electronic, Jazz, Classical &amp;
-          more · 18+
+          First 5 minutes free · No card required · 10 curated styles + Infinite Live AI · 18+
         </p>
       </section>
 
@@ -145,13 +144,13 @@ export function HeroLandingView({
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-0.5 text-[11px] text-slate-400">
-          <span>Want another mood or your own music style (Reggae, Rock, Jazz, Classical)?</span>
+          <span>Prefer Jazz, Dub Reggae, Solo Piano, Bossa Nova, or Beatless Space?</span>
           <button
             type="button"
             onClick={onStartCustomize}
             className="inline-flex items-center gap-1 font-semibold text-cyan-300 transition hover:text-cyan-200"
           >
-            Pick Any Mood &amp; Music
+            Choose From All 10 Styles
             <ArrowRight className="h-3 w-3" />
           </button>
           <span className="hidden text-slate-700 sm:inline">·</span>
@@ -196,8 +195,9 @@ export function HeroLandingView({
             3. Blended With Music You Love
           </div>
           <p className="text-xs leading-relaxed text-slate-400">
-            No boring background hums. Listen with Lo-Fi, Reggae, Jazz, Classical, Electronic, or{' '}
-            <span className="text-slate-200">any music style you type</span>.
+            No boring background hums. Pick from{' '}
+            <span className="text-slate-200">10 curated instrumental styles</span> — Lo-Fi, Electronic,
+            Jazz, Classical, Reggae, Piano, Bossa Nova &amp; more — plus Infinite Live AI.
           </p>
         </div>
       </section>

@@ -18,7 +18,7 @@ import {
   Sparkles,
   Waves,
 } from 'lucide-react';
-import { getGenreDisplayMeta, sanitizeCustomVibe } from '../../shared/promptComposer';
+import { getGenreDisplayMeta } from '../../shared/promptComposer';
 import type { ProtocolRecommendation, ResolvedGenre, UserProfile } from '../../shared/types';
 import {
   DEVICE_LABELS,
@@ -134,16 +134,11 @@ export function ProtocolRevealView({
   recommendation,
   profile,
   mood,
-  customLiveGenAvailable,
   onSwapGenre,
-  onSwapCustomVibe,
   onLaunchAudio,
   onOpenStudyLab,
   onBack,
 }: ProtocolRevealViewProps) {
-  const [showCustomSwap, setShowCustomSwap] = useState(false);
-  const [customDraft, setCustomDraft] = useState('');
-  const [customError, setCustomError] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [showFormulaFacts, setShowFormulaFacts] = useState(false);
 
@@ -368,24 +363,7 @@ export function ProtocolRevealView({
   const landingMin = Math.max(1, Math.round(recommendation.plannedDurationMin * 0.12));
   const peakMin = Math.max(1, recommendation.plannedDurationMin - entryMin - landingMin);
 
-  const applyCustomSwap = async (): Promise<boolean> => {
-    const check = sanitizeCustomVibe(customDraft);
-    if (!check || check.rejectedReason) {
-      setCustomError(check?.rejectedReason ?? 'Enter a valid instrumental genre (e.g., chill reggae).');
-      return false;
-    }
-    setCustomError(null);
-    await onSwapCustomVibe(check.displayLabel);
-    setShowCustomSwap(false);
-    setCustomDraft('');
-    return true;
-  };
-
-  const handleLaunchClick = async () => {
-    if (showCustomSwap && customDraft.trim()) {
-      const ok = await applyCustomSwap();
-      if (!ok) return;
-    }
+  const handleLaunchClick = () => {
     onLaunchAudio();
   };
 
@@ -688,10 +666,10 @@ export function ProtocolRevealView({
             </div>
           )}
 
-          {/* 1-Tap Layer 2 Swap */}
+          {/* 1-Tap Layer 2 Swap (10 Curated Genres + Other Coming Soon) */}
           <div className="space-y-2 pt-1">
             <div className="text-[11px] font-medium text-slate-400">
-              Want a different music layer? Swap in 1 tap before playing:
+              Want a different music style? Swap in 1 tap before playing:
             </div>
             <div className="flex flex-wrap gap-1.5">
               {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
@@ -700,10 +678,7 @@ export function ProtocolRevealView({
                   <button
                     key={g}
                     type="button"
-                    onClick={() => {
-                      setShowCustomSwap(false);
-                      onSwapGenre(g);
-                    }}
+                    onClick={() => onSwapGenre(g)}
                     className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                       active
                         ? 'border-indigo-400 bg-indigo-500/25 text-white shadow-[0_0_16px_rgba(129,140,248,0.28)]'
@@ -715,50 +690,17 @@ export function ProtocolRevealView({
                 );
               })}
 
-              <button
-                type="button"
-                onClick={() => setShowCustomSwap((v) => !v)}
-                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                  recommendation.customGenreSlug || showCustomSwap
-                    ? 'border-fuchsia-400 bg-fuchsia-500/20 text-fuchsia-100'
-                    : 'border-fuchsia-400/35 bg-fuchsia-500/10 text-fuchsia-200 hover:border-fuchsia-400/60'
-                }`}
+              <span
+                aria-disabled="true"
+                title="More genres & custom styles coming soon"
+                className="inline-flex cursor-not-allowed select-none items-center gap-1 rounded-full border border-dashed border-slate-700/80 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-500"
               >
-                <Plus className="h-3 w-3" />
-                {recommendation.customGenreLabel ? `Custom: ${recommendation.customGenreLabel}` : 'Custom vibe'}
-              </button>
+                <span>Other</span>
+                <span className="rounded-full border border-slate-700 bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Coming Soon
+                </span>
+              </span>
             </div>
-
-            {showCustomSwap && (
-              <div className="animate-step flex flex-col gap-2 pt-1 sm:flex-row">
-                <input
-                  type="text"
-                  value={customDraft}
-                  onChange={(e) => {
-                    setCustomDraft(e.target.value);
-                    setCustomError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void applyCustomSwap();
-                  }}
-                  placeholder="e.g. reggae, synthwave, bossa nova, rain..."
-                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-fuchsia-400 focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => void applyCustomSwap()}
-                  className="rounded-xl border border-fuchsia-400/50 bg-fuchsia-500/20 px-4 py-2 text-xs font-semibold text-fuchsia-100 hover:bg-fuchsia-500/30"
-                >
-                  Apply Vibe
-                </button>
-              </div>
-            )}
-            {customError && <p className="text-[11px] text-rose-300">{customError}</p>}
-            {showCustomSwap && !customLiveGenAvailable && (
-              <p className="text-[10px] text-slate-500">
-                Checks Community R2 Cache first; uncached vibes start smoothly on our closest studio match.
-              </p>
-            )}
           </div>
         </div>
       </div>
