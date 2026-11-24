@@ -15,6 +15,7 @@ import type {
 import { GenerativeComposer } from './GenerativeComposer';
 import { LyriaRealtimeClient, type LyriaRealtimeStatus } from './LyriaRealtimeClient';
 import { createCalibratedNoiseBuffer, MedicalStimulusRack } from './MedicalStimulusRack';
+import { StereoRainBed } from './StereoRainBed';
 
 export type SessionPhase = 'entry' | 'plateau' | 'landing';
 
@@ -218,6 +219,7 @@ export class PsychoacousticEngine {
   private composer = new GenerativeComposer();
   private stimulusRack = new MedicalStimulusRack();
   private lyriaClient = new LyriaRealtimeClient();
+  private rainBed = new StereoRainBed();
 
   // Mobile background bridge & wake lock
   private audioEl: HTMLAudioElement | null = null;
@@ -596,6 +598,10 @@ export class PsychoacousticEngine {
       sampleApiBase,
     });
 
+    // ─── DEDICATED PHYSICAL STEREO RAINFALL LAYER (active whenever Soft Rain & Nature is chosen) ───
+    this.rainBed.attach(ctx, compressor, params.speakerSafeEQ);
+    this.syncRainBed();
+
     this.isPlaying = true;
     this.setupMediaSession(title);
     void this.requestWakeLock();
@@ -603,6 +609,11 @@ export class PsychoacousticEngine {
     if (this.carrierMode === 'studio_library' && !skipInitialStudioDeck) {
       void this.activateStudioForGenre(this.genre);
     }
+  }
+
+  private syncRainBed(): void {
+    const shouldPlayRain = this.genre === 'nature_rain' && this.carrierMode !== 'pure_stimulus';
+    this.rainBed.setActive(shouldPlayRain);
   }
 
   /**
@@ -644,6 +655,7 @@ export class PsychoacousticEngine {
       this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, now, 0.4);
       void this.activateStudioForGenre(this.genre);
     }
+    this.syncRainBed();
   }
 
   /**
@@ -680,6 +692,7 @@ export class PsychoacousticEngine {
           this.usingCustomTrack = false;
           this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.85);
           this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.85);
+          this.syncRainBed();
         } else if ((st === 'error' || st === 'unavailable') && this.carrierMode === 'lyria_realtime') {
           this.setCarrierMode('studio_library');
         }
@@ -1032,13 +1045,15 @@ export class PsychoacousticEngine {
 
     const chosenIdx = this.studioTrackIdx % tracks.length;
     const track = tracks[chosenIdx];
+    // For Soft Rain & Nature, gently tuck warm pads so our stereo rain & raindrops stay crystal clear!
+    const studioTargetGain = genre === 'nature_rain' ? 0.54 : 0.96;
 
     // 1. Instant HTTP 206 Range streaming (<0.3s start) with smooth 4s Dual-Deck rotation across tracks!
     const streamed = await this.playStreamingTrack(
       track.url,
       track.name,
       token,
-      0.96,
+      studioTargetGain,
       false,
       () => {
         if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
@@ -1056,7 +1071,7 @@ export class PsychoacousticEngine {
       return;
     }
 
-    this.playStudioBuffer(buffer, track.name, token, 0.96, () => {
+    this.playStudioBuffer(buffer, track.name, token, studioTargetGain, () => {
       if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
       this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
       void this.activateStudioForGenre(genre, 4.0);
@@ -1136,6 +1151,7 @@ export class PsychoacousticEngine {
       this.studioTrackIdx = 0;
       void this.activateStudioForGenre(style);
     }
+    this.syncRainBed();
   }
 
   public getGenre(): ResolvedGenre {
@@ -1271,6 +1287,7 @@ export class PsychoacousticEngine {
     this.intensityMultiplier = Math.max(0.45, Math.min(1.55, multiplier));
     this.composer.setIntensityMultiplier(this.intensityMultiplier);
     this.stimulusRack.setIntensityMultiplier(this.intensityMultiplier);
+    this.rainBed.setIntensityMultiplier(this.intensityMultiplier);
     if (this.carrierMode === 'lyria_realtime' && this.studySpec) {
       this.lyriaClient.steer(this.studySpec, this.intensityMultiplier, this.genre);
     }
@@ -1424,6 +1441,7 @@ export class PsychoacousticEngine {
       this.composer.stop();
       this.stimulusRack.stop();
       this.lyriaClient.stop();
+      this.rainBed.stop();
       this.clearStudioDeck(0.35);
       window.setTimeout(() => {
         audioElRef?.pause();
@@ -1453,6 +1471,7 @@ export class PsychoacousticEngine {
     this.composer.stop();
     this.stimulusRack.stop();
     this.lyriaClient.stop();
+    this.rainBed.stop();
     this.clearStudioDeck(0.1);
     if (this.visibilityHandler) {
       document.removeEventListener('visibilitychange', this.visibilityHandler);
