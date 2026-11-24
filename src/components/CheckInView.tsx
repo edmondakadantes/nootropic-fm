@@ -221,7 +221,8 @@ export function CheckInView({
 
   // Beat 4: Preferred Music Layer (10 curated studio + infinite AI genres)
   const [genreChoice, setGenreChoice] = useState<MusicGenreChoice>(
-    initialPreset?.requestedGenre ?? 'auto'
+    initialPreset?.requestedGenre ??
+      (profile?.favoriteGenres && profile.favoriteGenres.length > 0 ? 'auto' : 'deep_electronic')
   );
 
   const [listeningBeat, setListeningBeat] = useState<1 | 2 | 3 | null>(null);
@@ -1369,7 +1370,7 @@ export function CheckInView({
                       genreChoice !== 'auto' ? GENRE_META[genreChoice].label : 'Auto Music';
                     return profile?.planTier === 'pro'
                       ? `Play ${activeMusicName} · Pro`
-                      : `Play ${activeMusicName} · 15 Min Free`;
+                      : `Play ${activeMusicName} · 5 Min Free (+30m Share)`;
                   })()}
             </button>
           </div>

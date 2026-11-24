@@ -558,19 +558,19 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
     };
   }
 
-  // Default: Deep Focus · Lo-Fi Keys (16 Hz Beta AM — Woods et al. 2024)
+  // Default: Deep Focus · Deep Electronic (16 Hz Beta AM — Woods et al. 2024)
   const baseParams: ProtocolArm['baseParams'] = {
     modulationHz: 16,
     modulationDepth: 0.38,
     crossoverHz: 190,
     upperCrossoverHz: 4500,
-    bpm: 88,
+    bpm: 108,
     pulseIntensity: 0.48,
     noiseColor: 'pink',
     noiseLevel: 0.07,
     harmonicMode: 'warm_min9',
     rootNoteHz: 146.83,
-    filterCutoffHz: 2200,
+    filterCutoffHz: 2600,
     speakerSafeEQ: false,
     antiMonotonyCycleMin: 0,
     binauralOffsetHz: 0,
@@ -603,8 +603,8 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
       },
       {
         parameter: 'Musical Carrier',
-        targetLabel: 'Mastered Studio Lo-Fi Keys',
-        executedValue: 'Warm Dusty Rhodes studio stems · zero lyrics',
+        targetLabel: 'Mastered Studio Deep Electronic',
+        executedValue: 'Clean analog synths & steady focus pulse · zero lyrics',
         studyQuote: 'Background music engineered specifically to avoid lyrical distraction while remaining pleasant.',
         origin: 'study_exact',
       },
@@ -620,19 +620,19 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
     },
     music: {
       defaultCarrierMode: 'studio_library',
-      bpm: 88,
+      bpm: 108,
       tonalMode: 'dorian',
       tuningA4Hz: 440,
       rootMidi: 50,
       percussion: 'steady_pulse',
       density: 0.5,
       brightness: 0.54,
-      spectralLowPassHz: 2200,
-      instrumentPalette: 'felt_piano',
-      vibeTags: ['lofi keys', 'warm rhodes', 'deep focus', 'lyric-free'],
+      spectralLowPassHz: 2600,
+      instrumentPalette: 'deep_electronic',
+      vibeTags: ['deep electronic', 'analog synths', 'deep focus', 'lyric-free'],
       lyriaWeightedPrompts: [
         {
-          text: 'Strictly instrumental warm Lo-Fi Rhodes keys focus groove, soft vinyl warmth, zero vocals',
+          text: 'Strictly instrumental warm deep electronic focus pulse, clean analog synths, zero vocals',
           weight: 1.5,
         },
       ],
@@ -654,9 +654,9 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
     arm: {
       id: 'beta-focus-16hz',
       name: 'Beta Focus 16 Hz',
-      tagline: '16 Hz Beta AM · Lo-Fi Warm Keys',
+      tagline: '16 Hz Beta AM · Deep Electronic',
       description:
-        'Rapid 16 Hz mid-band amplitude modulation fused into mastered Lo-Fi Warm Keys studio tracks for sustained deep work.',
+        'Rapid 16 Hz mid-band amplitude modulation fused into mastered Deep Electronic studio tracks for sustained deep work.',
       targetStates: ['alert_focus', 'deep_flow'],
       drivingSafe: true,
       priorAlpha: 4.5,
@@ -667,7 +667,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
     params: {
       ...baseParams,
       stereoAmSpread: true,
-      genre: 'lofi_keys',
+      genre: 'deep_electronic',
       genreSelectionMode: 'user_chosen',
       energyTier: 'focus',
     },
@@ -677,17 +677,17 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
     safetyMode: false,
     safetyWarnings: [],
     audioSource: 'studio_library',
-    fallbackCoreGenre: 'lofi_keys',
+    fallbackCoreGenre: 'deep_electronic',
     personalizationSummary: [
       'Instant preview · 100% local-only mode (zero signup)',
-      '16 Hz Beta 3-Band LR4 AM over mastered Lo-Fi Warm Keys studio stems',
+      '16 Hz Beta 3-Band LR4 AM over mastered Deep Electronic studio stems',
     ],
     formulaIngredients: [
       { role: 'Layer 1 · Active AM', compound: '16 Hz Beta · 3-Band LR4', dose: '29%→38% (190Hz–4.5kHz)', evidenceTag: 'Woods et al. 2024' },
-      { role: 'Layer 2 · Music', compound: 'Lo-Fi Warm Keys · Focus', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
+      { role: 'Layer 2 · Music', compound: 'Deep Electronic · Focus', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
     ],
     rationale:
-      'Applies phase-coherent 16 Hz Beta modulation strictly to the 190 Hz–4.5 kHz mid-band of mastered Lo-Fi Warm Keys studio audio so sub-bass warmth and crisp highs stay completely intact.',
+      'Applies phase-coherent 16 Hz Beta modulation strictly to the 190 Hz-4.5 kHz mid-band of mastered Deep Electronic studio audio so sub-bass warmth and crisp highs stay completely intact.',
     studies: QUICK_TRY_CITATIONS.focus_lofi,
     executableSpec: spec,
     confidencePct: 89,

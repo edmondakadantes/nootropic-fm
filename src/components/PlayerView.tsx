@@ -52,7 +52,7 @@ import { NeuralVisualizer } from './NeuralVisualizer';
 import { PvtBenchmarkModal } from './PvtBenchmarkModal';
 import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
-const FREE_PREVIEW_LIMIT_SEC = 900; // 15-minute free calibration session (past 6-12 min entrainment threshold)
+const FREE_PREVIEW_LIMIT_SEC = 300; // 5-minute free calibration session (+30 min Share Bonus)
 const SHARE_BONUS_SEC = 1800; // +30 minutes free when sharing your 1-of-1 Neural Fingerprint Card
 const SHARE_BONUS_DAY_KEY = 'nootropic_fm_share_bonus_day_v1';
 
@@ -172,7 +172,7 @@ export function PlayerView({
   const [selectedPaywallPlan, setSelectedPaywallPlan] = useState<'annual' | 'monthly'>('annual');
   const [unlockingCheckout, setUnlockingCheckout] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
-  const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('none');
+  const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('tune');
 
   const effectiveFreeLimitSec = FREE_PREVIEW_LIMIT_SEC + shareBonusSec;
   const shareSeed = syncCode || profile?.id || recommendation.sessionId;
@@ -1039,29 +1039,43 @@ export function PlayerView({
               of {recommendation.plannedDurationMin}:00 min
             </div>
             {!isPro && plannedSec > effectiveFreeLimitSec && (
-              <button
-                type="button"
-                onClick={() => onUpgradePro?.()}
-                className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
-                  shareBonusSec > 0
-                    ? 'border-emerald-400/40 bg-emerald-500/12 text-[#34D399] hover:bg-emerald-500/20'
-                    : effectiveFreeLimitSec - elapsedSec <= 30
-                      ? 'border-amber-400/60 bg-amber-400/18 text-amber-200'
-                      : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
-                }`}
-                title={
-                  shareBonusSec > 0
-                    ? '+30 min Share Bonus active! Upgrade to Pro for unlimited full sessions.'
-                    : 'Free calibration lasts 15 minutes. Share your Neural Fingerprint for +30 min free or try Pro free for 7 days.'
-                }
-              >
-                <Clock className="h-3 w-3" />
-                {previewLocked
-                  ? 'Preview ended'
-                  : shareBonusSec > 0
-                    ? `+30m Bonus · ${formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))}`
-                    : `Free · ${formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))}`}
-              </button>
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onUpgradePro?.()}
+                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
+                    shareBonusSec > 0
+                      ? 'border-emerald-400/40 bg-emerald-500/12 text-[#34D399] hover:bg-emerald-500/20'
+                      : effectiveFreeLimitSec - elapsedSec <= 45
+                        ? 'border-amber-400/60 bg-amber-400/18 text-amber-200'
+                        : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
+                  }`}
+                  title={
+                    shareBonusSec > 0
+                      ? '+30 min Share Bonus active! Upgrade to Pro for unlimited full sessions.'
+                      : 'Free calibration lasts 5 minutes. Share your Neural Fingerprint for +30 min free or try Pro free for 7 days.'
+                  }
+                >
+                  <Clock className="h-3 w-3" />
+                  {previewLocked
+                    ? 'Preview ended'
+                    : shareBonusSec > 0
+                      ? `+30m Bonus · ${formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))}`
+                      : `Free · ${formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))}`}
+                </button>
+                {!shareBonusUsedToday && shareBonusSec === 0 && !previewLocked && (
+                  <button
+                    type="button"
+                    disabled={sharingForBonus}
+                    onClick={() => void handleShareFor30MinBonus()}
+                    className="inline-flex items-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-500/12 px-2 py-0.5 font-mono-tech text-[10px] font-semibold text-[#34D399] transition hover:bg-emerald-500/20 disabled:opacity-60"
+                    title="Share your public Neural Fingerprint card to unlock +30 extra minutes free"
+                  >
+                    <Share2 className="h-2.5 w-2.5" />
+                    {sharingForBonus ? 'Sharing...' : '+30m Share'}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -1186,9 +1200,14 @@ export function PlayerView({
               </button>
             </div>
 
-            {!isPro && elapsedSec >= 300 && elapsedSec < 325 && plannedSec > effectiveFreeLimitSec && (
+            {!isPro && shareBonusSec === 0 && !shareBonusUsedToday && elapsedSec >= 210 && elapsedSec < 240 && plannedSec > effectiveFreeLimitSec && (
               <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-[#34D399]">
-                5:00 Entrainment Phase-Locked · {formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))} remaining in your free calibration session
+                1:30 remaining in your 5-min free calibration · Tap +30m Share above anytime for 30 extra minutes free
+              </div>
+            )}
+            {!isPro && shareBonusSec > 0 && elapsedSec >= 300 && elapsedSec < 325 && plannedSec > effectiveFreeLimitSec && (
+              <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-[#34D399]">
+                5:00 Entrainment Phase-Locked · {formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))} remaining in your +30m bonus session
               </div>
             )}
           </div>
@@ -1781,14 +1800,14 @@ export function PlayerView({
         </div>
       )}
 
-      {/* 15-Minute Free Session Complete -> Stripe Pro Unlock Overlay */}
+      {/* 5-Minute Free Calibration Complete -> Stripe Pro Unlock Overlay */}
       {previewLocked && !isPro && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/85 p-4 backdrop-blur-md">
           <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-2xl border border-white/15 p-5 sm:p-7 space-y-5">
             <div className="space-y-2 text-center">
               <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-400/35 bg-emerald-500/10 px-2.5 py-1 font-mono-tech text-[10px] font-bold uppercase tracking-wider text-[#34D399]">
                 <Lock className="h-3 w-3" />
-                15-Minute Free Session Complete
+                5-Minute Free Calibration Complete
                 {telemetry.currentModHz > 0 ? ` · ${telemetry.currentModHz} Hz Phase-Locked` : ''}
               </div>
               <h2 className="font-display text-2xl font-semibold text-[#F3F1EC] sm:text-[1.65rem] leading-tight">

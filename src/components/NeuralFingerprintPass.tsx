@@ -448,12 +448,12 @@ export async function renderPublicFingerprintCardBlob(opts: {
 
   ctx.fillStyle = '#4A4A46';
   ctx.font = '500 23px sans-serif';
-  ctx.fillText('Shift how you feel with music', 386, 1188);
-  ctx.fillText('you can actually measure.', 386, 1222);
+  ctx.fillText('Reach your best mental state', 386, 1188);
+  ctx.fillText('with music you can measure.', 386, 1222);
 
   ctx.fillStyle = '#6E6E68';
   ctx.font = 'bold 18px monospace';
-  ctx.fillText('15-MIN FREE SESSION · ZERO LOGIN REQUIRED', 386, 1268);
+  ctx.fillText('5-MIN FREE CALIBRATION · +30M SHARE BONUS', 386, 1268);
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG export failed'))), 'image/png');

@@ -346,8 +346,8 @@ export function resolveEnergyTier(
 }
 
 const ALL_GENRES: ResolvedGenre[] = [
-  'lofi_keys',
   'deep_electronic',
+  'lofi_keys',
   'cinematic_strings',
   'jazz_rhodes',
   'acoustic_pluck',
@@ -362,7 +362,7 @@ function getGenrePrior(
   genre: ResolvedGenre,
   targetState: TargetState,
   environment: SessionEnvironment,
-  currentState: CurrentState,
+  _currentState: CurrentState,
   profile: UserProfile
 ): { alpha: number; beta: number } {
   const isDriving = environment === 'driving';
@@ -385,15 +385,16 @@ function getGenrePrior(
     else if (genre === 'acoustic_pluck') alpha = 2.6;
     else alpha = 1.4;
   } else if (targetState === 'deep_flow') {
-    if (genre === 'lofi_keys' || genre === 'cinematic_strings' || genre === 'solo_piano') alpha = 3.5;
-    else if (genre === 'deep_electronic' || genre === 'jazz_rhodes' || genre === 'dub_reggae') alpha = 3.1;
+    if (genre === 'deep_electronic') alpha = 3.6;
+    else if (genre === 'lofi_keys' || genre === 'cinematic_strings' || genre === 'solo_piano') alpha = 3.4;
+    else if (genre === 'jazz_rhodes' || genre === 'dub_reggae') alpha = 3.1;
     else if (genre === 'bossa_nova' || genre === 'ambient_space') alpha = 2.8;
     else alpha = 2.3;
   } else {
     // alert_focus
     if (environment === 'study' && (genre === 'lofi_keys' || genre === 'solo_piano')) alpha = 3.7;
-    else if (currentState === 'fatigued' && genre === 'deep_electronic') alpha = 3.6;
-    else if (genre === 'jazz_rhodes' || genre === 'lofi_keys' || genre === 'deep_electronic' || genre === 'bossa_nova') alpha = 3.2;
+    else if (genre === 'deep_electronic') alpha = 3.6;
+    else if (genre === 'jazz_rhodes' || genre === 'lofi_keys' || genre === 'bossa_nova') alpha = 3.2;
     else alpha = 2.5;
   }
 

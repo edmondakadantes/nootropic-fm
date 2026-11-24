@@ -29,7 +29,7 @@ const CHANNEL_PRESETS: Array<{
     tag: '16 HZ AM',
     from: 'Distracted',
     to: 'Focused',
-    sub: 'Lo-Fi Beats · 25 min',
+    sub: 'Deep Electronic · 25 min',
   },
   {
     id: 'mood_uplift',
@@ -210,7 +210,7 @@ export function HeroLandingView({
         </div>
 
         <p className="max-w-lg font-mono-tech text-[11px] leading-relaxed text-[#7E7E78]">
-          15-min free session · No card or login required · 10 styles + Endless Stream · 18+
+          5-min free calibration · Share for +30 min free · No card or login required · 18+
         </p>
 
         {/* Interactive Oscilloscope Preview Strip */}
