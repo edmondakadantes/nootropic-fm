@@ -277,6 +277,9 @@ export const api = {
         profileTrials: number;
         wasControlTrial: boolean;
         preferredModMult: number;
+        learnedGenre?: ResolvedGenre;
+        learnedGenreLabel?: string;
+        learnedGenreFitPct?: number;
       };
     }>('/api/session/debrief', {
       method: 'POST',
@@ -353,6 +356,8 @@ export const api = {
     device?: OutputDevice;
     environment?: SessionEnvironment;
     preferredGenre?: ResolvedGenre;
+    profileId?: string;
+    ephemeralMode?: boolean;
   }) =>
     apiFetch<{
       spec: ExecutableStudySpec;

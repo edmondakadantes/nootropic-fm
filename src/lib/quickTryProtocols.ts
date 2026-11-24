@@ -1,5 +1,5 @@
 import type { ExecutableStudySpec } from '../../shared/studySpec';
-import type { ProtocolArm, ProtocolRecommendation, ScientificStudy } from '../../shared/types';
+import type { ProtocolArm, ProtocolRecommendation, ScientificStudy, UserProfile } from '../../shared/types';
 
 export type QuickTryId = 'focus_lofi' | 'mood_uplift' | 'calm_rain' | 'energy_electronic';
 
@@ -70,11 +70,63 @@ const QUICK_TRY_CITATIONS: Record<QuickTryId, ScientificStudy[]> = {
   ],
 };
 
+function applyQuickTryProfile(
+  rec: ProtocolRecommendation,
+  profile?: UserProfile | null
+): ProtocolRecommendation {
+  if (!profile) return rec;
+  const mult = Math.max(0.65, Math.min(1.35, profile.preferredModMult ?? 1.0));
+  const targetDevice = profile.role === 'driver' ? 'car_audio' : profile.defaultDevice;
+  const isDriving = targetDevice === 'car_audio';
+  const isSpeakers = targetDevice === 'speakers' || isDriving;
+  const scaledDepth = Number(Math.min(0.36, Math.max(0.1, rec.params.modulationDepth * mult)).toFixed(2));
+
+  const nextSpec = rec.executableSpec
+    ? {
+        ...rec.executableSpec,
+        entrainment: {
+          ...rec.executableSpec.entrainment,
+          modulationDepth: isDriving ? Math.min(0.26, scaledDepth) : scaledDepth,
+          phaseOffsetDeg: isSpeakers ? 0 : rec.executableSpec.entrainment.phaseOffsetDeg,
+        },
+        protocol: {
+          ...rec.executableSpec.protocol,
+          requiresHeadphones: false,
+          drivingSafe: isDriving ? true : rec.executableSpec.protocol.drivingSafe,
+        },
+      }
+    : undefined;
+
+  return {
+    ...rec,
+    device: targetDevice,
+    environment: isDriving ? 'driving' : rec.environment,
+    safetyMode: isDriving,
+    params: {
+      ...rec.params,
+      modulationDepth: isDriving ? Math.min(0.26, scaledDepth) : scaledDepth,
+      speakerSafeEQ: isSpeakers,
+      stereoAmSpread: Boolean(rec.params.stereoAmSpread && !isSpeakers),
+      noiseLevel: isDriving ? Math.min(rec.params.noiseLevel, 0.07) : rec.params.noiseLevel,
+      antiMonotonyCycleMin: isDriving ? 5 : rec.params.antiMonotonyCycleMin,
+    },
+    executableSpec: nextSpec,
+  };
+}
+
 /**
  * Builds a zero-latency, ephemeral studio-ready ProtocolRecommendation for 1-click Hero Quick Try.
  * Kept isolated from `studyPresets.ts` so the initial `/` bundle stays ultra-light and policy-clean.
  */
-export function buildInstantQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation {
+export function buildInstantQuickTryRecommendation(
+  id: QuickTryId,
+  profile?: UserProfile | null
+): ProtocolRecommendation {
+  const rec = buildRawQuickTryRecommendation(id);
+  return applyQuickTryProfile(rec, profile);
+}
+
+function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation {
   const sessionId = `eph_quick_${id}_${Date.now().toString(36)}`;
 
   if (id === 'mood_uplift') {

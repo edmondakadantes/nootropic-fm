@@ -1327,6 +1327,16 @@ export function CheckInView({
               </span>
             </div>
 
+            {genreChoice === 'auto' && profile?.favoriteGenres && profile.favoriteGenres.length > 0 && (
+              <div className="rounded-xl border border-emerald-400/25 bg-emerald-500/[0.06] px-3.5 py-2 text-[11px] text-[#D4D4CE]">
+                <span className="font-semibold text-[#34D399]">Learned top match:</span>{' '}
+                {GENRE_META[profile.favoriteGenres[0]].label}
+                {profile.favoriteGenres[1]
+                  ? ` (runner-up: ${GENRE_META[profile.favoriteGenres[1]].label})`
+                  : ''}
+              </div>
+            )}
+
             {genreChoice !== 'auto' && (
               <div className="rounded-xl border border-white/10 bg-[#0B0C0E] px-3.5 py-2 text-[11px] text-[#D4D4CE]">
                 <strong className="text-[#34D399]">{GENRE_META[genreChoice].label}:</strong>{' '}

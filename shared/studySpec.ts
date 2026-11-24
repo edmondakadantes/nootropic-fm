@@ -127,6 +127,31 @@ export function midiToHz(midi: number, tuningA4Hz: 440 | 432 = 440): number {
   return Number((tuningA4Hz * Math.pow(2, (midi - 69) / 12)).toFixed(2));
 }
 
+/**
+ * Finds the exact concert-tuned octave of `rootMidi` (in A=440 or A=432 Hz)
+ * closest to `targetHz` so unspecified discrete entrainment carriers fuse
+ * in 0.0-cent harmonic consonance with the musical key.
+ */
+export function computeHarmonicCarrierHz(
+  rootMidi: number,
+  tuningA4Hz: 440 | 432 = 440,
+  targetHz = 220
+): number {
+  const basePc = ((Math.round(rootMidi) % 12) + 12) % 12;
+  let bestHz = midiToHz(60 + basePc, tuningA4Hz);
+  let bestRatioDiff = Infinity;
+  for (let octave = 2; octave <= 6; octave++) {
+    const midi = octave * 12 + basePc;
+    const hz = midiToHz(midi, tuningA4Hz);
+    const diff = Math.abs(Math.log2(hz / Math.max(60, targetHz)));
+    if (diff < bestRatioDiff) {
+      bestRatioDiff = diff;
+      bestHz = hz;
+    }
+  }
+  return bestHz;
+}
+
 export function snrDbToLinearGain(snrDb: number): number {
   if (snrDb <= -34) return 0;
   // Calibrated mapping: -18 dB -> ~0.12, -12 dB -> ~0.22, -6 dB -> ~0.34, 0 dB -> ~0.48

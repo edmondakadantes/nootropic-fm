@@ -488,6 +488,15 @@ async function fetchBanditRows(
   }));
 }
 
+async function fetchTopPersonalGenres(db: D1Database, profileId: string): Promise<ResolvedGenre[]> {
+  const rows = await fetchBanditRows(db, 'profile_genre', profileId);
+  return rows
+    .filter((r) => r.armId in GENRE_META && r.trials >= 1 && r.alpha / (r.alpha + r.beta) >= 0.56)
+    .sort((a, b) => b.alpha / (b.alpha + b.beta) - a.alpha / (a.alpha + a.beta))
+    .slice(0, 2)
+    .map((r) => r.armId as ResolvedGenre);
+}
+
 /**
  * Atomic, separated Explicit vs Implicit Bandit update with delta-replacement support
  * so an explicit debrief cleanly supersedes any earlier implicit retention update
@@ -971,15 +980,88 @@ export default {
           preferredGenre: body.preferredGenre,
         });
 
-        const sessionId = `eph_study_${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}`;
+        let sessionId = `eph_study_${crypto.randomUUID().replace(/-/g, '').slice(0, 14)}`;
+        let isPersisted = false;
+        let studyProfile: UserProfile | null = null;
+        let effectivePreferredGenre = body.preferredGenre;
+
+        if (body.profileId && !body.ephemeralMode) {
+          const auth = await verifyProfileAccess(env.DB, body.profileId, request);
+          if (auth.row && auth.ok && Number(auth.row.research_consent) === 1) {
+            studyProfile = mapProfileRow(auth.row);
+            const pGenreRows = await fetchBanditRows(env.DB, 'profile_genre', studyProfile.id);
+            if (!effectivePreferredGenre) {
+              const bestRow = pGenreRows
+                .filter((r) => r.armId in GENRE_META && r.trials >= 1 && r.alpha / (r.alpha + r.beta) >= 0.56)
+                .sort((a, b) => b.alpha / (b.alpha + b.beta) - a.alpha / (a.alpha + a.beta))[0];
+              if (bestRow) {
+                effectivePreferredGenre = bestRow.armId as ResolvedGenre;
+              }
+            }
+            if (spec.entrainment.modulationDepth > 0) {
+              const modMult = Math.max(0.65, Math.min(1.35, studyProfile.preferredModMult ?? 1.0));
+              spec.entrainment.modulationDepth = Number(
+                Math.min(0.75, Math.max(0.1, spec.entrainment.modulationDepth * modMult)).toFixed(2)
+              );
+            }
+            sessionId = `ses_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+            isPersisted = true;
+          }
+        }
+
         const recommendation = buildRecommendationFromStudySpec({
           spec,
           sessionId,
           device,
           environment,
-          preferredGenre: body.preferredGenre,
-          ephemeralMode: true,
+          preferredGenre: effectivePreferredGenre,
+          ephemeralMode: !isPersisted,
+          cohortKey: studyProfile
+            ? buildCohortKey(studyProfile.ageBand, environment, spec.protocol.targetState)
+            : undefined,
         });
+
+        if (isPersisted && studyProfile) {
+          const now = new Date().toISOString();
+          const finalGenreKey = recommendation.customGenreSlug ?? recommendation.params.genre;
+          await env.DB.prepare(
+            `INSERT INTO sessions (
+              id, profile_id, cohort_key, raw_input_text, current_state, baseline_score,
+              target_state, environment, device, safety_mode, planned_duration_min,
+              actual_duration_sec, completion_ratio, arm_id, arm_name, is_exploration,
+              is_control_trial, energy_tier, music_genre, initial_music_genre,
+              custom_genre_slug, audio_source, study_spec_id,
+              acoustic_params_json, cited_study_ids_json, live_adjustments_json,
+              time_of_day_bucket, status, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, 0, 0, ?, ?, ?, NULL, ?, ?, ?, ?, '[]', ?, 'active', ?)`
+          )
+            .bind(
+              sessionId,
+              studyProfile.id,
+              recommendation.cohortKey,
+              `Study Lab: ${spec.shortLabel}`.slice(0, 500),
+              recommendation.currentState,
+              recommendation.baselineScore,
+              recommendation.targetState,
+              recommendation.environment,
+              recommendation.device,
+              recommendation.safetyMode ? 1 : 0,
+              recommendation.plannedDurationMin,
+              recommendation.arm.id,
+              recommendation.arm.name,
+              recommendation.params.energyTier,
+              finalGenreKey,
+              finalGenreKey,
+              recommendation.audioSource,
+              recommendation.executableSpec?.id ?? spec.id,
+              JSON.stringify(recommendation.params),
+              JSON.stringify(recommendation.arm.studyIds),
+              getTimeOfDayBucket(),
+              now
+            )
+            .run()
+            .catch(() => {});
+        }
 
         return json({ spec: recommendation.executableSpec ?? spec, recommendation, fromCache }, 200, request);
       }
@@ -991,7 +1073,7 @@ export default {
           return json(
             {
               available: false,
-              reason: 'Infinite Live AI is offline right now; continuing smoothly on Studio Audio.',
+              reason: 'Endless Stream is offline right now; continuing smoothly on Studio Mix.',
             },
             200,
             request
@@ -1004,13 +1086,13 @@ export default {
         if (providedToken) {
           const tokenHash = await sha256Hex(providedToken);
           const proRow = await env.DB.prepare(
-            `SELECT plan_tier, pro_until, auth_token_hash FROM profiles
-             WHERE plan_tier = 'pro' AND auth_token_hash LIKE ? LIMIT 5`
+            `SELECT plan_tier, pro_until, token_hash FROM profiles
+             WHERE plan_tier = 'pro' AND token_hash LIKE ? LIMIT 5`
           )
             .bind(`%${tokenHash}%`)
             .all<Record<string, unknown>>();
           for (const row of proRow.results) {
-            const stored = String(row.auth_token_hash ?? '');
+            const stored = String(row.token_hash ?? '');
             const until = row.pro_until ? String(row.pro_until) : null;
             const validUntil = !until || Number.isNaN(Date.parse(until)) || Date.parse(until) > Date.now();
             if (validUntil && tokenHashMatches(tokenHash, stored)) {
@@ -1030,7 +1112,7 @@ export default {
           return json(
             {
               available: false,
-              reason: 'Daily Infinite Live AI quota reached; continuing seamlessly on Studio Audio.',
+              reason: 'Daily Endless Stream quota reached; continuing seamlessly on Studio Mix.',
             },
             200,
             request
@@ -1502,7 +1584,7 @@ export default {
           .bind(mergedHashes, new Date().toISOString(), id)
           .run();
 
-        const [pendingRow, countRow] = await Promise.all([
+        const [pendingRow, countRow, favoriteGenres] = await Promise.all([
           env.DB.prepare(
             `SELECT * FROM sessions
              WHERE profile_id = ? AND status = 'pending_debrief' AND actual_duration_sec >= 60
@@ -1513,11 +1595,12 @@ export default {
           env.DB.prepare('SELECT COUNT(*) AS cnt FROM sessions WHERE profile_id = ?')
             .bind(id)
             .first<{ cnt: number }>(),
+          fetchTopPersonalGenres(env.DB, id),
         ]);
 
         return json(
           {
-            profile: mapProfileRow(row, Number(countRow?.cnt ?? 0)),
+            profile: { ...mapProfileRow(row, Number(countRow?.cnt ?? 0)), favoriteGenres },
             profileToken: freshToken,
             syncCode: normalized,
             pendingDebrief: pendingRow ? mapSessionRow(pendingRow) : null,
@@ -1544,7 +1627,7 @@ export default {
             .run();
         }
 
-        const [pendingRow, countRow] = await Promise.all([
+        const [pendingRow, countRow, favoriteGenres] = await Promise.all([
           env.DB.prepare(
             `SELECT * FROM sessions
              WHERE profile_id = ? AND status = 'pending_debrief' AND actual_duration_sec >= 60
@@ -1555,11 +1638,12 @@ export default {
           env.DB.prepare('SELECT COUNT(*) AS cnt FROM sessions WHERE profile_id = ?')
             .bind(id)
             .first<{ cnt: number }>(),
+          fetchTopPersonalGenres(env.DB, id),
         ]);
 
         return json(
           {
-            profile: mapProfileRow(auth.row, Number(countRow?.cnt ?? 0)),
+            profile: { ...mapProfileRow(auth.row, Number(countRow?.cnt ?? 0)), favoriteGenres },
             pendingDebrief: pendingRow ? mapSessionRow(pendingRow) : null,
             ...(auth.issuedLegacyToken ? { profileToken: auth.issuedLegacyToken } : {}),
             ...(issuedSyncCode ? { syncCode: issuedSyncCode } : {}),
@@ -2799,11 +2883,20 @@ export default {
         const finalMilestonePct =
           completionRatio >= 0.9 ? 90 : completionRatio >= 0.75 ? 75 : completionRatio >= 0.5 ? 50 : completionRatio >= 0.25 ? 25 : 0;
 
+        const genreTweaks = liveAdjustments.filter(
+          (a) => a.control === 'genre' && a.note && a.note in GENRE_META
+        );
+        const swappedGenre =
+          genreTweaks.length > 0 ? String(genreTweaks[genreTweaks.length - 1].note) : null;
+        const finalGenre =
+          swappedGenre || session.musicGenre || session.acousticParams?.genre || 'deep_electronic';
+
         await env.DB.prepare(
           `UPDATE sessions SET
             actual_duration_sec = ?,
             completion_ratio = ?,
             max_milestone_pct = MAX(COALESCE(max_milestone_pct, 0), ?),
+            music_genre = ?,
             live_adjustments_json = ?,
             status = 'completed',
             post_score = ?,
@@ -2825,6 +2918,7 @@ export default {
             actualSec,
             completionRatio,
             finalMilestonePct,
+            finalGenre,
             JSON.stringify(liveAdjustments),
             postScore,
             delta,
@@ -2872,17 +2966,41 @@ export default {
 
         let cohortUpdated = { successRatePct: 0, trials: 0 };
         let profileUpdated = { successRatePct: 0, trials: 0 };
-        const finalGenre = session.musicGenre || session.acousticParams?.genre || 'deep_electronic';
+        let profileGenreUpdated = { successRatePct: 0, trials: 0 };
         const profileId = String(row.profile_id);
+        const tags = body.feedbackTags ?? [];
+
+        // Decouple Layer 1 (Protocol Sound) vs Layer 2 (Music Taste) rewards so disliking one never sabotages the other
+        let protocolReward = reward;
+        let genreReward = reward;
+        if (tags.includes('Loved the music style')) {
+          genreReward = Number(Math.min(0.98, genreReward + 0.14).toFixed(3));
+        }
+        if (session.initialMusicGenre && finalGenre !== session.initialMusicGenre && body.workedRating === 'yes') {
+          genreReward = Number(Math.min(0.96, genreReward + 0.1).toFixed(3));
+        }
+        if (tags.includes('Try a different music style')) {
+          genreReward = Number(Math.max(0.12, Math.min(0.32, genreReward - 0.38)).toFixed(3));
+          if (body.workedRating !== 'no') {
+            protocolReward = Number(Math.max(protocolReward, 0.62).toFixed(3));
+          }
+        }
+        if (
+          tags.includes('Modulation felt distracting') &&
+          !tags.includes('Try a different music style') &&
+          body.workedRating !== 'no'
+        ) {
+          genreReward = Number(Math.min(0.88, Math.max(genreReward, 0.64)).toFixed(3));
+        }
 
         if (!session.isControlTrial) {
-          const [cUp, pUp] = await Promise.all([
+          const [cUp, pUp, , pGenreUp] = await Promise.all([
             updateBanditScope(env.DB, {
               scopeType: 'cohort',
               scopeId: session.cohortKey,
               armId: session.armId,
               mode: 'explicit',
-              reward,
+              reward: protocolReward,
               weight: learningWeight,
               delta,
               completionRatio,
@@ -2894,7 +3012,7 @@ export default {
               scopeId: profileId,
               armId: session.armId,
               mode: 'explicit',
-              reward,
+              reward: protocolReward,
               weight: learningWeight,
               delta,
               completionRatio,
@@ -2906,7 +3024,7 @@ export default {
               scopeId: session.cohortKey,
               armId: finalGenre,
               mode: 'explicit',
-              reward,
+              reward: genreReward,
               weight: learningWeight,
               delta,
               completionRatio,
@@ -2918,7 +3036,7 @@ export default {
               scopeId: profileId,
               armId: finalGenre,
               mode: 'explicit',
-              reward,
+              reward: genreReward,
               weight: learningWeight,
               delta,
               completionRatio,
@@ -2930,7 +3048,7 @@ export default {
               scopeId: `${session.cohortKey}|${finalGenre}`,
               armId: session.armId,
               mode: 'explicit',
-              reward,
+              reward: protocolReward,
               weight: learningWeight,
               delta,
               completionRatio,
@@ -2940,15 +3058,16 @@ export default {
           ]);
           cohortUpdated = cUp;
           profileUpdated = pUp;
+          profileGenreUpdated = pGenreUp;
         } else {
           // Control trial still updates Layer 2 genre preference cleanly
-          await Promise.all([
+          const [, pGenreUp] = await Promise.all([
             updateBanditScope(env.DB, {
               scopeType: 'cohort_genre',
               scopeId: session.cohortKey,
               armId: finalGenre,
               mode: 'explicit',
-              reward,
+              reward: genreReward,
               weight: learningWeight * 0.75,
               delta,
               completionRatio,
@@ -2960,7 +3079,7 @@ export default {
               scopeId: profileId,
               armId: finalGenre,
               mode: 'explicit',
-              reward,
+              reward: genreReward,
               weight: learningWeight * 0.75,
               delta,
               completionRatio,
@@ -2968,6 +3087,7 @@ export default {
               supersedePrevWeight: prevImplicitWeight,
             }),
           ]);
+          profileGenreUpdated = pGenreUp;
           const [cStats, pStats] = await Promise.all([
             fetchBanditRows(env.DB, 'cohort', session.cohortKey),
             fetchBanditRows(env.DB, 'profile', profileId),
@@ -2990,7 +3110,6 @@ export default {
           .first<{ preferred_mod_mult?: number }>();
         const prevMult = Number(profRow?.preferred_mod_mult ?? 1.0);
         let multDelta = 0;
-        const tags = body.feedbackTags ?? [];
         if (tags.includes('A bit too intense') || tags.includes('Modulation felt distracting')) {
           multDelta -= 0.08;
         }
@@ -3020,13 +3139,16 @@ export default {
               cohortKey: session.cohortKey,
               cohortLabel: formatCohortLabel(session.cohortKey),
               delta,
-              reward,
+              reward: protocolReward,
               cohortSuccessRatePct: cohortUpdated.successRatePct,
               cohortTrials: cohortUpdated.trials,
               profileSuccessRatePct: profileUpdated.successRatePct,
               profileTrials: profileUpdated.trials,
               wasControlTrial: session.isControlTrial,
               preferredModMult: updatedModMult,
+              ...(finalGenre in GENRE_META ? { learnedGenre: finalGenre as ResolvedGenre } : {}),
+              learnedGenreLabel: getGenreDisplayMeta(finalGenre).label,
+              learnedGenreFitPct: profileGenreUpdated.successRatePct,
             },
           },
           200,

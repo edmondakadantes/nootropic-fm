@@ -1,4 +1,5 @@
 import {
+  computeHarmonicCarrierHz,
   ENTRAINMENT_LABELS,
   midiToHz,
   paletteToResolvedGenre,
@@ -166,6 +167,7 @@ export function compileStudyTextDeterministically(input: {
   let startFrequencyHz: number | undefined;
   let carrierLeftHz: number | undefined;
   let carrierRightHz: number | undefined;
+  let hasExplicitCarrier = false;
   let modulationBandHz: [number, number] = [190, 4500];
   let modulationDepth = 0.24;
   let waveform: EntrainmentWaveform = 'sine';
@@ -213,6 +215,7 @@ export function compileStudyTextDeterministically(input: {
       dutyCycle = Number(Math.min(0.45, Math.max(0.02, ms / 25)).toFixed(3));
     }
     const carrierMatch = cleanText.match(/(\d{3,4})\s*-?\s*hz\s*(?:carrier|tone|sine|click|burst)/i);
+    hasExplicitCarrier = Boolean(carrierMatch);
     carrierLeftHz = carrierMatch ? Math.max(200, Math.min(2000, Number(carrierMatch[1]))) : 520;
     carrierRightHz = carrierLeftHz;
     exactSlots++;
@@ -241,6 +244,7 @@ export function compileStudyTextDeterministically(input: {
         carrierLeftHz = Math.min(f1, f2);
         carrierRightHz = Math.max(f1, f2);
         frequencyHz = Number(Math.abs(f2 - f1).toFixed(2));
+        hasExplicitCarrier = true;
       }
     }
     if (!frequencyHz) {
@@ -249,7 +253,12 @@ export function compileStudyTextDeterministically(input: {
         (/\btheta\b/i.test(lower) ? 6 : /\balpha\b/i.test(lower) ? 10 : /\bgamma\b/i.test(lower) ? 40 : /\bdelta\b/i.test(lower) ? 2.5 : 14);
     }
     if (!carrierLeftHz) {
-      carrierLeftHz = carrierCandidates[0] ?? 200;
+      if (carrierCandidates.length > 0) {
+        hasExplicitCarrier = true;
+        carrierLeftHz = carrierCandidates[0];
+      } else {
+        carrierLeftHz = 200;
+      }
       carrierRightHz = Number((carrierLeftHz + frequencyHz).toFixed(2));
     }
     modulationDepth = 0.22;
@@ -270,7 +279,9 @@ export function compileStudyTextDeterministically(input: {
     frequencyHz =
       [...localHz, ...allHz].find((v) => v >= 1 && v <= 45) ??
       (/\btheta\b/i.test(lower) ? 6 : /\balpha\b/i.test(lower) ? 10 : /\bgamma\b/i.test(lower) ? 40 : 14);
-    carrierLeftHz = [...localHz, ...allHz].find((v) => v >= 120 && v <= 800) ?? 220;
+    const explicitIsoCarrier = [...localHz, ...allHz].find((v) => v >= 120 && v <= 800);
+    hasExplicitCarrier = explicitIsoCarrier !== undefined;
+    carrierLeftHz = explicitIsoCarrier ?? 220;
     carrierRightHz = carrierLeftHz;
     modulationDepth = 0.45;
     exactSlots++;
@@ -287,7 +298,9 @@ export function compileStudyTextDeterministically(input: {
     const localHz = extractHzValues(monauralHit.sentence);
     const allHz = extractHzValues(cleanText);
     frequencyHz = [...localHz, ...allHz].find((v) => v >= 1 && v <= 45) ?? 10;
-    carrierLeftHz = [...localHz, ...allHz].find((v) => v >= 100 && v <= 800) ?? 200;
+    const explicitMonoCarrier = [...localHz, ...allHz].find((v) => v >= 100 && v <= 800);
+    hasExplicitCarrier = explicitMonoCarrier !== undefined;
+    carrierLeftHz = explicitMonoCarrier ?? 200;
     carrierRightHz = Number((carrierLeftHz + frequencyHz).toFixed(2));
     modulationDepth = 0.24;
     exactSlots++;
@@ -550,6 +563,33 @@ export function compileStudyTextDeterministically(input: {
     ? resolvedGenreToPalette(input.preferredGenre)
     : defaultPaletteForText(lower, targetState);
 
+  if (!hasExplicitCarrier) {
+    const entEv = evidenceMap.find((e) => e.parameter === 'Entrainment Stimulus');
+    if (entrainmentType === 'gamma_40hz_clicks') {
+      carrierLeftHz = Math.round(computeHarmonicCarrierHz(rootMidi, tuningA4Hz, 520));
+      carrierRightHz = carrierLeftHz;
+      if (entEv) {
+        entEv.executedValue = `40.0 Hz · ${Math.round((dutyCycle ?? 0.04) * 25 * 10) / 10} ms raised-cosine bursts @ ${carrierLeftHz} Hz`;
+      }
+    } else if (entrainmentType === 'isochronic_pulse') {
+      carrierLeftHz = Number(computeHarmonicCarrierHz(rootMidi, tuningA4Hz, 220).toFixed(2));
+      carrierRightHz = carrierLeftHz;
+      if (entEv) {
+        entEv.executedValue = `${frequencyHz} Hz trapezoidal pulse (50% duty @ ${carrierLeftHz} Hz carrier)`;
+      }
+    } else if (entrainmentType === 'binaural_beat' || entrainmentType === 'monaural_beat') {
+      const centerHz = computeHarmonicCarrierHz(rootMidi, tuningA4Hz, 220);
+      carrierLeftHz = Number((centerHz - frequencyHz / 2).toFixed(2));
+      carrierRightHz = Number((centerHz + frequencyHz / 2).toFixed(2));
+      if (entEv) {
+        entEv.executedValue =
+          entrainmentType === 'binaural_beat'
+            ? `${frequencyHz} Hz beat (${carrierLeftHz} Hz L / ${carrierRightHz} Hz R)`
+            : `${frequencyHz} Hz summed beat (${carrierLeftHz} Hz + ${carrierRightHz} Hz)`;
+      }
+    }
+  }
+
   const spectralLowPassHz =
     targetState === 'sleep_winddown'
       ? 720
@@ -772,10 +812,14 @@ export function applySafetyAndDeviceGuardrails(
     Math.max(0, Math.min(0.78, spec.entrainment.modulationDepth || 0)).toFixed(2)
   );
   if (spec.entrainment.carrierLeftHz) {
-    spec.entrainment.carrierLeftHz = Math.max(60, Math.min(1200, Math.round(spec.entrainment.carrierLeftHz)));
+    spec.entrainment.carrierLeftHz = Number(
+      Math.max(60, Math.min(1200, spec.entrainment.carrierLeftHz)).toFixed(2)
+    );
   }
   if (spec.entrainment.carrierRightHz) {
-    spec.entrainment.carrierRightHz = Math.max(60, Math.min(1240, Math.round(spec.entrainment.carrierRightHz)));
+    spec.entrainment.carrierRightHz = Number(
+      Math.max(60, Math.min(1240, spec.entrainment.carrierRightHz)).toFixed(2)
+    );
   }
   spec.music.bpm = spec.music.bpm === 0 ? 0 : Math.max(40, Math.min(150, Math.round(spec.music.bpm)));
   spec.music.spectralLowPassHz = Math.max(480, Math.min(16000, Math.round(spec.music.spectralLowPassHz)));

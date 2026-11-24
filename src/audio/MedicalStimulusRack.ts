@@ -1,4 +1,5 @@
 import {
+  computeHarmonicCarrierHz,
   snrDbToLinearGain,
   type EntrainmentType,
   type ExecutableStudySpec,
@@ -161,10 +162,18 @@ export class MedicalStimulusRack {
   private pureStimulusMode = false;
   private modMult = 1.0;
   private intensityMult = 1.0;
+  private phaseModFactor = 1.0;
 
   private activeSources: AudioScheduledSourceNode[] = [];
   private stimulusGain: GainNode | null = null;
   private noiseGain: GainNode | null = null;
+  private hrvCarrierGain: GainNode | null = null;
+  private hrvDepthGain: GainNode | null = null;
+  private hrvBaseDepth = 0;
+  private beatOscL: OscillatorNode | null = null;
+  private beatOscR: OscillatorNode | null = null;
+  private beatCenterHz = 200;
+  private beatSymmetric = false;
 
   private currentHz = 0;
   private carrierLabel = 'None';
@@ -180,14 +189,16 @@ export class MedicalStimulusRack {
     speakerSafeEQ: boolean;
     isControlTrial: boolean;
     pureStimulusMode: boolean;
+    stimulusTap?: AudioNode | null;
   }): { hrvBusInput: GainNode | null } {
     this.stop();
-    const { ctx, spec, masterDestination, speakerSafeEQ, isControlTrial, pureStimulusMode } = opts;
+    const { ctx, spec, masterDestination, speakerSafeEQ, isControlTrial, pureStimulusMode, stimulusTap } = opts;
     this.ctx = ctx;
     this.spec = spec;
     this.speakerSafeEQ = speakerSafeEQ;
     this.isControlTrial = isControlTrial;
     this.pureStimulusMode = pureStimulusMode;
+    this.phaseModFactor = 1.0;
     this.currentHz = spec.entrainment.startFrequencyHz ?? spec.entrainment.frequencyHz;
 
     const now = ctx.currentTime;
@@ -201,21 +212,27 @@ export class MedicalStimulusRack {
     let hrvBusInput: GainNode | null = null;
     if (hrvHz > 0 && !speakerSafeEQ && !isControlTrial) {
       const hrvGain = ctx.createGain();
-      const depth = spec.entrainment.type === 'hrv_breathing_swell' ? 0.28 : 0.14;
-      hrvGain.gain.setValueAtTime(1 - depth / 2, now);
+      this.hrvBaseDepth =
+        spec.entrainment.type === 'hrv_breathing_swell'
+          ? Math.max(0.14, Math.min(0.55, spec.entrainment.modulationDepth || 0.32))
+          : 0.14;
+      const effHrv = this.computeEffectiveHrvDepth();
+      hrvGain.gain.setValueAtTime(1 - effHrv / 2, now);
 
       const hrvLfo = ctx.createOscillator();
       hrvLfo.type = 'sine';
       hrvLfo.frequency.setValueAtTime(hrvHz, now);
 
       const hrvDepth = ctx.createGain();
-      hrvDepth.gain.setValueAtTime(depth / 2, now);
+      hrvDepth.gain.setValueAtTime(effHrv / 2, now);
 
       hrvLfo.connect(hrvDepth);
       hrvDepth.connect(hrvGain.gain);
       hrvLfo.start(now);
 
       this.activeSources.push(hrvLfo);
+      this.hrvCarrierGain = hrvGain;
+      this.hrvDepthGain = hrvDepth;
       hrvBusInput = hrvGain;
     }
 
@@ -225,13 +242,18 @@ export class MedicalStimulusRack {
       const stimGain = ctx.createGain();
       stimGain.gain.setValueAtTime(0.0001, now);
       stimGain.connect(masterDestination);
+      if (stimulusTap) {
+        stimGain.connect(stimulusTap);
+      }
       this.stimulusGain = stimGain;
 
       const targetLevel = this.computeStimulusTargetGain();
 
       if (eType === 'gamma_40hz_clicks' && !speakerSafeEQ) {
         const rateHz = spec.entrainment.frequencyHz || 40;
-        const carrierHz = spec.entrainment.carrierLeftHz ?? 520;
+        const carrierHz =
+          spec.entrainment.carrierLeftHz ??
+          Math.round(computeHarmonicCarrierHz(spec.music.rootMidi, spec.music.tuningA4Hz, 520));
         const duty = spec.entrainment.dutyCycle ?? 0.048;
         const buf = createPeriodicPulseBuffer(ctx, {
           pulseRateHz: rateHz,
@@ -243,7 +265,7 @@ export class MedicalStimulusRack {
         src.buffer = buf;
         src.loop = true;
 
-        // Gentle warm bandpass around carrier so 40 Hz clicks sound crisp yet non-fatiguing
+        // Gentle warm lowpass around carrier so 40 Hz clicks sound crisp yet non-fatiguing
         const lp = ctx.createBiquadFilter();
         lp.type = 'lowpass';
         lp.frequency.value = Math.min(3600, carrierHz * 4.5);
@@ -255,7 +277,9 @@ export class MedicalStimulusRack {
         this.carrierLabel = `${rateHz} Hz · ${(duty * (1000 / rateHz)).toFixed(1)} ms @ ${carrierHz} Hz`;
       } else if (eType === 'isochronic_pulse') {
         const rateHz = spec.entrainment.frequencyHz || 14;
-        const carrierHz = spec.entrainment.carrierLeftHz ?? 220;
+        const carrierHz =
+          spec.entrainment.carrierLeftHz ??
+          Number(computeHarmonicCarrierHz(spec.music.rootMidi, spec.music.tuningA4Hz, 220).toFixed(2));
         const duty = spec.entrainment.dutyCycle ?? 0.5;
         const buf = createPeriodicPulseBuffer(ctx, {
           pulseRateHz: rateHz,
@@ -277,9 +301,19 @@ export class MedicalStimulusRack {
         this.activeSources.push(src);
         this.carrierLabel = `${rateHz} Hz Isochronic (${Math.round(duty * 100)}% duty @ ${carrierHz} Hz)`;
       } else if (eType === 'binaural_beat' && !speakerSafeEQ) {
-        const leftHz = spec.entrainment.carrierLeftHz ?? 200;
-        const beatHz = spec.entrainment.frequencyHz || 10;
-        const rightHz = spec.entrainment.carrierRightHz ?? Number((leftHz + beatHz).toFixed(2));
+        const startBeatHz = spec.entrainment.startFrequencyHz ?? (spec.entrainment.frequencyHz || 10);
+        const hasExplicitPair = spec.entrainment.carrierLeftHz !== undefined;
+        const centerHz = hasExplicitPair
+          ? spec.entrainment.carrierLeftHz!
+          : computeHarmonicCarrierHz(spec.music.rootMidi, spec.music.tuningA4Hz, 220);
+        const leftHz = hasExplicitPair
+          ? spec.entrainment.carrierLeftHz!
+          : Number((centerHz - startBeatHz / 2).toFixed(2));
+        const rightHz = hasExplicitPair
+          ? spec.entrainment.carrierRightHz ?? Number((leftHz + startBeatHz).toFixed(2))
+          : Number((centerHz + startBeatHz / 2).toFixed(2));
+        this.beatCenterHz = centerHz;
+        this.beatSymmetric = !hasExplicitPair;
 
         const oscL = ctx.createOscillator();
         const oscR = ctx.createOscillator();
@@ -293,18 +327,36 @@ export class MedicalStimulusRack {
         panL.pan.value = -1;
         panR.pan.value = 1;
 
+        const warmLp = ctx.createBiquadFilter();
+        warmLp.type = 'lowpass';
+        warmLp.frequency.value = 1200;
+        warmLp.Q.value = 0.6;
+
         oscL.connect(panL);
         oscR.connect(panR);
-        panL.connect(stimGain);
-        panR.connect(stimGain);
+        panL.connect(warmLp);
+        panR.connect(warmLp);
+        warmLp.connect(stimGain);
         oscL.start(now);
         oscR.start(now);
+        this.beatOscL = oscL;
+        this.beatOscR = oscR;
         this.activeSources.push(oscL, oscR);
-        this.carrierLabel = `${leftHz} Hz L / ${rightHz} Hz R (${beatHz} Hz Beat)`;
+        this.carrierLabel = `${leftHz} Hz L / ${rightHz} Hz R (${startBeatHz} Hz Beat)`;
       } else if (eType === 'monaural_beat' || (eType === 'binaural_beat' && speakerSafeEQ)) {
-        const leftHz = spec.entrainment.carrierLeftHz ?? 200;
-        const beatHz = spec.entrainment.frequencyHz || 10;
-        const rightHz = spec.entrainment.carrierRightHz ?? Number((leftHz + beatHz).toFixed(2));
+        const startBeatHz = spec.entrainment.startFrequencyHz ?? (spec.entrainment.frequencyHz || 10);
+        const hasExplicitPair = spec.entrainment.carrierLeftHz !== undefined;
+        const centerHz = hasExplicitPair
+          ? spec.entrainment.carrierLeftHz!
+          : computeHarmonicCarrierHz(spec.music.rootMidi, spec.music.tuningA4Hz, 220);
+        const leftHz = hasExplicitPair
+          ? spec.entrainment.carrierLeftHz!
+          : Number((centerHz - startBeatHz / 2).toFixed(2));
+        const rightHz = hasExplicitPair
+          ? spec.entrainment.carrierRightHz ?? Number((leftHz + startBeatHz).toFixed(2))
+          : Number((centerHz + startBeatHz / 2).toFixed(2));
+        this.beatCenterHz = centerHz;
+        this.beatSymmetric = !hasExplicitPair;
 
         const osc1 = ctx.createOscillator();
         const osc2 = ctx.createOscillator();
@@ -315,13 +367,21 @@ export class MedicalStimulusRack {
 
         const mix = ctx.createGain();
         mix.gain.value = 0.5;
+        const warmLp = ctx.createBiquadFilter();
+        warmLp.type = 'lowpass';
+        warmLp.frequency.value = speakerSafeEQ ? 760 : 1200;
+        warmLp.Q.value = 0.6;
+
         osc1.connect(mix);
         osc2.connect(mix);
-        mix.connect(stimGain);
+        mix.connect(warmLp);
+        warmLp.connect(stimGain);
         osc1.start(now);
         osc2.start(now);
+        this.beatOscL = osc1;
+        this.beatOscR = osc2;
         this.activeSources.push(osc1, osc2);
-        this.carrierLabel = `${leftHz} + ${rightHz} Hz Monaural (${beatHz} Hz Beat)`;
+        this.carrierLabel = `${leftHz} + ${rightHz} Hz Monaural (${startBeatHz} Hz Beat)`;
       }
 
       stimGain.gain.exponentialRampToValueAtTime(Math.max(0.001, targetLevel), now + 1.8);
@@ -376,6 +436,12 @@ export class MedicalStimulusRack {
     return { hrvBusInput };
   }
 
+  private computeEffectiveHrvDepth(): number {
+    if (!this.spec || this.isControlTrial || this.hrvBaseDepth <= 0) return 0;
+    const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
+    return Math.min(0.68, Math.max(0, this.hrvBaseDepth * this.modMult * phaseScale));
+  }
+
   private computeStimulusTargetGain(): number {
     if (!this.spec || this.isControlTrial) return 0.0001;
     const baseDepth = Math.max(0.1, Math.min(0.8, this.spec.entrainment.modulationDepth || 0.26));
@@ -386,7 +452,8 @@ export class MedicalStimulusRack {
     else if (type === 'binaural_beat' || type === 'monaural_beat') {
       base = this.pureStimulusMode ? 0.22 : 0.075;
     }
-    return Math.min(0.36, Math.max(0.0001, base * (0.65 + baseDepth * 0.9) * this.modMult));
+    const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
+    return Math.min(0.36, Math.max(0.0001, base * (0.65 + baseDepth * 0.9) * this.modMult * phaseScale));
   }
 
   private computeNoiseTargetGain(): number {
@@ -412,6 +479,43 @@ export class MedicalStimulusRack {
     this.refreshLevels();
   }
 
+  public updateProgress(progressRatio: number, phaseModFactor: number): void {
+    this.phaseModFactor = Math.max(0.45, Math.min(1.05, phaseModFactor));
+    const spec = this.spec;
+    if (
+      this.ctx &&
+      spec &&
+      !this.isControlTrial &&
+      spec.entrainment.startFrequencyHz !== undefined &&
+      (spec.entrainment.type === 'binaural_beat' || spec.entrainment.type === 'monaural_beat') &&
+      this.beatOscL &&
+      this.beatOscR
+    ) {
+      const rampRatio = Math.min(1, Math.max(0, progressRatio) / 0.25);
+      const liveBeatHz = Number(
+        (
+          spec.entrainment.startFrequencyHz +
+          (spec.entrainment.frequencyHz - spec.entrainment.startFrequencyHz) * rampRatio
+        ).toFixed(2)
+      );
+      this.currentHz = liveBeatHz;
+      const leftHz = this.beatSymmetric
+        ? Number((this.beatCenterHz - liveBeatHz / 2).toFixed(2))
+        : this.beatCenterHz;
+      const rightHz = this.beatSymmetric
+        ? Number((this.beatCenterHz + liveBeatHz / 2).toFixed(2))
+        : Number((leftHz + liveBeatHz).toFixed(2));
+      const now = this.ctx.currentTime;
+      this.beatOscL.frequency.setTargetAtTime(leftHz, now, 0.4);
+      this.beatOscR.frequency.setTargetAtTime(rightHz, now, 0.4);
+      this.carrierLabel =
+        spec.entrainment.type === 'binaural_beat' && !this.speakerSafeEQ
+          ? `${leftHz} Hz L / ${rightHz} Hz R (${liveBeatHz} Hz Beat)`
+          : `${leftHz} + ${rightHz} Hz Monaural (${liveBeatHz} Hz Beat)`;
+    }
+    this.refreshLevels();
+  }
+
   private refreshLevels(): void {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
@@ -420,6 +524,11 @@ export class MedicalStimulusRack {
     }
     if (this.noiseGain) {
       this.noiseGain.gain.setTargetAtTime(this.computeNoiseTargetGain(), now, 0.25);
+    }
+    if (this.hrvCarrierGain && this.hrvDepthGain) {
+      const effHrv = this.computeEffectiveHrvDepth();
+      this.hrvCarrierGain.gain.setTargetAtTime(1 - effHrv / 2, now, 0.35);
+      this.hrvDepthGain.gain.setTargetAtTime(effHrv / 2, now, 0.35);
     }
   }
 
@@ -462,6 +571,14 @@ export class MedicalStimulusRack {
     this.activeSources = [];
     this.stimulusGain = null;
     this.noiseGain = null;
+    this.hrvCarrierGain = null;
+    this.hrvDepthGain = null;
+    this.hrvBaseDepth = 0;
+    this.beatOscL = null;
+    this.beatOscR = null;
+    this.beatCenterHz = 200;
+    this.beatSymmetric = false;
+    this.phaseModFactor = 1.0;
     this.ctx = null;
   }
 }

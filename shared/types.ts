@@ -90,6 +90,7 @@ export interface UserProfile {
   primaryChallenge: PrimaryChallenge;
   researchConsent: boolean;
   preferredModMult?: number;
+  favoriteGenres?: ResolvedGenre[];
   sessionCount?: number;
   planTier?: 'free' | 'pro';
   proUntil?: string | null;

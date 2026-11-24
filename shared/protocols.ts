@@ -425,6 +425,7 @@ function resolveGenreLayer(input: {
   mode: 'auto' | 'user_chosen' | 'iso_adapted';
   adaptationNote?: string;
   genreLearnedTrials?: number;
+  personalGenreTrials?: number;
 } {
   const req = input.requestedGenre ?? 'auto';
   const isDriving = input.environment === 'driving';
@@ -448,21 +449,32 @@ function resolveGenreLayer(input: {
       const alpha =
         prior.alpha +
         (c ? Math.max(0, c.alpha - 2.5) : 0) +
-        (p ? Math.max(0, p.alpha - 2.5) * 1.6 : 0);
+        (p ? Math.max(0, p.alpha - 2.5) * 2.6 : 0);
       const beta =
         prior.beta +
         (c ? Math.max(0, c.beta - 1.5) : 0) +
-        (p ? Math.max(0, p.beta - 1.5) * 1.6 : 0);
+        (p ? Math.max(0, p.beta - 1.5) * 2.6 : 0);
 
-      const trials = (c?.trials ?? 0) + (p?.trials ?? 0);
-      // If no real data yet for any candidate, keep deterministic scientific prior winner;
-      // once real trials accumulate, use full Thompson Sampling to explore & optimize Layer 2!
-      const score = trials > 0 ? sampleBeta(alpha, beta) : alpha / (alpha + beta);
-      return { genre: g, score, trials };
+      const personalTrials = p?.trials ?? 0;
+      const trials = (c?.trials ?? 0) + personalTrials;
+      const posteriorMean = alpha / (alpha + beta);
+      // Balanced exploitation + gentle exploration so learned personal favorites reliably win Auto mode
+      const score =
+        personalTrials >= 1
+          ? posteriorMean * 0.72 + sampleBeta(alpha, beta) * 0.28
+          : trials > 0
+            ? posteriorMean * 0.45 + sampleBeta(alpha, beta) * 0.55
+            : posteriorMean;
+      return { genre: g, score, trials, personalTrials };
     });
 
     const winner = scored.sort((a, b) => b.score - a.score)[0];
-    return { genre: winner.genre, mode: 'auto', genreLearnedTrials: winner.trials };
+    return {
+      genre: winner.genre,
+      mode: 'auto',
+      genreLearnedTrials: winner.trials,
+      personalGenreTrials: winner.personalTrials,
+    };
   }
 
   // Smart Iso-Safety adaptation when user chooses a genre that could clash with goal/safety
@@ -904,6 +916,9 @@ export function selectProtocolRecommendation(input: {
   }
   if (personalModMult !== 1.0) {
     personalizationSummary.push(`Personal AM depth calibrated to ${Math.round(personalModMult * 100)}%`);
+  }
+  if (genreResolution.mode === 'auto' && 'personalGenreTrials' in genreResolution && (genreResolution.personalGenreTrials ?? 0) > 0) {
+    personalizationSummary.push('Music style matched to your highest-rated past sessions');
   }
   if (isDriving) {
     personalizationSummary.push('Driving Safety EQ open (800–3500 Hz traffic cues protected)');

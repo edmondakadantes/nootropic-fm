@@ -247,12 +247,12 @@ export default function App() {
   const handleInstantHeroPlay = useCallback(
     (id: QuickTryId) => {
       setErrorBanner(null);
-      const rec = buildInstantQuickTryRecommendation(id);
+      const rec = buildInstantQuickTryRecommendation(id, profile);
       setActiveRec(rec);
       setFieldMood(moodFromTarget(rec.environment, rec.targetState));
       setScreen('player');
     },
-    [moodFromTarget]
+    [moodFromTarget, profile]
   );
 
   const handleStartDirectCheckout = useCallback(
@@ -795,6 +795,8 @@ export default function App() {
           >
             <StudyLabView
               defaultDevice={profile?.defaultDevice ?? 'headphones'}
+              profileId={profile?.id}
+              ephemeralMode={profile ? !profile.researchConsent : true}
               onExecuteRecommendation={(rec, directPlay) => {
                 setErrorBanner(null);
                 setActiveRec(rec);
@@ -850,6 +852,24 @@ export default function App() {
             syncCode={syncCode}
             isPro={profile?.planTier === 'pro'}
             onUpgradePro={() => setShowProModal(true)}
+            onLearningApplied={(update) => {
+              setProfile((prev) => {
+                if (!prev) return prev;
+                const nextFavs =
+                  update.learnedGenre && (update.learnedGenreFitPct ?? 0) >= 58
+                    ? [
+                        update.learnedGenre,
+                        ...(prev.favoriteGenres ?? []).filter((g) => g !== update.learnedGenre),
+                      ].slice(0, 2)
+                    : prev.favoriteGenres;
+                return {
+                  ...prev,
+                  preferredModMult: update.preferredModMult,
+                  favoriteGenres: nextFavs,
+                  sessionCount: (prev.sessionCount ?? 0) + 1,
+                };
+              });
+            }}
             onStartNew={() => {
               setDebriefContext(null);
               setScreen(profile ? 'checkin' : 'landing');

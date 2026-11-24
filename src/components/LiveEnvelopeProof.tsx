@@ -74,7 +74,7 @@ export function LiveEnvelopeProof({
       ctx.clearRect(0, 0, w, h);
 
       const hasWave = Boolean(engine && isPlaying && engine.getScopeWaveform(waveBuf));
-      const useModTap = entrainmentType === 'amplitude_modulation' && !isPureWave;
+      const useModTap = entrainmentType !== 'none' && !isPureWave;
       const hasMod = Boolean(
         engine && isPlaying && (useModTap ? engine.getScopeModBand(modBuf) : false)
       );

@@ -206,6 +206,7 @@ export class PsychoacousticEngine {
   private cleanSubBus: GainNode | null = null;
   private proceduralMaster: GainNode | null = null;
   private studioBus: GainNode | null = null;
+  private studioFilter: BiquadFilterNode | null = null;
   private pureAmCarrierGain: GainNode | null = null;
   private pureAmCarrierSrc: AudioBufferSourceNode | null = null;
 
@@ -383,6 +384,12 @@ export class PsychoacousticEngine {
     this.analyser = analyser;
     this.scopeMasterAnalyser = scopeMasterAnalyser;
 
+    // Dedicated zero-smoothing Lab Oscilloscope tap on the clinical stimulus / LR4 AM band
+    const scopeModAnalyser = ctx.createAnalyser();
+    scopeModAnalyser.fftSize = 1024;
+    scopeModAnalyser.smoothingTimeConstant = 0.0;
+    this.scopeModAnalyser = scopeModAnalyser;
+
     // ─── LAYER 1A: PRECISION MEDICAL STIMULUS RACK (40 Hz GENUS, Isochronic, Binaural, Monaural, HRV, SNR Noise) ───
     const { hrvBusInput } = this.stimulusRack.start({
       ctx,
@@ -391,6 +398,7 @@ export class PsychoacousticEngine {
       speakerSafeEQ: params.speakerSafeEQ,
       isControlTrial: this.isControlTrial,
       pureStimulusMode: this.carrierMode === 'pure_stimulus',
+      stimulusTap: scopeModAnalyser,
     });
 
     // ─── LAYER 1B: 3-BAND LINKWITZ-RILEY (LR4) PHASE-COHERENT CORTICAL AM MATRIX ───
@@ -417,25 +425,31 @@ export class PsychoacousticEngine {
 
     const studioBus = ctx.createGain();
     studioBus.gain.setValueAtTime(0.98, ctx.currentTime);
-    studioBus.connect(preHrvBus);
+    const studioFilter = ctx.createBiquadFilter();
+    studioFilter.type = 'lowpass';
+    studioFilter.Q.value = 0.62;
+    studioFilter.frequency.setValueAtTime(this.computeStudioCutoffHz(), ctx.currentTime);
+    studioBus.connect(studioFilter);
+    studioFilter.connect(preHrvBus);
     this.studioBus = studioBus;
+    this.studioFilter = studioFilter;
 
     const cleanSubBus = ctx.createGain();
     cleanSubBus.gain.setValueAtTime(startWithMusic ? 0.9 : 0.0001, ctx.currentTime);
     cleanSubBus.connect(compressor);
     this.cleanSubBus = cleanSubBus;
 
-    // Gentle pink carrier specifically for Pure Clinical Signal auditing of Amplitude Modulation (AM) studies
+    // Gentle pink carrier specifically for Pure Clinical Signal auditing of AM & 0.1 Hz HRV studies
     const pureAmBuf = createCalibratedNoiseBuffer(ctx, 'pink', 6);
     const pureAmSrc = ctx.createBufferSource();
     pureAmSrc.buffer = pureAmBuf;
     pureAmSrc.loop = true;
     const pureAmGain = ctx.createGain();
     const needsPureAmCarrier =
-      this.carrierMode === 'pure_stimulus' && this.studySpec.entrainment.type === 'amplitude_modulation';
+      this.carrierMode === 'pure_stimulus' && this.specNeedsPureReferenceCarrier();
     pureAmGain.gain.setValueAtTime(needsPureAmCarrier ? 0.32 : 0.0001, ctx.currentTime);
     pureAmSrc.connect(pureAmGain);
-    pureAmGain.connect(musicMixBus);
+    pureAmGain.connect(preHrvBus);
     pureAmSrc.start();
     this.pureAmCarrierSrc = pureAmSrc;
     this.pureAmCarrierGain = pureAmGain;
@@ -477,16 +491,22 @@ export class PsychoacousticEngine {
         (this.studySpec.entrainment.phaseOffsetDeg ?? 0) > 0 &&
         !params.speakerSafeEQ
     );
+    const isRaisedCosine = this.studySpec.entrainment.waveform === 'raised_cosine';
+    const initialAmGains = this.computeAmGainPair(initialDepth);
 
     const amLfoL = ctx.createOscillator();
-    amLfoL.type = 'sine';
+    if (isRaisedCosine) {
+      amLfoL.setPeriodicWave(createPhaseShiftedSineWave(ctx, 90));
+    } else {
+      amLfoL.type = 'sine';
+    }
     amLfoL.frequency.setValueAtTime(Math.max(0.5, amStartHz || 16), ctx.currentTime);
 
     const amDepthGainL = ctx.createGain();
-    amDepthGainL.gain.setValueAtTime(initialDepth / 2, ctx.currentTime);
+    amDepthGainL.gain.setValueAtTime(initialAmGains.swing, ctx.currentTime);
 
     const amGainL = ctx.createGain();
-    amGainL.gain.setValueAtTime(1 - initialDepth / 2, ctx.currentTime);
+    amGainL.gain.setValueAtTime(initialAmGains.bias, ctx.currentTime);
 
     amLfoL.connect(amDepthGainL);
     amDepthGainL.connect(amGainL.gain);
@@ -500,15 +520,18 @@ export class PsychoacousticEngine {
 
       const amLfoR = ctx.createOscillator();
       amLfoR.setPeriodicWave(
-        createPhaseShiftedSineWave(ctx, this.studySpec.entrainment.phaseOffsetDeg ?? 32)
+        createPhaseShiftedSineWave(
+          ctx,
+          (this.studySpec.entrainment.phaseOffsetDeg ?? 32) + (isRaisedCosine ? 90 : 0)
+        )
       );
       amLfoR.frequency.setValueAtTime(Math.max(0.5, amStartHz || 16), ctx.currentTime);
 
       const amDepthGainR = ctx.createGain();
-      amDepthGainR.gain.setValueAtTime(initialDepth / 2, ctx.currentTime);
+      amDepthGainR.gain.setValueAtTime(initialAmGains.swing, ctx.currentTime);
 
       const amGainR = ctx.createGain();
-      amGainR.gain.setValueAtTime(1 - initialDepth / 2, ctx.currentTime);
+      amGainR.gain.setValueAtTime(initialAmGains.bias, ctx.currentTime);
 
       amLfoR.connect(amDepthGainR);
       amDepthGainR.connect(amGainR.gain);
@@ -531,12 +554,10 @@ export class PsychoacousticEngine {
       this.amDepthGainR = null;
     }
 
-    // Dedicated zero-smoothing Lab Oscilloscope tap directly on the modulated LR4 cortical band (190-4500 Hz)
-    const scopeModAnalyser = ctx.createAnalyser();
-    scopeModAnalyser.fftSize = 1024;
-    scopeModAnalyser.smoothingTimeConstant = 0.0;
-    midOutput.connect(scopeModAnalyser);
-    this.scopeModAnalyser = scopeModAnalyser;
+    const eType = this.studySpec.entrainment.type;
+    if (eType === 'amplitude_modulation' || eType === 'hrv_breathing_swell' || eType === 'none') {
+      midOutput.connect(scopeModAnalyser);
+    }
 
     if (params.speakerSafeEQ) {
       const safetyNotch = ctx.createBiquadFilter();
@@ -626,6 +647,39 @@ export class PsychoacousticEngine {
     }
   }
 
+  private specNeedsPureReferenceCarrier(): boolean {
+    return Boolean(
+      this.studySpec &&
+        (this.studySpec.entrainment.type === 'amplitude_modulation' ||
+          this.studySpec.entrainment.type === 'hrv_breathing_swell' ||
+          (this.studySpec.entrainment.hrvBreathHz ?? 0) > 0)
+    );
+  }
+
+  private computeStudioCutoffHz(): number {
+    const specCutoff = this.studySpec?.music.spectralLowPassHz ?? this.params?.filterCutoffHz ?? 2200;
+    const target = this.studySpec?.protocol.targetState ?? 'alert_focus';
+    const isIsoAdapted = this.params?.genreSelectionMode === 'iso_adapted';
+    let base = 15000;
+    if (target === 'sleep_winddown' || isIsoAdapted) {
+      base = Math.max(1150, Math.min(2200, specCutoff * 1.65));
+    } else if (target === 'calm_reset' || (this.params?.filterCutoffHz ?? 2200) <= 1750) {
+      base = Math.max(2600, Math.min(5200, (this.params?.filterCutoffHz ?? 1600) * 2.4));
+    }
+    const scaled = base * (0.74 + 0.32 * this.intensityMultiplier);
+    return Math.round(Math.max(950, Math.min(18000, scaled)));
+  }
+
+  private computeAmGainPair(depth: number): { bias: number; swing: number } {
+    if (depth <= 0.001) return { bias: 1.0, swing: 0 };
+    const rms = Math.sqrt((1 - depth / 2) ** 2 + (depth ** 2) / 8);
+    const makeup = Math.min(1.14, 1 / Math.max(0.74, rms));
+    return {
+      bias: Number(((1 - depth / 2) * makeup).toFixed(4)),
+      swing: Number(((depth / 2) * makeup).toFixed(4)),
+    };
+  }
+
   private syncRainBed(): void {
     const shouldPlayRain = this.genre === 'nature_rain' && this.carrierMode !== 'pure_stimulus';
     this.rainBed.setActive(shouldPlayRain);
@@ -663,7 +717,7 @@ export class PsychoacousticEngine {
       this.stimulusRack.setPureStimulusMode(true);
       this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.45);
       this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.45);
-      const needsPureAm = this.studySpec?.entrainment.type === 'amplitude_modulation';
+      const needsPureAm = this.specNeedsPureReferenceCarrier();
       this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureAm ? 0.34 : 0.0001, now, 0.45);
     } else if (mode === 'studio_library') {
       this.stimulusRack.setPureStimulusMode(false);
@@ -1224,15 +1278,16 @@ export class PsychoacousticEngine {
 
     if (this.ctx && this.amGainL && this.amDepthGainL && this.amLfoL) {
       const now = this.ctx.currentTime;
-      this.amGainL.gain.setTargetAtTime(1 - effectiveDepth / 2, now, 0.35);
-      this.amDepthGainL.gain.setTargetAtTime(effectiveDepth / 2, now, 0.35);
+      const amGains = this.computeAmGainPair(effectiveDepth);
+      this.amGainL.gain.setTargetAtTime(amGains.bias, now, 0.35);
+      this.amDepthGainL.gain.setTargetAtTime(amGains.swing, now, 0.35);
       if (amActive) {
         this.amLfoL.frequency.setTargetAtTime(Math.max(0.5, liveAmHz), now, 0.5);
       }
 
       if (this.amGainR && this.amDepthGainR && this.amLfoR) {
-        this.amGainR.gain.setTargetAtTime(1 - effectiveDepth / 2, now, 0.35);
-        this.amDepthGainR.gain.setTargetAtTime(effectiveDepth / 2, now, 0.35);
+        this.amGainR.gain.setTargetAtTime(amGains.bias, now, 0.35);
+        this.amDepthGainR.gain.setTargetAtTime(amGains.swing, now, 0.35);
         if (amActive) {
           this.amLfoR.frequency.setTargetAtTime(Math.max(0.5, liveAmHz), now, 0.5);
         }
@@ -1251,6 +1306,7 @@ export class PsychoacousticEngine {
       }
     }
 
+    this.stimulusRack.updateProgress(progressRatio, phaseModFactor);
     const stim = this.stimulusRack.getTelemetry(elapsedSec);
     return {
       phase,
@@ -1303,6 +1359,16 @@ export class PsychoacousticEngine {
     this.composer.setIntensityMultiplier(this.intensityMultiplier);
     this.stimulusRack.setIntensityMultiplier(this.intensityMultiplier);
     this.rainBed.setIntensityMultiplier(this.intensityMultiplier);
+    if (this.ctx) {
+      const now = this.ctx.currentTime;
+      if (this.studioFilter) {
+        this.studioFilter.frequency.setTargetAtTime(this.computeStudioCutoffHz(), now, 0.3);
+      }
+      if (this.studioBus) {
+        const gainTrim = 0.98 * Math.max(0.82, Math.min(1.08, 0.88 + 0.12 * this.intensityMultiplier));
+        this.studioBus.gain.setTargetAtTime(gainTrim, now, 0.3);
+      }
+    }
     if (this.carrierMode === 'lyria_realtime' && this.studySpec) {
       this.lyriaClient.steer(this.studySpec, this.intensityMultiplier, this.genre);
     }
@@ -1532,6 +1598,7 @@ export class PsychoacousticEngine {
     this.cleanSubBus = null;
     this.proceduralMaster = null;
     this.studioBus = null;
+    this.studioFilter = null;
     if (this.ctx) {
       this.ctx.close().catch(() => {});
       this.ctx = null;

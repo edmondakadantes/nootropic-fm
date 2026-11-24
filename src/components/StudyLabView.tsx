@@ -32,6 +32,8 @@ import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
 interface StudyLabViewProps {
   defaultDevice?: OutputDevice;
+  profileId?: string;
+  ephemeralMode?: boolean;
   onExecuteRecommendation: (rec: ProtocolRecommendation, directPlay?: boolean) => void;
 }
 
@@ -59,7 +61,12 @@ const EXAMPLE_QUERIES = [
   '432 Hz music heart rate variability',
 ];
 
-export function StudyLabView({ defaultDevice = 'headphones', onExecuteRecommendation }: StudyLabViewProps) {
+export function StudyLabView({
+  defaultDevice = 'headphones',
+  profileId,
+  ephemeralMode = true,
+  onExecuteRecommendation,
+}: StudyLabViewProps) {
   const [queryInput, setQueryInput] = useState('');
   const [device, setDevice] = useState<OutputDevice>(defaultDevice);
   const [environment, setEnvironment] = useState<SessionEnvironment>(
@@ -133,6 +140,8 @@ export function StudyLabView({ defaultDevice = 'headphones', onExecuteRecommenda
         ...payload,
         device,
         environment,
+        profileId,
+        ephemeralMode,
       });
       setCompiledResult(res);
     } catch (err) {
@@ -549,6 +558,8 @@ export function StudyLabView({ defaultDevice = 'headphones', onExecuteRecommenda
                             presetId: preset.id,
                             device,
                             environment,
+                            profileId,
+                            ephemeralMode,
                           });
                           onExecuteRecommendation(res.recommendation, true);
                         } catch (err) {

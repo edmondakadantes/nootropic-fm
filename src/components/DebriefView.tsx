@@ -12,7 +12,7 @@ import {
   ThumbsUp,
   Zap,
 } from 'lucide-react';
-import type { LiveAdjustment, UserProfile, WorkedRating } from '../../shared/types';
+import type { LiveAdjustment, ResolvedGenre, UserProfile, WorkedRating } from '../../shared/types';
 import { api } from '../lib/api';
 import {
   NeuralFingerprintSigil,
@@ -20,6 +20,25 @@ import {
 } from './NeuralFingerprintPass';
 import { PvtBenchmarkModal } from './PvtBenchmarkModal';
 import { SonicOrb } from './SonicOrb';
+
+export interface DebriefLearningUpdate {
+  sessionId?: string;
+  armId?: string;
+  armName: string;
+  cohortKey?: string;
+  cohortLabel: string;
+  delta: number;
+  reward: number;
+  cohortSuccessRatePct: number;
+  cohortTrials: number;
+  profileSuccessRatePct: number;
+  profileTrials: number;
+  wasControlTrial: boolean;
+  preferredModMult: number;
+  learnedGenre?: ResolvedGenre;
+  learnedGenreLabel?: string;
+  learnedGenreFitPct?: number;
+}
 
 interface DebriefViewProps {
   sessionId: string;
@@ -40,6 +59,7 @@ interface DebriefViewProps {
   syncCode?: string | null;
   isPro?: boolean;
   onUpgradePro?: () => void;
+  onLearningApplied?: (update: DebriefLearningUpdate) => void;
   onStartNew: () => void;
   onViewInsights: () => void;
 }
@@ -48,11 +68,13 @@ const FEEDBACK_WHISPERS = [
   'Kept me locked in',
   'Warm & pleasant',
   'Calmed my mind quickly',
+  'Loved the music style',
   'Safe & clear in traffic',
   'Wanted stronger focus',
   'Too monotonous',
   'A bit too intense',
   'Modulation felt distracting',
+  'Try a different music style',
 ];
 
 export function DebriefView({
@@ -74,6 +96,7 @@ export function DebriefView({
   syncCode = null,
   isPro = false,
   onUpgradePro,
+  onLearningApplied,
   onStartNew,
   onViewInsights,
 }: DebriefViewProps) {
@@ -89,18 +112,7 @@ export function DebriefView({
   const [pvtLapsesPost, setPvtLapsesPost] = useState<number | null>(null);
   const [sharingCard, setSharingCard] = useState(false);
   const [shareNote, setShareNote] = useState<string | null>(null);
-  const [learningUpdate, setLearningUpdate] = useState<{
-    armName: string;
-    cohortLabel: string;
-    delta: number;
-    reward: number;
-    cohortSuccessRatePct: number;
-    cohortTrials: number;
-    profileSuccessRatePct: number;
-    profileTrials: number;
-    wasControlTrial: boolean;
-    preferredModMult: number;
-  } | null>(null);
+  const [learningUpdate, setLearningUpdate] = useState<DebriefLearningUpdate | null>(null);
 
   const isStudyLabTrial = sessionId.startsWith('eph_study_');
 
@@ -131,7 +143,7 @@ export function DebriefView({
       setShareNote(
         outcome === 'shared'
           ? 'Shared your public Neural Fingerprint card!'
-          : 'Public Card PNG saved + link copied — private sync key hidden!'
+          : 'Public Card PNG saved and link copied (private sync key hidden).'
       );
       window.setTimeout(() => setShareNote(null), 4000);
     } finally {
@@ -174,6 +186,7 @@ export function DebriefView({
         setEphemeralCompleted(true);
       } else {
         setLearningUpdate(res.learningUpdate);
+        onLearningApplied?.(res.learningUpdate);
       }
     } catch {
       if (isStudyLabTrial) {
@@ -353,6 +366,11 @@ export function DebriefView({
               Updated cohort:{' '}
               <span className="font-semibold text-[#F3F1EC]">{learningUpdate.cohortLabel}</span>
             </span>
+            {learningUpdate.learnedGenreLabel && typeof learningUpdate.learnedGenreFitPct === 'number' && (
+              <span className="font-mono-tech rounded border border-white/15 bg-[#16181C] px-2 py-0.5 text-[11px] text-[#34D399]">
+                Music Fit: {learningUpdate.learnedGenreLabel} ({learningUpdate.learnedGenreFitPct}%)
+              </span>
+            )}
             {learningUpdate.preferredModMult !== 1.0 && (
               <span className="font-mono-tech rounded border border-white/15 bg-[#16181C] px-2 py-0.5 text-[11px] text-[#34D399]">
                 Personal AM Depth: {Math.round(learningUpdate.preferredModMult * 100)}%
