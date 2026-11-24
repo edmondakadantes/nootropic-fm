@@ -192,7 +192,7 @@ export function PlayerView({
     phaseLabel: 'Entry & Iso-Alignment',
     progressRatio: 0,
     currentModHz: spec?.entrainment.frequencyHz ?? recommendation.params.modulationHz,
-    currentModDepth: Number((recommendation.params.modulationDepth * 0.55).toFixed(2)),
+    currentModDepth: Number((recommendation.params.modulationDepth * 0.76).toFixed(2)),
     crossoverHz: spec?.entrainment.modulationBandHz[0] ?? recommendation.params.crossoverHz ?? 190,
     upperCrossoverHz: spec?.entrainment.modulationBandHz[1] ?? recommendation.params.upperCrossoverHz ?? 4500,
     stereoAmActive: Boolean(recommendation.params.stereoAmSpread && !recommendation.params.speakerSafeEQ),
@@ -784,7 +784,7 @@ export function PlayerView({
   };
 
   const tweakModulation = (delta: number) => {
-    const next = Number(Math.max(0.3, Math.min(1.5, modMult + delta)).toFixed(2));
+    const next = Number(Math.max(0.3, Math.min(1.55, modMult + delta)).toFixed(2));
     setModMult(next);
     if (layerMonitor === 'music_only') {
       setLayerMonitor('full_mix');
@@ -795,7 +795,7 @@ export function PlayerView({
   };
 
   const setDirectModDepth = (targetMult: number) => {
-    const clamped = Number(Math.max(0.3, Math.min(1.5, targetMult)).toFixed(2));
+    const clamped = Number(Math.max(0.3, Math.min(1.55, targetMult)).toFixed(2));
     const delta = Number((clamped - modMult).toFixed(2));
     setModMult(clamped);
     if (layerMonitor === 'music_only') {
@@ -1313,7 +1313,7 @@ export function PlayerView({
             {[
               { label: 'Subtle', val: 0.65, active: modMult <= 0.78 },
               { label: 'Standard', val: 1.0, active: modMult > 0.78 && modMult < 1.18 },
-              { label: 'Deep', val: 1.35, active: modMult >= 1.18 },
+              { label: 'Deep', val: 1.38, active: modMult >= 1.18 },
             ].map((tier) => (
               <button
                 key={tier.label}

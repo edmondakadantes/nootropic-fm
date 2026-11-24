@@ -325,7 +325,7 @@ export function compileStudyTextDeterministically(input: {
       const pct = Number(depthMatch[1] || depthMatch[2]);
       modulationDepth = Number(Math.max(0.12, Math.min(0.75, pct / 100)).toFixed(2));
     } else {
-      modulationDepth = frequencyHz >= 14 ? 0.28 : 0.2;
+      modulationDepth = frequencyHz >= 12 ? 0.38 : 0.24;
     }
 
     const bandMatch = cleanText.match(/(\d{2,4})\s*(?:hz)?\s*(?:-|to|–)\s*(\d+(?:\.\d+)?)\s*(k?hz)/i);
@@ -371,7 +371,7 @@ export function compileStudyTextDeterministically(input: {
         entrainmentType = hz >= 38 && hz <= 42 ? 'gamma_40hz_clicks' : 'amplitude_modulation';
         frequencyHz = hz;
         waveform = entrainmentType === 'gamma_40hz_clicks' ? 'gaussian_click_1ms' : 'sine';
-        modulationDepth = entrainmentType === 'gamma_40hz_clicks' ? 0.3 : 0.24;
+        modulationDepth = entrainmentType === 'gamma_40hz_clicks' ? 0.38 : 0.34;
         exactSlots++;
         evidenceMap.push({
           parameter: 'Entrainment Stimulus',
@@ -403,11 +403,11 @@ export function compileStudyTextDeterministically(input: {
     } else {
       entrainmentType = 'amplitude_modulation';
       frequencyHz = targetState === 'deep_flow' ? 14 : 16;
-      modulationDepth = 0.18;
+      modulationDepth = 0.32;
       evidenceMap.push({
         parameter: 'Entrainment Stimulus',
         targetLabel: 'Subtle Cortical AM Support',
-        executedValue: `${frequencyHz} Hz LR4 AM (18% depth — safe baseline)`,
+        executedValue: `${frequencyHz} Hz LR4 AM (32% depth — safe baseline)`,
         studyQuote: 'No explicit modulation Hz stated in abstract; using validated Woods 2024 light baseline.',
         origin: 'clinical_safety_default',
       });
@@ -847,7 +847,7 @@ export function applySafetyAndDeviceGuardrails(
       spec.entrainment.type = 'amplitude_modulation';
       spec.entrainment.frequencyHz = 16;
       spec.entrainment.waveform = 'sine';
-      spec.entrainment.modulationDepth = Math.min(0.26, spec.entrainment.modulationDepth);
+      spec.entrainment.modulationDepth = Math.min(0.36, spec.entrainment.modulationDepth);
       spec.evidenceMap.push({
         parameter: 'Safety Adaptation',
         targetLabel: 'Driving Mode Stimulus Guard',

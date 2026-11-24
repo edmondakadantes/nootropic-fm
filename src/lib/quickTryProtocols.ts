@@ -79,14 +79,14 @@ function applyQuickTryProfile(
   const targetDevice = profile.role === 'driver' ? 'car_audio' : profile.defaultDevice;
   const isDriving = targetDevice === 'car_audio';
   const isSpeakers = targetDevice === 'speakers' || isDriving;
-  const scaledDepth = Number(Math.min(0.36, Math.max(0.1, rec.params.modulationDepth * mult)).toFixed(2));
+  const scaledDepth = Number(Math.min(0.56, Math.max(0.12, rec.params.modulationDepth * mult)).toFixed(2));
 
   const nextSpec = rec.executableSpec
     ? {
         ...rec.executableSpec,
         entrainment: {
           ...rec.executableSpec.entrainment,
-          modulationDepth: isDriving ? Math.min(0.26, scaledDepth) : scaledDepth,
+          modulationDepth: isDriving ? Math.min(0.38, scaledDepth) : scaledDepth,
           phaseOffsetDeg: isSpeakers ? 0 : rec.executableSpec.entrainment.phaseOffsetDeg,
         },
         protocol: {
@@ -104,7 +104,7 @@ function applyQuickTryProfile(
     safetyMode: isDriving,
     params: {
       ...rec.params,
-      modulationDepth: isDriving ? Math.min(0.26, scaledDepth) : scaledDepth,
+      modulationDepth: isDriving ? Math.min(0.38, scaledDepth) : scaledDepth,
       speakerSafeEQ: isSpeakers,
       stereoAmSpread: Boolean(rec.params.stereoAmSpread && !isSpeakers),
       noiseLevel: isDriving ? Math.min(rec.params.noiseLevel, 0.07) : rec.params.noiseLevel,
@@ -132,7 +132,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
   if (id === 'mood_uplift') {
     const baseParams: ProtocolArm['baseParams'] = {
       modulationHz: 12,
-      modulationDepth: 0.22,
+      modulationDepth: 0.34,
       crossoverHz: 200,
       upperCrossoverHz: 4200,
       bpm: 112,
@@ -174,7 +174,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
         {
           parameter: 'Acoustic Modulation',
           targetLabel: '12 Hz Gentle SMR Clarity AM',
-          executedValue: '12.0 Hz 3-Band LR4 Mid-Band AM (200–4200 Hz, 22% organic depth)',
+          executedValue: '12.0 Hz 3-Band LR4 Mid-Band AM (200–4200 Hz, 34% active ASSR depth)',
           studyQuote: 'Gentle mid-band rhythmic alignment adds clarity without sharp fatigue.',
           origin: 'study_inferred',
         },
@@ -184,7 +184,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
         frequencyHz: 12,
         startFrequencyHz: 10,
         modulationBandHz: [200, 4200],
-        modulationDepth: 0.22,
+        modulationDepth: 0.34,
         waveform: 'sine',
         phaseOffsetDeg: 24,
       },
@@ -253,7 +253,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
         'Major-mode acoustic stems + gentle 12 Hz mid-band clarity AM',
       ],
       formulaIngredients: [
-        { role: 'Layer 1 · Active AM', compound: '12 Hz SMR Lift · 3-Band LR4', dose: '11%→22% (200Hz–4.2kHz)', evidenceTag: 'Husain 2002' },
+        { role: 'Layer 1 · Active AM', compound: '12 Hz SMR Lift · 3-Band LR4', dose: '26%→34% (200Hz–4.2kHz)', evidenceTag: 'Husain 2002' },
         { role: 'Layer 2 · Music', compound: 'Acoustic Pluck · Bright Major', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
       ],
       rationale:
@@ -275,7 +275,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
   if (id === 'energy_electronic') {
     const baseParams: ProtocolArm['baseParams'] = {
       modulationHz: 18,
-      modulationDepth: 0.26,
+      modulationDepth: 0.4,
       crossoverHz: 220,
       upperCrossoverHz: 4500,
       bpm: 114,
@@ -310,7 +310,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
         {
           parameter: 'Acoustic Modulation',
           targetLabel: '18 Hz Beta Vigilance AM',
-          executedValue: '18.0 Hz 3-Band LR4 Mid-Band AM (220–4500 Hz, 26% depth)',
+          executedValue: '18.0 Hz 3-Band LR4 Mid-Band AM (220–4500 Hz, 40% depth)',
           studyQuote: 'Upbeat rhythmic drive paired with crisp mid-band modulation sustains alertness.',
           origin: 'study_exact',
         },
@@ -327,7 +327,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
         frequencyHz: 18,
         startFrequencyHz: 15,
         modulationBandHz: [220, 4500],
-        modulationDepth: 0.26,
+        modulationDepth: 0.4,
         waveform: 'sine',
         phaseOffsetDeg: 28,
       },
@@ -396,7 +396,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
         '18 Hz Beta 3-Band LR4 AM over mastered Deep Electronic stems',
       ],
       formulaIngredients: [
-        { role: 'Layer 1 · Active AM', compound: '18 Hz Beta · 3-Band LR4', dose: '13%→26% (220Hz–4.5kHz)', evidenceTag: 'Husain 2002' },
+        { role: 'Layer 1 · Active AM', compound: '18 Hz Beta · 3-Band LR4', dose: '30%→40% (220Hz–4.5kHz)', evidenceTag: 'Husain 2002' },
         { role: 'Layer 2 · Music', compound: 'Deep Electronic · Drive', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
       ],
       rationale:
@@ -418,7 +418,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
   if (id === 'calm_rain') {
     const baseParams: ProtocolArm['baseParams'] = {
       modulationHz: 0.1,
-      modulationDepth: 0.24,
+      modulationDepth: 0.32,
       crossoverHz: 140,
       upperCrossoverHz: 2800,
       bpm: 60,
@@ -470,7 +470,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
         frequencyHz: 0.1,
         hrvBreathHz: 0.1,
         modulationBandHz: [140, 2800],
-        modulationDepth: 0.24,
+        modulationDepth: 0.32,
         waveform: 'sine',
         phaseOffsetDeg: 0,
       },
@@ -561,7 +561,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
   // Default: Deep Focus · Lo-Fi Keys (16 Hz Beta AM — Woods et al. 2024)
   const baseParams: ProtocolArm['baseParams'] = {
     modulationHz: 16,
-    modulationDepth: 0.28,
+    modulationDepth: 0.38,
     crossoverHz: 190,
     upperCrossoverHz: 4500,
     bpm: 88,
@@ -597,7 +597,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
       {
         parameter: 'Acoustic Modulation',
         targetLabel: '16 Hz Beta Cortical AM',
-        executedValue: '16.0 Hz 3-Band LR4 Mid-Band AM (190–4500 Hz, 28% depth)',
+        executedValue: '16.0 Hz 3-Band LR4 Mid-Band AM (190–4500 Hz, 38% depth)',
         studyQuote: 'Rapid amplitude modulation (~16 Hz, beta range) embedded in background music supports sustained attention.',
         origin: 'study_exact',
       },
@@ -614,7 +614,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
       frequencyHz: 16,
       startFrequencyHz: 14,
       modulationBandHz: [190, 4500],
-      modulationDepth: 0.28,
+      modulationDepth: 0.38,
       waveform: 'sine',
       phaseOffsetDeg: 32,
     },
@@ -683,7 +683,7 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
       '16 Hz Beta 3-Band LR4 AM over mastered Lo-Fi Warm Keys studio stems',
     ],
     formulaIngredients: [
-      { role: 'Layer 1 · Active AM', compound: '16 Hz Beta · 3-Band LR4', dose: '14%→28% (190Hz–4.5kHz)', evidenceTag: 'Woods et al. 2024' },
+      { role: 'Layer 1 · Active AM', compound: '16 Hz Beta · 3-Band LR4', dose: '29%→38% (190Hz–4.5kHz)', evidenceTag: 'Woods et al. 2024' },
       { role: 'Layer 2 · Music', compound: 'Lo-Fi Warm Keys · Focus', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
     ],
     rationale:

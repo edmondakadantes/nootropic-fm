@@ -111,6 +111,36 @@ function createPhaseShiftedSineWave(ctx: AudioContext, phaseDeg: number): Period
   return ctx.createPeriodicWave(real, imag, { disableNormalization: true });
 }
 
+/**
+ * 3-harmonic cortical salience pulse normalized to [-1, +1]:
+ * sharper attack crest resists musical modulation masking (Woods et al. 2024)
+ * while staying smooth and fatigue-free on the 190-4500 Hz mid-band.
+ */
+function createNeuralSalienceWave(ctx: AudioContext, phaseDeg: number): PeriodicWave {
+  const rad = (phaseDeg * Math.PI) / 180;
+  const amps = [1.0, 0.34, 0.1];
+  const phaseShifts = [rad, 2 * rad - Math.PI / 4, 3 * rad - Math.PI / 2];
+  let peak = 0;
+  for (let i = 0; i < 512; i++) {
+    const t = (2 * Math.PI * i) / 512;
+    const v =
+      amps[0] * Math.sin(t + phaseShifts[0]) +
+      amps[1] * Math.sin(2 * t + phaseShifts[1]) +
+      amps[2] * Math.sin(3 * t + phaseShifts[2]);
+    if (Math.abs(v) > peak) peak = Math.abs(v);
+  }
+  const norm = peak > 0 ? 1 / peak : 1;
+  const real = new Float32Array(4);
+  const imag = new Float32Array(4);
+  for (let k = 1; k <= 3; k++) {
+    const a = amps[k - 1] * norm;
+    const p = phaseShifts[k - 1];
+    real[k] = a * Math.sin(p);
+    imag[k] = a * Math.cos(p);
+  }
+  return ctx.createPeriodicWave(real, imag, { disableNormalization: true });
+}
+
 function buildFallbackStudySpec(params: AcousticParams, durationMin: number): ExecutableStudySpec {
   const tonalMap: Record<AcousticParams['harmonicMode'], TonalMode> = {
     bright_maj9: 'major',
@@ -210,6 +240,7 @@ export class PsychoacousticEngine {
   private studioBus: GainNode | null = null;
   private studioFilter: BiquadFilterNode | null = null;
   private musicAuditionGain: GainNode | null = null;
+  private spectralPocketNotch: BiquadFilterNode | null = null;
   private pureAmCarrierGain: GainNode | null = null;
   private pureAmCarrierSrc: AudioBufferSourceNode | null = null;
 
@@ -422,12 +453,22 @@ export class PsychoacousticEngine {
       preHrvBus.connect(musicMixBus);
     }
 
+    const spectralPocketNotch = ctx.createBiquadFilter();
+    spectralPocketNotch.type = 'peaking';
+    const discreteCarrierHz = this.stimulusRack.getPrimaryCarrierHz();
+    spectralPocketNotch.frequency.setValueAtTime(discreteCarrierHz ?? 250, ctx.currentTime);
+    spectralPocketNotch.Q.value = 2.6;
+    const wantPocket = Boolean(discreteCarrierHz && !this.isControlTrial);
+    spectralPocketNotch.gain.setValueAtTime(wantPocket ? -4.5 : 0, ctx.currentTime);
+    this.spectralPocketNotch = spectralPocketNotch;
+
     const musicAuditionGain = ctx.createGain();
     musicAuditionGain.gain.setValueAtTime(
       this.layerMonitorMode === 'science_only' ? 0.0001 : 1.0,
       ctx.currentTime
     );
-    musicAuditionGain.connect(preHrvBus);
+    musicAuditionGain.connect(spectralPocketNotch);
+    spectralPocketNotch.connect(preHrvBus);
     this.musicAuditionGain = musicAuditionGain;
 
     const startWithMusic = this.carrierMode === 'generative_live';
@@ -497,7 +538,7 @@ export class PsychoacousticEngine {
     const targetAmDepth = amActiveForSpec ? this.studySpec.entrainment.modulationDepth : 0;
     const initialDepth = this.isControlTrial
       ? 0
-      : Math.min(0.72, Math.max(0, targetAmDepth * 0.55 * this.modDepthMultiplier));
+      : Math.min(0.74, Math.max(0, targetAmDepth * 0.76 * this.modDepthMultiplier));
 
     const useStereoSpread = Boolean(
       amActiveForSpec &&
@@ -505,11 +546,15 @@ export class PsychoacousticEngine {
         !params.speakerSafeEQ
     );
     const isRaisedCosine = this.studySpec.entrainment.waveform === 'raised_cosine';
+    const useNeuralSalience =
+      amActiveForSpec && !isRaisedCosine && this.studySpec.entrainment.frequencyHz >= 12;
     const initialAmGains = this.computeAmGainPair(initialDepth);
 
     const amLfoL = ctx.createOscillator();
     if (isRaisedCosine) {
       amLfoL.setPeriodicWave(createPhaseShiftedSineWave(ctx, 90));
+    } else if (useNeuralSalience) {
+      amLfoL.setPeriodicWave(createNeuralSalienceWave(ctx, 0));
     } else {
       amLfoL.type = 'sine';
     }
@@ -532,11 +577,11 @@ export class PsychoacousticEngine {
       const merger = ctx.createChannelMerger(2);
 
       const amLfoR = ctx.createOscillator();
+      const spreadDeg = this.studySpec.entrainment.phaseOffsetDeg ?? 32;
       amLfoR.setPeriodicWave(
-        createPhaseShiftedSineWave(
-          ctx,
-          (this.studySpec.entrainment.phaseOffsetDeg ?? 32) + (isRaisedCosine ? 90 : 0)
-        )
+        useNeuralSalience
+          ? createNeuralSalienceWave(ctx, spreadDeg)
+          : createPhaseShiftedSineWave(ctx, spreadDeg + (isRaisedCosine ? 90 : 0))
       );
       amLfoR.frequency.setValueAtTime(Math.max(0.5, amStartHz || 16), ctx.currentTime);
 
@@ -721,6 +766,11 @@ export class PsychoacousticEngine {
     }
     this.stimulusRack.setScienceMuted(muteScience);
     this.stimulusRack.setPureStimulusMode(muteMusic && !muteScience);
+
+    const wantPocket = Boolean(
+      this.stimulusRack.getPrimaryCarrierHz() && !this.isControlTrial && !muteScience
+    );
+    this.spectralPocketNotch?.gain.setTargetAtTime(wantPocket ? -4.5 : 0, now, 0.18);
 
     const needsPureCarrier = muteMusic && !muteScience && this.specNeedsPureReferenceCarrier();
     this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureCarrier ? 0.34 : 0.0001, now, 0.18);
@@ -1320,14 +1370,15 @@ export class PsychoacousticEngine {
     let phaseLabel = 'Study Protocol Plateau';
     let phaseModFactor = 1.0;
 
-    if (progressRatio < 0.15) {
+    const entryDurationSec = Math.min(45, Math.max(20, this.plannedSec * 0.08));
+    if (elapsedSec < entryDurationSec) {
       phase = 'entry';
       phaseLabel = 'Entry & Iso-Alignment';
-      phaseModFactor = 0.55 + (progressRatio / 0.15) * 0.45;
-    } else if (progressRatio > 0.88) {
+      phaseModFactor = 0.76 + (elapsedSec / entryDurationSec) * 0.24;
+    } else if (progressRatio > 0.9) {
       phase = 'landing';
       phaseLabel = 'Gentle Landing';
-      phaseModFactor = 1.0 - ((progressRatio - 0.88) / 0.12) * 0.45;
+      phaseModFactor = 1.0 - ((progressRatio - 0.9) / 0.1) * 0.4;
     }
 
     const antiMonotonyActive = this.isAntiMonotonyPulseActive();
@@ -1341,10 +1392,11 @@ export class PsychoacousticEngine {
     const nominalDepth = Math.min(0.75, Math.max(0, baseDepth * this.modDepthMultiplier * activePhaseFactor));
     const effectiveDepth = this.isControlTrial || scienceMuted ? 0 : nominalDepth;
 
-    // Iso-Principle live frequency ramp (startFrequencyHz -> target frequencyHz during entry)
+    // Iso-Principle live frequency ramp (startFrequencyHz -> target frequencyHz within 90s)
     let liveAmHz = spec?.entrainment.frequencyHz ?? this.params?.modulationHz ?? 16;
     if (amActive && spec?.entrainment.startFrequencyHz !== undefined) {
-      const rampRatio = Math.min(1, progressRatio / 0.25);
+      const freqRampSec = Math.min(90, Math.max(30, this.plannedSec * 0.15));
+      const rampRatio = Math.min(1, Math.max(0, elapsedSec / freqRampSec));
       liveAmHz = Number(
         (
           spec.entrainment.startFrequencyHz +
@@ -1680,6 +1732,7 @@ export class PsychoacousticEngine {
     this.studioBus = null;
     this.studioFilter = null;
     this.musicAuditionGain = null;
+    this.spectralPocketNotch = null;
     this.layerMonitorMode = 'full_mix';
     if (this.ctx) {
       this.ctx.close().catch(() => {});

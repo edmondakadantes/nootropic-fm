@@ -175,6 +175,7 @@ export class MedicalStimulusRack {
   private beatOscR: OscillatorNode | null = null;
   private beatCenterHz = 200;
   private beatSymmetric = false;
+  private primaryCarrierHz: number | null = null;
 
   private currentHz = 0;
   private carrierLabel = 'None';
@@ -201,6 +202,7 @@ export class MedicalStimulusRack {
     this.pureStimulusMode = pureStimulusMode;
     this.scienceMuted = false;
     this.phaseModFactor = 1.0;
+    this.primaryCarrierHz = null;
     this.currentHz = spec.entrainment.startFrequencyHz ?? spec.entrainment.frequencyHz;
 
     const now = ctx.currentTime;
@@ -275,6 +277,7 @@ export class MedicalStimulusRack {
         src.connect(lp);
         lp.connect(stimGain);
         src.start(now);
+        this.primaryCarrierHz = carrierHz;
         this.activeSources.push(src);
         this.carrierLabel = `${rateHz} Hz · ${(duty * (1000 / rateHz)).toFixed(1)} ms @ ${carrierHz} Hz`;
       } else if (eType === 'isochronic_pulse') {
@@ -300,6 +303,7 @@ export class MedicalStimulusRack {
         src.connect(lp);
         lp.connect(stimGain);
         src.start(now);
+        this.primaryCarrierHz = carrierHz;
         this.activeSources.push(src);
         this.carrierLabel = `${rateHz} Hz Isochronic (${Math.round(duty * 100)}% duty @ ${carrierHz} Hz)`;
       } else if (eType === 'binaural_beat' && !speakerSafeEQ) {
@@ -316,6 +320,7 @@ export class MedicalStimulusRack {
           : Number((centerHz + startBeatHz / 2).toFixed(2));
         this.beatCenterHz = centerHz;
         this.beatSymmetric = !hasExplicitPair;
+        this.primaryCarrierHz = Number(((leftHz + rightHz) / 2).toFixed(2));
 
         const oscL = ctx.createOscillator();
         const oscR = ctx.createOscillator();
@@ -359,6 +364,7 @@ export class MedicalStimulusRack {
           : Number((centerHz + startBeatHz / 2).toFixed(2));
         this.beatCenterHz = centerHz;
         this.beatSymmetric = !hasExplicitPair;
+        this.primaryCarrierHz = Number(((leftHz + rightHz) / 2).toFixed(2));
 
         const osc1 = ctx.createOscillator();
         const osc2 = ctx.createOscillator();
@@ -449,13 +455,17 @@ export class MedicalStimulusRack {
     const baseDepth = Math.max(0.1, Math.min(0.8, this.spec.entrainment.modulationDepth || 0.26));
     const type = this.spec.entrainment.type;
     let base = 0.08;
-    if (type === 'gamma_40hz_clicks') base = this.pureStimulusMode ? 0.24 : 0.11;
-    else if (type === 'isochronic_pulse') base = this.pureStimulusMode ? 0.22 : 0.095;
+    if (type === 'gamma_40hz_clicks') base = this.pureStimulusMode ? 0.28 : 0.165;
+    else if (type === 'isochronic_pulse') base = this.pureStimulusMode ? 0.26 : 0.15;
     else if (type === 'binaural_beat' || type === 'monaural_beat') {
-      base = this.pureStimulusMode ? 0.22 : 0.075;
+      base = this.pureStimulusMode ? 0.26 : 0.135;
     }
     const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
-    return Math.min(0.36, Math.max(0.0001, base * (0.65 + baseDepth * 0.9) * this.modMult * phaseScale));
+    return Math.min(0.42, Math.max(0.0001, base * (0.68 + baseDepth * 0.95) * this.modMult * phaseScale));
+  }
+
+  public getPrimaryCarrierHz(): number | null {
+    return this.primaryCarrierHz;
   }
 
   private computeNoiseTargetGain(): number {
@@ -500,7 +510,7 @@ export class MedicalStimulusRack {
       this.beatOscL &&
       this.beatOscR
     ) {
-      const rampRatio = Math.min(1, Math.max(0, progressRatio) / 0.25);
+      const rampRatio = Math.min(1, Math.max(0, progressRatio) / 0.12);
       const liveBeatHz = Number(
         (
           spec.entrainment.startFrequencyHz +
@@ -587,6 +597,7 @@ export class MedicalStimulusRack {
     this.beatOscR = null;
     this.beatCenterHz = 200;
     this.beatSymmetric = false;
+    this.primaryCarrierHz = null;
     this.phaseModFactor = 1.0;
     this.scienceMuted = false;
     this.ctx = null;

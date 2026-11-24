@@ -46,7 +46,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     priorBeta: 1.2,
     baseParams: {
       modulationHz: 16,
-      modulationDepth: 0.25,
+      modulationDepth: 0.38,
       crossoverHz: 190,
       upperCrossoverHz: 4500,
       bpm: 106,
@@ -80,7 +80,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     priorBeta: 1.4,
     baseParams: {
       modulationHz: 18,
-      modulationDepth: 0.28,
+      modulationDepth: 0.4,
       crossoverHz: 190,
       upperCrossoverHz: 4500,
       bpm: 114,
@@ -114,7 +114,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     priorBeta: 1.3,
     baseParams: {
       modulationHz: 14,
-      modulationDepth: 0.22,
+      modulationDepth: 0.34,
       crossoverHz: 190,
       upperCrossoverHz: 4500,
       bpm: 96,
@@ -147,7 +147,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     priorBeta: 1.2,
     baseParams: {
       modulationHz: 15,
-      modulationDepth: 0.24,
+      modulationDepth: 0.36,
       crossoverHz: 190,
       upperCrossoverHz: 4500,
       bpm: 90,
@@ -181,7 +181,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     priorBeta: 1.1,
     baseParams: {
       modulationHz: 10,
-      modulationDepth: 0.18,
+      modulationDepth: 0.24,
       crossoverHz: 190,
       upperCrossoverHz: 4500,
       bpm: 66,
@@ -214,7 +214,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
     priorBeta: 1.2,
     baseParams: {
       modulationHz: 6,
-      modulationDepth: 0.14,
+      modulationDepth: 0.2,
       crossoverHz: 190,
       upperCrossoverHz: 4500,
       bpm: 0,
@@ -797,7 +797,7 @@ export function selectProtocolRecommendation(input: {
   };
 
   params.modulationDepth = Number(
-    Math.min(0.36, Math.max(0.1, params.modulationDepth * personalModMult)).toFixed(2)
+    Math.min(0.56, Math.max(0.12, params.modulationDepth * personalModMult)).toFixed(2)
   );
 
   if (input.profile.noiseSensitivity === 'high') {
@@ -810,7 +810,7 @@ export function selectProtocolRecommendation(input: {
 
   if (input.currentState === 'fatigued' && params.bpm > 0) {
     params.bpm = Math.min(120, params.bpm + 4);
-    params.modulationDepth = Number(Math.min(0.34, params.modulationDepth + 0.03).toFixed(2));
+    params.modulationDepth = Number(Math.min(0.56, params.modulationDepth + 0.03).toFixed(2));
   } else if (input.currentState === 'anxious' || input.currentState === 'stressed') {
     params.modulationDepth = Number(Math.max(0.12, params.modulationDepth - 0.04).toFixed(2));
     params.filterCutoffHz = Math.round(params.filterCutoffHz * 0.88);
@@ -831,6 +831,7 @@ export function selectProtocolRecommendation(input: {
     params.speakerSafeEQ = true;
     params.stereoAmSpread = false;
     params.binauralOffsetHz = 0;
+    params.modulationDepth = Math.min(0.38, params.modulationDepth);
     params.noiseLevel = Math.min(params.noiseLevel, 0.07);
     params.antiMonotonyCycleMin = params.antiMonotonyCycleMin > 0 ? params.antiMonotonyCycleMin : 5;
     safetyWarnings.push(

@@ -274,7 +274,7 @@ export function studySpecToAcousticParams(
   return {
     modulationHz: Number(rawModHz.toFixed(2)),
     modulationDepth: isDriving
-      ? Math.min(0.28, spec.entrainment.modulationDepth)
+      ? Math.min(0.38, spec.entrainment.modulationDepth)
       : Math.min(0.78, spec.entrainment.modulationDepth),
     crossoverHz: Math.max(20, Math.min(500, spec.entrainment.modulationBandHz[0])),
     upperCrossoverHz: Math.max(1200, Math.min(18000, spec.entrainment.modulationBandHz[1])),
