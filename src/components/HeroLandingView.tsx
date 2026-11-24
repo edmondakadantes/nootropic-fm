@@ -172,9 +172,11 @@ export function HeroLandingView({
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center space-y-7 py-3 sm:space-y-9 sm:py-8">
       {/* Above-the-Fold Precision Studio Hero (<1s Instant Audio Entry) */}
       <section className="animate-rise flex w-full flex-col items-center text-center space-y-5 px-1">
-        <div className="inline-flex items-center gap-2 font-mono-tech text-[10px] font-medium uppercase tracking-[0.18em] text-[#A3A39E] sm:text-[11px]">
-          <span className="h-1.5 w-1.5 bg-[#34D399]" />
-          <span>48.0 kHz Web Audio · Peer-Reviewed Acoustics · Live Oscilloscope</span>
+        <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/[0.07] px-3.5 py-1 font-mono-tech text-[10px] font-medium uppercase tracking-[0.16em] text-[#A3A39E] sm:text-[11px]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#34D399]" />
+          <span className="font-semibold text-[#34D399]">Tune Your Mind</span>
+          <span className="text-white/25">·</span>
+          <span>48.0 kHz Psychoacoustic Studio · Live Oscilloscope</span>
         </div>
 
         <h1 className="max-w-3xl font-display text-[2rem] font-semibold tracking-tight text-[#F3F1EC] sm:text-5xl leading-[1.06]">

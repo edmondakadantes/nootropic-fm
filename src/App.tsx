@@ -591,8 +591,8 @@ export default function App() {
               <div className="font-display text-sm font-bold tracking-tight text-[#F3F1EC] leading-none sm:text-base">
                 nootropic<span className="text-[#34D399]">.fm</span>
               </div>
-              <div className="mt-0.5 hidden text-[10px] font-mono-tech uppercase tracking-[0.16em] text-[#8E8E88] sm:block">
-                Studio Acoustics
+              <div className="mt-0.5 text-[9px] font-mono-tech uppercase tracking-[0.14em] text-[#34D399]/85 sm:text-[10px] sm:tracking-[0.16em]">
+                Tune your mind
               </div>
             </div>
           </button>
