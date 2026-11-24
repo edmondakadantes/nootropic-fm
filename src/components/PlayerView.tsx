@@ -1033,7 +1033,7 @@ export function PlayerView({
           }`}
         >
           <Waves className="h-3.5 w-3.5 text-emerald-300" />
-          <span>Live Signal &amp; Science</span>
+          <span>Live Oscilloscope &amp; Science</span>
           {openDrawer === 'science' ? (
             <ChevronUp className="h-3.5 w-3.5 opacity-75" />
           ) : (
@@ -1215,7 +1215,7 @@ export function PlayerView({
       {/* Collapsible Drawer 2: Live Signal Scope, Acoustic Telemetry & Verified Studies */}
       {openDrawer === 'science' && (
         <div className="animate-step glass-card rounded-3xl p-5 sm:p-6 space-y-5">
-          {/* Live 60fps Proof Scope */}
+          {/* Live 60fps 100%-Measured Real-Time Web Audio Oscilloscope */}
           <LiveEnvelopeProof
             engine={engineRef.current}
             isPlaying={isPlaying}
@@ -1224,6 +1224,12 @@ export function PlayerView({
             depth={telemetry.currentModDepth}
             carrierLabel={activeSourceShort}
             tuningA4Hz={telemetry.tuningA4Hz}
+            isPureWave={carrierMode === 'pure_stimulus'}
+            onTogglePureWave={() =>
+              void handleCarrierSwitch(
+                carrierMode === 'pure_stimulus' ? 'studio_library' : 'pure_stimulus'
+              )
+            }
           />
 
           {/* Compact Telemetry Strip */}
@@ -1394,7 +1400,7 @@ export function PlayerView({
               </li>
               <li className="flex items-start gap-2">
                 <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <span>Full Science Study Lab + reaction speed tracking across devices</span>
+                <span>Real-time oscilloscope proof, Pure Wave audition &amp; Science Study Lab</span>
               </li>
             </ul>
 

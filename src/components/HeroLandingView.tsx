@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowRight,
   Compass,
   FlaskConical,
@@ -181,11 +182,11 @@ export function HeroLandingView({
         <div className="glass-card rounded-2xl border border-white/[0.08] p-4 space-y-1.5">
           <div className="inline-flex items-center gap-2 text-xs font-bold text-white">
             <Waves className="h-4 w-4 text-indigo-300" />
-            2. Science Turned Into Sound
+            2. Measurable on Any Oscilloscope
           </div>
           <p className="text-xs leading-relaxed text-slate-400">
-            We turn real sound studies into gentle focus and calm rhythms—and show the live wave
-            working on screen.
+            No fake playlists or black boxes. Every frequency is generated mathematically live—verify
+            it on our built-in oscilloscope or isolate the pure wave yourself.
           </p>
         </div>
 
@@ -199,6 +200,33 @@ export function HeroLandingView({
             <span className="text-slate-200">10 curated instrumental styles</span> — Lo-Fi, Electronic,
             Jazz, Classical, Reggae, Piano, Bossa Nova &amp; more — plus Infinite Live AI.
           </p>
+        </div>
+      </section>
+
+      {/* Verifiable Oscilloscope Proof Banner */}
+      <section className="animate-rise w-full rounded-3xl border border-cyan-400/25 bg-gradient-to-r from-cyan-500/[0.07] via-slate-950/80 to-indigo-500/[0.08] p-4 sm:p-5">
+        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 font-mono-tech text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+              <Activity className="h-3.5 w-3.5" />
+              Verifiable Sound Science · Real-Time Oscilloscope Proof
+            </div>
+            <p className="text-xs leading-relaxed text-slate-300 sm:text-[13px]">
+              Don’t just trust a playlist. Every frequency (16 Hz focus AM, 10 Hz calm, 40 Hz bursts,
+              binaural beats, 432 Hz) is{' '}
+              <strong className="text-white">measurable live on our built-in oscilloscope</strong>—or
+              tap <strong className="text-cyan-200">Isolate Pure Wave</strong> to test it with any
+              external oscilloscope or spectrum analyzer.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onStartCustomize}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3.5 py-2 text-xs font-bold text-cyan-100 transition hover:bg-cyan-400/25"
+          >
+            <Activity className="h-3.5 w-3.5" />
+            See It Live
+          </button>
         </div>
       </section>
 

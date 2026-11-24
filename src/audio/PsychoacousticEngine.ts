@@ -195,6 +195,8 @@ function buildFallbackStudySpec(params: AcousticParams, durationMin: number): Ex
 export class PsychoacousticEngine {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
+  private scopeMasterAnalyser: AnalyserNode | null = null;
+  private scopeModAnalyser: AnalyserNode | null = null;
   private masterGain: GainNode | null = null;
 
   // Core routing buses
@@ -328,8 +330,14 @@ export class PsychoacousticEngine {
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.82;
 
+    // Dedicated zero-smoothing Lab Oscilloscope tap on master output (2048 raw IEEE-754 samples)
+    const scopeMasterAnalyser = ctx.createAnalyser();
+    scopeMasterAnalyser.fftSize = 2048;
+    scopeMasterAnalyser.smoothingTimeConstant = 0.0;
+
     compressor.connect(masterGain);
     masterGain.connect(analyser);
+    masterGain.connect(scopeMasterAnalyser);
 
     // Lock-screen / Car Bluetooth audio bridge
     this.backgroundAudioActive = false;
@@ -356,6 +364,7 @@ export class PsychoacousticEngine {
 
     this.masterGain = masterGain;
     this.analyser = analyser;
+    this.scopeMasterAnalyser = scopeMasterAnalyser;
 
     // ─── LAYER 1A: PRECISION MEDICAL STIMULUS RACK (40 Hz GENUS, Isochronic, Binaural, Monaural, HRV, SNR Noise) ───
     const { hrvBusInput } = this.stimulusRack.start({
@@ -504,6 +513,13 @@ export class PsychoacousticEngine {
       this.amLfoR = null;
       this.amDepthGainR = null;
     }
+
+    // Dedicated zero-smoothing Lab Oscilloscope tap directly on the modulated LR4 cortical band (190-4500 Hz)
+    const scopeModAnalyser = ctx.createAnalyser();
+    scopeModAnalyser.fftSize = 1024;
+    scopeModAnalyser.smoothingTimeConstant = 0.0;
+    midOutput.connect(scopeModAnalyser);
+    this.scopeModAnalyser = scopeModAnalyser;
 
     if (params.speakerSafeEQ) {
       const safetyNotch = ctx.createBiquadFilter();
@@ -1338,6 +1354,54 @@ export class PsychoacousticEngine {
     return true;
   }
 
+  /**
+   * High-resolution IEEE-754 float samples directly from the live master Web Audio output
+   * (zero smoothing — authentic lab oscilloscope trace).
+   */
+  public getScopeWaveform(target: Float32Array<ArrayBuffer>): boolean {
+    if (!this.scopeMasterAnalyser || !this.isPlaying) return false;
+    this.scopeMasterAnalyser.getFloatTimeDomainData(target);
+    return true;
+  }
+
+  /**
+   * High-resolution IEEE-754 float samples tapped directly from the LR4 modulated cortical mid-band
+   * (190–4500 Hz) for real measured AM envelope telemetry.
+   */
+  public getScopeModBand(target: Float32Array<ArrayBuffer>): boolean {
+    if (!this.scopeModAnalyser || !this.isPlaying) return false;
+    this.scopeModAnalyser.getFloatTimeDomainData(target);
+    return true;
+  }
+
+  /**
+   * Computes the strongest real FFT spectral peak (Hz) from the live Web Audio master output.
+   */
+  public getMeasuredPeakHz(): number | null {
+    if (!this.scopeMasterAnalyser || !this.ctx || !this.isPlaying) return null;
+    const bins = this.scopeMasterAnalyser.frequencyBinCount;
+    const fft = new Float32Array(bins);
+    this.scopeMasterAnalyser.getFloatFrequencyData(fft);
+    const binHz = this.ctx.sampleRate / this.scopeMasterAnalyser.fftSize;
+    let bestBin = -1;
+    let bestDb = -90;
+    // Scan audible musical/carrier band (35 Hz – 4000 Hz)
+    const minBin = Math.max(2, Math.floor(35 / binHz));
+    const maxBin = Math.min(bins - 1, Math.ceil(4000 / binHz));
+    for (let i = minBin; i <= maxBin; i++) {
+      if (fft[i] > bestDb) {
+        bestDb = fft[i];
+        bestBin = i;
+      }
+    }
+    if (bestBin < 0 || bestDb < -72) return null;
+    return Math.round(bestBin * binHz);
+  }
+
+  public getSampleRate(): number {
+    return this.ctx?.sampleRate ?? 48000;
+  }
+
   public stop(): void {
     void this.releaseWakeLock();
     if (this.visibilityHandler) {
@@ -1369,6 +1433,8 @@ export class PsychoacousticEngine {
       this.ctx = null;
       this.audioEl = null;
       this.analyser = null;
+      this.scopeMasterAnalyser = null;
+      this.scopeModAnalyser = null;
       return;
     }
     this.stopImmediate();
@@ -1421,6 +1487,8 @@ export class PsychoacousticEngine {
       this.ctx = null;
     }
     this.analyser = null;
+    this.scopeMasterAnalyser = null;
+    this.scopeModAnalyser = null;
   }
 
   private async requestWakeLock(): Promise<void> {

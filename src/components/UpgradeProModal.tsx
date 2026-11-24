@@ -21,8 +21,8 @@ interface UpgradeProModalProps {
 
 const PRO_BENEFITS = [
   'Unlimited full sessions (15, 30, 45, 60 min — zero 5-minute cutoffs)',
-  'All 10 curated instrumental styles (Lo-Fi, Electronic, Classical, Jazz, Dub Reggae, Piano, Bossa Nova, Acoustic, Ambient, Rain)',
-  'Infinite Live AI music streaming — never repeats on long sessions',
+  'All 10 curated instrumental styles + Infinite Live AI streaming (never repeats)',
+  'Real-time oscilloscope proof & 1-tap Pure Sound Wave isolation (verifiable on any scope)',
   'Full Science Study Lab + reaction-speed tracking & instant QR sync across devices',
 ];
 
