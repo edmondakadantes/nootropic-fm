@@ -126,10 +126,10 @@ export class LyriaRealtimeClient {
     this.activeApiBase = opts.apiBase ?? '';
     this.fetchFreshToken = opts.fetchFreshToken;
     this.onStatusChange = opts.onStatusChange;
-    this.setStatus('connecting', 'Connecting to Infinite Live AI stream...');
+    this.setStatus('connecting', 'Connecting to Endless Stream...');
 
     if (!opts.ctx.audioWorklet) {
-      this.setStatus('unavailable', 'AudioWorklet unsupported in this browser; using Studio Audio.');
+      this.setStatus('unavailable', 'AudioWorklet unsupported in this browser. Playing Studio Mix.');
       return false;
     }
 
@@ -157,7 +157,7 @@ export class LyriaRealtimeClient {
 
       return await this.openSocket(opts.token, opts.model);
     } catch {
-      this.setStatus('error', 'Could not initialize Infinite Live AI — continuing smoothly on Studio Audio.');
+      this.setStatus('error', 'Could not initialize Endless Stream. Continuing smoothly on Studio Mix.');
       this.stop();
       return false;
     }
@@ -185,7 +185,7 @@ export class LyriaRealtimeClient {
 
       const timeout = window.setTimeout(() => {
         if (!settled) {
-          this.setStatus('error', 'Infinite Live AI handshake timed out — continuing on Studio Audio.');
+          this.setStatus('error', 'Endless Stream handshake timed out. Continuing on Studio Mix.');
           this.stop();
           finish(false);
         }
@@ -254,7 +254,7 @@ export class LyriaRealtimeClient {
             if (this.status !== 'streaming') {
               window.clearTimeout(timeout);
               this.reconnectCount = 0;
-              this.setStatus('streaming', 'Infinite Live AI streaming continuously through 3-Band LR4 DSP');
+              this.setStatus('streaming', 'Endless Stream active through 3-Band LR4 DSP');
               this.outputGain?.gain.exponentialRampToValueAtTime(0.92, this.activeCtx.currentTime + 1.5);
               finish(true);
             }
@@ -267,7 +267,7 @@ export class LyriaRealtimeClient {
       ws.onerror = () => {
         window.clearTimeout(timeout);
         if (!settled) {
-          this.setStatus('error', 'Infinite Live AI stream error — continuing seamlessly on Studio Audio.');
+          this.setStatus('error', 'Endless Stream connection interrupted. Continuing seamlessly on Studio Mix.');
           finish(false);
         }
       };
@@ -279,14 +279,14 @@ export class LyriaRealtimeClient {
           return;
         }
         if (!settled) {
-          this.setStatus('unavailable', 'Infinite Live AI unavailable — continuing on Studio Audio.');
+          this.setStatus('unavailable', 'Endless Stream unavailable. Continuing on Studio Mix.');
           finish(false);
           return;
         }
         // Seamless auto-reconnect for 30–60 min long sessions (Google WS sessions can refresh every ~10-15 min)
         if (this.status === 'streaming' && this.fetchFreshToken && this.reconnectCount < 6) {
           this.reconnectCount++;
-          this.setStatus('connecting', 'Refreshing Infinite Live AI stream seamlessly...');
+          this.setStatus('connecting', 'Refreshing Endless Stream seamlessly...');
           this.reconnectTimer = window.setTimeout(() => {
             this.reconnectTimer = null;
             if (this.intentionalStop || !this.fetchFreshToken) return;
@@ -296,17 +296,17 @@ export class LyriaRealtimeClient {
                 if (fresh?.token) {
                   void this.openSocket(fresh.token, fresh.model ?? 'models/lyria-realtime-exp');
                 } else {
-                  this.setStatus('unavailable', 'Continuing smoothly on Studio Audio.');
+                  this.setStatus('unavailable', 'Continuing smoothly on Studio Mix.');
                 }
               })
               .catch(() => {
                 if (!this.intentionalStop) {
-                  this.setStatus('unavailable', 'Continuing smoothly on Studio Audio.');
+                  this.setStatus('unavailable', 'Continuing smoothly on Studio Mix.');
                 }
               });
           }, 900);
         } else if (this.status === 'streaming') {
-          this.setStatus('unavailable', 'Infinite Live AI session ended — continuing smoothly on Studio Audio.');
+          this.setStatus('unavailable', 'Endless Stream session ended. Continuing smoothly on Studio Mix.');
         }
       };
     });
