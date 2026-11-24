@@ -352,7 +352,7 @@ export async function renderPublicFingerprintCardBlob(opts: {
     badges.push(`${Math.abs(opts.highlight.pvtDeltaMs)} ms Faster Reaction`);
   }
   if (badges.length === 0) {
-    badges.push('10 Curated Styles · Infinite Live AI · Oscilloscope Verified');
+    badges.push('10 Curated Styles · Endless Stream · Oscilloscope Verified');
   }
 
   ctx.fillStyle = '#94a3b8';

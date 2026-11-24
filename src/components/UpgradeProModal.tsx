@@ -6,7 +6,6 @@ import {
   ExternalLink,
   Loader2,
   ShieldCheck,
-  Sparkles,
   X,
 } from 'lucide-react';
 import type { UserProfile } from '../../shared/types';
@@ -20,8 +19,8 @@ interface UpgradeProModalProps {
 }
 
 const PRO_BENEFITS = [
-  'Unlimited full sessions (15, 30, 45, 60 min — zero 5-minute cutoffs)',
-  'All 10 curated instrumental styles + Infinite Live AI streaming (never repeats)',
+  'Unlimited full sessions (15, 30, 45, 60 min with zero 5-minute cutoffs)',
+  'All 10 curated instrumental styles + Endless Stream (never repeats)',
   'Real-time oscilloscope proof & 1-tap Pure Sound Wave isolation (verifiable on any scope)',
   'Full Science Study Lab + reaction-speed tracking & instant QR sync across devices',
 ];
@@ -73,29 +72,29 @@ export function UpgradeProModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-md">
-      <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-3xl border border-amber-400/35 p-5 sm:p-6 space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/85 p-4 backdrop-blur-md">
+      <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-2xl border border-white/15 p-5 sm:p-6 space-y-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <img
               src="/brand/pro-checkout-banner.png"
               alt="nootropic.fm Pro"
-              className="h-14 w-14 shrink-0 rounded-2xl border border-cyan-400/35 object-cover shadow-[0_0_20px_rgba(34,211,238,0.2)]"
+              className="h-14 w-14 shrink-0 rounded-xl border border-white/15 object-cover"
             />
             <div className="space-y-1">
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/12 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
+              <div className="inline-flex items-center gap-1.5 rounded border border-amber-400/35 bg-amber-400/10 px-2 py-0.5 font-mono-tech text-[10px] font-bold uppercase tracking-wider text-amber-200">
                 <Crown className="h-3 w-3" />
                 {isPro ? 'Pro Membership Active' : 'nootropic.fm Pro'}
               </div>
-              <h3 className="text-base font-bold text-white sm:text-lg leading-tight">
-                {isPro ? 'Your Pro Subscription Is Active' : 'Unlock Full Sessions & Infinite Live AI'}
+              <h3 className="text-base font-semibold text-[#F3F1EC] sm:text-lg leading-tight">
+                {isPro ? 'Your Pro Subscription Is Active' : 'Unlock Full Sessions & Endless Stream'}
               </h3>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+            className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/[0.06] hover:text-[#F3F1EC]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -103,15 +102,15 @@ export function UpgradeProModal({
 
         {isPro ? (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-emerald-400/35 bg-emerald-500/10 p-4 space-y-1.5 text-xs text-emerald-100">
-              <div className="flex items-center gap-2 font-bold text-emerald-200">
-                <Sparkles className="h-4 w-4" />
+            <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/10 p-4 space-y-1.5 text-xs text-emerald-100">
+              <div className="flex items-center gap-2 font-semibold text-[#34D399]">
+                <Check className="h-4 w-4" />
                 All Pro features are unlocked on this profile
               </div>
               {profile?.proUntil && (
-                <p className="text-slate-300">
+                <p className="text-[#D4D4CE]">
                   Active through:{' '}
-                  <strong className="font-mono-tech text-white">
+                  <strong className="font-mono-tech text-[#F3F1EC]">
                     {new Date(profile.proUntil).toLocaleDateString()}
                   </strong>
                 </p>
@@ -128,7 +127,7 @@ export function UpgradeProModal({
               type="button"
               disabled={busy}
               onClick={() => void handleManagePortal()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-cyan-400/45 bg-cyan-400/15 px-5 py-3.5 text-sm font-bold text-cyan-100 transition hover:bg-cyan-400/25 disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#16181C] px-5 py-3.5 text-sm font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 disabled:opacity-60"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
               Manage Billing or Cancel in Stripe
@@ -141,46 +140,46 @@ export function UpgradeProModal({
               <button
                 type="button"
                 onClick={() => setPlan('annual')}
-                className={`relative rounded-2xl border p-4 text-left transition ${
+                className={`relative rounded-xl border p-4 text-left transition ${
                   plan === 'annual'
-                    ? 'border-amber-400 bg-amber-400/12 shadow-[0_0_24px_rgba(251,191,36,0.18)]'
-                    : 'border-slate-800 bg-slate-950/70 hover:border-slate-600'
+                    ? 'border-amber-400/70 bg-amber-400/10'
+                    : 'border-white/10 bg-[#121316] hover:border-white/25'
                 }`}
               >
-                <span className="absolute -top-2.5 right-3 rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-950">
+                <span className="absolute -top-2.5 right-3 rounded bg-amber-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#0A0B0C]">
                   Save 50%
                 </span>
                 <div className="text-xs font-semibold text-amber-200">Annual Pro</div>
                 <div className="mt-1 flex items-baseline gap-1">
-                  <span className="font-mono-tech text-2xl font-bold text-white">$59</span>
-                  <span className="text-xs text-slate-400">/ year</span>
+                  <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$59</span>
+                  <span className="text-xs text-[#8E8E88]">/ year</span>
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">$4.92/mo · billed yearly</div>
+                <div className="mt-1 text-[11px] text-[#8E8E88]">$4.92/mo · billed yearly</div>
               </button>
 
               <button
                 type="button"
                 onClick={() => setPlan('monthly')}
-                className={`rounded-2xl border p-4 text-left transition ${
+                className={`rounded-xl border p-4 text-left transition ${
                   plan === 'monthly'
-                    ? 'border-cyan-400 bg-cyan-400/12 shadow-[0_0_24px_rgba(34,211,238,0.18)]'
-                    : 'border-slate-800 bg-slate-950/70 hover:border-slate-600'
+                    ? 'border-emerald-400/70 bg-emerald-400/10'
+                    : 'border-white/10 bg-[#121316] hover:border-white/25'
                 }`}
               >
-                <div className="text-xs font-semibold text-cyan-200">Monthly Pro</div>
+                <div className="text-xs font-semibold text-[#34D399]">Monthly Pro</div>
                 <div className="mt-1 flex items-baseline gap-1">
-                  <span className="font-mono-tech text-2xl font-bold text-white">$9.99</span>
-                  <span className="text-xs text-slate-400">/ month</span>
+                  <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$9.99</span>
+                  <span className="text-xs text-[#8E8E88]">/ month</span>
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">Cancel anytime in 1 click</div>
+                <div className="mt-1 text-[11px] text-[#8E8E88]">Cancel anytime in 1 click</div>
               </button>
             </div>
 
             {/* Benefits */}
-            <ul className="space-y-2 rounded-2xl border border-slate-800/90 bg-slate-950/65 p-4 text-xs text-slate-200">
+            <ul className="space-y-2 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-4 text-xs text-[#D4D4CE]">
               {PRO_BENEFITS.map((item) => (
                 <li key={item} className="flex items-start gap-2">
-                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -188,15 +187,15 @@ export function UpgradeProModal({
 
             {/* Optional receipt email */}
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-slate-400">
-                Email for receipt &amp; invoice (optional — Stripe also collects it securely)
+              <label className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
+                Email for receipt &amp; invoice (optional, Stripe also collects it securely)
               </label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                className="w-full rounded-xl border border-white/15 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
               />
             </div>
 
@@ -217,7 +216,7 @@ export function UpgradeProModal({
               type="button"
               disabled={busy || !stripeAvailable}
               onClick={() => void handleCheckout()}
-              className="btn-aurora flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 disabled:opacity-50"
+              className="btn-aurora flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold disabled:opacity-50"
             >
               {busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -231,8 +230,8 @@ export function UpgradeProModal({
                   : 'Continue to Stripe · $9.99/month'}
             </button>
 
-            <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+            <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#8E8E88]">
+              <ShieldCheck className="h-3.5 w-3.5 text-[#34D399]" />
               <span>Secured by Stripe · Tax included · Cancel anytime · Promo codes supported</span>
             </div>
           </>

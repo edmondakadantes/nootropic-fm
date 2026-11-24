@@ -10,7 +10,6 @@ import {
   Radio,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -591,7 +590,7 @@ export default function App() {
       setAudioActive(false);
       setScreen('checkin');
       setPrivacyStatus(
-        'Your Neural Identity, Sync Key, session history, and personal Bandit records have been permanently erased from Cloudflare D1 and this browser.'
+        'Your Neural Identity, Sync Key, session history, and personal Bandit records have been permanently erased from our servers and this browser.'
       );
     } catch (err) {
       setPrivacyStatus(
@@ -605,12 +604,12 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-dvh flex flex-col overflow-x-hidden bg-[#05070d]">
-      {/* Full-bleed 60fps interactive bioluminescent soundwave & neural particle canvas */}
+    <div className="relative min-h-dvh flex flex-col overflow-x-hidden bg-[#0A0B0C]">
+      {/* Architectural studio calibration backdrop */}
       <AmbientField mood={fieldMood} activePulse={audioActive} />
 
-      {/* Floating Glass Header (single crisp horizontal row on mobile & desktop) */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#05070d]/70 backdrop-blur-2xl">
+      {/* Precision Console Header */}
+      <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0A0B0C]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-2.5 sm:px-6 sm:py-3.5">
           <button
             type="button"
@@ -620,15 +619,15 @@ export default function App() {
             }}
             className="group flex shrink-0 items-center gap-2 text-left sm:gap-2.5"
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-cyan-400/35 bg-cyan-400/10 text-cyan-300 shadow-[0_0_24px_rgba(34,211,238,0.18)] transition group-hover:scale-105 group-hover:border-cyan-300/60 sm:h-9 sm:w-9">
-              <Radio className="h-4 w-4 sm:h-5 sm:w-5" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-[#131518] text-[#34D399] transition group-hover:border-white/30 sm:h-9 sm:w-9">
+              <Radio className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
             </div>
             <div className="whitespace-nowrap">
-              <div className="font-display text-sm font-bold tracking-tight text-white leading-none sm:text-base">
-                nootropic<span className="text-cyan-400">.fm</span>
+              <div className="font-display text-sm font-bold tracking-tight text-[#F3F1EC] leading-none sm:text-base">
+                nootropic<span className="text-[#34D399]">.fm</span>
               </div>
-              <div className="mt-0.5 hidden text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400 sm:block">
-                Tune your mind
+              <div className="mt-0.5 hidden text-[10px] font-mono-tech uppercase tracking-[0.16em] text-[#8E8E88] sm:block">
+                Studio Acoustics
               </div>
             </div>
           </button>
@@ -642,10 +641,10 @@ export default function App() {
                   await installPrompt.userChoice;
                   setInstallPrompt(null);
                 }}
-                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-400/35 bg-emerald-500/12 px-2.5 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20 sm:px-3"
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/12 bg-[#131518] px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:border-white/25 hover:text-[#F3F1EC] sm:px-3"
                 title="Install nootropic.fm as an app"
               >
-                <Download className="h-3.5 w-3.5 shrink-0" />
+                <Download className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
                 <span className="hidden md:inline">Install App</span>
               </button>
             )}
@@ -654,14 +653,14 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setScreen(activeRec ? 'player' : 'checkin')}
-                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 py-2 text-xs font-medium transition sm:px-3 ${
+                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
                   screen === 'checkin' || screen === 'reveal' || screen === 'player' || screen === 'debrief'
-                    ? 'bg-cyan-400/15 text-cyan-200 border border-cyan-400/35'
-                    : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
+                    ? 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
+                    : 'border-transparent text-[#A3A39E] hover:bg-white/[0.05] hover:text-[#F3F1EC]'
                 }`}
                 title="Active Session"
               >
-                <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
                 <span className="hidden md:inline">Session</span>
               </button>
             )}
@@ -672,14 +671,14 @@ export default function App() {
                 setFieldMood('focus');
                 setScreen('studylab');
               }}
-              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 py-2 text-xs font-semibold transition sm:px-3 ${
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
                 screen === 'studylab'
-                  ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/40'
-                  : 'text-slate-300 hover:bg-white/[0.05] hover:text-cyan-200'
+                  ? 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
+                  : 'border-transparent text-[#A3A39E] hover:bg-white/[0.05] hover:text-[#F3F1EC]'
               }`}
               title="Browse & play published science studies"
             >
-              <FlaskConical className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+              <FlaskConical className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
               <span className="hidden sm:inline">Study Lab</span>
             </button>
 
@@ -689,10 +688,10 @@ export default function App() {
                 setFieldMood('flow');
                 setScreen('insights');
               }}
-              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 py-2 text-xs font-medium transition sm:px-3 ${
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
                 screen === 'insights'
-                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-400/35'
-                  : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
+                  ? 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
+                  : 'border-transparent text-[#A3A39E] hover:bg-white/[0.05] hover:text-[#F3F1EC]'
               }`}
               title="Research Brain & Live Outcomes"
             >
@@ -704,10 +703,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => setShowProModal(true)}
-              className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-xs font-bold transition sm:gap-1.5 sm:px-3 ${
+              className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition sm:gap-1.5 sm:px-3 ${
                 profile?.planTier === 'pro'
-                  ? 'border border-emerald-400/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25'
-                  : 'border border-amber-400/45 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25'
+                  ? 'border-emerald-400/35 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20'
+                  : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
               }`}
               title={
                 profile?.planTier === 'pro'
@@ -725,11 +724,7 @@ export default function App() {
                 setIdentityStatus(null);
                 setShowIdentityModal(true);
               }}
-              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-2 py-1.5 text-xs font-medium transition sm:px-2.5 ${
-                profile
-                  ? 'border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/18'
-                  : 'border border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700 hover:text-white'
-              }`}
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/12 bg-[#131518] px-2 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:border-white/25 hover:text-[#F3F1EC] sm:px-2.5"
               title="Neural Fingerprint Pass, Scannable QR & Switch Identity"
             >
               {profile ? (
@@ -741,7 +736,7 @@ export default function App() {
                 </>
               ) : (
                 <>
-                  <KeyRound className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
+                  <KeyRound className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
                   <span className="hidden sm:inline">Sync QR</span>
                 </>
               )}
@@ -781,7 +776,7 @@ export default function App() {
         )}
 
         {booting ? (
-          <div className="py-28 text-center font-mono-tech text-xs uppercase tracking-[0.25em] text-cyan-300/70">
+          <div className="py-28 text-center font-mono-tech text-xs uppercase tracking-[0.25em] text-[#8E8E88]">
             Restoring your Neural Sync Pass...
           </div>
         ) : screen === 'landing' ? (
@@ -828,7 +823,7 @@ export default function App() {
         ) : screen === 'studylab' ? (
           <Suspense
             fallback={
-              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-cyan-300/70">
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-[#8E8E88]">
                 Loading Study-to-Sound Lab...
               </div>
             }
@@ -899,7 +894,7 @@ export default function App() {
         ) : (
           <Suspense
             fallback={
-              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-cyan-300/70">
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-[#8E8E88]">
                 Loading Research Brain...
               </div>
             }
@@ -922,19 +917,19 @@ export default function App() {
         />
       )}
 
-      {/* Futuristic Neural Fingerprint Pass, Scannable QR & Switch Identity Modal */}
+      {/* Identity Pass, Scannable QR & Switch Identity Modal */}
       {showIdentityModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-md">
-          <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-3xl p-5 sm:p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-2xl p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-cyan-300">
+              <div className="flex items-center gap-2 text-[#34D399]">
                 <Fingerprint className="h-5 w-5" />
-                <h3 className="text-base font-semibold text-white">Your Neural Fingerprint &amp; QR Pass</h3>
+                <h3 className="text-base font-semibold text-[#F3F1EC]">Your Neural Fingerprint &amp; QR Pass</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowIdentityModal(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/[0.06] hover:text-[#F3F1EC]"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -951,15 +946,15 @@ export default function App() {
                       setShowIdentityModal(false);
                       setScreen('onboarding');
                     }}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700/90 bg-slate-900/80 px-3.5 py-2.5 text-xs font-medium text-slate-200 transition hover:border-cyan-400/50 hover:text-white"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-[#141518] px-3.5 py-2.5 text-xs font-medium text-[#D4D4CE] transition hover:border-white/25 hover:text-[#F3F1EC]"
                   >
-                    <SlidersHorizontal className="h-3.5 w-3.5 text-cyan-300" />
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-[#34D399]" />
                     Edit Profile Details
                   </button>
                   <button
                     type="button"
                     onClick={handleSwitchIdentity}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700/90 bg-slate-900/80 px-3.5 py-2.5 text-xs font-medium text-slate-200 transition hover:border-amber-400/50 hover:text-amber-200"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-[#141518] px-3.5 py-2.5 text-xs font-medium text-[#D4D4CE] transition hover:border-amber-400/45 hover:text-amber-200"
                   >
                     <LogOut className="h-3.5 w-3.5 text-amber-300" />
                     Switch Person / New Pass
@@ -969,13 +964,13 @@ export default function App() {
             )}
 
             {/* Restore Identity via Sync Key */}
-            <div className="space-y-2 border-t border-slate-800/80 pt-3.5">
-              <div className="text-xs font-semibold text-white">
+            <div className="space-y-2 border-t border-white/[0.08] pt-3.5">
+              <div className="text-xs font-semibold text-[#F3F1EC]">
                 {profile ? 'Or restore another Pass with a Sync Key:' : 'Restore your Neural Pass on this device:'}
               </div>
-              <p className="text-[11px] leading-relaxed text-slate-400">
+              <p className="text-[11px] leading-relaxed text-[#A3A39E]">
                 Scan your QR Pass with your phone camera, or enter your{' '}
-                <code className="font-mono-tech text-cyan-300">NFM-XXXX-XXXX</code> key below.
+                <code className="font-mono-tech text-[#34D399]">NFM-XXXX-XXXX</code> key below.
               </p>
               <div className="flex gap-2">
                 <input
@@ -986,13 +981,13 @@ export default function App() {
                     if (e.key === 'Enter') void handleRestoreIdentity();
                   }}
                   placeholder="NFM-XXXX-XXXX"
-                  className="font-mono-tech flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-xs uppercase tracking-wider text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                  className="font-mono-tech flex-1 rounded-xl border border-white/15 bg-[#0A0B0C] px-3.5 py-2.5 text-xs uppercase tracking-wider text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
                 />
                 <button
                   type="button"
                   disabled={restoring || !restoreInput.trim()}
                   onClick={() => void handleRestoreIdentity()}
-                  className="btn-aurora rounded-xl px-4 py-2.5 text-xs font-bold text-slate-950 disabled:opacity-50"
+                  className="btn-aurora rounded-xl px-4 py-2.5 text-xs font-semibold disabled:opacity-50"
                 >
                   {restoring ? 'Syncing...' : 'Restore'}
                 </button>
@@ -1084,14 +1079,14 @@ export default function App() {
       )}
 
       {screen !== 'player' && (
-        <footer className="relative z-10 border-t border-white/[0.05] px-4 py-5 text-center text-[11px] text-slate-500">
+        <footer className="relative z-10 border-t border-white/[0.06] px-4 py-5 text-center text-[11px] text-[#6E6E68]">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
             <span>
               nootropic.fm · Tune your mind · Psychoacoustic cognitive wellness, focus, and relaxation
-              audio — not a medical device. Not intended to diagnose, treat, cure, or prevent any
+              audio (not a medical device). Not intended to diagnose, treat, cure, or prevent any
               medical condition. Listeners 18+.
             </span>
-            <span className="text-slate-600">
+            <span className="text-[#555550]">
               Samples: Salamander Grand Piano &amp; FluidR3 GM (CC-BY 3.0)
             </span>
             <button
@@ -1100,7 +1095,7 @@ export default function App() {
                 setPrivacyStatus(null);
                 setShowPrivacyModal(true);
               }}
-              className="inline-flex items-center gap-1 font-medium text-cyan-400/90 underline-offset-2 hover:text-cyan-300 hover:underline"
+              className="inline-flex items-center gap-1 font-medium text-[#D4D4CE] underline-offset-2 hover:text-[#34D399] hover:underline"
             >
               <ShieldCheck className="h-3 w-3" />
               Privacy, Credits &amp; Delete My Data

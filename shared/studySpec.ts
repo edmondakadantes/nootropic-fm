@@ -405,19 +405,19 @@ export const ENTRAINMENT_LABELS: Record<EntrainmentType, string> = {
 
 export const CARRIER_MODE_LABELS: Record<CarrierEngineMode, { label: string; shortDesc: string }> = {
   generative_live: {
-    label: 'Live Generative · Study-Locked ($0)',
-    shortDesc: 'Composed live as-we-go obeying exact study BPM, key, tuning & ramps',
+    label: 'Live Synth',
+    shortDesc: 'Synthesized live to match exact tempo, tuning & study ramps',
   },
   studio_library: {
-    label: 'Studio R2 Library',
-    shortDesc: 'Pre-mastered R2 stems routed through the exact psychoacoustic DSP rack',
+    label: 'Studio Mix',
+    shortDesc: 'Mastered instrumental tracks routed through 3-band DSP',
   },
   pure_stimulus: {
-    label: 'Pure Acoustic Signal',
-    shortDesc: 'Raw study modulation & calibrated noise floor (zero background music)',
+    label: 'Pure Signal',
+    shortDesc: 'Isolated acoustic wave and calibrated noise bed (no music)',
   },
   lyria_realtime: {
-    label: 'Google Lyria RealTime AI',
-    shortDesc: 'Live WebSocket AI music steered by study BPM, scale & drums lock',
+    label: 'Endless Stream',
+    shortDesc: 'Continuous live instrumental stream that never loops',
   },
 };

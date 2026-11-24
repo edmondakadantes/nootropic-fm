@@ -1,17 +1,11 @@
 import {
-  Activity,
   ArrowRight,
-  Compass,
   FlaskConical,
   KeyRound,
-  Music2,
   SlidersHorizontal,
-  Sparkles,
-  Waves,
 } from 'lucide-react';
 import type { QuickTryId } from '../lib/quickTryProtocols';
 import { CohortIntelligenceShowcase } from './CohortIntelligenceShowcase';
-import { SonicOrb } from './SonicOrb';
 
 interface HeroLandingViewProps {
   onSelectMoodPreset: (id: QuickTryId) => void;
@@ -20,44 +14,40 @@ interface HeroLandingViewProps {
   onOpenIdentityModal: () => void;
 }
 
-const STATE_SHIFT_PILLS: Array<{
+const CHANNEL_PRESETS: Array<{
   id: QuickTryId;
+  tag: string;
   from: string;
   to: string;
   sub: string;
-  accent: string;
 }> = [
   {
     id: 'focus_lofi',
+    tag: '16 HZ AM',
     from: 'Distracted',
     to: 'Focused',
-    sub: 'Chill Lo-Fi · Deep Focus',
-    accent:
-      'border-cyan-400/40 bg-cyan-400/10 text-cyan-100 hover:border-cyan-300 hover:bg-cyan-400/20',
+    sub: 'Lo-Fi Beats · 35 min',
   },
   {
     id: 'mood_uplift',
+    tag: '12 HZ',
     from: 'Sad',
     to: 'Happy',
-    sub: 'Warm Guitar · Good Mood',
-    accent:
-      'border-amber-400/40 bg-amber-400/10 text-amber-100 hover:border-amber-300 hover:bg-amber-400/20',
+    sub: 'Acoustic Guitar · 20 min',
   },
   {
     id: 'calm_rain',
+    tag: '0.1 HZ',
     from: 'Stressed',
     to: 'Calm',
-    sub: 'Soft Rain & Piano · Relax',
-    accent:
-      'border-emerald-400/40 bg-emerald-500/10 text-emerald-100 hover:border-emerald-300 hover:bg-emerald-500/20',
+    sub: 'Soft Rain & Nature · 20 min',
   },
   {
     id: 'energy_electronic',
+    tag: '18 HZ',
     from: 'Tired',
     to: 'Awake',
-    sub: 'Upbeat Electronic · Energy',
-    accent:
-      'border-indigo-400/40 bg-indigo-500/12 text-indigo-100 hover:border-indigo-300 hover:bg-indigo-500/22',
+    sub: 'Deep Electronic · 20 min',
   },
 ];
 
@@ -68,178 +58,155 @@ export function HeroLandingView({
   onOpenIdentityModal,
 }: HeroLandingViewProps) {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col items-center space-y-7 py-2 sm:space-y-8 sm:py-6">
-      {/* Above-the-Fold 3-Second State-Shift Hero */}
+    <div className="mx-auto flex w-full max-w-5xl flex-col items-center space-y-7 py-3 sm:space-y-9 sm:py-8">
+      {/* Above-the-Fold Precision Studio Hero */}
       <section className="animate-rise flex w-full flex-col items-center text-center space-y-5 px-1">
-        <SonicOrb mood="focus" size="md" label="Tune your mind" />
-
-        <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/35 bg-cyan-400/[0.09] px-3.5 py-1 text-[11px] font-semibold tracking-wide text-cyan-200">
-          <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.9)] animate-pulse" />
-          Science-Backed Music · 5-Min Free Preview
+        <div className="inline-flex items-center gap-2 font-mono-tech text-[10px] font-medium uppercase tracking-[0.18em] text-[#A3A39E] sm:text-[11px]">
+          <span className="h-1.5 w-1.5 bg-[#34D399]" />
+          <span>48.0 kHz Web Audio · Peer-Reviewed Acoustics · Live Oscilloscope</span>
         </div>
 
-        <h1 className="max-w-3xl font-display text-[1.95rem] font-bold tracking-tight text-white sm:text-5xl leading-[1.08]">
-          Go from how you feel{' '}
-          <span className="text-aurora">to how you want to feel.</span>
+        <h1 className="max-w-3xl font-display text-[2rem] font-semibold tracking-tight text-[#F3F1EC] sm:text-5xl leading-[1.06]">
+          Shift how you feel{' '}
+          <span className="text-[#34D399]">with music you can actually measure.</span>
         </h1>
 
-        <p className="max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
-          Stressed to calm. Distracted to focused. Sad to happy. We turn real sound science into
-          music tailored to <strong className="text-white">your favorite style</strong>.
+        <p className="max-w-2xl text-sm leading-relaxed text-[#A3A39E] sm:text-base">
+          Move from stressed to calm, distracted to focused, or tired to awake. Published acoustic
+          rhythms blended live into 10 instrumental styles, verified on a built-in oscilloscope.
         </p>
 
-        {/* Single Commanding Primary CTA */}
+        {/* Primary Tactile Chalk Studio CTA */}
         <div className="flex w-full max-w-md flex-col items-center justify-center pt-1">
           <button
             type="button"
             onClick={onStartCustomize}
-            className="btn-aurora inline-flex w-full items-center justify-center gap-2.5 rounded-2xl px-7 py-4 text-base font-bold text-slate-950 shadow-[0_0_32px_rgba(34,211,238,0.28)] sm:w-auto sm:min-w-[290px]"
+            className="btn-aurora inline-flex w-full items-center justify-center gap-2.5 rounded-xl px-7 py-3.5 text-sm font-semibold sm:w-auto sm:min-w-[270px] sm:text-base"
           >
             <SlidersHorizontal className="h-4 w-4 shrink-0" />
-            <span>Choose My Mood &amp; Music</span>
+            <span>Configure Session</span>
             <ArrowRight className="h-4 w-4 shrink-0" />
           </button>
         </div>
 
-        {/* Zero-Friction Trust Strip */}
-        <p className="max-w-lg text-[11px] leading-relaxed text-slate-400">
-          First 5 minutes free · No card required · 10 curated styles + Infinite Live AI · 18+
+        <p className="max-w-lg font-mono-tech text-[11px] leading-relaxed text-[#7E7E78]">
+          5-min free preview · No card required · 10 curated styles + Endless Stream · 18+
         </p>
       </section>
 
-      {/* 4 Quick Starting Points (Pre-fills your mood shift -> pick your favorite music) */}
-      <section className="animate-step glass-stage w-full rounded-3xl border border-cyan-400/20 p-4 sm:p-5 space-y-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-          <span className="font-mono-tech text-[11px] uppercase tracking-[0.12em] text-cyan-300/90">
-            Or pick a starting goal — then choose your music:
+      {/* CH 01–04 Quick Channel Presets */}
+      <section className="animate-step w-full rounded-2xl border border-white/10 bg-[#101114] p-4 sm:p-5 space-y-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+          <span className="font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#8E8E88]">
+            CH 01–04 · Quick Start Presets
           </span>
           <button
             type="button"
             onClick={onOpenIdentityModal}
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 transition hover:text-cyan-200"
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#A3A39E] transition hover:text-[#F3F1EC]"
           >
-            <KeyRound className="h-3 w-3" />
-            Have a Sync QR? Restore
+            <KeyRound className="h-3 w-3 text-[#34D399]" />
+            Restore Sync Key
           </button>
         </div>
 
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-          {STATE_SHIFT_PILLS.map((pill) => (
+          {CHANNEL_PRESETS.map((pad) => (
             <button
-              key={pill.id}
+              key={pad.id}
               type="button"
-              onClick={() => onSelectMoodPreset(pill.id)}
-              className={`group flex flex-col items-start rounded-2xl border px-4 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${pill.accent}`}
+              onClick={() => onSelectMoodPreset(pad.id)}
+              className="group flex flex-col items-start rounded-xl border border-white/[0.08] bg-[#15171B] px-3.5 py-3 text-left transition hover:border-emerald-400/50 hover:bg-[#191C21]"
             >
-              <div className="flex w-full items-center justify-between gap-1 text-xs font-bold">
-                <span className="inline-flex items-center gap-1.5">
-                  <span>{pill.from}</span>
-                  <ArrowRight className="h-3.5 w-3.5 opacity-80" />
-                  <span className="text-white">{pill.to}</span>
+              <div className="flex w-full items-center justify-between gap-1.5">
+                <span className="font-mono-tech text-[10px] font-semibold uppercase tracking-wider text-[#34D399]">
+                  {pad.tag}
                 </span>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-75 transition-transform group-hover:translate-x-0.5" />
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-[#6E6E68] transition-transform group-hover:translate-x-0.5 group-hover:text-[#F3F1EC]" />
               </div>
-              <span className="mt-1 text-[10px] opacity-80">{pill.sub}</span>
+              <div className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-[#A3A39E]">
+                <span>{pad.from}</span>
+                <ArrowRight className="h-3 w-3 opacity-70" />
+                <span className="text-[#F3F1EC]">{pad.to}</span>
+              </div>
+              <span className="mt-1 text-[11px] text-[#7E7E78]">{pad.sub}</span>
             </button>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-0.5 text-[11px] text-slate-400">
-          <span>Prefer Jazz, Dub Reggae, Solo Piano, Bossa Nova, or Beatless Space?</span>
-          <button
-            type="button"
-            onClick={onStartCustomize}
-            className="inline-flex items-center gap-1 font-semibold text-cyan-300 transition hover:text-cyan-200"
-          >
-            Choose From All 10 Styles
-            <ArrowRight className="h-3 w-3" />
-          </button>
-          <span className="hidden text-slate-700 sm:inline">·</span>
-          <button
-            type="button"
-            onClick={onOpenStudyLab}
-            className="inline-flex items-center gap-1 font-semibold text-emerald-300 transition hover:text-emerald-200"
-          >
-            <FlaskConical className="h-3 w-3" />
-            Browse Science Studies
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-white/[0.06] pt-3 text-xs text-[#8E8E88]">
+          <span>Want Jazz, Dub Reggae, Solo Piano, Bossa Nova, Classical, or Ambient Space?</span>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={onStartCustomize}
+              className="inline-flex items-center gap-1 font-medium text-[#D4D4CE] transition hover:text-[#34D399]"
+            >
+              <span>Choose from all 10 styles</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onOpenStudyLab}
+              className="inline-flex items-center gap-1 font-medium text-[#34D399] transition hover:text-emerald-300"
+            >
+              <FlaskConical className="h-3.5 w-3.5" />
+              <span>Browse published studies</span>
+            </button>
+          </div>
         </div>
       </section>
 
-      {/* 3-Step Visual Story: How We Take You Where You Want To Go */}
-      <section className="animate-rise delay-150 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="glass-card rounded-2xl border border-white/[0.08] p-4 space-y-1.5">
-          <div className="inline-flex items-center gap-2 text-xs font-bold text-white">
-            <Compass className="h-4 w-4 text-cyan-300" />
-            1. Pick How You Want to Feel
+      {/* 3-Column Instrument Spec Grid */}
+      <section className="animate-rise delay-150 grid w-full grid-cols-1 divide-y divide-white/[0.08] rounded-2xl border border-white/10 bg-[#0E0F12] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <div className="p-5 space-y-2">
+          <div className="font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#34D399]">
+            01 / State Ramp
           </div>
-          <p className="text-xs leading-relaxed text-slate-400">
-            Tell us how you feel right now—stressed, sad, distracted, or tired—and where you want to
-            get.
+          <h2 className="text-sm font-semibold text-[#F3F1EC]">Pick How You Want to Feel</h2>
+          <p className="text-xs leading-relaxed text-[#A3A39E]">
+            Tell us your current state and how much time you have. The audio ramps gradually from
+            where you are to your target.
           </p>
         </div>
 
-        <div className="glass-card rounded-2xl border border-white/[0.08] p-4 space-y-1.5">
-          <div className="inline-flex items-center gap-2 text-xs font-bold text-white">
-            <Waves className="h-4 w-4 text-indigo-300" />
-            2. Measurable on Any Oscilloscope
+        <div className="p-5 space-y-2">
+          <div className="font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#34D399]">
+            02 / Measurable Signal
           </div>
-          <p className="text-xs leading-relaxed text-slate-400">
-            No fake playlists or black boxes. Every frequency is generated mathematically live—verify
-            it on our built-in oscilloscope or isolate the pure wave yourself.
+          <h2 className="text-sm font-semibold text-[#F3F1EC]">Measurable on Any Oscilloscope</h2>
+          <p className="text-xs leading-relaxed text-[#A3A39E]">
+            Every frequency (16 Hz focus AM, 10 Hz calm, 40 Hz bursts, 432 Hz) runs live on our
+            built-in dual-trace oscilloscope.{' '}
+            <button
+              type="button"
+              onClick={onStartCustomize}
+              className="font-medium text-[#F3F1EC] underline decoration-white/30 underline-offset-2 hover:text-[#34D399] hover:decoration-[#34D399]"
+            >
+              Isolate Pure Wave
+            </button>{' '}
+            anytime to inspect it externally.
           </p>
         </div>
 
-        <div className="glass-card rounded-2xl border border-white/[0.08] p-4 space-y-1.5">
-          <div className="inline-flex items-center gap-2 text-xs font-bold text-white">
-            <Music2 className="h-4 w-4 text-emerald-300" />
-            3. Blended With Music You Love
+        <div className="p-5 space-y-2">
+          <div className="font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#34D399]">
+            03 / 10 Styles + Endless
           </div>
-          <p className="text-xs leading-relaxed text-slate-400">
-            No boring background hums. Pick from{' '}
-            <span className="text-slate-200">10 curated instrumental styles</span> — Lo-Fi, Electronic,
-            Jazz, Classical, Reggae, Piano, Bossa Nova &amp; more — plus Infinite Live AI.
+          <h2 className="text-sm font-semibold text-[#F3F1EC]">Blended With Real Music</h2>
+          <p className="text-xs leading-relaxed text-[#A3A39E]">
+            Pair your protocol with Lo-Fi, Solo Piano, Jazz, Dub Reggae, Bossa Nova, Classical, Soft
+            Rain, or switch to Endless Stream with zero loops.
           </p>
         </div>
       </section>
 
-      {/* Verifiable Oscilloscope Proof Banner */}
-      <section className="animate-rise w-full rounded-3xl border border-cyan-400/25 bg-gradient-to-r from-cyan-500/[0.07] via-slate-950/80 to-indigo-500/[0.08] p-4 sm:p-5">
-        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-1.5 font-mono-tech text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-              <Activity className="h-3.5 w-3.5" />
-              Verifiable Sound Science · Real-Time Oscilloscope Proof
-            </div>
-            <p className="text-xs leading-relaxed text-slate-300 sm:text-[13px]">
-              Don’t just trust a playlist. Every frequency (16 Hz focus AM, 10 Hz calm, 40 Hz bursts,
-              binaural beats, 432 Hz) is{' '}
-              <strong className="text-white">measurable live on our built-in oscilloscope</strong>—or
-              tap <strong className="text-cyan-200">Isolate Pure Wave</strong> to test it with any
-              external oscilloscope or spectrum analyzer.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onStartCustomize}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3.5 py-2 text-xs font-bold text-cyan-100 transition hover:bg-cyan-400/25"
-          >
-            <Activity className="h-3.5 w-3.5" />
-            See It Live
-          </button>
-        </div>
-      </section>
-
-      {/* Blurred B2B Cohort Intelligence Showcase */}
+      {/* B2B Cohort Intelligence Showcase */}
       <CohortIntelligenceShowcase mode="compact" />
 
-      {/* Subtle Bottom Prompt */}
-      <div className="flex items-center gap-2 text-xs text-slate-400">
-        <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
-        <span>
-          Includes an optional 15-second reaction speed test before and after listening so you can
-          see the difference.
-        </span>
+      {/* Quiet Spec Footnote */}
+      <div className="font-mono-tech text-center text-[10px] uppercase tracking-[0.12em] text-[#7E7E78]">
+        Optional 15-second reaction benchmark included before and after each session
       </div>
     </div>
   );

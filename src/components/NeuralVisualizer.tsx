@@ -8,9 +8,12 @@ interface NeuralVisualizerProps {
   modulationHz: number;
 }
 
+const BAND_COUNT = 36;
+
 /**
- * Dual-layer 60fps Live Psychoacoustic Visualizer:
- * Central audio-reactive radial resonance halo + flowing dual-ribbon harmonic waveforms.
+ * 36-Band Studio Spectrum & Peak-Hold Analyzer:
+ * Driven by live Web Audio FFT frequency bins with calibrated dB gridlines,
+ * smooth ballistic decay, peak-hold caps, and authentic resting floor when paused.
  */
 export function NeuralVisualizer({
   engine,
@@ -27,15 +30,16 @@ export function NeuralVisualizer({
     if (!ctx) return;
 
     const freqData = new Uint8Array(128);
-    const timeData = new Uint8Array(128);
+    const bandLevels = new Float32Array(BAND_COUNT);
+    const peakCaps = new Float32Array(BAND_COUNT);
+    const peakHoldTicks = new Uint8Array(BAND_COUNT);
     let rafId = 0;
-    let phase = 0;
 
     const draw = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const rect = canvas.getBoundingClientRect();
       const width = Math.max(260, Math.floor(rect.width));
-      const height = Math.max(180, Math.floor(rect.height));
+      const height = Math.max(132, Math.floor(rect.height));
 
       if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
         canvas.width = width * dpr;
@@ -46,107 +50,141 @@ export function NeuralVisualizer({
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, width, height);
 
-      const cx = width / 2;
-      const cy = height / 2;
-      const hasAudio =
-        isPlaying && engine.getFrequencyData(freqData) && engine.getTimeDomainData(timeData);
-
-      phase += isPlaying ? 0.042 : 0.012;
-
-      // Average low-mid energy for central breathing halo
-      let energy = 0.14;
-      if (hasAudio) {
-        let sum = 0;
-        for (let i = 0; i < 32; i++) sum += freqData[i];
-        energy = Math.min(1, sum / (32 * 210));
-      } else {
-        energy = 0.14 + 0.06 * Math.sin(phase * 1.4);
-      }
-
-      const c1 = safetyMode ? '245, 158, 11' : '34, 211, 238';
-      const c2 = safetyMode ? '56, 189, 248' : '129, 140, 248';
-      const primaryHex = safetyMode ? '#f59e0b' : '#22d3ee';
-      const secondaryHex = safetyMode ? '#38bdf8' : '#a5b4fc';
-
-      // Ambient central radial bloom
-      const haloR = Math.min(width, height) * (0.36 + energy * 0.14);
-      const bloom = ctx.createRadialGradient(cx, cy, 4, cx, cy, haloR * 1.45);
-      bloom.addColorStop(0, `rgba(${c1}, ${(0.22 + energy * 0.25).toFixed(3)})`);
-      bloom.addColorStop(0.5, `rgba(${c2}, 0.08)`);
-      bloom.addColorStop(1, 'rgba(6, 9, 17, 0)');
-      ctx.fillStyle = bloom;
+      // Background recessed panel
+      ctx.fillStyle = '#070809';
       ctx.fillRect(0, 0, width, height);
 
-      // Flowing dual harmonic ribbons across full width
-      for (let layer = 0; layer < 2; layer++) {
-        const waveGrad = ctx.createLinearGradient(0, 0, width, 0);
-        waveGrad.addColorStop(0, `rgba(${layer === 0 ? c1 : c2}, 0)`);
-        waveGrad.addColorStop(0.2, layer === 0 ? primaryHex : secondaryHex);
-        waveGrad.addColorStop(0.8, layer === 0 ? secondaryHex : primaryHex);
-        waveGrad.addColorStop(1, `rgba(${layer === 0 ? c2 : c1}, 0)`);
+      const padLeft = 36;
+      const padRight = 12;
+      const padTop = 26;
+      const padBottom = 12;
+      const plotW = Math.max(120, width - padLeft - padRight);
+      const plotH = Math.max(60, height - padTop - padBottom);
 
-        ctx.strokeStyle = waveGrad;
-        ctx.lineWidth = layer === 0 ? 2.1 : 1.25;
-        ctx.globalAlpha = layer === 0 ? 0.92 : 0.45;
+      // Horizontal dB calibration gridlines (-6, -18, -36 dB)
+      const dbMarks = [
+        { label: '-6', norm: 0.85 },
+        { label: '-18', norm: 0.55 },
+        { label: '-36', norm: 0.25 },
+      ];
+      ctx.font = '500 9px "JetBrains Mono", monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      for (const mark of dbMarks) {
+        const y = Math.round(padTop + plotH * (1 - mark.norm)) + 0.5;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.lineWidth = 1;
         ctx.beginPath();
-
-        for (let x = 0; x <= width; x += 3) {
-          const normX = x / width;
-          const env = Math.sin(normX * Math.PI);
-          const idx = Math.min(timeData.length - 1, Math.floor(normX * timeData.length));
-          const liveDelta = hasAudio ? ((timeData[idx] - 128) / 128) * (height * 0.36) : 0;
-          const amRipple =
-            Math.sin(normX * Math.max(5, modulationHz * 0.9) + phase * (layer === 0 ? 2.1 : -1.5)) *
-            (isPlaying ? 12 + energy * 10 : 5) *
-            env;
-          const y = cy + (layer === 0 ? 1 : -0.65) * (liveDelta * env + amRipple);
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
+        ctx.moveTo(padLeft, y);
+        ctx.lineTo(padLeft + plotW, y);
         ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
 
-      // Central Radial Spectrum Mandala
-      const baseR = Math.min(width, height) * 0.24;
-      const spokes = 64;
-      for (let i = 0; i < spokes; i++) {
-        const angle = (i / spokes) * Math.PI * 2 - Math.PI / 2 + phase * 0.12;
-        const bin = hasAudio ? freqData[i % 48] / 255 : (Math.sin(phase * 1.8 + i * 0.3) * 0.5 + 0.5) * 0.22;
-        const len = 5 + bin * (Math.min(width, height) * 0.19);
-        const x1 = cx + Math.cos(angle) * baseR;
-        const y1 = cy + Math.sin(angle) * baseR;
-        const x2 = cx + Math.cos(angle) * (baseR + len);
-        const y2 = cy + Math.sin(angle) * (baseR + len);
-
-        ctx.strokeStyle = i % 2 === 0 ? `rgba(${c1}, ${(0.45 + bin * 0.55).toFixed(2)})` : `rgba(${c2}, ${(0.35 + bin * 0.5).toFixed(2)})`;
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
+        ctx.fillStyle = 'rgba(163, 163, 158, 0.55)';
+        ctx.fillText(mark.label, padLeft - 6, y);
       }
 
-      // Inner luminous ring
-      ctx.strokeStyle = `rgba(${c1}, 0.55)`;
-      ctx.lineWidth = 1.4;
+      // Baseline floor
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.beginPath();
-      ctx.arc(cx, cy, baseR - 2, 0, Math.PI * 2);
+      ctx.moveTo(padLeft, padTop + plotH + 0.5);
+      ctx.lineTo(padLeft + plotW, padTop + plotH + 0.5);
       ctx.stroke();
 
-      // Core Hz readout centered inside mandala
-      ctx.fillStyle = 'rgba(248, 250, 252, 0.92)';
-      ctx.font = '600 14px "JetBrains Mono", monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(`${modulationHz} Hz`, cx, cy - 5);
-      ctx.fillStyle = `rgba(${c1}, 0.85)`;
-      ctx.font = '500 9px "JetBrains Mono", monospace';
-      ctx.fillText(isPlaying ? 'LIVE AM' : 'PAUSED', cx, cy + 11);
+      const hasAudio = isPlaying && engine.getFrequencyData(freqData);
+      const slotW = plotW / BAND_COUNT;
+      const barW = Math.max(2, Math.floor(slotW * 0.68));
+      const offsetX = Math.floor((slotW - barW) / 2);
+
+      let anyMoving = isPlaying;
+
+      for (let b = 0; b < BAND_COUNT; b++) {
+        // Log-weighted index across bins 0..63 so bass + mid + upper frequencies balance visually
+        const normBand = b / (BAND_COUNT - 1);
+        const rawIdx = Math.min(63, Math.floor(Math.pow(normBand, 1.35) * 63));
+        const nextIdx = Math.min(63, Math.floor(Math.pow((b + 1) / BAND_COUNT, 1.35) * 63));
+        let target = 0;
+        if (hasAudio) {
+          let sum = 0;
+          let count = 0;
+          for (let k = rawIdx; k <= Math.max(rawIdx, nextIdx); k++) {
+            sum += freqData[k];
+            count++;
+          }
+          target = Math.min(1, sum / (Math.max(1, count) * 235));
+        }
+
+        // Fast attack, smooth studio VU ballistic release
+        if (target >= bandLevels[b]) {
+          bandLevels[b] = bandLevels[b] + (target - bandLevels[b]) * 0.45;
+        } else {
+          bandLevels[b] = bandLevels[b] * 0.86;
+          if (bandLevels[b] < 0.004) bandLevels[b] = 0;
+        }
+
+        // Peak-hold cap
+        if (bandLevels[b] >= peakCaps[b]) {
+          peakCaps[b] = bandLevels[b];
+          peakHoldTicks[b] = 18;
+        } else if (peakHoldTicks[b] > 0) {
+          peakHoldTicks[b]--;
+        } else {
+          peakCaps[b] = Math.max(bandLevels[b], peakCaps[b] * 0.91);
+          if (peakCaps[b] < 0.004) peakCaps[b] = 0;
+        }
+
+        if (bandLevels[b] > 0.004 || peakCaps[b] > 0.004) {
+          anyMoving = true;
+        }
+
+        const x = Math.round(padLeft + b * slotW + offsetX);
+        const levelH = Math.max(isPlaying ? 2 : 0, Math.round(bandLevels[b] * plotH));
+
+        if (levelH > 0) {
+          const yTop = padTop + plotH - levelH;
+          // Segmented 3px-step bars with 1px gap
+          const segH = 3;
+          const gap = 1;
+          for (let sy = padTop + plotH - segH; sy >= yTop; sy -= segH + gap) {
+            const heightNorm = (padTop + plotH - sy) / plotH;
+            if (safetyMode || heightNorm > 0.84) {
+              ctx.fillStyle = heightNorm > 0.84 ? '#F59E0B' : 'rgba(245, 158, 11, 0.82)';
+            } else {
+              ctx.fillStyle = heightNorm > 0.65 ? 'rgba(52, 211, 153, 0.95)' : 'rgba(52, 211, 153, 0.68)';
+            }
+            ctx.fillRect(x, sy, barW, segH);
+          }
+        } else {
+          // Subtle quiet resting tick at 0 floor when standby
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+          ctx.fillRect(x, padTop + plotH - 1, barW, 1);
+        }
+
+        // Peak-hold cap indicator
+        if (peakCaps[b] > 0.015) {
+          const peakY = Math.round(padTop + plotH - peakCaps[b] * plotH);
+          ctx.fillStyle = '#F3F1EC';
+          ctx.fillRect(x, Math.max(padTop, peakY - 2), barW, 2);
+        }
+      }
+
+      // Instrument Header Overlay inside canvas
+      ctx.font = '600 10px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = 'rgba(163, 163, 158, 0.85)';
+      ctx.fillText('SPECTRUM ANALYZER · 3-BAND LR4', 12, 8);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isPlaying ? (safetyMode ? '#F59E0B' : '#34D399') : 'rgba(142, 142, 136, 0.75)';
+      const statusText = modulationHz > 0
+        ? `${modulationHz} HZ · ${isPlaying ? 'ACTIVE' : 'STANDBY'}`
+        : isPlaying ? 'ACTIVE' : 'STANDBY';
+      ctx.fillText(statusText, width - 12, 8);
 
       ctx.restore();
-      rafId = requestAnimationFrame(draw);
+      if (anyMoving || isPlaying) {
+        rafId = requestAnimationFrame(draw);
+      }
     };
 
     rafId = requestAnimationFrame(draw);
@@ -156,8 +194,8 @@ export function NeuralVisualizer({
   return (
     <canvas
       ref={canvasRef}
-      className="h-52 sm:h-60 w-full rounded-2xl bg-[#050811]/85 border border-slate-800/80 shadow-inner"
-      aria-label="Live psychoacoustic waveform and radial frequency visualizer"
+      className="h-36 sm:h-40 w-full rounded-xl bg-[#070809] border border-white/[0.08]"
+      aria-label="Live 36-band studio spectrum and peak-hold analyzer"
     />
   );
 }

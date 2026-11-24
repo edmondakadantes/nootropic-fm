@@ -20,7 +20,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sliders,
-  Sparkles,
   Volume2,
   Zap,
 } from 'lucide-react';
@@ -611,7 +610,7 @@ export function PlayerView({
         if (!res.available || !res.token) {
           setLyriaNotice(
             res.reason ??
-              'Infinite Live AI temporarily unavailable — playing Studio Mix seamlessly.'
+              'Endless Stream is temporarily unavailable. Playing Studio Mix seamlessly.'
           );
           setCarrierMode('studio_library');
           setAudioSource('studio_library');
@@ -653,7 +652,7 @@ export function PlayerView({
           engineRef.current?.setCarrierMode('studio_library');
         }
       } catch {
-        setLyriaNotice('Infinite Live AI temporarily unreachable — continuing smoothly on Studio Mix.');
+        setLyriaNotice('Endless Stream temporarily unreachable. Continuing smoothly on Studio Mix.');
         setCarrierMode('studio_library');
         setAudioSource('studio_library');
         engineRef.current?.setCarrierMode('studio_library');
@@ -850,9 +849,9 @@ export function PlayerView({
 
   const activeSourceShort =
     telemetry.carrierMode === 'lyria_realtime'
-      ? `${activeVibeDisplay.label} · Infinite AI`
+      ? `${activeVibeDisplay.label} · Endless Stream`
       : telemetry.carrierMode === 'pure_stimulus'
-        ? 'Pure Acoustic Signal'
+        ? 'Pure Signal'
         : telemetry.usingCustomTrack || audioSource === 'community_cache'
           ? activeVibeDisplay.label
           : telemetry.usingStudioAudio
@@ -862,7 +861,7 @@ export function PlayerView({
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
       {recommendation.safetyMode && (
-        <div className="animate-rise rounded-2xl border border-amber-400/40 bg-amber-500/12 p-3.5 backdrop-blur-md">
+        <div className="animate-rise rounded-xl border border-amber-400/40 bg-amber-500/10 p-3.5">
           <div className="flex items-start gap-2.5">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
             <div className="space-y-0.5 text-xs text-amber-100">
@@ -877,68 +876,68 @@ export function PlayerView({
         </div>
       )}
 
-      {/* Brief Custom Music Background Status (disappears once crossfaded) */}
+      {/* Brief Custom Music Background Status */}
       {customGenState === 'generating' && activeCustomLabel && (
-        <div className="animate-rise flex items-center gap-2.5 rounded-2xl border border-fuchsia-400/35 bg-fuchsia-500/12 px-4 py-2.5 text-xs text-fuchsia-100 backdrop-blur-md">
-          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fuchsia-300" />
+        <div className="animate-rise flex items-center gap-2.5 rounded-xl border border-white/15 bg-[#121417] px-4 py-2.5 text-xs text-[#F3F1EC]">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#34D399]" />
           <span>
-            Crafting custom <strong>“{activeCustomLabel}”</strong> — playing{' '}
-            <strong>{GENRE_META[genre].label}</strong> smoothly while it blends in.
+            Crafting custom <strong>“{activeCustomLabel}”</strong> while{' '}
+            <strong>{GENRE_META[genre].label}</strong> plays cleanly underneath.
           </span>
         </div>
       )}
 
       {customGenState === 'notice' && customGenNotice && (
-        <div className="animate-rise flex items-center gap-2 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
-          <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+        <div className="animate-rise flex items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+          <Activity className="h-3.5 w-3.5 shrink-0 text-amber-300" />
           <span>{customGenNotice}</span>
         </div>
       )}
 
       {shareBonusToast && (
-        <div className="animate-rise flex items-center gap-2 rounded-2xl border border-emerald-400/40 bg-emerald-500/15 px-4 py-2.5 text-xs font-medium text-emerald-100 backdrop-blur-md">
-          <Sparkles className="h-4 w-4 shrink-0 text-emerald-300" />
+        <div className="animate-rise flex items-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-500/12 px-4 py-2.5 text-xs font-medium text-emerald-100">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-[#34D399]" />
           <span>{shareBonusToast}</span>
         </div>
       )}
 
-      {/* STANDALONE FULL-FOCUS PLAYER STAGE (Distraction-Free) */}
-      <div className="animate-rise glass-stage rounded-3xl border border-cyan-400/20 p-5 sm:p-8 space-y-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
-        {/* Minimal Header: Goal + Active Music + Timer */}
+      {/* STANDALONE STUDIO PLAYER CONSOLE */}
+      <div className="animate-rise glass-stage rounded-2xl p-5 sm:p-7 space-y-5">
+        {/* Minimal Header: Goal + Active Source Tag + Timer */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold text-cyan-200">
-              <Music2 className="h-3 w-3 shrink-0" />
+          <div className="min-w-0 space-y-1.5">
+            <div className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-white/10 bg-[#14161A] px-2.5 py-1 font-mono-tech text-[11px] text-[#D4D4CE]">
+              <Music2 className="h-3 w-3 shrink-0 text-[#34D399]" />
               <span className="truncate">{activeSourceShort}</span>
               {telemetry.currentModHz > 0 && (
-                <span className="shrink-0 text-cyan-300/80">· {telemetry.currentModHz} Hz</span>
+                <span className="shrink-0 text-[#34D399]">· {telemetry.currentModHz} Hz</span>
               )}
             </div>
-            <h1 className="font-display text-xl font-bold text-white sm:text-2xl leading-tight">
-              <span className="text-aurora">{TARGET_LABELS[recommendation.targetState]}</span>
+            <h1 className="font-display text-xl font-semibold text-[#F3F1EC] sm:text-2xl leading-tight">
+              {TARGET_LABELS[recommendation.targetState]}
             </h1>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-[#8E8E88]">
               {STATE_LABELS[recommendation.currentState]} → {TARGET_LABELS[recommendation.targetState]} ·{' '}
               {DEVICE_LABELS[recommendation.device]}
             </p>
           </div>
 
           <div className="shrink-0 text-right space-y-1">
-            <div className="font-mono-tech text-3xl font-bold tracking-tight text-white sm:text-4xl leading-none">
+            <div className="font-mono-tech text-3xl font-bold tracking-tight text-[#F3F1EC] sm:text-4xl leading-none">
               {formatTimer(elapsedSec)}
             </div>
-            <div className="font-mono-tech text-[11px] text-slate-400">
+            <div className="font-mono-tech text-[11px] text-[#8E8E88]">
               of {recommendation.plannedDurationMin}:00 min
             </div>
             {!isPro && plannedSec > effectiveFreeLimitSec && (
               <button
                 type="button"
                 onClick={() => onUpgradePro?.()}
-                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
                   shareBonusSec > 0
-                    ? 'border-emerald-400/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25'
+                    ? 'border-emerald-400/40 bg-emerald-500/12 text-[#34D399] hover:bg-emerald-500/20'
                     : effectiveFreeLimitSec - elapsedSec <= 30
-                      ? 'border-amber-400/60 bg-amber-400/20 text-amber-200 animate-pulse'
+                      ? 'border-amber-400/60 bg-amber-400/18 text-amber-200'
                       : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
                 }`}
                 title={
@@ -958,7 +957,7 @@ export function PlayerView({
           </div>
         </div>
 
-        {/* Centerpiece 60fps Neural Soundwave Visualizer */}
+        {/* Centerpiece 36-Band Studio Spectrum Analyzer */}
         <NeuralVisualizer
           engine={engineRef.current}
           isPlaying={isPlaying}
@@ -968,19 +967,19 @@ export function PlayerView({
 
         {/* Synchronized 0.1 Hz HRV Breathing Guide (only shown on calm breathing protocols) */}
         {telemetry.hrvActive && telemetry.hrvBreathPhase && (
-          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/[0.08] px-4 py-2.5 space-y-1.5">
+          <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/[0.06] px-4 py-2.5 space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-emerald-200">
+              <span className="font-semibold text-[#34D399]">
                 Breathe with the wave ·{' '}
-                <span className="uppercase tracking-wider text-white">
+                <span className="uppercase tracking-wider text-[#F3F1EC]">
                   {telemetry.hrvBreathPhase === 'inhale' ? 'Inhale Slowly (5s)' : 'Exhale Smoothly (5s)'}
                 </span>
               </span>
-              <span className="font-mono-tech text-[10px] text-emerald-300">6 breaths/min</span>
+              <span className="font-mono-tech text-[10px] text-[#34D399]">6 breaths/min</span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-900">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-300 transition-all duration-300"
+                className="h-full rounded-full bg-[#34D399] transition-all duration-300"
                 style={{ width: `${Math.max(8, Math.round(telemetry.hrvBreathProgress * 100))}%` }}
               />
             </div>
@@ -990,26 +989,26 @@ export function PlayerView({
         {/* Clean Session Progress Bar */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-[11px]">
-            <span className="inline-flex items-center gap-1.5 font-medium text-cyan-300">
+            <span className="inline-flex items-center gap-1.5 font-medium text-[#34D399]">
               <Activity className="h-3.5 w-3.5" />
               {telemetry.phaseLabel}
               {telemetry.antiMonotonyActive && (
-                <span className="rounded bg-amber-400/20 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200">
+                <span className="rounded border border-amber-400/35 bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200">
                   Fresh pulse
                 </span>
               )}
             </span>
-            <span className="font-mono-tech text-slate-400">{Math.round(progressPct)}%</span>
+            <span className="font-mono-tech text-[#8E8E88]">{Math.round(progressPct)}%</span>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800/90">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-indigo-400 to-amber-300 shadow-[0_0_14px_rgba(34,211,238,0.55)] transition-all duration-500"
+              className="h-full rounded-full bg-[#34D399] transition-all duration-500"
               style={{ width: `${Math.max(2, progressPct)}%` }}
             />
           </div>
         </div>
 
-        {/* Prominent 2-Button Music Engine Selector: Studio Mix vs Infinite Live AI */}
+        {/* Prominent 2-Button Music Engine Selector: Studio Mix vs Endless Stream */}
         {lyriaRealtimeAvailable && (
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
@@ -1017,33 +1016,33 @@ export function PlayerView({
               <button
                 type="button"
                 onClick={() => void handleCarrierSwitch('studio_library')}
-                className={`group relative flex flex-col justify-between rounded-2xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
+                className={`group relative flex flex-col justify-between rounded-xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
                   carrierMode === 'studio_library'
-                    ? 'border-cyan-400/65 bg-cyan-400/[0.12] text-white shadow-[0_0_22px_rgba(34,211,238,0.16)]'
-                    : 'border-slate-800/90 bg-slate-950/65 text-slate-300 hover:border-cyan-400/40 hover:bg-slate-900/80 hover:text-white'
+                    ? 'border-white/35 bg-[#17191E] text-[#F3F1EC]'
+                    : 'border-white/[0.08] bg-[#0F1013] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
                 }`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-1.5">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold sm:text-sm">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold sm:text-sm">
                     <Music2
                       className={`h-4 w-4 shrink-0 ${
                         carrierMode === 'studio_library'
-                          ? 'text-cyan-300'
-                          : 'text-slate-400 group-hover:text-cyan-300'
+                          ? 'text-[#34D399]'
+                          : 'text-[#8E8E88] group-hover:text-[#F3F1EC]'
                       }`}
                     />
                     <span>Studio Mix</span>
                   </span>
                   {carrierMode === 'studio_library' && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/40 bg-cyan-400/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-cyan-100">
+                    <span className="inline-flex items-center gap-1 rounded border border-emerald-400/40 bg-emerald-400/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#34D399]">
                       <Check className="h-2.5 w-2.5" />
-                      Active
+                      ON
                     </span>
                   )}
                 </div>
                 <p
                   className={`mt-1.5 text-[11px] leading-snug ${
-                    carrierMode === 'studio_library' ? 'text-cyan-100/85' : 'text-slate-400'
+                    carrierMode === 'studio_library' ? 'text-[#D4D4CE]' : 'text-[#7E7E78]'
                   }`}
                 >
                   {carrierMode === 'studio_library'
@@ -1052,56 +1051,56 @@ export function PlayerView({
                 </p>
               </button>
 
-              {/* Button 2: Infinite Live AI */}
+              {/* Button 2: Endless Stream */}
               <button
                 type="button"
                 disabled={connectingLyria}
                 onClick={() => void handleCarrierSwitch('lyria_realtime')}
-                className={`group relative flex flex-col justify-between rounded-2xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
+                className={`group relative flex flex-col justify-between rounded-xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
                   carrierMode === 'lyria_realtime'
-                    ? 'border-indigo-400/75 bg-gradient-to-br from-indigo-500/[0.20] via-indigo-500/[0.10] to-cyan-400/[0.10] text-white shadow-[0_0_24px_rgba(129,140,248,0.24)]'
+                    ? 'border-emerald-400/55 bg-emerald-500/[0.09] text-[#F3F1EC]'
                     : connectingLyria
-                      ? 'border-indigo-400/50 bg-indigo-500/[0.12] text-indigo-100'
-                      : 'border-indigo-400/25 bg-indigo-950/25 text-slate-200 hover:border-indigo-400/55 hover:bg-indigo-500/[0.12] hover:text-white'
+                      ? 'border-emerald-400/40 bg-emerald-500/[0.06] text-[#F3F1EC]'
+                      : 'border-white/[0.08] bg-[#0F1013] text-[#D4D4CE] hover:border-emerald-400/45 hover:bg-emerald-500/[0.06] hover:text-[#F3F1EC]'
                 }`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-1.5">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold sm:text-sm">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold sm:text-sm">
                     {connectingLyria ? (
-                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-indigo-300" />
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#34D399]" />
                     ) : (
-                      <Sparkles
+                      <Radio
                         className={`h-4 w-4 shrink-0 ${
                           carrierMode === 'lyria_realtime'
-                            ? 'text-indigo-300'
-                            : 'text-indigo-300/80 group-hover:text-indigo-200'
+                            ? 'text-[#34D399]'
+                            : 'text-[#8E8E88] group-hover:text-[#34D399]'
                         }`}
                       />
                     )}
-                    <span>Infinite Live AI</span>
+                    <span>Endless Stream</span>
                   </span>
                   {connectingLyria ? (
-                    <span className="rounded-full border border-indigo-400/40 bg-indigo-500/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-100">
-                      Starting…
+                    <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#34D399]">
+                      Syncing…
                     </span>
                   ) : carrierMode === 'lyria_realtime' ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/45 bg-emerald-500/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="inline-flex items-center gap-1 rounded border border-emerald-400/45 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#34D399] animate-pulse" />
                       Live
                     </span>
                   ) : (
-                    <span className="rounded-full border border-indigo-400/30 bg-indigo-500/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-indigo-200">
-                      Zero Loops
+                    <span className="rounded border border-white/12 bg-white/[0.05] px-1.5 py-0.5 font-mono-tech text-[9px] font-semibold uppercase tracking-wider text-[#A3A39E]">
+                      No Loops
                     </span>
                   )}
                 </div>
                 <p
                   className={`mt-1.5 text-[11px] leading-snug ${
-                    carrierMode === 'lyria_realtime' ? 'text-indigo-100/90' : 'text-slate-400'
+                    carrierMode === 'lyria_realtime' ? 'text-[#D4D4CE]' : 'text-[#7E7E78]'
                   }`}
                 >
                   {connectingLyria
-                    ? 'Connecting real-time AI stream…'
+                    ? 'Connecting live stream…'
                     : carrierMode === 'lyria_realtime'
                       ? 'Streaming live · Never repeats'
                       : 'Generated live · Never repeats'}
@@ -1110,35 +1109,35 @@ export function PlayerView({
             </div>
 
             {lyriaNotice && openDrawer !== 'tune' && (
-              <div className="rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+              <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
                 {lyriaNotice}
               </div>
             )}
           </div>
         )}
 
-        {/* Clean Primary Control Dock: Play/Pause + Volume + End & Rate */}
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800/80 bg-slate-950/65 p-3.5 sm:px-5 sm:py-4">
+        {/* Primary Hardware Transport Dock: Play/Pause + Volume + End & Rate */}
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3.5 sm:px-5 sm:py-4">
           <div className="flex flex-1 items-center gap-3.5 min-w-[190px]">
             <button
               type="button"
               onClick={() => void togglePlay()}
-              className="btn-aurora inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-slate-950 shadow-[0_0_24px_rgba(34,211,238,0.3)]"
+              className="btn-aurora inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-[#0A0B0C]"
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
-                <Pause className="h-6 w-6 fill-slate-950" />
+                <Pause className="h-6 w-6 fill-[#0A0B0C]" />
               ) : (
-                <Play className="h-6 w-6 translate-x-0.5 fill-slate-950" />
+                <Play className="h-6 w-6 translate-x-0.5 fill-[#0A0B0C]" />
               )}
             </button>
 
             <div className="flex-1 max-w-[180px] space-y-1">
-              <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <div className="flex items-center justify-between text-[11px] text-[#8E8E88]">
                 <span className="inline-flex items-center gap-1">
                   <Volume2 className="h-3.5 w-3.5" /> Volume
                 </span>
-                <span className="font-mono-tech">{Math.round(volume * 100)}%</span>
+                <span className="font-mono-tech text-[#D4D4CE]">{Math.round(volume * 100)}%</span>
               </div>
               <input
                 type="range"
@@ -1155,9 +1154,9 @@ export function PlayerView({
           <button
             type="button"
             onClick={handleEndSession}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:-translate-y-0.5 hover:bg-emerald-300 sm:px-5 sm:py-3 sm:text-sm"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/15 bg-[#16181C] px-4 py-2.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1C1F24] sm:px-5 sm:py-3 sm:text-sm"
           >
-            <CheckCircle2 className="h-4 w-4" />
+            <CheckCircle2 className="h-4 w-4 text-[#34D399]" />
             {isEphemeral ? 'End Session' : 'End & Rate'}
           </button>
         </div>
@@ -1193,9 +1192,9 @@ export function PlayerView({
           ) : (
             <form
               onSubmit={(e) => void handleClaimProfile(e)}
-              className="rounded-2xl border border-indigo-400/25 bg-indigo-500/[0.07] p-3 space-y-2"
+              className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3 space-y-2"
             >
-              <div className="text-[11px] font-semibold text-indigo-100">
+              <div className="text-[11px] font-semibold text-[#D4D4CE]">
                 Save your progress while you listen (anonymous):
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -1208,7 +1207,7 @@ export function PlayerView({
                     setClaimError(null);
                   }}
                   placeholder="Profession (e.g. Doctor, Programmer, Student)"
-                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                  className="flex-1 rounded-xl border border-white/12 bg-[#141518] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
                 />
                 <input
                   type="number"
@@ -1221,12 +1220,12 @@ export function PlayerView({
                     setClaimError(null);
                   }}
                   placeholder="Age 18+"
-                  className="font-mono-tech w-full rounded-xl border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none sm:w-24"
+                  className="font-mono-tech w-full rounded-xl border border-white/12 bg-[#141518] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none sm:w-24"
                 />
                 <button
                   type="submit"
                   disabled={claimingProfile}
-                  className="btn-aurora shrink-0 rounded-xl px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-60"
+                  className="btn-aurora shrink-0 rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-60"
                 >
                   {claimingProfile ? 'Saving...' : 'Save'}
                 </button>
@@ -1236,18 +1235,18 @@ export function PlayerView({
           ))}
       </div>
 
-      {/* 2 Discreet Collapsible Drawer Triggers (Collapsed by default = 100% Zen Player) */}
+      {/* 2 Discreet Collapsible Drawer Triggers */}
       <div className="flex flex-wrap items-center justify-center gap-2.5">
         <button
           type="button"
           onClick={() => setOpenDrawer((prev) => (prev === 'tune' ? 'none' : 'tune'))}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition ${
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-semibold transition ${
             openDrawer === 'tune'
-              ? 'border-cyan-400/60 bg-cyan-400/15 text-cyan-100'
-              : 'border-white/10 bg-slate-900/60 text-slate-300 hover:border-cyan-400/40 hover:text-white'
+              ? 'border-white/30 bg-[#181A1F] text-[#F3F1EC]'
+              : 'border-white/10 bg-[#111215] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
           }`}
         >
-          <Sliders className="h-3.5 w-3.5 text-cyan-300" />
+          <Sliders className="h-3.5 w-3.5 text-[#34D399]" />
           <span>Tune Sound &amp; Music</span>
           {openDrawer === 'tune' ? (
             <ChevronUp className="h-3.5 w-3.5 opacity-75" />
@@ -1259,13 +1258,13 @@ export function PlayerView({
         <button
           type="button"
           onClick={() => setOpenDrawer((prev) => (prev === 'science' ? 'none' : 'science'))}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold transition ${
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-semibold transition ${
             openDrawer === 'science'
-              ? 'border-emerald-400/60 bg-emerald-500/15 text-emerald-100'
-              : 'border-white/10 bg-slate-900/60 text-slate-300 hover:border-emerald-400/40 hover:text-white'
+              ? 'border-white/30 bg-[#181A1F] text-[#F3F1EC]'
+              : 'border-white/10 bg-[#111215] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
           }`}
         >
-          <BookOpen className="h-3.5 w-3.5 text-emerald-300" />
+          <BookOpen className="h-3.5 w-3.5 text-[#34D399]" />
           <span>Verified Science &amp; Studies</span>
           {openDrawer === 'science' ? (
             <ChevronUp className="h-3.5 w-3.5 opacity-75" />
@@ -1277,38 +1276,38 @@ export function PlayerView({
 
       {/* Collapsible Drawer 1: Live Sound Tweaks, Genre Switcher, Audio Engine & 15s Reaction Test */}
       {openDrawer === 'tune' && (
-        <div className="animate-step glass-card rounded-3xl p-5 sm:p-6 space-y-5">
+        <div className="animate-step glass-card rounded-2xl p-5 sm:p-6 space-y-5">
           {/* Fine Live Tweaks */}
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white">
-              <Sliders className="h-3.5 w-3.5 text-cyan-300" /> Live Sound Balance
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+              <Sliders className="h-3.5 w-3.5 text-[#34D399]" /> Live Sound Balance
             </span>
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => tweakIntensity(-0.15)}
-                className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
+                className="subtle-chip rounded-lg px-3 py-1.5 text-xs font-medium"
               >
                 Calmer
               </button>
               <button
                 type="button"
                 onClick={() => tweakIntensity(0.15)}
-                className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
+                className="subtle-chip rounded-lg px-3 py-1.5 text-xs font-medium"
               >
                 More drive
               </button>
               <button
                 type="button"
                 onClick={() => tweakModulation(-0.2)}
-                className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
+                className="subtle-chip rounded-lg px-3 py-1.5 text-xs font-medium"
               >
                 Wave −
               </button>
               <button
                 type="button"
                 onClick={() => tweakModulation(0.2)}
-                className="subtle-chip rounded-xl px-3 py-1.5 text-xs font-medium"
+                className="subtle-chip rounded-lg px-3 py-1.5 text-xs font-medium"
               >
                 Wave +
               </button>
@@ -1318,12 +1317,12 @@ export function PlayerView({
           {/* Music Style Switcher */}
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 font-medium text-slate-300">
-                <Music2 className="h-3.5 w-3.5 text-cyan-400" />
+              <span className="inline-flex items-center gap-1.5 font-medium text-[#D4D4CE]">
+                <Music2 className="h-3.5 w-3.5 text-[#34D399]" />
                 Switch Music Style Live
               </span>
               {telemetry.backgroundAudioActive && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-medium text-emerald-300">
+                <span className="inline-flex items-center gap-1 rounded border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 font-mono-tech text-[10px] font-medium text-[#34D399]">
                   <Radio className="h-3 w-3" />
                   Background Audio Ready
                 </span>
@@ -1340,35 +1339,35 @@ export function PlayerView({
                     onClick={() => switchGenre(style)}
                     className={`rounded-xl border px-3 py-2 text-left transition-all ${
                       active
-                        ? 'border-cyan-400/70 bg-cyan-400/14 text-white'
-                        : 'border-slate-800/80 bg-slate-900/50 text-slate-300 hover:border-slate-700 hover:text-white'
+                        ? 'border-emerald-400/55 bg-emerald-400/10 text-[#F3F1EC]'
+                        : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
                     }`}
                   >
                     <div className="text-xs font-semibold">{meta.label}</div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">{meta.shortDesc}</div>
+                    <div className="mt-0.5 text-[10px] text-[#7E7E78]">{meta.shortDesc}</div>
                   </button>
                 );
               })}
               <div
                 aria-disabled="true"
-                className="cursor-not-allowed select-none rounded-xl border border-dashed border-slate-800/80 bg-slate-900/30 px-3 py-2 text-left opacity-70"
+                className="cursor-not-allowed select-none rounded-xl border border-dashed border-white/10 bg-[#0B0C0E] px-3 py-2 text-left opacity-70"
               >
-                <div className="flex items-center justify-between gap-1 text-xs font-semibold text-slate-400">
+                <div className="flex items-center justify-between gap-1 text-xs font-semibold text-[#8E8E88]">
                   <span>Other Styles</span>
-                  <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-400">
+                  <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono-tech text-[8px] font-bold uppercase tracking-wider text-[#A3A39E]">
                     Soon
                   </span>
                 </div>
-                <div className="mt-0.5 text-[10px] text-slate-500">More curated genres coming soon</div>
+                <div className="mt-0.5 text-[10px] text-[#6E6E68]">More curated genres coming soon</div>
               </div>
             </div>
           </div>
 
           {/* Audio Engine Switcher */}
-          <div className="space-y-2 border-t border-slate-800/80 pt-4">
+          <div className="space-y-2 border-t border-white/[0.08] pt-4">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="font-semibold text-cyan-200">Audio Engine</span>
-              <span className="font-mono-tech text-[10px] text-slate-400">
+              <span className="font-semibold text-[#F3F1EC]">Audio Engine</span>
+              <span className="font-mono-tech text-[10px] text-[#8E8E88]">
                 {telemetry.stimulusCarrierLabel}
               </span>
             </div>
@@ -1386,31 +1385,29 @@ export function PlayerView({
                       onClick={() => void handleCarrierSwitch(m)}
                       className={`rounded-xl border px-2.5 py-2 text-left transition ${
                         active
-                          ? 'border-cyan-400/70 bg-cyan-400/18 text-white'
-                          : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-600 hover:text-white'
+                          ? 'border-emerald-400/55 bg-emerald-400/12 text-[#F3F1EC]'
+                          : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
                       }`}
                     >
                       <div className="text-[11px] font-semibold leading-tight">
                         {m === 'generative_live'
-                          ? 'Live Composer'
+                          ? 'Live Synth'
                           : m === 'studio_library'
-                            ? 'Studio Audio'
+                            ? 'Studio Mix'
                             : m === 'pure_stimulus'
-                              ? 'Pure Sound Wave'
+                              ? 'Pure Signal'
                               : connectingLyria
-                                ? 'Connecting…'
-                                : lyriaRealtimeAvailable
-                                  ? 'Lyria Live AI'
-                                  : 'Lyria AI'}
+                                ? 'Syncing…'
+                                : 'Endless Stream'}
                       </div>
-                      <div className="mt-0.5 line-clamp-1 text-[9px] text-slate-400">{info.shortDesc}</div>
+                      <div className="mt-0.5 line-clamp-1 text-[9px] text-[#7E7E78]">{info.shortDesc}</div>
                     </button>
                   );
                 }
               )}
             </div>
             {lyriaNotice && (
-              <div className="rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-1.5 text-[11px] text-indigo-200">
+              <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-100">
                 {lyriaNotice}
               </div>
             )}
@@ -1418,15 +1415,15 @@ export function PlayerView({
 
           {/* Optional 15-Second Reaction Speed Check */}
           {!recommendation.safetyMode && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.05] px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#121417] px-4 py-3">
               <div className="space-y-0.5">
-                <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-200">
-                  <Zap className="h-3.5 w-3.5 text-cyan-300" />
+                <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                  <Zap className="h-3.5 w-3.5 text-[#34D399]" />
                   {pvtPreMs !== null
                     ? `Baseline Recorded: ${pvtPreMs} ms`
                     : 'Optional 15s Reaction Speed Test'}
                 </div>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-[#8E8E88]">
                   {pvtPreMs !== null
                     ? 'Retest at the end to measure your millisecond shift.'
                     : 'Tap 5 quick flashes to measure your speed before vs. after.'}
@@ -1435,9 +1432,9 @@ export function PlayerView({
               <button
                 type="button"
                 onClick={() => setShowPrePvt(true)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/25"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#181A1F] px-3 py-1.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1E2128]"
               >
-                <Zap className="h-3.5 w-3.5" />
+                <Zap className="h-3.5 w-3.5 text-[#34D399]" />
                 {pvtPreMs !== null ? 'Retake' : 'Test Now (15s)'}
               </button>
             </div>
@@ -1447,44 +1444,44 @@ export function PlayerView({
 
       {/* Collapsible Drawer 2: Acoustic Telemetry & Verified Studies */}
       {openDrawer === 'science' && (
-        <div className="animate-step glass-card rounded-3xl p-5 sm:p-6 space-y-5">
+        <div className="animate-step glass-card rounded-2xl p-5 sm:p-6 space-y-5">
           {/* Compact Telemetry Strip */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Wave</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-cyan-300">
+            <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
+              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Wave</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#34D399]">
                 {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz` : `A=${telemetry.tuningA4Hz} Hz`}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Depth</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-indigo-300">
+            <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
+              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Depth</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#F3F1EC]">
                 {Math.round(telemetry.currentModDepth * 100)}%
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Tempo</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-white">
+            <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
+              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Tempo</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#F3F1EC]">
                 {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Beatless'}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Noise Bed</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-slate-200 capitalize">
+            <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
+              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Noise Bed</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#D4D4CE] capitalize">
                 {telemetry.noiseColor === 'none' ? 'Clean' : telemetry.noiseColor.replace('_', ' ')}
               </div>
             </div>
           </div>
 
           {/* Verified Peer-Reviewed Studies */}
-          <div className="space-y-3 border-t border-slate-800/80 pt-4">
-            <div className="flex items-center gap-2 text-cyan-300">
+          <div className="space-y-3 border-t border-white/[0.08] pt-4">
+            <div className="flex items-center gap-2 text-[#34D399]">
               <BookOpen className="h-4 w-4" />
-              <h2 className="text-sm font-semibold text-white">
+              <h2 className="text-sm font-semibold text-[#F3F1EC]">
                 Peer-Reviewed Science Powering This Sound
               </h2>
             </div>
-            <p className="text-xs leading-relaxed text-slate-300">{recommendation.rationale}</p>
+            <p className="text-xs leading-relaxed text-[#A3A39E]">{recommendation.rationale}</p>
 
             {recommendation.executableSpec && (
               <StudyFidelityMatrix spec={recommendation.executableSpec} />
@@ -1497,25 +1494,25 @@ export function PlayerView({
                   href={study.doiOrUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group block rounded-2xl border border-slate-800/90 bg-slate-950/60 p-3.5 space-y-1 transition hover:border-cyan-400/45"
+                  className="group block rounded-xl border border-white/[0.08] bg-[#131417] p-3.5 space-y-1 transition hover:border-emerald-400/45"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="text-[11px] font-semibold text-cyan-300">
+                    <div className="text-[11px] font-semibold text-[#34D399]">
                       {study.authors.split(',')[0]} et al. ({study.year})
                     </div>
-                    <ExternalLink className="h-3 w-3 shrink-0 text-slate-400 group-hover:text-cyan-300" />
+                    <ExternalLink className="h-3 w-3 shrink-0 text-[#7E7E78] group-hover:text-[#34D399]" />
                   </div>
-                  <div className="text-xs font-medium text-white group-hover:text-cyan-100">
+                  <div className="text-xs font-medium text-[#F3F1EC] group-hover:text-white">
                     {study.title}
                   </div>
-                  <p className="text-[11px] leading-relaxed text-slate-400">{study.summary}</p>
+                  <p className="text-[11px] leading-relaxed text-[#8E8E88]">{study.summary}</p>
                 </a>
               ))}
             </div>
 
             {livePapers.length > 0 && (
-              <div className="space-y-2 border-t border-slate-800/80 pt-3">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+              <div className="space-y-2 border-t border-white/[0.08] pt-3">
+                <div className="font-mono-tech text-[10px] font-semibold uppercase tracking-wider text-[#34D399]">
                   Live Matched Studies (NIH PubMed &amp; OpenAlex)
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1525,15 +1522,15 @@ export function PlayerView({
                       href={paper.doiUrl || paper.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="group block rounded-xl border border-emerald-400/20 bg-emerald-500/[0.04] p-3 space-y-1 transition hover:border-emerald-400/50"
+                      className="group block rounded-xl border border-white/[0.08] bg-[#131417] p-3 space-y-1 transition hover:border-emerald-400/45"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono-tech text-[9px] font-semibold uppercase text-emerald-300">
+                        <span className="font-mono-tech text-[9px] font-semibold uppercase text-[#34D399]">
                           {paper.source === 'openalex' ? 'OpenAlex' : 'NIH PubMed'} · {paper.year}
                         </span>
-                        <ExternalLink className="h-3 w-3 shrink-0 text-slate-400 group-hover:text-emerald-300" />
+                        <ExternalLink className="h-3 w-3 shrink-0 text-[#7E7E78] group-hover:text-[#34D399]" />
                       </div>
-                      <div className="text-xs font-medium leading-snug text-white">
+                      <div className="text-xs font-medium leading-snug text-[#F3F1EC]">
                         {paper.title}
                       </div>
                     </a>
@@ -1547,20 +1544,20 @@ export function PlayerView({
 
       {/* 5-Minute Free Preview Complete -> Stripe Pro Unlock Overlay */}
       {previewLocked && !isPro && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/82 p-4 backdrop-blur-md">
-          <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-3xl border border-amber-400/40 p-5 sm:p-7 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/85 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-2xl border border-white/15 p-5 sm:p-7 space-y-5">
             <div className="space-y-2 text-center">
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/45 bg-amber-400/15 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-200">
-                <Lock className="h-3.5 w-3.5" />
+              <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-400/35 bg-amber-400/10 px-2.5 py-1 font-mono-tech text-[10px] font-bold uppercase tracking-wider text-amber-200">
+                <Lock className="h-3 w-3" />
                 5-Minute Free Preview Complete
               </div>
-              <h2 className="font-display text-2xl font-bold text-white sm:text-[1.65rem] leading-tight">
-                Keep this feeling going —{' '}
-                <span className="text-aurora">unlock the full session.</span>
+              <h2 className="font-display text-2xl font-semibold text-[#F3F1EC] sm:text-[1.65rem] leading-tight">
+                Keep this session running.{' '}
+                <span className="text-[#34D399]">Unlock full sessions.</span>
               </h2>
-              <p className="text-xs leading-relaxed text-slate-300 sm:text-sm">
-                Your custom <strong className="text-white">{activeVibeDisplay.label}</strong> +{' '}
-                <strong className="text-cyan-200">{recommendation.arm.name}</strong> mix is tuned
+              <p className="text-xs leading-relaxed text-[#A3A39E] sm:text-sm">
+                Your <strong className="text-[#F3F1EC]">{activeVibeDisplay.label}</strong> and{' '}
+                <strong className="text-[#34D399]">{recommendation.arm.name}</strong> mix is tuned
                 for your full {recommendation.plannedDurationMin}-minute session.
               </p>
             </div>
@@ -1570,52 +1567,52 @@ export function PlayerView({
               <button
                 type="button"
                 onClick={() => setSelectedPaywallPlan('annual')}
-                className={`relative rounded-2xl border p-4 text-left transition ${
+                className={`relative rounded-xl border p-4 text-left transition ${
                   selectedPaywallPlan === 'annual'
-                    ? 'border-amber-400 bg-amber-400/12 shadow-[0_0_24px_rgba(251,191,36,0.18)]'
-                    : 'border-slate-800 bg-slate-950/70 hover:border-slate-600'
+                    ? 'border-amber-400/70 bg-amber-400/10'
+                    : 'border-white/10 bg-[#121316] hover:border-white/25'
                 }`}
               >
-                <span className="absolute -top-2.5 right-3 rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-950">
+                <span className="absolute -top-2.5 right-3 rounded bg-amber-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#0A0B0C]">
                   Save 50%
                 </span>
                 <div className="text-xs font-semibold text-amber-200">Annual Pro</div>
                 <div className="mt-1 flex items-baseline gap-1">
-                  <span className="font-mono-tech text-2xl font-bold text-white">$59</span>
-                  <span className="text-xs text-slate-400">/ year</span>
+                  <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$59</span>
+                  <span className="text-xs text-[#8E8E88]">/ year</span>
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">$4.92/mo · billed yearly</div>
+                <div className="mt-1 text-[11px] text-[#8E8E88]">$4.92/mo · billed yearly</div>
               </button>
 
               <button
                 type="button"
                 onClick={() => setSelectedPaywallPlan('monthly')}
-                className={`rounded-2xl border p-4 text-left transition ${
+                className={`rounded-xl border p-4 text-left transition ${
                   selectedPaywallPlan === 'monthly'
-                    ? 'border-cyan-400 bg-cyan-400/12 shadow-[0_0_24px_rgba(34,211,238,0.18)]'
-                    : 'border-slate-800 bg-slate-950/70 hover:border-slate-600'
+                    ? 'border-emerald-400/70 bg-emerald-400/10'
+                    : 'border-white/10 bg-[#121316] hover:border-white/25'
                 }`}
               >
-                <div className="text-xs font-semibold text-cyan-200">Monthly Pro</div>
+                <div className="text-xs font-semibold text-[#34D399]">Monthly Pro</div>
                 <div className="mt-1 flex items-baseline gap-1">
-                  <span className="font-mono-tech text-2xl font-bold text-white">$9.99</span>
-                  <span className="text-xs text-slate-400">/ month</span>
+                  <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$9.99</span>
+                  <span className="text-xs text-[#8E8E88]">/ month</span>
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">Cancel anytime in 1 click</div>
+                <div className="mt-1 text-[11px] text-[#8E8E88]">Cancel anytime in 1 click</div>
               </button>
             </div>
 
-            <ul className="space-y-1.5 rounded-2xl border border-slate-800/90 bg-slate-950/65 p-3.5 text-xs text-slate-200">
+            <ul className="space-y-1.5 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3.5 text-xs text-[#D4D4CE]">
               <li className="flex items-start gap-2">
-                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <span>Unlimited full-length sessions (15, 30, 45, 60 min — zero cutoffs)</span>
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                <span>Unlimited full-length sessions (15, 30, 45, 60 min with zero cutoffs)</span>
               </li>
               <li className="flex items-start gap-2">
-                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                <span>All 10 curated instrumental styles + Infinite Live AI (never repeats)</span>
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                <span>All 10 curated instrumental styles + Endless Stream (never repeats)</span>
               </li>
               <li className="flex items-start gap-2">
-                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />
                 <span>Real-time oscilloscope proof, Pure Wave audition &amp; Science Study Lab</span>
               </li>
             </ul>
@@ -1645,7 +1642,7 @@ export function PlayerView({
                   setUnlockingCheckout(false);
                 }
               }}
-              className="btn-aurora flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 disabled:opacity-60 sm:text-base"
+              className="btn-aurora flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold disabled:opacity-60 sm:text-base"
             >
               {unlockingCheckout ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1661,22 +1658,22 @@ export function PlayerView({
 
             {/* Viral Share Bonus: Share your 1-of-1 Neural Fingerprint Card -> +30 Min Free Instantly! */}
             {!shareBonusUsedToday && shareBonusSec === 0 && (
-              <div className="rounded-2xl border border-cyan-400/35 bg-gradient-to-r from-cyan-500/[0.10] via-slate-950/90 to-emerald-500/[0.10] p-4 space-y-3">
+              <div className="rounded-xl border border-emerald-400/30 bg-[#0D110F] p-4 space-y-3">
                 <div className="flex items-center gap-3">
                   <NeuralFingerprintSigil
                     seed={shareSeed}
                     size={48}
-                    className="rounded-xl border border-cyan-400/30 bg-slate-950 p-0.5"
+                    className="rounded-lg border border-white/10 bg-[#08090B] p-0.5"
                   />
                   <div className="min-w-0 space-y-0.5 text-left">
-                    <div className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-200">
-                      <Sparkles className="h-3.5 w-3.5 text-emerald-300" />
+                    <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                      <Share2 className="h-3.5 w-3.5 text-[#34D399]" />
                       Want +30 minutes free right now?
                     </div>
-                    <p className="text-[11px] leading-relaxed text-slate-300">
-                      Share your unique <strong className="text-white">1-of-1 Neural Fingerprint</strong>{' '}
-                      card (public QR only — your private login key stays hidden) to unlock{' '}
-                      <strong className="text-emerald-300">+30 extra minutes</strong> instantly.
+                    <p className="text-[11px] leading-relaxed text-[#A3A39E]">
+                      Share your unique <strong className="text-[#F3F1EC]">1-of-1 Neural Fingerprint</strong>{' '}
+                      card (public QR only, your private login key stays hidden) to unlock{' '}
+                      <strong className="text-[#34D399]">+30 extra minutes</strong> instantly.
                     </p>
                   </div>
                 </div>
@@ -1684,12 +1681,12 @@ export function PlayerView({
                   type="button"
                   disabled={sharingForBonus}
                   onClick={() => void handleShareFor30MinBonus()}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-400/50 bg-emerald-400/18 px-4 py-2.5 text-xs font-bold text-emerald-100 transition hover:bg-emerald-400/28 disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-400/45 bg-emerald-400/15 px-4 py-2.5 text-xs font-semibold text-[#F3F1EC] transition hover:bg-emerald-400/25 disabled:opacity-60"
                 >
                   {sharingForBonus ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Share2 className="h-3.5 w-3.5" />
+                    <Share2 className="h-3.5 w-3.5 text-[#34D399]" />
                   )}
                   {sharingForBonus
                     ? 'Preparing Your Fingerprint Card...'
@@ -1699,17 +1696,17 @@ export function PlayerView({
             )}
 
             <div className="flex flex-col items-center gap-2 pt-0.5 text-center">
-              <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+              <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#8E8E88]">
+                <ShieldCheck className="h-3.5 w-3.5 text-[#34D399]" />
                 <span>Secured by Stripe · Instant unlock · Cancel anytime</span>
               </div>
               <button
                 type="button"
                 onClick={handleEndSession}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 underline-offset-2 transition hover:text-cyan-200 hover:underline"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-[#A3A39E] underline-offset-2 transition hover:text-[#34D399] hover:underline"
               >
                 <Crown className="h-3 w-3 opacity-60" />
-                Not now — end preview &amp; rate how I feel
+                Not now, end preview &amp; rate how I feel
               </button>
             </div>
           </div>

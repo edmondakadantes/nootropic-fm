@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, BarChart3, Database, Lock, Sparkles, TrendingUp } from 'lucide-react';
+import { ArrowRight, BarChart3, Database, Lock, TrendingUp } from 'lucide-react';
 import type { CohortIntelligenceCard, GlobalRetentionFunnel } from '../../shared/types';
 import { api } from '../lib/api';
 import { DatasetInquiryModal } from './DatasetInquiryModal';
@@ -97,19 +97,19 @@ export function CohortIntelligenceShowcase({ mode = 'compact' }: CohortIntellige
 
   return (
     <section className="w-full space-y-4">
-      <div className="glass-stage rounded-3xl border border-indigo-400/25 p-5 sm:p-6 space-y-5">
+      <div className="rounded-2xl border border-white/10 bg-[#101114] p-5 sm:p-6 space-y-5">
         {/* Header introducing Psychoacoustic Cohort Intelligence (B2B Data Licensing) */}
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
           <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/35 bg-indigo-500/12 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-200">
-              <Database className="h-3 w-3" />
-              Psychoacoustic Cohort Intelligence · Research &amp; Enterprise Data
+            <div className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-[#15171B] px-2.5 py-1 font-mono-tech text-[10px] font-medium uppercase tracking-wider text-[#A3A39E]">
+              <Database className="h-3 w-3 text-[#34D399]" />
+              Cohort Intelligence · Research &amp; Enterprise Data
             </div>
-            <h2 className="text-lg font-bold text-white sm:text-xl">
-              Real-world state shifts &amp; listening retention —{' '}
-              <span className="text-aurora">measured by profession.</span>
+            <h2 className="text-lg font-semibold text-[#F3F1EC] sm:text-xl">
+              Real-world state shifts &amp; listening retention,{' '}
+              <span className="text-[#34D399]">measured by profession.</span>
             </h2>
-            <p className="max-w-2xl text-xs leading-relaxed text-slate-400">
+            <p className="max-w-2xl text-xs leading-relaxed text-[#A3A39E]">
               Every opted-in anonymous session tracks how far each profession listens (25% → halfway
               → 75% → full finish) and whether the sound shifted their state. Organizations and labs
               can license full k-anonymized cohort reports (zero personal data).
@@ -119,41 +119,41 @@ export function CohortIntelligenceShowcase({ mode = 'compact' }: CohortIntellige
           <button
             type="button"
             onClick={() => setSelectedCohortForModal('Full Multi-Cohort Psychoacoustic Dataset')}
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-cyan-400/45 bg-cyan-400/12 px-4 py-2.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/22"
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-4 py-2.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/45 hover:bg-[#1C1F24]"
           >
-            <Lock className="h-3.5 w-3.5" />
+            <Lock className="h-3.5 w-3.5 text-[#34D399]" />
             License Full Dataset
           </button>
         </div>
 
-        {/* Live Global Retention Funnel Strip (always 100% real D1 data) */}
+        {/* Live Global Retention Funnel Strip */}
         {globalRetention && globalRetention.measuredSessions > 0 && (
-          <div className="rounded-2xl border border-slate-800/90 bg-slate-950/75 p-4 space-y-2.5">
+          <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-4 space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-300">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-[#34D399]">
                 <BarChart3 className="h-3.5 w-3.5" />
                 Live Platform Listening Retention Funnel ({globalRetention.measuredSessions} measured
                 sessions)
               </span>
-              <span className="font-mono-tech text-[11px] text-slate-400">
-                Avg completion: <strong className="text-white">{globalRetention.avgCompletionPct}%</strong>
+              <span className="font-mono-tech text-[11px] text-[#A3A39E]">
+                Avg completion: <strong className="text-[#F3F1EC]">{globalRetention.avgCompletionPct}%</strong>
               </span>
             </div>
             <div className="grid grid-cols-4 gap-2">
               {[
-                { label: 'Stayed 25%+', val: globalRetention.pct25, color: 'text-cyan-300' },
-                { label: 'Reached Halfway (50%+)', val: globalRetention.pct50, color: 'text-indigo-300' },
-                { label: 'Deep Listen (75%+)', val: globalRetention.pct75, color: 'text-purple-300' },
-                { label: 'Finished Full (90%+)', val: globalRetention.pct90, color: 'text-emerald-300' },
+                { label: 'Stayed 25%+', val: globalRetention.pct25, color: 'text-[#D4D4CE]' },
+                { label: 'Halfway (50%+)', val: globalRetention.pct50, color: 'text-[#D4D4CE]' },
+                { label: 'Deep Listen (75%+)', val: globalRetention.pct75, color: 'text-[#F3F1EC]' },
+                { label: 'Finished Full (90%+)', val: globalRetention.pct90, color: 'text-[#34D399]' },
               ].map((step) => (
                 <div
                   key={step.label}
-                  className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-center"
+                  className="rounded-lg border border-white/[0.08] bg-[#141518] px-3 py-2 text-center"
                 >
                   <div className={`font-mono-tech text-lg font-bold ${step.color}`}>
                     {step.val}%
                   </div>
-                  <div className="text-[10px] leading-tight text-slate-400">{step.label}</div>
+                  <div className="text-[10px] leading-tight text-[#8E8E88]">{step.label}</div>
                 </div>
               ))}
             </div>
@@ -167,76 +167,75 @@ export function CohortIntelligenceShowcase({ mode = 'compact' }: CohortIntellige
             return (
               <div
                 key={card.id}
-                className="glass-card flex flex-col justify-between rounded-2xl border border-white/[0.09] p-4 space-y-3"
+                className="flex flex-col justify-between rounded-xl border border-white/[0.08] bg-[#0D0E10] p-4 space-y-3"
               >
                 {/* VISIBLE TEASER TOP HALF */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <span
-                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono-tech text-[9px] font-semibold uppercase tracking-wider ${
+                      className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-mono-tech text-[9px] font-semibold uppercase tracking-wider border ${
                         card.isLiveData
-                          ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
-                          : 'border-amber-400/35 bg-amber-500/10 text-amber-200'
+                          ? 'border-emerald-400/35 bg-emerald-500/10 text-[#34D399]'
+                          : 'border-amber-400/30 bg-amber-500/10 text-amber-200'
                       }`}
                     >
-                      <Sparkles className="h-2.5 w-2.5" />
                       {card.isLiveData
-                        ? `Live D1 · n=${card.sessions}`
+                        ? `Live Cohort · n=${card.sessions}`
                         : 'Sample Report Format'}
                     </span>
-                    <span className="font-mono-tech text-[10px] text-slate-400 truncate">
+                    <span className="font-mono-tech text-[10px] text-[#7E7E78] truncate">
                       {card.studyLabel.split('·')[0].trim()}
                     </span>
                   </div>
 
                   <div>
-                    <div className="text-sm font-bold text-white leading-snug">
+                    <div className="text-sm font-semibold text-[#F3F1EC] leading-snug">
                       {card.fromStateLabel} {card.professionLabel}
                     </div>
-                    <div className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-cyan-300">
+                    <div className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-[#34D399]">
                       <ArrowRight className="h-3 w-3" />
                       <span>{card.toStateLabel}</span>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/[0.07] px-2.5 py-2">
-                      <div className="font-mono-tech text-xl font-bold text-emerald-300">
+                    <div className="rounded-lg border border-white/[0.08] bg-[#141518] px-2.5 py-2">
+                      <div className="font-mono-tech text-xl font-bold text-[#34D399]">
                         {card.successRatePct}%
                       </div>
-                      <div className="text-[10px] text-slate-400">Reported state shift</div>
+                      <div className="text-[10px] text-[#8E8E88]">Reported state shift</div>
                     </div>
-                    <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-2.5 py-2">
-                      <div className="font-mono-tech text-xl font-bold text-cyan-200">
+                    <div className="rounded-lg border border-white/[0.08] bg-[#141518] px-2.5 py-2">
+                      <div className="font-mono-tech text-xl font-bold text-[#F3F1EC]">
                         {card.fullFinishPct}%
                       </div>
-                      <div className="text-[10px] text-slate-400">Stayed to finish</div>
+                      <div className="text-[10px] text-[#8E8E88]">Stayed to finish</div>
                     </div>
                   </div>
                 </div>
 
                 {/* PARTIALLY BLURRED LOCKED B2B DETAILS BOTTOM HALF */}
-                <div className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-950/85 p-3">
+                <div className="relative overflow-hidden rounded-lg border border-white/[0.08] bg-[#090A0B] p-3">
                   <div
                     aria-hidden="true"
                     className="select-none space-y-1.5 blur-[4.5px] opacity-75 pointer-events-none"
                   >
-                    <div className="flex items-center justify-between font-mono-tech text-[10px] text-slate-300">
+                    <div className="flex items-center justify-between font-mono-tech text-[10px] text-[#A3A39E]">
                       <span>25%→50%→75%→90%</span>
                       <span>
                         {card.retentionCurve.pct25}% / {card.retentionCurve.pct50}% /{' '}
                         {card.retentionCurve.pct75}% / {card.retentionCurve.pct90}%
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-[10px] text-cyan-200">
+                    <div className="flex items-center justify-between text-[10px] text-[#D4D4CE]">
                       <span>Winning genre:</span>
                       <span className="font-semibold">{card.blurredPreview.topGenreHint}</span>
                     </div>
-                    <div className="flex items-center justify-between font-mono-tech text-[10px] text-indigo-200">
+                    <div className="flex items-center justify-between font-mono-tech text-[10px] text-[#A3A39E]">
                       <span>Exact DSP:</span>
                       <span>{card.blurredPreview.modulationHint}</span>
                     </div>
-                    <div className="flex items-center justify-between font-mono-tech text-[10px] text-emerald-300">
+                    <div className="flex items-center justify-between font-mono-tech text-[10px] text-[#34D399]">
                       <span>PVT &amp; Control Lift:</span>
                       <span>
                         {card.blurredPreview.avgPvtShiftMs ?? -28} ms · +
@@ -246,16 +245,16 @@ export function CohortIntelligenceShowcase({ mode = 'compact' }: CohortIntellige
                   </div>
 
                   {/* Overlay CTA */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/35 backdrop-blur-[1px] p-2 text-center">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0A0B0C]/45 backdrop-blur-[1px] p-2 text-center">
                     <button
                       type="button"
                       onClick={() => setSelectedCohortForModal(cohortTitle)}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/50 bg-[#070b15]/95 px-3 py-1.5 text-[11px] font-semibold text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.2)] transition hover:border-cyan-300 hover:bg-cyan-400/20"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-[#15171B]/95 px-3 py-1.5 text-[11px] font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1B1E24]"
                     >
-                      <Lock className="h-3 w-3 text-cyan-300" />
+                      <Lock className="h-3 w-3 text-[#34D399]" />
                       Unlock Full Cohort Report
                     </button>
-                    <span className="mt-1 text-[9px] text-slate-400">
+                    <span className="mt-1 text-[9px] text-[#8E8E88]">
                       Retention curve · DSP params · Winning genre
                     </span>
                   </div>
@@ -265,14 +264,14 @@ export function CohortIntelligenceShowcase({ mode = 'compact' }: CohortIntellige
           })}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-3 text-[11px] text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.08] pt-3 text-[11px] text-[#8E8E88]">
           <span className="inline-flex items-center gap-1.5">
-            <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
+            <TrendingUp className="h-3.5 w-3.5 text-[#34D399]" />
             Live cohorts unlock automatically from real opted-in sessions at{' '}
-            <code className="font-mono-tech text-slate-300">n ≥ 5</code> (strict k-anonymity, zero
+            <code className="font-mono-tech text-[#D4D4CE]">n ≥ 5</code> (strict k-anonymity, zero
             PII).
           </span>
-          <span className="font-mono-tech text-[10px] text-slate-500">
+          <span className="font-mono-tech text-[10px] text-[#7E7E78]">
             Active live cohorts: {liveCohorts.length}
           </span>
         </div>

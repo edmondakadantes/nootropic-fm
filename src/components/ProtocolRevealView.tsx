@@ -15,7 +15,6 @@ import {
   Radio,
   Search,
   ShieldAlert,
-  Sparkles,
   Waves,
 } from 'lucide-react';
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
@@ -47,32 +46,32 @@ interface ProtocolRevealViewProps {
 
 const SOURCE_BADGES = {
   generative_live: {
-    label: 'Live Generative · Study-Locked ($0)',
-    cls: 'border-cyan-400/45 bg-cyan-400/14 text-cyan-100',
+    label: 'Live Synth · Study-Locked',
+    cls: 'border-emerald-400/35 bg-emerald-500/10 text-[#34D399]',
   },
   studio_library: {
-    label: 'Instant Studio Library · R2 ($0)',
-    cls: 'border-emerald-400/35 bg-emerald-500/12 text-emerald-200',
+    label: 'Studio Mix',
+    cls: 'border-white/15 bg-[#16181C] text-[#F3F1EC]',
   },
   community_cache: {
-    label: 'Community R2 Cache · Instant',
-    cls: 'border-cyan-400/40 bg-cyan-400/12 text-cyan-200',
+    label: 'Studio Mix · Instant',
+    cls: 'border-white/15 bg-[#16181C] text-[#F3F1EC]',
   },
   live_generating: {
-    label: '2-Speed · Instant Start → Custom Crossfade',
-    cls: 'border-fuchsia-400/40 bg-fuchsia-500/15 text-fuchsia-200',
+    label: 'Custom Track · Blending In',
+    cls: 'border-amber-400/35 bg-amber-500/10 text-amber-200',
   },
   lyria_realtime: {
-    label: 'Google Lyria RealTime · Live WebSocket',
-    cls: 'border-purple-400/45 bg-purple-500/15 text-purple-100',
+    label: 'Endless Stream · Live',
+    cls: 'border-emerald-400/40 bg-emerald-500/12 text-[#34D399]',
   },
   pure_stimulus: {
-    label: 'Pure Acoustic Signal · Zero Music',
-    cls: 'border-amber-400/40 bg-amber-500/15 text-amber-100',
+    label: 'Pure Signal · Zero Music',
+    cls: 'border-amber-400/35 bg-amber-500/10 text-amber-200',
   },
   procedural_fallback: {
-    label: 'Real-Time DSP Fallback',
-    cls: 'border-slate-700 bg-slate-900 text-slate-300',
+    label: 'Real-Time DSP',
+    cls: 'border-white/10 bg-[#141518] text-[#A3A39E]',
   },
 };
 
@@ -100,12 +99,12 @@ function SoundWavePreview({
     const y = 26 + Math.sin(t * Math.PI * 2 * cycles) * amp * (0.45 + 0.55 * envelope);
     points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
   }
-  const strokeColor = safetyMode ? '#fbbf24' : '#22d3ee';
+  const strokeColor = safetyMode ? '#F59E0B' : '#34D399';
 
   return (
-    <div className="rounded-xl border border-cyan-400/20 bg-[#04070f]/90 px-3 py-2">
-      <div className="mb-1 flex items-center justify-between font-mono-tech text-[10px] text-slate-400">
-        <span className="inline-flex items-center gap-1 text-cyan-300">
+    <div className="rounded-xl border border-white/10 bg-[#070809] px-3 py-2">
+      <div className="mb-1 flex items-center justify-between font-mono-tech text-[10px] text-[#8E8E88]">
+        <span className="inline-flex items-center gap-1 text-[#34D399]">
           <Activity className="h-3 w-3" />
           Live DSP Envelope Preview
         </span>
@@ -114,15 +113,14 @@ function SoundWavePreview({
         </span>
       </div>
       <svg viewBox="0 0 320 52" className="h-11 w-full overflow-visible">
-        <line x1="0" y1="26" x2="320" y2="26" stroke="rgba(148,163,184,0.16)" strokeDasharray="3 3" />
+        <line x1="0" y1="26" x2="320" y2="26" stroke="rgba(255,255,255,0.09)" strokeDasharray="3 3" />
         <polyline
           fill="none"
           stroke={strokeColor}
-          strokeWidth="2"
+          strokeWidth="1.8"
           strokeLinecap="round"
           strokeLinejoin="round"
           points={points.join(' ')}
-          className="animate-pulse"
         />
       </svg>
     </div>
@@ -248,27 +246,27 @@ export function ProtocolRevealView({
     return (
       <div className="mx-auto flex max-w-xl flex-col items-center py-6 sm:py-10 space-y-6">
         <div className="flex flex-col items-center text-center">
-          <SonicOrb mood={mood} size="lg" label="Thinking..." />
-          <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/[0.08] px-3 py-1 text-[11px] font-medium text-cyan-200">
-            <Search className="h-3.5 w-3.5 animate-pulse text-cyan-300" />
-            nootropic.fm · Searching Scientific Protocols
+          <SonicOrb mood={mood} size="lg" label="Matching Acoustic Studies" />
+          <div className="mt-4 inline-flex items-center gap-2 font-mono-tech text-[11px] uppercase tracking-[0.14em] text-[#8E8E88]">
+            <Search className="h-3.5 w-3.5 text-[#34D399]" />
+            Searching Scientific Protocols
           </div>
-          <h1 className="animate-rise mt-3 text-2xl font-bold text-white sm:text-3xl">
-            Give me a moment — <span className="text-aurora">searching the science for you...</span>
+          <h1 className="animate-rise mt-2 text-2xl font-semibold text-[#F3F1EC] sm:text-3xl">
+            Matching peer-reviewed acoustics <span className="text-[#34D399]">for your state...</span>
           </h1>
         </div>
 
         {/* Live Conversational Research Trace */}
-        <div className="animate-step glass-stage w-full rounded-3xl border border-cyan-400/25 p-5 sm:p-6 space-y-3.5">
+        <div className="animate-step glass-stage w-full rounded-2xl p-5 sm:p-6 space-y-3.5">
           <div className="flex items-center justify-between text-[11px]">
-            <span className="font-mono-tech uppercase tracking-[0.16em] text-cyan-300/85">
+            <span className="font-mono-tech uppercase tracking-[0.14em] text-[#34D399]">
               Live Research Trace
             </span>
             {recommendation && (
               <button
                 type="button"
                 onClick={() => setRevealedSessionId(recommendation.sessionId)}
-                className="text-slate-400 transition hover:text-cyan-200"
+                className="text-[#A3A39E] transition hover:text-[#F3F1EC]"
               >
                 Skip →
               </button>
@@ -284,23 +282,23 @@ export function ProtocolRevealView({
               return (
                 <div
                   key={st.idx}
-                  className={`flex items-start gap-3 rounded-2xl border px-3.5 py-3 transition-all duration-300 ${
+                  className={`flex items-start gap-3 rounded-xl border px-3.5 py-3 transition-all duration-300 ${
                     isDone
-                      ? 'border-emerald-400/25 bg-emerald-500/[0.05]'
+                      ? 'border-emerald-400/30 bg-emerald-500/[0.06]'
                       : isActive
-                        ? 'border-cyan-400/45 bg-cyan-400/[0.08] shadow-[0_0_20px_rgba(34,211,238,0.12)]'
-                        : 'border-slate-800/70 bg-slate-950/40 opacity-45'
+                        ? 'border-white/25 bg-[#16181C]'
+                        : 'border-white/[0.06] bg-[#0B0C0E] opacity-50'
                   }`}
                 >
                   <div className="mt-0.5 shrink-0">
                     {isDone ? (
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-300">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400/20 text-[#34D399]">
                         <Check className="h-3.5 w-3.5" />
                       </span>
                     ) : isActive ? (
-                      <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />
+                      <Loader2 className="h-5 w-5 animate-spin text-[#34D399]" />
                     ) : (
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-700 text-[10px] text-slate-500">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/15 text-[10px] text-[#7E7E78]">
                         {st.idx + 1}
                       </span>
                     )}
@@ -308,12 +306,12 @@ export function ProtocolRevealView({
                   <div className="min-w-0 flex-1 space-y-1">
                     <div
                       className={`text-xs font-semibold ${
-                        isWaiting ? 'text-slate-500' : 'text-white'
+                        isWaiting ? 'text-[#7E7E78]' : 'text-[#F3F1EC]'
                       }`}
                     >
                       {st.title}
                     </div>
-                    <div className="text-[11px] leading-relaxed text-slate-400">{st.detail}</div>
+                    <div className="text-[11px] leading-relaxed text-[#A3A39E]">{st.detail}</div>
 
                     {/* Real discovered study chips lighting up in Step 2 */}
                     {st.idx === 1 && recommendation && thoughtStep >= 2 && (
@@ -321,7 +319,7 @@ export function ProtocolRevealView({
                         {coreStudies.slice(0, 3).map((s) => (
                           <span
                             key={s.id}
-                            className="font-mono-tech rounded-md border border-cyan-400/30 bg-slate-950/80 px-2 py-0.5 text-[10px] text-cyan-200"
+                            className="font-mono-tech rounded border border-white/12 bg-[#111215] px-2 py-0.5 text-[10px] text-[#D4D4CE]"
                           >
                             {s.authors.split(',')[0]} ({s.year})
                           </span>
@@ -329,7 +327,7 @@ export function ProtocolRevealView({
                         {livePapers.slice(0, 2).map((p) => (
                           <span
                             key={p.pmid}
-                            className="font-mono-tech rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-200"
+                            className="font-mono-tech rounded border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-[#34D399]"
                           >
                             {p.source === 'openalex' ? 'OpenAlex' : 'PubMed'} ({p.year})
                           </span>
@@ -369,40 +367,39 @@ export function ProtocolRevealView({
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      {/* Conversational WOW Header */}
+      {/* Studio Blueprint Header */}
       <div className="animate-rise text-center space-y-2.5">
-        <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/12 px-3.5 py-1 text-[11px] font-semibold text-emerald-300">
-          <Sparkles className="h-3.5 w-3.5" />
+        <div className="inline-flex flex-wrap items-center justify-center gap-1.5 rounded-md border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 font-mono-tech text-[10px] font-semibold uppercase tracking-wider text-[#34D399]">
           Research Complete · {totalStudiesCount} Verified Studies Matched · {profileLine}
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">
-          Here’s what the science found
+        <h1 className="text-2xl font-semibold tracking-tight text-[#F3F1EC] sm:text-4xl">
+          Here is the acoustic blueprint
           {profile?.displayName ? (
             <>
               {' '}
-              for <span className="text-aurora">{profile.displayName}.</span>
+              for <span className="text-[#34D399]">{profile.displayName}.</span>
             </>
           ) : (
             <>
               {' '}
-              <span className="text-aurora">for you.</span>
+              <span className="text-[#34D399]">matched to your state.</span>
             </>
           )}
         </h1>
-        <p className="mx-auto max-w-xl text-xs leading-relaxed text-slate-300 sm:text-sm">
+        <p className="mx-auto max-w-xl text-xs leading-relaxed text-[#A3A39E] sm:text-sm">
           To guide you from{' '}
-          <strong>
+          <strong className="text-[#F3F1EC]">
             {recommendation.microStateLabel ?? STATE_LABELS[recommendation.currentState].split(' ')[0]}
           </strong>{' '}
-          to <strong className="text-cyan-200">{TARGET_LABELS[recommendation.targetState]}</strong> for{' '}
-          <strong>{recommendation.plannedDurationMin} minutes</strong>, here are the peer-reviewed
-          studies I matched and the exact sound layers I will generate for you.
+          to <strong className="text-[#34D399]">{TARGET_LABELS[recommendation.targetState]}</strong> for{' '}
+          <strong className="text-[#F3F1EC]">{recommendation.plannedDurationMin} minutes</strong>, below
+          are the peer-reviewed studies and exact audio synthesis parameters ready for playback.
         </p>
       </div>
 
       {/* Driving Safety Notice */}
       {recommendation.safetyMode && (
-        <div className="animate-rise rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4">
+        <div className="animate-rise rounded-xl border border-amber-400/40 bg-amber-500/10 p-4">
           <div className="flex items-start gap-3">
             <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
             <div className="space-y-1 text-xs text-amber-100">
@@ -418,15 +415,15 @@ export function ProtocolRevealView({
       {/* ================================================================= */}
       {/* BLOCK 1: VERIFIED STUDIES FOUND FIRST (Core DOIs + Live PubMed)   */}
       {/* ================================================================= */}
-      <div className="animate-rise glass-card rounded-3xl border border-cyan-400/25 p-5 sm:p-6 space-y-4">
+      <div className="animate-rise glass-card rounded-2xl border border-white/10 p-5 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-cyan-300">
+          <div className="flex items-center gap-2 text-[#34D399]">
             <BookOpen className="h-5 w-5" />
-            <h2 className="text-base font-bold text-white">
+            <h2 className="text-base font-semibold text-[#F3F1EC]">
               1. Peer-Reviewed Studies Found ({totalStudiesCount} verified sources)
             </h2>
           </div>
-          <span className="font-mono-tech rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-200">
+          <span className="font-mono-tech rounded border border-white/12 bg-[#141518] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#A3A39E]">
             Click any study to verify
           </span>
         </div>
@@ -437,30 +434,30 @@ export function ProtocolRevealView({
             <div
               key={study.id}
               style={{ animationDelay: `${idx * 80}ms` }}
-              className="animate-rise rounded-2xl border border-slate-800/90 bg-slate-950/70 p-4 space-y-2 transition hover:border-cyan-400/40"
+              className="animate-rise rounded-xl border border-white/[0.08] bg-[#131417] p-4 space-y-2 transition hover:border-emerald-400/40"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs font-semibold text-cyan-300">
+                  <div className="text-xs font-semibold text-[#34D399]">
                     {study.authors.split(',')[0]} et al. ({study.year}) · {study.journal}
                   </div>
-                  <div className="mt-0.5 text-sm font-medium text-white">{study.title}</div>
+                  <div className="mt-0.5 text-sm font-medium text-[#F3F1EC]">{study.title}</div>
                 </div>
                 <a
                   href={study.doiOrUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-cyan-400/35 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-400/20"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/15 bg-[#181A1F] px-2.5 py-1 text-[11px] font-semibold text-[#D4D4CE] hover:border-emerald-400/50 hover:text-[#F3F1EC]"
                 >
                   Open Paper
                   <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
 
-              <div className="flex items-start gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/8 px-3 py-2 text-xs text-cyan-100">
-                <Waves className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
+              <div className="flex items-start gap-2 rounded-lg border border-white/[0.06] bg-[#0B0C0E] px-3 py-2 text-xs text-[#D4D4CE]">
+                <Waves className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />
                 <span>
-                  <strong className="text-cyan-200">Sound generated from this study:</strong>{' '}
+                  <strong className="text-[#34D399]">Sound generated from this study:</strong>{' '}
                   {study.soundEffect}
                 </span>
               </div>
@@ -470,8 +467,8 @@ export function ProtocolRevealView({
 
         {/* Live Matched NIH PubMed & OpenAlex Papers */}
         {livePapers.length > 0 && (
-          <div className="space-y-2.5 border-t border-slate-800/80 pt-3.5">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+          <div className="space-y-2.5 border-t border-white/[0.08] pt-3.5">
+            <div className="flex items-center gap-1.5 font-mono-tech text-[11px] font-semibold uppercase tracking-wider text-[#34D399]">
               <Cpu className="h-3.5 w-3.5" />
               Live Matched Literature (NIH PubMed &amp; OpenAlex)
             </div>
@@ -483,25 +480,25 @@ export function ProtocolRevealView({
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ animationDelay: `${(idx + recommendation.studies.length) * 80}ms` }}
-                  className="animate-rise group flex flex-col justify-between rounded-2xl border border-emerald-400/25 bg-emerald-500/[0.04] p-3.5 space-y-2 transition hover:border-emerald-400/55"
+                  className="animate-rise group flex flex-col justify-between rounded-xl border border-white/[0.08] bg-[#131417] p-3.5 space-y-2 transition hover:border-emerald-400/45"
                 >
                   <div>
-                    <div className="flex items-center justify-between gap-2 text-[10px] text-emerald-300">
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-[#34D399]">
                       <span className="font-mono-tech uppercase">
                         {p.source === 'openalex' ? 'OpenAlex · DOI' : `NIH PubMed · ${p.pmid}`} · {p.year}
                       </span>
-                      <ExternalLink className="h-3.5 w-3.5 text-slate-500 group-hover:text-emerald-300" />
+                      <ExternalLink className="h-3.5 w-3.5 text-[#7E7E78] group-hover:text-[#34D399]" />
                     </div>
-                    <div className="mt-1 text-xs font-semibold leading-snug text-white group-hover:text-emerald-100">
+                    <div className="mt-1 text-xs font-semibold leading-snug text-[#F3F1EC] group-hover:text-white">
                       {p.title}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-slate-400">
+                    <div className="mt-0.5 text-[11px] text-[#8E8E88]">
                       {p.authors} · {p.journal}
                     </div>
                   </div>
                   {p.appliedMechanism && (
-                    <div className="rounded-lg bg-slate-950/80 px-2.5 py-1.5 text-[11px] text-cyan-200/90">
-                      <strong className="text-cyan-300">→ Applied:</strong> {p.appliedMechanism}
+                    <div className="rounded-lg bg-[#0B0C0E] px-2.5 py-1.5 text-[11px] text-[#D4D4CE]">
+                      <strong className="text-[#34D399]">→ Applied:</strong> {p.appliedMechanism}
                     </div>
                   )}
                 </a>
@@ -512,16 +509,16 @@ export function ProtocolRevealView({
 
         {/* Executable Study-to-Sound Fidelity Matrix */}
         {recommendation.executableSpec && (
-          <div className="space-y-2.5 border-t border-slate-800/80 pt-3.5">
+          <div className="space-y-2.5 border-t border-white/[0.08] pt-3.5">
             <StudyFidelityMatrix spec={recommendation.executableSpec} compact />
             {onOpenStudyLab && (
               <div className="flex justify-end">
                 <button
                   type="button"
                   onClick={onOpenStudyLab}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/30 bg-cyan-400/8 px-3 py-1.5 text-[11px] font-semibold text-cyan-200 transition hover:border-cyan-400/55 hover:bg-cyan-400/16"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3 py-1.5 text-[11px] font-semibold text-[#D4D4CE] transition hover:border-emerald-400/50 hover:text-[#F3F1EC]"
                 >
-                  <FlaskConical className="h-3.5 w-3.5" />
+                  <FlaskConical className="h-3.5 w-3.5 text-[#34D399]" />
                   <span>Want to execute a different PubMed / DOI study? Open Study Lab →</span>
                 </button>
               </div>
@@ -534,20 +531,20 @@ export function ProtocolRevealView({
       {/* BLOCK 2: EXACT SOUNDS GENERATED & FUSED (LAYER 1 + LAYER 2)       */}
       {/* ================================================================= */}
       <div className="animate-rise delay-75 space-y-2">
-        <div className="px-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          2. Exact Sound Architecture I Will Generate &amp; Fuse Live
+        <div className="px-1 font-mono-tech text-[11px] font-semibold uppercase tracking-wider text-[#8E8E88]">
+          2. Exact Sound Architecture Generated &amp; Fused Live
         </div>
 
         {/* LAYER 1: SCIENTIFIC SIGNAL + WAVE PREVIEW */}
-        <div className="glass-stage rounded-3xl border border-cyan-400/30 p-5 sm:p-6 space-y-4">
+        <div className="glass-stage rounded-2xl border border-white/10 p-5 sm:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="font-mono-tech rounded-lg border border-cyan-400/40 bg-cyan-400/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-200">
-                Layer 1 · Scientific Audio DSP
+              <span className="font-mono-tech rounded border border-emerald-400/35 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
+                Layer 1 · Acoustic DSP
               </span>
-              <span className="text-sm font-bold text-white">{recommendation.arm.name}</span>
+              <span className="text-sm font-semibold text-[#F3F1EC]">{recommendation.arm.name}</span>
             </div>
-            <span className="font-mono-tech text-[11px] text-cyan-300">
+            <span className="font-mono-tech text-[11px] text-[#34D399]">
               {recommendation.params.modulationHz} Hz AM · {recommendation.params.crossoverHz}Hz–{upperKhz}kHz
             </span>
           </div>
@@ -560,46 +557,46 @@ export function ProtocolRevealView({
 
           {/* Exact Sound Parameter Pills */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border border-slate-800/90 bg-slate-950/75 p-2.5">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Cortical AM</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-bold text-cyan-300">
+            <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Cortical AM</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-bold text-[#34D399]">
                 {recommendation.params.modulationHz} Hz
               </div>
-              <div className="text-[10px] text-slate-400">3-Band LR4 clean sub</div>
+              <div className="text-[10px] text-[#8E8E88]">3-Band LR4 clean sub</div>
             </div>
-            <div className="rounded-xl border border-slate-800/90 bg-slate-950/75 p-2.5">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Pulse Tempo</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-bold text-white">
+            <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Pulse Tempo</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-bold text-[#F3F1EC]">
                 {recommendation.params.bpm > 0 ? `${recommendation.params.bpm} BPM` : 'Ambient'}
               </div>
-              <div className="text-[10px] text-slate-400">{energyInfo.label}</div>
+              <div className="text-[10px] text-[#8E8E88]">{energyInfo.label}</div>
             </div>
-            <div className="rounded-xl border border-slate-800/90 bg-slate-950/75 p-2.5">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Noise Floor</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-bold text-indigo-200 capitalize">
+            <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Noise Floor</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-bold text-[#D4D4CE] capitalize">
                 {recommendation.params.noiseColor.replace('_', ' ')}
               </div>
-              <div className="text-[10px] text-slate-400">
+              <div className="text-[10px] text-[#8E8E88]">
                 {Math.round(recommendation.params.noiseLevel * 100)}% stochastic mask
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800/90 bg-slate-950/75 p-2.5">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Iso-Arc</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-bold text-emerald-300">
+            <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Iso-Arc</div>
+              <div className="font-mono-tech mt-0.5 text-sm font-bold text-[#34D399]">
                 {entryMin}m → {peakMin}m → {landingMin}m
               </div>
-              <div className="text-[10px] text-slate-400">Entry · Peak · Land</div>
+              <div className="text-[10px] text-[#8E8E88]">Entry · Peak · Land</div>
             </div>
           </div>
 
-          <p className="text-xs leading-relaxed text-slate-300">{recommendation.rationale}</p>
+          <p className="text-xs leading-relaxed text-[#A3A39E]">{recommendation.rationale}</p>
 
           {recommendation.personalizationSummary && recommendation.personalizationSummary.length > 0 && (
             <div className="flex flex-wrap gap-1.5 text-[11px]">
               {recommendation.personalizationSummary.map((item) => (
                 <span
                   key={item}
-                  className="rounded-lg border border-slate-800 bg-slate-950/75 px-2.5 py-1 text-slate-200"
+                  className="rounded-lg border border-white/[0.08] bg-[#141518] px-2.5 py-1 text-[#D4D4CE]"
                 >
                   {item}
                 </span>
@@ -608,42 +605,42 @@ export function ProtocolRevealView({
           )}
         </div>
 
-        {/* Glowing "+" Fusion Connector */}
+        {/* Connector */}
         <div className="relative flex items-center justify-center py-0.5">
-          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 bg-[#070b15] px-4 py-1 text-[11px] font-semibold text-cyan-200 shadow-[0_0_24px_rgba(34,211,238,0.22)]">
-            <Plus className="h-3.5 w-3.5 text-cyan-300" />
+          <div className="inline-flex items-center gap-2 rounded-md border border-white/12 bg-[#141518] px-3.5 py-1 font-mono-tech text-[10px] uppercase tracking-wider text-[#D4D4CE]">
+            <Plus className="h-3.5 w-3.5 text-[#34D399]" />
             Fused live in real time with your favorite music
           </div>
         </div>
 
         {/* LAYER 2: PREFERRED MUSIC CARRIER */}
-        <div className="glass-stage rounded-3xl border border-indigo-400/30 p-5 sm:p-6 space-y-4">
+        <div className="glass-stage rounded-2xl border border-white/10 p-5 sm:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="font-mono-tech rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-200">
+              <span className="font-mono-tech rounded border border-white/15 bg-[#16181C] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#D4D4CE]">
                 Layer 2 · Your Preferred Music
               </span>
-              <span className="text-sm font-bold text-white">{activeGenreDisplay.label}</span>
+              <span className="text-sm font-semibold text-[#F3F1EC]">{activeGenreDisplay.label}</span>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${sourceBadge.cls}`}>
+              <span className={`inline-flex items-center gap-1 rounded border px-2.5 py-0.5 text-[10px] font-semibold ${sourceBadge.cls}`}>
                 <Radio className="h-3 w-3" />
                 {sourceBadge.label}
               </span>
-              <span className="font-mono-tech rounded-lg border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-indigo-200">
+              <span className="font-mono-tech rounded border border-white/12 bg-[#141518] px-2 py-0.5 text-[10px] text-[#D4D4CE]">
                 {DEVICE_LABELS[recommendation.device]}
               </span>
             </div>
           </div>
 
-          <p className="text-xs leading-relaxed text-slate-300">
-            Preferred lyric-free aesthetics trigger striatal dopamine release (<em>Salimpoor et al. 2011</em>),
-            sustaining attention while verbal working memory stays completely clear (<em>Perham &amp; Currie 2014</em>).
+          <p className="text-xs leading-relaxed text-[#A3A39E]">
+            Preferred lyric-free aesthetics sustain attention (<em>Salimpoor et al. 2011</em>)
+            while keeping verbal working memory completely clear (<em>Perham &amp; Currie 2014</em>).
           </p>
 
           {recommendation.genreAdaptationNote && (
-            <div className="flex items-start gap-2.5 rounded-xl border border-indigo-400/35 bg-indigo-500/10 p-3 text-xs text-indigo-100">
-              <Music2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-300" />
+            <div className="flex items-start gap-2.5 rounded-xl border border-white/10 bg-[#121417] p-3 text-xs text-[#D4D4CE]">
+              <Music2 className="mt-0.5 h-4 w-4 shrink-0 text-[#34D399]" />
               <span>{recommendation.genreAdaptationNote}</span>
             </div>
           )}
@@ -653,13 +650,13 @@ export function ProtocolRevealView({
               <button
                 type="button"
                 onClick={() => setShowPrompt((v) => !v)}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-[#34D399] hover:text-emerald-300"
               >
                 <span>Inspect scientific instrumental prompt for {activeGenreDisplay.label}</span>
                 <ChevronDown className={`h-3.5 w-3.5 transition ${showPrompt ? 'rotate-180' : ''}`} />
               </button>
               {showPrompt && (
-                <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950/80 p-3 font-mono-tech text-[11px] leading-relaxed text-slate-300">
+                <div className="mt-2 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3 font-mono-tech text-[11px] leading-relaxed text-[#D4D4CE]">
                   {recommendation.composedMusicPrompt}
                 </div>
               )}
@@ -668,7 +665,7 @@ export function ProtocolRevealView({
 
           {/* 1-Tap Layer 2 Swap (10 Curated Genres + Other Coming Soon) */}
           <div className="space-y-2 pt-1">
-            <div className="text-[11px] font-medium text-slate-400">
+            <div className="text-[11px] font-medium text-[#8E8E88]">
               Want a different music style? Swap in 1 tap before playing:
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -679,9 +676,9 @@ export function ProtocolRevealView({
                     key={g}
                     type="button"
                     onClick={() => onSwapGenre(g)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
                       active
-                        ? 'border-indigo-400 bg-indigo-500/25 text-white shadow-[0_0_16px_rgba(129,140,248,0.28)]'
+                        ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
                         : 'subtle-chip'
                     }`}
                   >
@@ -693,10 +690,10 @@ export function ProtocolRevealView({
               <span
                 aria-disabled="true"
                 title="More genres & custom styles coming soon"
-                className="inline-flex cursor-not-allowed select-none items-center gap-1 rounded-full border border-dashed border-slate-700/80 bg-slate-900/40 px-3 py-1.5 text-xs font-medium text-slate-500"
+                className="inline-flex cursor-not-allowed select-none items-center gap-1 rounded-lg border border-dashed border-white/12 bg-[#0B0C0E] px-3 py-1.5 text-xs font-medium text-[#6E6E68]"
               >
                 <span>Other</span>
-                <span className="rounded-full border border-slate-700 bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                <span className="rounded border border-white/10 bg-[#141518] px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#8E8E88]">
                   Coming Soon
                 </span>
               </span>
@@ -708,12 +705,12 @@ export function ProtocolRevealView({
       {/* ================================================================= */}
       {/* BLOCK 3: APPLY LAYERS & PLAY CTA (+ Expandable Formula Facts)     */}
       {/* ================================================================= */}
-      <div className="animate-rise delay-150 glass-stage rounded-3xl p-5 sm:p-6 space-y-4">
+      <div className="animate-rise delay-150 glass-stage rounded-2xl p-5 sm:p-6 space-y-4">
         <div className="flex flex-col items-center gap-3 sm:flex-row">
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center justify-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-4 text-xs font-medium text-slate-300 transition hover:border-slate-600 hover:text-white w-full sm:w-auto"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-[#141518] px-4 py-4 text-xs font-medium text-[#D4D4CE] transition hover:border-white/25 hover:text-[#F3F1EC] w-full sm:w-auto"
           >
             <ArrowLeft className="h-4 w-4" />
             Adjust
@@ -721,17 +718,17 @@ export function ProtocolRevealView({
           <button
             type="button"
             onClick={() => void handleLaunchClick()}
-            className="btn-aurora flex flex-1 w-full items-center justify-center gap-2.5 rounded-2xl px-6 py-4 text-base font-bold text-slate-950"
+            className="btn-aurora flex flex-1 w-full items-center justify-center gap-2.5 rounded-xl px-6 py-4 text-base font-semibold"
           >
-            <Play className="h-5 w-5 fill-slate-950" />
-            Apply Layers &amp; Tune My Mind ({recommendation.plannedDurationMin} min ·{' '}
+            <Play className="h-5 w-5 fill-[#0A0B0C]" />
+            Apply Layers &amp; Start ({recommendation.plannedDurationMin} min ·{' '}
             {activeGenreDisplay.label})
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/80 pt-3 text-[11px] text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.08] pt-3 text-[11px] text-[#8E8E88]">
           <span className="inline-flex items-center gap-1.5">
-            <FlaskConical className="h-3.5 w-3.5 text-purple-400" />
+            <FlaskConical className="h-3.5 w-3.5 text-[#34D399]" />
             {recommendation.ephemeralMode
               ? 'Local-Only Mode (Zero Remote Tracking)'
               : recommendation.isExploration
@@ -741,7 +738,7 @@ export function ProtocolRevealView({
           <button
             type="button"
             onClick={() => setShowFormulaFacts((v) => !v)}
-            className="inline-flex items-center gap-1 font-medium text-cyan-300 hover:text-cyan-200"
+            className="inline-flex items-center gap-1 font-medium text-[#34D399] hover:text-emerald-300"
           >
             <span>Full Audio Formula Facts</span>
             <ChevronDown className={`h-3.5 w-3.5 transition ${showFormulaFacts ? 'rotate-180' : ''}`} />
@@ -749,19 +746,19 @@ export function ProtocolRevealView({
         </div>
 
         {showFormulaFacts && (
-          <div className="animate-step overflow-hidden rounded-2xl border border-cyan-400/25 bg-[#050812]/90">
-            <div className="divide-y divide-slate-800/80">
+          <div className="animate-step overflow-hidden rounded-xl border border-white/12 bg-[#0B0C0E]">
+            <div className="divide-y divide-white/[0.06]">
               {recommendation.formulaIngredients.map((ing) => (
                 <div
                   key={ing.role}
                   className="grid grid-cols-1 gap-1 px-4 py-2.5 sm:grid-cols-12 sm:items-center sm:gap-2"
                 >
-                  <div className="font-mono-tech text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:col-span-3">
+                  <div className="font-mono-tech text-[10px] font-semibold uppercase tracking-wider text-[#8E8E88] sm:col-span-3">
                     {ing.role}
                   </div>
-                  <div className="text-xs font-semibold text-white sm:col-span-4">{ing.compound}</div>
-                  <div className="font-mono-tech text-xs text-cyan-300 sm:col-span-3">{ing.dose}</div>
-                  <div className="text-[10px] text-slate-400 sm:col-span-2 sm:text-right">
+                  <div className="text-xs font-semibold text-[#F3F1EC] sm:col-span-4">{ing.compound}</div>
+                  <div className="font-mono-tech text-xs text-[#34D399] sm:col-span-3">{ing.dose}</div>
+                  <div className="text-[10px] text-[#8E8E88] sm:col-span-2 sm:text-right">
                     {ing.evidenceTag}
                   </div>
                 </div>

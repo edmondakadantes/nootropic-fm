@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Compass, Crosshair, Sparkles } from 'lucide-react';
+import { Compass, Crosshair } from 'lucide-react';
 import {
   NEURAL_MICRO_STATES,
   TARGET_COORDS,
@@ -79,29 +79,25 @@ export function NeuralCompassSelector({
   const cursorLeft = coords ? `${coords.clarity}%` : '50%';
   const cursorTop = coords ? `${100 - coords.energy}%` : '50%';
 
-  // Dynamic quadrant aura color
+  // Dynamic studio crosshair accent (amber only for stressed/high-tension quadrant, phosphor emerald otherwise)
   const cursorColor = !coords
-    ? '#22d3ee'
+    ? '#34D399'
     : coords.clarity < 48 && coords.energy >= 55
-      ? '#fb7185' // Top-Left: rose/amber tension
-      : coords.clarity < 48 && coords.energy < 55
-        ? '#818cf8' // Bottom-Left: indigo depleted/fog
-        : coords.energy >= 52
-          ? '#22d3ee' // Top-Right: cyan activated/clear
-          : '#34d399'; // Bottom-Right: emerald calm/grounded
+      ? '#F59E0B'
+      : '#34D399';
 
   return (
     <div className="space-y-3">
       {/* Header label */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-        <span className="inline-flex items-center gap-1.5 font-mono-tech uppercase tracking-[0.14em] text-cyan-300/90">
+        <span className="inline-flex items-center gap-1.5 font-mono-tech uppercase tracking-[0.14em] text-[#34D399]">
           <Compass className="h-3.5 w-3.5" />
           2D Neural State Map · Touch or Drag Anywhere
         </span>
-        <span className="text-[10px] text-slate-500">Russell Circumplex (Arousal × Clarity)</span>
+        <span className="text-[10px] text-[#7E7E78]">Russell Circumplex (Arousal × Clarity)</span>
       </div>
 
-      {/* Interactive 2D Bioluminescent Radar Field (Spacious & Easy to Tap) */}
+      {/* Interactive 2D Studio Vector Grid */}
       <div
         ref={padRef}
         onPointerDown={handlePointerDown}
@@ -110,31 +106,23 @@ export function NeuralCompassSelector({
         onPointerCancel={handlePointerUp}
         role="application"
         aria-label="Interactive 2D Neural State Compass"
-        className="relative h-[400px] w-full touch-none select-none overflow-hidden rounded-2xl border border-slate-700/80 bg-[#040711] cursor-crosshair sm:h-[460px]"
+        className="relative h-[400px] w-full touch-none select-none overflow-hidden rounded-xl border border-white/12 bg-[#08090B] cursor-crosshair sm:h-[460px]"
       >
-        {/* 4 Subtle Quadrant Ambiance Gradients */}
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(circle at 12% 14%, rgba(251,113,133,0.16), transparent 46%), ' +
-              'radial-gradient(circle at 14% 88%, rgba(99,102,241,0.18), transparent 48%), ' +
-              'radial-gradient(circle at 88% 14%, rgba(34,211,238,0.16), transparent 46%), ' +
-              'radial-gradient(circle at 86% 86%, rgba(52,211,153,0.15), transparent 48%)',
-          }}
-        />
-
-        {/* Concentric Radar Rings & Axes SVG */}
+        {/* Subtle studio X-Y Grid & Concentric Rings */}
         <svg
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
           className="pointer-events-none absolute inset-0 h-full w-full"
         >
-          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(148,163,184,0.15)" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
-          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(148,163,184,0.15)" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
-          <circle cx="50" cy="50" r="18" fill="none" stroke="rgba(148,163,184,0.1)" strokeWidth="0.3" />
-          <circle cx="50" cy="50" r="36" fill="none" stroke="rgba(148,163,184,0.08)" strokeWidth="0.3" />
-          {/* Live Crosshair projection lines (only once user selects a point!) */}
+          <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.03)" strokeWidth="0.25" />
+          <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.03)" strokeWidth="0.25" />
+          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.03)" strokeWidth="0.25" />
+          <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.03)" strokeWidth="0.25" />
+          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.09)" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
+          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.09)" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
+          <circle cx="50" cy="50" r="18" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.3" />
+          <circle cx="50" cy="50" r="36" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="0.3" />
+          {/* Live Crosshair projection lines */}
           {coords && (
             <>
               <line
@@ -143,8 +131,8 @@ export function NeuralCompassSelector({
                 x2={coords.clarity}
                 y2="100"
                 stroke={cursorColor}
-                strokeOpacity="0.24"
-                strokeWidth="0.3"
+                strokeOpacity="0.32"
+                strokeWidth="0.35"
               />
               <line
                 x1="0"
@@ -152,24 +140,24 @@ export function NeuralCompassSelector({
                 x2="100"
                 y2={100 - coords.energy}
                 stroke={cursorColor}
-                strokeOpacity="0.24"
-                strokeWidth="0.3"
+                strokeOpacity="0.32"
+                strokeWidth="0.35"
               />
             </>
           )}
         </svg>
 
-        {/* Biological Axis Edge Labels (kept flush to edges so cursor never collides) */}
-        <div className="pointer-events-none absolute left-1/2 top-2 z-0 -translate-x-1/2 rounded-full bg-slate-950/75 px-3 py-0.5 font-mono-tech text-[10px] uppercase tracking-[0.14em] text-slate-300/85">
+        {/* Biological Axis Edge Labels */}
+        <div className="pointer-events-none absolute left-1/2 top-2 z-0 -translate-x-1/2 rounded bg-[#0F1013]/90 px-2.5 py-0.5 font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#A3A39E]">
           ▲ High Energy · Wired
         </div>
-        <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2 rounded-full bg-slate-950/75 px-3 py-0.5 font-mono-tech text-[10px] uppercase tracking-[0.14em] text-slate-300/85">
+        <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2 rounded bg-[#0F1013]/90 px-2.5 py-0.5 font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#A3A39E]">
           ▼ Low Energy · Drained
         </div>
-        <div className="pointer-events-none absolute left-2 top-1/2 z-0 -translate-y-1/2 rounded bg-slate-950/65 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-slate-400">
+        <div className="pointer-events-none absolute left-2 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0F1013]/85 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-[#7E7E78]">
           Tense / Fog
         </div>
-        <div className="pointer-events-none absolute right-2 top-1/2 z-0 -translate-y-1/2 rounded bg-slate-950/65 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-slate-400">
+        <div className="pointer-events-none absolute right-2 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0F1013]/85 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-[#7E7E78]">
           Clear / Open
         </div>
 
@@ -189,17 +177,17 @@ export function NeuralCompassSelector({
               className="group absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 p-2 focus:outline-none"
             >
               <span
-                className={`h-2.5 w-2.5 rounded-full transition-all ${
+                className={`h-2 w-2 rounded-full transition-all ${
                   isSelected
                     ? 'opacity-0'
-                    : 'bg-slate-300/80 group-hover:scale-125 group-hover:bg-cyan-300'
+                    : 'bg-[#8E8E88] group-hover:scale-125 group-hover:bg-[#34D399]'
                 }`}
               />
               <span
                 className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium transition ${
                   isSelected
-                    ? 'translate-y-4 bg-slate-950/95 text-white ring-1 ring-white/25'
-                    : 'text-slate-300/90 group-hover:bg-slate-950/90 group-hover:text-cyan-200'
+                    ? 'translate-y-4 bg-[#141518] text-[#F3F1EC] ring-1 ring-white/25'
+                    : 'text-[#A3A39E] group-hover:bg-[#141518] group-hover:text-[#F3F1EC]'
                 }`}
               >
                 {st.shortLabel}
@@ -208,7 +196,7 @@ export function NeuralCompassSelector({
           );
         })}
 
-        {/* Active Draggable Bioluminescent Orb (only shown after user taps/drags!) */}
+        {/* Active Draggable Crosshair */}
         {coords ? (
           <div
             style={{
@@ -219,28 +207,21 @@ export function NeuralCompassSelector({
             className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
           >
             <span
-              className="absolute -inset-4 rounded-full opacity-35 blur-md"
+              className="relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#F3F1EC]"
               style={{ backgroundColor: cursorColor }}
-            />
-            <span
-              className="relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-white shadow-lg"
-              style={{
-                backgroundColor: cursorColor,
-                boxShadow: `0 0 22px ${cursorColor}`,
-              }}
             >
-              <Crosshair className="h-3.5 w-3.5 text-slate-950" />
+              <Crosshair className="h-3.5 w-3.5 text-[#0A0B0C]" />
             </span>
           </div>
         ) : (
-          <div className="pointer-events-none absolute left-1/2 top-9 z-10 -translate-x-1/2 rounded-full border border-cyan-400/35 bg-slate-950/85 px-3.5 py-1 text-[11px] font-medium text-cyan-200/95 backdrop-blur-sm">
+          <div className="pointer-events-none absolute left-1/2 top-9 z-10 -translate-x-1/2 rounded-md border border-white/15 bg-[#121417]/95 px-3 py-1 text-[11px] font-medium text-[#D4D4CE]">
             Tap or drag anywhere on the map
           </div>
         )}
       </div>
 
       {/* Live Neural Readout Card + Nearby Nuanced Micro-States */}
-      <div className="rounded-2xl border border-cyan-400/25 bg-slate-950/75 p-3.5 space-y-3">
+      <div className="rounded-xl border border-white/10 bg-[#0D0E10] p-3.5 space-y-3">
         {selectedState && coords ? (
           <>
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -248,19 +229,19 @@ export function NeuralCompassSelector({
                 <div className="flex items-center gap-2">
                   <span
                     className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: cursorColor, boxShadow: `0 0 10px ${cursorColor}` }}
+                    style={{ backgroundColor: cursorColor }}
                   />
-                  <span className="text-sm font-bold text-white">{selectedState.label}</span>
+                  <span className="text-sm font-semibold text-[#F3F1EC]">{selectedState.label}</span>
                 </div>
-                <div className="font-mono-tech text-[10px] text-slate-400">
-                  Energy <span className="text-cyan-300">{coords.energy}%</span> · Clarity{' '}
-                  <span className="text-indigo-300">{coords.clarity}%</span>
+                <div className="font-mono-tech text-[10px] text-[#8E8E88]">
+                  Energy <span className="text-[#34D399]">{coords.energy}%</span> · Clarity{' '}
+                  <span className="text-[#F3F1EC]">{coords.clarity}%</span>
                 </div>
               </div>
 
-              {/* Compact Auto-Calibrated Baseline 1-5 (editable with 1 tap) */}
+              {/* Compact Auto-Calibrated Baseline 1-5 */}
               <div className="flex items-center gap-1">
-                <span className="mr-1 text-[10px] text-slate-400">Baseline:</span>
+                <span className="mr-1 text-[10px] text-[#8E8E88]">Baseline:</span>
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
                     key={n}
@@ -268,8 +249,8 @@ export function NeuralCompassSelector({
                     onClick={() => onChangeBaseline(n)}
                     className={`h-7 w-7 rounded-lg border font-mono-tech text-[11px] font-bold transition ${
                       baselineScore === n
-                        ? 'border-cyan-400 bg-cyan-400/20 text-white'
-                        : 'border-slate-800 bg-slate-900/70 text-slate-500 hover:border-slate-600 hover:text-slate-300'
+                        ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
+                        : 'border-white/[0.08] bg-[#141518] text-[#7E7E78] hover:border-white/25 hover:text-[#D4D4CE]'
                     }`}
                   >
                     {n}
@@ -278,27 +259,26 @@ export function NeuralCompassSelector({
               </div>
             </div>
 
-            {/* Subtle DSP preview for this exact state */}
-            <p className="text-[11px] leading-relaxed text-cyan-200/85">
-              <Sparkles className="mr-1 inline h-3 w-3 text-cyan-300" />
+            {/* Subtle DSP preview */}
+            <p className="font-mono-tech text-[11px] leading-relaxed text-[#A3A39E]">
               {selectedState.dspNote}
             </p>
           </>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="space-y-0.5">
-              <div className="text-xs font-semibold text-white">No state selected yet</div>
-              <div className="text-[11px] text-slate-400">
+              <div className="text-xs font-semibold text-[#F3F1EC]">No state selected yet</div>
+              <div className="text-[11px] text-[#8E8E88]">
                 Tap any point on the 2D map above, describe how you feel, or choose a state below.
               </div>
             </div>
           </div>
         )}
 
-        {/* Quick / Nearby Micro-States + 1-Tap Expand All 19 States */}
-        <div className="space-y-1.5 border-t border-slate-800/80 pt-2.5">
+        {/* Quick / Nearby Micro-States + Expand All 19 States */}
+        <div className="space-y-1.5 border-t border-white/[0.08] pt-2.5">
           <div className="flex items-center justify-between gap-2 text-[10px]">
-            <span className="font-medium text-slate-500">
+            <span className="font-medium text-[#7E7E78]">
               {showAllStates
                 ? `All ${NEURAL_MICRO_STATES.length} neural states (tap any):`
                 : selectedState
@@ -308,7 +288,7 @@ export function NeuralCompassSelector({
             <button
               type="button"
               onClick={() => setShowAllStates((v) => !v)}
-              className="font-medium text-cyan-300 hover:text-cyan-200"
+              className="font-medium text-[#34D399] hover:text-emerald-300"
             >
               {showAllStates
                 ? selectedState
@@ -325,10 +305,10 @@ export function NeuralCompassSelector({
                   key={st.id}
                   type="button"
                   onClick={() => onSelectMicroState(st)}
-                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                  className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
                     active
-                      ? 'border-cyan-400/80 bg-cyan-400/18 text-white'
-                      : 'border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-600 hover:text-white'
+                      ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
+                      : 'border-white/[0.08] bg-[#141518] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
                   }`}
                 >
                   {st.label}
@@ -369,26 +349,26 @@ export function NeuralTrajectoryPreview({
   const my = Math.max(8, Math.min(92, (y1 + y2) / 2 - 10));
 
   return (
-    <div className="rounded-2xl border border-cyan-400/25 bg-[#050814]/90 p-3.5 space-y-2">
-      <div className="flex items-center justify-between font-mono-tech text-[10px] text-slate-400">
-        <span className="uppercase tracking-[0.14em] text-cyan-300">
-          Neural Trajectory Vector (Iso-Principle)
+    <div className="rounded-xl border border-white/12 bg-[#0B0C0E] p-3.5 space-y-2">
+      <div className="flex items-center justify-between font-mono-tech text-[10px] text-[#8E8E88]">
+        <span className="uppercase tracking-[0.14em] text-[#34D399]">
+          State Vector (Iso-Principle)
         </span>
         <span>
           ({fromCoords.energy}%, {fromCoords.clarity}%) → ({dest.energy}%, {dest.clarity}%)
         </span>
       </div>
 
-      <div className="relative h-28 w-full overflow-hidden rounded-xl border border-slate-800/80 bg-[#03060e]">
+      <div className="relative h-28 w-full overflow-hidden rounded-lg border border-white/[0.08] bg-[#08090B]">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
           <defs>
             <linearGradient id="nfmVectorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#818cf8" />
-              <stop offset="100%" stopColor="#22d3ee" />
+              <stop offset="0%" stopColor="#A3A39E" />
+              <stop offset="100%" stopColor="#34D399" />
             </linearGradient>
           </defs>
-          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(148,163,184,0.12)" strokeWidth="0.4" />
-          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(148,163,184,0.12)" strokeWidth="0.4" />
+          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.07)" strokeWidth="0.4" />
+          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.07)" strokeWidth="0.4" />
           <path
             d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
             fill="none"
@@ -403,8 +383,8 @@ export function NeuralTrajectoryPreview({
           style={{ left: `${x1}%`, top: `${y1}%` }}
           className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1"
         >
-          <span className="h-3 w-3 rounded-full border border-white bg-indigo-400 shadow-[0_0_12px_rgba(129,140,248,0.9)]" />
-          <span className="whitespace-nowrap rounded bg-slate-950/90 px-1.5 py-0.5 text-[9px] font-medium text-indigo-200">
+          <span className="h-2.5 w-2.5 rounded-full border border-[#F3F1EC] bg-[#A3A39E]" />
+          <span className="whitespace-nowrap rounded bg-[#121316]/95 px-1.5 py-0.5 text-[9px] font-medium text-[#D4D4CE]">
             Now: {fromLabel}
           </span>
         </div>
@@ -414,14 +394,14 @@ export function NeuralTrajectoryPreview({
           style={{ left: `${x2}%`, top: `${y2}%` }}
           className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1"
         >
-          <span className="h-3.5 w-3.5 rounded-full border-2 border-white bg-cyan-400 shadow-[0_0_16px_rgba(34,211,238,0.95)] animate-pulse" />
-          <span className="whitespace-nowrap rounded bg-slate-950/90 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-200">
+          <span className="h-3 w-3 rounded-full border-2 border-[#F3F1EC] bg-[#34D399]" />
+          <span className="whitespace-nowrap rounded bg-[#121316]/95 px-1.5 py-0.5 text-[9px] font-semibold text-[#34D399]">
             Goal: {dest.label}
           </span>
         </div>
       </div>
 
-      <p className="text-[11px] text-slate-300">
+      <p className="text-[11px] text-[#A3A39E]">
         {describeIsoVector(fromCoords, targetState, durationMin)}
       </p>
     </div>

@@ -11,9 +11,10 @@ import {
   Mic,
   MicOff,
   Music2,
+  Play,
   QrCode,
   ShieldCheck,
-  Sparkles,
+  SlidersHorizontal,
   Volume2,
   X,
 } from 'lucide-react';
@@ -574,16 +575,16 @@ export function CheckInView({
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center space-y-5">
-      {/* Selected Mood Goal Pill (when arriving from one of the 4 Hero quick shifts) */}
+      {/* Selected Mood Goal Pill */}
       {initialPreset && (
-        <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-400/35 bg-emerald-500/[0.08] px-4 py-2.5 text-xs text-emerald-100 backdrop-blur-md">
+        <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/[0.06] px-4 py-2.5 text-xs text-[#D4D4CE]">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+            <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
             <span>
-              Selected shift: <strong className="text-white">{initialPreset.label}</strong>
+              Selected shift: <strong className="text-[#F3F1EC]">{initialPreset.label}</strong>
               {beat === 1
                 ? ' · Quick profile, then pick your music'
-                : ' · Pick or type your favorite music below'}
+                : ' · Pick your favorite music below'}
             </span>
           </div>
           <button
@@ -592,30 +593,30 @@ export function CheckInView({
               onClearPreset?.();
               setBeat(2);
             }}
-            className="text-[11px] font-semibold text-emerald-300 underline-offset-2 hover:text-white hover:underline"
+            className="text-[11px] font-semibold text-[#34D399] underline-offset-2 hover:text-[#F3F1EC] hover:underline"
           >
             Edit mood
           </button>
         </div>
       )}
 
-      {/* Returning Listener Neural Fingerprint Identity Bar */}
+      {/* Returning Listener Identity Bar */}
       {profile && (
-        <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-cyan-400/25 bg-cyan-400/[0.06] px-4 py-2.5 backdrop-blur-md">
+        <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/10 bg-[#101114] px-4 py-2.5">
           <div className="flex items-center gap-2.5 min-w-0">
             <NeuralFingerprintSigil
               seed={syncCode || profile.id}
               size={38}
-              className="rounded-xl border border-cyan-400/25 bg-slate-950/80 p-0.5"
+              className="rounded-lg border border-white/10 bg-[#08090B] p-0.5"
             />
             <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-white">
+              <div className="truncate text-xs font-semibold text-[#F3F1EC]">
                 {profile.displayName ? `Welcome back, ${profile.displayName}` : 'Welcome back'}
-                <span className="ml-2 font-mono-tech text-[10px] font-normal text-cyan-300">
+                <span className="ml-2 font-mono-tech text-[10px] font-normal text-[#34D399]">
                   {liveProfileSummary}
                 </span>
               </div>
-              <div className="text-[10px] text-slate-400">
+              <div className="text-[10px] text-[#7E7E78]">
                 Neural Fingerprint active · {profile.sessionCount ?? 0} sessions tuned
               </div>
             </div>
@@ -623,26 +624,26 @@ export function CheckInView({
           <button
             type="button"
             onClick={onOpenIdentityModal}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/35 bg-slate-900/90 px-3 py-1.5 text-[11px] font-semibold text-cyan-200 transition hover:bg-cyan-400/15"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3 py-1.5 text-[11px] font-semibold text-[#D4D4CE] transition hover:border-white/30 hover:text-[#F3F1EC]"
           >
-            <QrCode className="h-3.5 w-3.5 text-cyan-300" />
+            <QrCode className="h-3.5 w-3.5 text-[#34D399]" />
             Neural Pass &amp; QR
           </button>
         </div>
       )}
 
-      {/* Deferred Debrief Banner (returning users — ONLY shown for sessions listened >= 60s!) */}
+      {/* Deferred Debrief Banner (returning users) */}
       {pendingDebrief && (
-        <div className="animate-rise w-full flex flex-col justify-between gap-3 rounded-2xl border border-amber-400/35 bg-amber-500/10 p-4 backdrop-blur-md sm:flex-row sm:items-center">
+        <div className="animate-rise w-full flex flex-col justify-between gap-3 rounded-xl border border-amber-400/35 bg-amber-500/10 p-4 sm:flex-row sm:items-center">
           <div className="flex items-start gap-3">
-            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+            <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
             <div>
               <div className="text-sm font-semibold text-amber-100">
                 Unrated previous session ({pendingDebrief.armName})
               </div>
               <p className="text-xs text-amber-200/80">
-                10 seconds: tell us how your {Math.max(1, Math.round(pendingDebrief.actualDurationSec / 60))}-min
-                session worked so your Neural Identity keeps getting smarter.
+                10 seconds: rate how your {Math.max(1, Math.round(pendingDebrief.actualDurationSec / 60))}-min
+                session worked so your profile keeps adapting.
               </p>
             </div>
           </div>
@@ -650,7 +651,7 @@ export function CheckInView({
             <button
               type="button"
               onClick={onOpenPendingDebrief}
-              className="rounded-xl bg-amber-400 px-3.5 py-2 text-xs font-bold text-slate-950 transition hover:bg-amber-300"
+              className="rounded-lg bg-amber-400 px-3.5 py-2 text-xs font-bold text-[#0A0B0C] transition hover:bg-amber-300"
             >
               Rate now
             </button>
@@ -666,70 +667,65 @@ export function CheckInView({
         </div>
       )}
 
-      {/* Centerpiece Sonic Orb + Live Guide Question */}
+      {/* Calibration Header & Live Step Prompt */}
       <div className="animate-rise flex flex-col items-center text-center">
         <SonicOrb
           mood={activeMood}
           size={beat === 1 || (!isFirstVisit && beat === 2) ? 'lg' : 'sm'}
-          label="Tune your mind"
+          label={`Step ${visibleStepNum} of ${totalBeats} · Acoustic Calibration`}
         />
-
-        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-400/[0.07] px-3 py-1 text-[11px] font-medium text-cyan-200">
-          <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.9)] animate-pulse" />
-          nootropic.fm · Step {visibleStepNum} of {totalBeats}
-        </div>
 
         {beat === 1 && (
           <>
-            <h1 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-4xl leading-[1.12]">
-              Welcome to <span className="text-aurora">nootropic.fm.</span>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-[#F3F1EC] sm:text-4xl leading-[1.12]">
+              Welcome to <span className="text-[#34D399]">nootropic.fm.</span>
             </h1>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-300 sm:text-base">
-              Before we start — tell me a little about you (age, gender, what you do) so I can build
-              your personal Neural Identity and match the right neuroscience.
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#A3A39E] sm:text-base">
+              Share your age, gender, and what you do so we can calibrate your Neural Identity and
+              match the right acoustic studies.
             </p>
           </>
         )}
 
         {beat === 2 && (
           <>
-            <p className="mt-3 text-xs font-medium text-cyan-300/90">
+            <p className="mt-3 font-mono-tech text-[11px] uppercase tracking-wider text-[#34D399]">
               {isFirstVisit
-                ? `Nice to meet you${displayName.trim() ? `, ${displayName.trim()}` : ''} — ${liveProfileSummary}.`
-                : `Ready to tune your mind${displayName.trim() ? `, ${displayName.trim()}` : ''}?`}
+                ? `${displayName.trim() ? `${displayName.trim()} · ` : ''}${liveProfileSummary}`
+                : `Ready to tune${displayName.trim() ? `, ${displayName.trim()}` : ''}`}
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-4xl leading-[1.12]">
-              How are you <span className="text-aurora">feeling right now?</span>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#F3F1EC] sm:text-4xl leading-[1.12]">
+              How are you <span className="text-[#34D399]">feeling right now?</span>
             </h1>
           </>
         )}
 
         {beat === 3 && (
           <>
-            <p className="mt-3 text-xs font-medium text-cyan-300/90">
-              Got it — {(selectedMicroState ?? DEFAULT_MICRO_STATE).label} (Energy{' '}
+            <p className="mt-3 font-mono-tech text-[11px] text-[#34D399]">
+              Current state: {(selectedMicroState ?? DEFAULT_MICRO_STATE).label} (Energy{' '}
               {(neuralCoords ?? DEFAULT_MICRO_STATE).energy}% · Clarity{' '}
-              {(neuralCoords ?? DEFAULT_MICRO_STATE).clarity}%).
+              {(neuralCoords ?? DEFAULT_MICRO_STATE).clarity}%)
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl leading-[1.12]">
-              What state do you want to reach, <span className="text-aurora">and for how long?</span>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#F3F1EC] sm:text-3xl leading-[1.12]">
+              What state do you want to reach, <span className="text-[#34D399]">and for how long?</span>
             </h1>
           </>
         )}
 
         {beat === 4 && (
           <>
-            <p className="mt-3 text-xs font-medium text-cyan-300/90">
-              Target locked: {TARGET_LABELS[targetState]} · {durationMin} min · {DEVICE_LABELS[device]}.
+            <p className="mt-3 font-mono-tech text-[11px] text-[#34D399]">
+              Target locked: {TARGET_LABELS[targetState]} · {durationMin} min · {DEVICE_LABELS[device]}
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl leading-[1.12]">
-              What is your favorite <span className="text-aurora">music vibe right now?</span>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#F3F1EC] sm:text-3xl leading-[1.12]">
+              Choose your <span className="text-[#34D399]">music style</span>
             </h1>
           </>
         )}
       </div>
 
-      {/* Progress Bars + Clickable Conversation Breadcrumbs */}
+      {/* Progress Bars + Clickable Breadcrumbs */}
       <div className="flex flex-col items-center gap-2.5 w-full">
         <div className="flex items-center gap-2">
           {(isFirstVisit ? ([1, 2, 3, 4] as const) : ([2, 3, 4] as const)).map((b) => (
@@ -742,22 +738,22 @@ export function CheckInView({
               aria-label={`Beat ${b}`}
               className={`h-1.5 rounded-full transition-all duration-300 ${
                 b === beat
-                  ? 'w-12 bg-gradient-to-r from-cyan-400 to-indigo-400 shadow-[0_0_12px_rgba(34,211,238,0.6)]'
+                  ? 'w-12 bg-[#34D399]'
                   : b < beat
-                    ? 'w-7 bg-emerald-400/55 hover:bg-emerald-400/80'
-                    : 'w-5 bg-slate-700/70'
+                    ? 'w-7 bg-emerald-400/50 hover:bg-emerald-400/80'
+                    : 'w-5 bg-white/15'
               }`}
             />
           ))}
         </div>
 
-        {/* Soft conversation breadcrumb strip showing collected answers */}
+        {/* Soft breadcrumb strip showing collected answers */}
         {beat > 1 && (
           <div className="flex flex-wrap items-center justify-center gap-1.5 text-[11px]">
             <button
               type="button"
               onClick={() => (isFirstVisit ? setBeat(1) : onOpenIdentityModal())}
-              className="rounded-full border border-slate-700/80 bg-slate-900/70 px-2.5 py-0.5 text-slate-300 transition hover:border-cyan-400/50 hover:text-white"
+              className="rounded-md border border-white/12 bg-[#141518] px-2.5 py-0.5 text-[#D4D4CE] transition hover:border-white/30 hover:text-[#F3F1EC]"
             >
               {displayName.trim() ? `${displayName.trim()} · ` : ''}
               {liveProfileSummary}
@@ -766,7 +762,7 @@ export function CheckInView({
               <button
                 type="button"
                 onClick={() => setBeat(2)}
-                className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-0.5 text-cyan-200 transition hover:bg-cyan-400/20"
+                className="rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-0.5 text-[#34D399] transition hover:bg-emerald-500/20"
               >
                 Now: {selectedMicroState.shortLabel} ({neuralCoords.energy}% / {neuralCoords.clarity}%)
               </button>
@@ -775,7 +771,7 @@ export function CheckInView({
               <button
                 type="button"
                 onClick={() => setBeat(3)}
-                className="rounded-full border border-indigo-400/30 bg-indigo-500/15 px-2.5 py-0.5 text-indigo-200 transition hover:bg-indigo-500/25"
+                className="rounded-md border border-white/15 bg-[#181A1F] px-2.5 py-0.5 text-[#F3F1EC] transition hover:border-white/30"
               >
                 Goal: {TARGET_LABELS[targetState]} · {durationMin}m
               </button>
@@ -788,17 +784,17 @@ export function CheckInView({
       {/* BEAT 1: WELCOME & NEURAL IDENTITY PROFILE (First-time visitors only) */}
       {/* ===================================================================== */}
       {beat === 1 && (
-        <div key="beat-1" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
+        <div key="beat-1" className="animate-step glass-stage w-full rounded-2xl p-5 sm:p-7 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-            <span className="font-mono-tech uppercase tracking-[0.16em] text-cyan-300/85">
+            <span className="font-mono-tech uppercase tracking-[0.14em] text-[#34D399]">
               01 / 04 · Create Your Neural Identity (Saved Once)
             </span>
             <button
               type="button"
               onClick={onOpenIdentityModal}
-              className="inline-flex items-center gap-1 font-medium text-cyan-300 hover:text-cyan-200"
+              className="inline-flex items-center gap-1 font-medium text-[#D4D4CE] hover:text-[#34D399]"
             >
-              <KeyRound className="h-3 w-3" />
+              <KeyRound className="h-3 w-3 text-[#34D399]" />
               Have a Sync Key? Restore
             </button>
           </div>
@@ -806,7 +802,7 @@ export function CheckInView({
           {/* Natural text/voice intro box */}
           <div className="space-y-2">
             <div className="glow-input-wrap">
-              <div className="relative flex items-start rounded-[1rem] bg-[#060a14]/95">
+              <div className="relative flex items-start rounded-[0.8rem] bg-[#0B0C0E]">
                 <textarea
                   rows={2}
                   value={introText}
@@ -817,16 +813,16 @@ export function CheckInView({
                       handleAdvanceFromBeat1();
                     }
                   }}
-                  placeholder='Introduce yourself naturally — e.g. "I’m Alex, 40 years old male, programmer" (or use the quick buttons below)'
-                  className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder-slate-500/80 focus:outline-none sm:text-base"
+                  placeholder='Introduce yourself naturally, e.g. "I am Alex, 40 years old male, programmer" (or use buttons below)'
+                  className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-[#F3F1EC] placeholder-[#5F605C] focus:outline-none sm:text-base"
                 />
                 <button
                   type="button"
                   onClick={() => toggleVoiceForBeat(1)}
-                  className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all ${
+                  className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-lg border transition-all ${
                     listeningBeat === 1
                       ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
-                      : 'border-slate-700/70 bg-slate-900/80 text-cyan-300 hover:border-cyan-400/50 hover:bg-cyan-400/10'
+                      : 'border-white/12 bg-[#141518] text-[#34D399] hover:border-emerald-400/50 hover:bg-[#191B1F]'
                   }`}
                   title="Speak your introduction"
                 >
@@ -836,36 +832,36 @@ export function CheckInView({
             </div>
 
             {introText.trim().length > 0 && (
-              <div className="flex items-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-xs text-slate-200">
-                <Cpu className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-500/[0.06] px-3 py-2 text-xs text-[#D4D4CE]">
+                <Cpu className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
                 <span>
-                  <strong className="text-cyan-300">nootropic.fm:</strong> Got it
-                  {displayName.trim() ? `, ${displayName.trim()}` : ''} —{' '}
-                  <strong className="text-white">{liveProfileSummary}</strong>.
+                  <strong className="text-[#34D399]">Detected profile:</strong>{' '}
+                  {displayName.trim() ? `${displayName.trim()}, ` : ''}
+                  <strong className="text-[#F3F1EC]">{liveProfileSummary}</strong>
                 </span>
               </div>
             )}
           </div>
 
-          {/* Structured compact identity controls (synced live with natural text!) */}
+          {/* Structured compact identity controls */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
             <div className="sm:col-span-8">
-              <label className="mb-1 block text-[11px] font-medium text-slate-400">
-                First name / Callsign <span className="text-slate-500">(optional — stay anonymous anytime)</span>
+              <label className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
+                First name / Callsign <span className="text-[#6E6E68]">(optional, anonymous by default)</span>
               </label>
               <input
                 type="text"
                 maxLength={28}
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="e.g. Alex (or leave blank for pure anonymous fingerprint)"
-                className="w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                placeholder="e.g. Alex (or leave blank for anonymous pass)"
+                className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
               />
             </div>
 
             <div className="sm:col-span-4">
-              <label className="mb-1 block text-[11px] font-medium text-slate-400">
-                Age <span className="text-cyan-300">(18+ · required)</span>
+              <label className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
+                Age <span className="text-[#34D399]">(18+ · required)</span>
               </label>
               <input
                 type="number"
@@ -879,15 +875,15 @@ export function CheckInView({
                   setAgeInput(rawVal);
                   setAgeError(null);
                 }}
-                className="font-mono-tech w-full rounded-xl border border-slate-700/80 bg-slate-950/80 px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                className="font-mono-tech w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
               />
             </div>
           </div>
 
-          {/* Gender (required — includes "Prefer not to say") */}
+          {/* Gender */}
           <div className="space-y-1.5">
-            <div className="text-[11px] font-medium text-slate-400">
-              Gender <span className="text-cyan-300">(required)</span>
+            <div className="text-[11px] font-medium text-[#A3A39E]">
+              Gender <span className="text-[#34D399]">(required)</span>
             </div>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {(['male', 'female', 'non_binary', 'prefer_not_to_say'] as UserGender[]).map((g) => (
@@ -900,8 +896,8 @@ export function CheckInView({
                   }}
                   className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
                     gender === g
-                      ? 'border-cyan-400/70 bg-cyan-400/15 text-white'
-                      : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                      ? 'border-emerald-400/60 bg-emerald-400/12 text-[#F3F1EC]'
+                      : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
                   }`}
                 >
                   {GENDER_LABELS[g]}
@@ -910,10 +906,10 @@ export function CheckInView({
             </div>
           </div>
 
-          {/* Primary Work / Archetype (required) */}
+          {/* Primary Work / Archetype */}
           <div className="space-y-2">
-            <div className="text-[11px] font-medium text-slate-400">
-              What best describes your day? <span className="text-cyan-300">(required)</span>
+            <div className="text-[11px] font-medium text-[#A3A39E]">
+              What best describes your day? <span className="text-[#34D399]">(required)</span>
             </div>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {(Object.keys(ROLE_SHORT_LABELS) as UserRole[]).map((r) => (
@@ -933,8 +929,8 @@ export function CheckInView({
                   }}
                   className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
                     role === r
-                      ? 'border-indigo-400/70 bg-indigo-500/18 text-white shadow-[0_0_16px_rgba(129,140,248,0.2)]'
-                      : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                      ? 'border-emerald-400/60 bg-emerald-400/12 text-[#F3F1EC]'
+                      : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
                   }`}
                 >
                   {ROLE_SHORT_LABELS[r]}
@@ -942,11 +938,10 @@ export function CheckInView({
               ))}
             </div>
 
-            {/* Dedicated Profession Input — required when "Other" is selected */}
             {role === 'other' ? (
-              <div className="animate-step rounded-2xl border border-indigo-400/40 bg-indigo-500/[0.08] p-3 space-y-1.5">
-                <label className="block text-[11px] font-semibold text-indigo-200">
-                  Type your profession or craft <span className="text-cyan-300">(required)</span>:
+              <div className="animate-step rounded-xl border border-emerald-400/35 bg-emerald-500/[0.06] p-3 space-y-1.5">
+                <label className="block text-[11px] font-semibold text-[#F3F1EC]">
+                  Type your profession or craft <span className="text-[#34D399]">(required)</span>:
                 </label>
                 <input
                   type="text"
@@ -958,7 +953,7 @@ export function CheckInView({
                     setAgeError(null);
                   }}
                   placeholder="e.g. Architect, Surgeon, Pilot, Chef, Trader, Musician, Therapist..."
-                  className="w-full rounded-xl border border-indigo-400/35 bg-slate-950/90 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
+                  className="w-full rounded-lg border border-white/15 bg-[#0B0C0E] px-3.5 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
                 />
               </div>
             ) : (
@@ -980,19 +975,19 @@ export function CheckInView({
                             ? 'Software Programmer, Data Analyst'
                             : 'Engineer, Designer, Doctor, Student'
                 })`}
-                className="w-full rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 py-2 text-[11px] text-slate-200 placeholder-slate-500 focus:border-cyan-400/60 focus:outline-none"
+                className="w-full rounded-xl border border-white/[0.08] bg-[#0B0C0E] px-3 py-2 text-[11px] text-[#D4D4CE] placeholder-[#5F605C] focus:border-emerald-400/60 focus:outline-none"
               />
             )}
           </div>
 
           {/* Required Anonymous Profile & QR Sync Opt-In */}
           <label
-            className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-3.5 py-3 text-[11px] leading-relaxed transition ${
+            className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 text-[11px] leading-relaxed transition ${
               researchConsent
-                ? 'border-emerald-400/45 bg-emerald-500/[0.10] text-slate-200'
+                ? 'border-emerald-400/40 bg-emerald-500/[0.08] text-[#D4D4CE]'
                 : ageError && !researchConsent
                   ? 'border-rose-400/70 bg-rose-500/10 text-rose-100'
-                  : 'border-slate-700 bg-slate-950/70 text-slate-300 hover:border-cyan-400/40'
+                  : 'border-white/12 bg-[#0B0C0E] text-[#A3A39E] hover:border-white/25'
             }`}
           >
             <input
@@ -1003,16 +998,15 @@ export function CheckInView({
                 setResearchConsent(e.target.checked);
                 if (e.target.checked) setAgeError(null);
               }}
-              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-slate-600 bg-slate-900 accent-emerald-400"
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-white/20 bg-[#141518] accent-emerald-400"
             />
             <span>
-              <strong className="inline-flex items-center gap-1 text-emerald-300">
+              <strong className="inline-flex items-center gap-1 text-[#34D399]">
                 <ShieldCheck className="h-3.5 w-3.5" /> Save my anonymous profile &amp; QR Sync Code{' '}
-                <span className="text-cyan-300">(required)</span>
+                <span>(required)</span>
               </strong>{' '}
-              — creates a private anonymous Sync Pass (no email, no password) so your sound adapts
-              to you and contributes anonymously to cohort outcomes. You can erase it anytime in
-              Privacy.
+              creates a private anonymous Sync Pass (no email, no password) so the sound adapts
+              over time and contributes anonymously to cohort metrics. Erase anytime in Privacy.
             </span>
           </label>
 
@@ -1025,9 +1019,9 @@ export function CheckInView({
           <button
             type="button"
             onClick={handleAdvanceFromBeat1}
-            className="btn-aurora flex w-full items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 sm:text-base"
+            className="btn-aurora flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold sm:text-base"
           >
-            Continue — How are you feeling?
+            Continue: Current State
             <ArrowRight className="h-5 w-5" />
           </button>
         </div>
@@ -1037,9 +1031,9 @@ export function CheckInView({
       {/* BEAT 2: INTERACTIVE 2D NEURAL STATE COMPASS (19 MICRO-STATES)         */}
       {/* ===================================================================== */}
       {beat === 2 && (
-        <div key="beat-2" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
+        <div key="beat-2" className="animate-step glass-stage w-full rounded-2xl p-5 sm:p-7 space-y-5">
           <div className="glow-input-wrap">
-            <div className="relative flex items-start rounded-[1rem] bg-[#060a14]/95">
+            <div className="relative flex items-start rounded-[0.8rem] bg-[#0B0C0E]">
               <textarea
                 rows={2}
                 value={feelingText}
@@ -1050,16 +1044,16 @@ export function CheckInView({
                     handleAdvanceFromBeat2();
                   }
                 }}
-                placeholder='Describe anything freely — e.g. "Over-caffeinated and jittery", "Brain fog after 5 Zoom calls", "Creative block"...'
-                className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder-slate-500/80 focus:outline-none sm:text-base"
+                placeholder='Describe anything freely, e.g. "Over-caffeinated and jittery", "Brain fog after 5 calls", "Creative block"...'
+                className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-[#F3F1EC] placeholder-[#5F605C] focus:outline-none sm:text-base"
               />
               <button
                 type="button"
                 onClick={() => toggleVoiceForBeat(2)}
-                className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all ${
+                className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-lg border transition-all ${
                   listeningBeat === 2
                     ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
-                    : 'border-slate-700/70 bg-slate-900/80 text-cyan-300 hover:border-cyan-400/50 hover:bg-cyan-400/10'
+                    : 'border-white/12 bg-[#141518] text-[#34D399] hover:border-emerald-400/50 hover:bg-[#191B1F]'
                 }`}
                 title="Speak how you feel"
               >
@@ -1084,7 +1078,7 @@ export function CheckInView({
               <button
                 type="button"
                 onClick={() => setBeat(1)}
-                className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 text-xs font-medium text-slate-300 hover:border-slate-600 hover:text-white"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#141518] px-4 py-4 text-xs font-medium text-[#D4D4CE] hover:border-white/25 hover:text-[#F3F1EC]"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back
@@ -1093,9 +1087,9 @@ export function CheckInView({
             <button
               type="button"
               onClick={handleAdvanceFromBeat2}
-              className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 sm:text-base"
+              className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold sm:text-base"
             >
-              Next — Where do you want to go?
+              Next: Target &amp; Duration
               <ArrowRight className="h-5 w-5" />
             </button>
           </div>
@@ -1106,7 +1100,7 @@ export function CheckInView({
       {/* BEAT 3: TARGET STATE, ISO-VECTOR TRAJECTORY, DURATION & OUTPUT        */}
       {/* ===================================================================== */}
       {beat === 3 && (
-        <div key="beat-3" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
+        <div key="beat-3" className="animate-step glass-stage w-full rounded-2xl p-5 sm:p-7 space-y-5">
           {/* Live Iso-Principle Vector Map: Current (X,Y) -> Target (X,Y) */}
           <NeuralTrajectoryPreview
             fromCoords={neuralCoords ?? { energy: DEFAULT_MICRO_STATE.energy, clarity: DEFAULT_MICRO_STATE.clarity }}
@@ -1115,7 +1109,7 @@ export function CheckInView({
             durationMin={durationMin}
           />
           <div className="glow-input-wrap">
-            <div className="relative flex items-start rounded-[1rem] bg-[#060a14]/95">
+            <div className="relative flex items-start rounded-[0.8rem] bg-[#0B0C0E]">
               <textarea
                 rows={2}
                 value={goalText}
@@ -1126,16 +1120,16 @@ export function CheckInView({
                     setBeat(4);
                   }
                 }}
-                placeholder='Tell me your goal — e.g. "I want to stop feeling tired for the next 20 minutes" or "Deep focus for 45 min"'
-                className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder-slate-500/80 focus:outline-none sm:text-base"
+                placeholder='Tell us your goal, e.g. "I want to stop feeling tired for the next 20 minutes" or "Deep focus for 45 min"'
+                className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-[#F3F1EC] placeholder-[#5F605C] focus:outline-none sm:text-base"
               />
               <button
                 type="button"
                 onClick={() => toggleVoiceForBeat(3)}
-                className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all ${
+                className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-lg border transition-all ${
                   listeningBeat === 3
                     ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
-                    : 'border-slate-700/70 bg-slate-900/80 text-cyan-300 hover:border-cyan-400/50 hover:bg-cyan-400/10'
+                    : 'border-white/12 bg-[#141518] text-[#34D399] hover:border-emerald-400/50 hover:bg-[#191B1F]'
                 }`}
                 title="Speak your goal & duration"
               >
@@ -1159,14 +1153,14 @@ export function CheckInView({
                     setTargetState(card.target);
                     if (!goalText.trim()) setDurationMin(card.defaultMin);
                   }}
-                  className={`rounded-2xl border px-3.5 py-2.5 text-left transition-all disabled:opacity-35 ${
+                  className={`rounded-xl border px-3.5 py-2.5 text-left transition-all disabled:opacity-35 ${
                     active
-                      ? 'border-cyan-400 bg-cyan-400/15 shadow-[0_0_20px_rgba(34,211,238,0.18)]'
-                      : 'border-slate-800/90 bg-slate-950/60 hover:border-cyan-400/40'
+                      ? 'border-emerald-400/60 bg-emerald-400/12 text-[#F3F1EC]'
+                      : 'border-white/[0.08] bg-[#131417] text-[#D4D4CE] hover:border-white/25'
                   }`}
                 >
-                  <div className="text-xs font-semibold text-white">{card.label}</div>
-                  <div className="mt-0.5 text-[10px] text-slate-400">{card.sub}</div>
+                  <div className="text-xs font-semibold text-[#F3F1EC]">{card.label}</div>
+                  <div className="mt-0.5 text-[10px] text-[#8E8E88]">{card.sub}</div>
                 </button>
               );
             })}
@@ -1175,8 +1169,8 @@ export function CheckInView({
           {/* Duration & Listening Output */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
-                <Clock className="h-3.5 w-3.5 text-cyan-400" />
+              <div className="flex items-center gap-1.5 text-[11px] font-medium text-[#A3A39E]">
+                <Clock className="h-3.5 w-3.5 text-[#34D399]" />
                 For how long?
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -1185,10 +1179,10 @@ export function CheckInView({
                     key={m}
                     type="button"
                     onClick={() => setDurationMin(m)}
-                    className={`rounded-xl border px-3 py-2 font-mono-tech text-xs font-semibold transition ${
+                    className={`rounded-lg border px-3 py-2 font-mono-tech text-xs font-semibold transition ${
                       durationMin === m
-                        ? 'border-cyan-400/70 bg-cyan-400/15 text-cyan-200'
-                        : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700'
+                        ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
+                        : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/25'
                     }`}
                   >
                     {m}m
@@ -1198,15 +1192,15 @@ export function CheckInView({
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[11px] font-medium text-slate-400">How are you listening?</div>
+              <div className="text-[11px] font-medium text-[#A3A39E]">How are you listening?</div>
               <div className="grid grid-cols-3 gap-1.5">
                 <button
                   type="button"
                   onClick={() => handleSelectDevice('headphones')}
-                  className={`flex flex-col items-center gap-1 rounded-xl border py-2 text-[11px] font-medium transition ${
+                  className={`flex flex-col items-center gap-1 rounded-lg border py-2 text-[11px] font-medium transition ${
                     device === 'headphones' && !isDriving
-                      ? 'border-cyan-400/70 bg-cyan-400/14 text-cyan-200'
-                      : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700'
+                      ? 'border-emerald-400/60 bg-emerald-400/12 text-[#F3F1EC]'
+                      : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/25'
                   }`}
                 >
                   <Headphones className="h-3.5 w-3.5" />
@@ -1215,10 +1209,10 @@ export function CheckInView({
                 <button
                   type="button"
                   onClick={() => handleSelectDevice('speakers')}
-                  className={`flex flex-col items-center gap-1 rounded-xl border py-2 text-[11px] font-medium transition ${
+                  className={`flex flex-col items-center gap-1 rounded-lg border py-2 text-[11px] font-medium transition ${
                     device === 'speakers' && !isDriving
-                      ? 'border-cyan-400/70 bg-cyan-400/14 text-cyan-200'
-                      : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700'
+                      ? 'border-emerald-400/60 bg-emerald-400/12 text-[#F3F1EC]'
+                      : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/25'
                   }`}
                 >
                   <Volume2 className="h-3.5 w-3.5" />
@@ -1227,10 +1221,10 @@ export function CheckInView({
                 <button
                   type="button"
                   onClick={() => handleSelectDevice('car_audio')}
-                  className={`flex flex-col items-center gap-1 rounded-xl border py-2 text-[11px] font-medium transition ${
+                  className={`flex flex-col items-center gap-1 rounded-lg border py-2 text-[11px] font-medium transition ${
                     isDriving
                       ? 'border-amber-400/70 bg-amber-500/15 text-amber-200'
-                      : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700'
+                      : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/25'
                   }`}
                 >
                   <Car className="h-3.5 w-3.5" />
@@ -1241,7 +1235,7 @@ export function CheckInView({
           </div>
 
           {isDriving && (
-            <div className="flex items-start gap-2.5 rounded-xl border border-amber-400/30 bg-amber-500/8 p-3 text-xs text-amber-100/90">
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
               <Car className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
               <span>
                 <strong className="text-amber-200">Driving Safety Mode active:</strong> Traffic
@@ -1255,7 +1249,7 @@ export function CheckInView({
             <button
               type="button"
               onClick={() => setBeat(2)}
-              className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 text-xs font-medium text-slate-300 hover:border-slate-600 hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#141518] px-4 py-4 text-xs font-medium text-[#D4D4CE] hover:border-white/25 hover:text-[#F3F1EC]"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
@@ -1263,9 +1257,9 @@ export function CheckInView({
             <button
               type="button"
               onClick={() => setBeat(4)}
-              className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 sm:text-base"
+              className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold sm:text-base"
             >
-              Next — Pick your music vibe
+              Next: Music Style
               <ArrowRight className="h-5 w-5" />
             </button>
           </div>
@@ -1273,31 +1267,33 @@ export function CheckInView({
       )}
 
       {/* ===================================================================== */}
-      {/* BEAT 4: PREFERRED MUSIC LAYER (10 Curated Studio + Infinite AI + Other) */}
+      {/* BEAT 4: PREFERRED MUSIC LAYER (10 Curated Studio + Endless Stream)    */}
       {/* ===================================================================== */}
       {beat === 4 && (
-        <div key="beat-4" className="animate-step glass-stage w-full rounded-3xl p-5 sm:p-7 space-y-5">
+        <div key="beat-4" className="animate-step glass-stage w-full rounded-2xl p-5 sm:p-7 space-y-5">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 font-medium text-slate-200">
-                <Music2 className="h-4 w-4 text-indigo-400" />
-                Choose the music style we’ll blend with your brainwave rhythm
+              <span className="inline-flex items-center gap-1.5 font-medium text-[#F3F1EC]">
+                <Music2 className="h-4 w-4 text-[#34D399]" />
+                Choose the music style blended with your session rhythm
               </span>
-              <span className="text-[11px] text-slate-400">10 curated styles · Lyric-free · Non-repeating</span>
+              <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
+                10 curated styles · Lyric-free
+              </span>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => setGenreChoice('auto')}
-                className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
+                className={`rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
                   genreChoice === 'auto'
-                    ? 'border-cyan-400 bg-cyan-400/20 text-white shadow-[0_0_16px_rgba(34,211,238,0.28)]'
+                    ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
                     : 'subtle-chip'
                 }`}
               >
                 {genreChoice === 'auto' ? '✓ ' : ''}
-                Auto (Best for my brain)
+                Auto (Best match)
               </button>
 
               {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
@@ -1307,9 +1303,9 @@ export function CheckInView({
                     key={g}
                     type="button"
                     onClick={() => setGenreChoice(g)}
-                    className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
+                    className={`rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
                       isSelected
-                        ? 'border-cyan-400 bg-cyan-400/22 text-white shadow-[0_0_18px_rgba(34,211,238,0.3)]'
+                        ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
                         : 'subtle-chip'
                     }`}
                   >
@@ -1321,21 +1317,21 @@ export function CheckInView({
 
               <span
                 aria-disabled="true"
-                title="Custom & additional music styles are coming soon"
-                className="inline-flex cursor-not-allowed select-none items-center gap-1.5 rounded-full border border-dashed border-slate-700/80 bg-slate-900/40 px-3.5 py-2 text-xs font-medium text-slate-500"
+                title="Additional music styles are coming soon"
+                className="inline-flex cursor-not-allowed select-none items-center gap-1.5 rounded-lg border border-dashed border-white/12 bg-[#0B0C0E] px-3.5 py-2 text-xs font-medium text-[#6E6E68]"
               >
                 <span>Other</span>
-                <span className="rounded-full border border-slate-700 bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                <span className="rounded border border-white/10 bg-[#141518] px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#8E8E88]">
                   Coming Soon
                 </span>
               </span>
             </div>
 
             {genreChoice !== 'auto' && (
-              <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.05] px-3.5 py-2 text-[11px] text-slate-300">
-                <strong className="text-cyan-200">{GENRE_META[genreChoice].label}:</strong>{' '}
+              <div className="rounded-xl border border-white/10 bg-[#0B0C0E] px-3.5 py-2 text-[11px] text-[#D4D4CE]">
+                <strong className="text-[#34D399]">{GENRE_META[genreChoice].label}:</strong>{' '}
                 {GENRE_META[genreChoice].shortDesc} ·{' '}
-                <span className="text-slate-400">{GENRE_META[genreChoice].vibeTag}</span>
+                <span className="text-[#8E8E88]">{GENRE_META[genreChoice].vibeTag}</span>
               </div>
             )}
           </div>
@@ -1344,7 +1340,7 @@ export function CheckInView({
             <button
               type="button"
               onClick={() => setBeat(3)}
-              className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-4 text-xs font-medium text-slate-300 hover:border-slate-600 hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#141518] px-4 py-4 text-xs font-medium text-[#D4D4CE] hover:border-white/25 hover:text-[#F3F1EC]"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
@@ -1353,11 +1349,11 @@ export function CheckInView({
               type="button"
               disabled={starting}
               onClick={() => void handleLaunch()}
-              className="btn-aurora flex flex-1 items-center justify-center gap-2.5 rounded-2xl px-6 py-4 text-sm font-bold text-slate-950 disabled:opacity-60 sm:text-base"
+              className="btn-aurora flex flex-1 items-center justify-center gap-2.5 rounded-xl px-6 py-4 text-sm font-semibold disabled:opacity-60 sm:text-base"
             >
-              <Sparkles className="h-5 w-5" />
+              <Play className="h-4 w-4 fill-[#0A0B0C]" />
               {starting
-                ? 'Building your sound...'
+                ? 'Preparing your session...'
                 : (() => {
                     const activeMusicName =
                       genreChoice !== 'auto' ? GENRE_META[genreChoice].label : 'Auto Music';
@@ -1369,7 +1365,7 @@ export function CheckInView({
           </div>
 
           {isDriving && (
-            <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-500">
+            <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-[#7E7E78]">
               <AlertTriangle className="h-3.5 w-3.5 text-amber-400/70" />
               Start before driving. Audio supports focus but never replaces rest.
             </p>
