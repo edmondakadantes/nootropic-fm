@@ -578,24 +578,60 @@ export function PlayerView({
   };
 
   const handleCarrierSwitch = async (nextMode: CarrierEngineMode) => {
+    if (!isPro && previewLocked) {
+      return;
+    }
+    if (audioStarted && isPlaying && carrierMode === nextMode && !connectingLyria) {
+      return;
+    }
+
     setLyriaNotice(null);
     if (nextMode === 'lyria_realtime') {
+      if (connectingLyria) return;
       setConnectingLyria(true);
       try {
+        if (!audioStarted) {
+          await engineRef.current?.start(
+            recommendation.params,
+            recommendation.plannedDurationMin,
+            recommendation.arm.name,
+            recommendation.isControlTrial,
+            recommendation.executableSpec,
+            'lyria_realtime',
+            API_BASE
+          );
+          setAudioStarted(true);
+          setIsPlaying(true);
+        } else if (!isPlaying) {
+          await engineRef.current?.resume();
+          setIsPlaying(true);
+        }
+
         const res = await api.getLyriaRealtimeToken();
         if (!res.available || !res.token) {
           setLyriaNotice(
             res.reason ??
-              'Lyria RealTime API key not configured yet — continuing seamlessly on $0 Live Generative Composer.'
+              'Infinite Live AI temporarily unavailable — playing Studio Mix seamlessly.'
           );
+          setCarrierMode('studio_library');
+          setAudioSource('studio_library');
+          engineRef.current?.setCarrierMode('studio_library');
           setConnectingLyria(false);
           return;
         }
         const ok = await engineRef.current?.activateLyriaRealtime(
           res.token,
           res.model ?? 'models/lyria-realtime-exp',
-          (_status, note) => {
-            if (note) setLyriaNotice(note);
+          (status, note) => {
+            if (status === 'streaming') {
+              setLyriaNotice(null);
+              setCarrierMode('lyria_realtime');
+              setAudioSource('lyria_realtime');
+            } else if (status === 'error' || status === 'unavailable') {
+              if (note) setLyriaNotice(note);
+              setCarrierMode('studio_library');
+              setAudioSource('studio_library');
+            }
           },
           async () => {
             try {
@@ -611,15 +647,43 @@ export function PlayerView({
         if (ok) {
           setCarrierMode('lyria_realtime');
           setAudioSource('lyria_realtime');
+        } else {
+          setCarrierMode('studio_library');
+          setAudioSource('studio_library');
+          engineRef.current?.setCarrierMode('studio_library');
         }
       } catch {
-        setLyriaNotice('Lyria RealTime temporarily unreachable — continuing on $0 Live Generative Composer.');
+        setLyriaNotice('Infinite Live AI temporarily unreachable — continuing smoothly on Studio Mix.');
+        setCarrierMode('studio_library');
+        setAudioSource('studio_library');
+        engineRef.current?.setCarrierMode('studio_library');
       } finally {
         setConnectingLyria(false);
       }
       return;
     }
 
+    if (!audioStarted) {
+      setCarrierMode(nextMode);
+      setAudioSource(nextMode);
+      await engineRef.current?.start(
+        recommendation.params,
+        recommendation.plannedDurationMin,
+        recommendation.arm.name,
+        recommendation.isControlTrial,
+        recommendation.executableSpec,
+        nextMode,
+        API_BASE
+      );
+      setAudioStarted(true);
+      setIsPlaying(true);
+      return;
+    }
+
+    if (!isPlaying) {
+      await engineRef.current?.resume();
+      setIsPlaying(true);
+    }
     setCarrierMode(nextMode);
     setAudioSource(nextMode);
     engineRef.current?.setCarrierMode(nextMode);
@@ -945,43 +1009,111 @@ export function PlayerView({
           </div>
         </div>
 
-        {/* 1-Tap Studio Mix vs Infinite Live AI (Never-Repeating) Switch */}
+        {/* Prominent 2-Button Music Engine Selector: Studio Mix vs Infinite Live AI */}
         {lyriaRealtimeAvailable && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-indigo-400/20 bg-indigo-500/[0.06] px-3.5 py-2.5 text-xs">
-            <div className="flex items-center gap-2 text-slate-300">
-              <Sparkles className="h-3.5 w-3.5 shrink-0 text-indigo-300" />
-              <span>
-                {carrierMode === 'lyria_realtime'
-                  ? 'Infinite Live AI active — evolving continuously with zero loops.'
-                  : 'Want music that never repeats on long sessions?'}
-              </span>
-            </div>
-            <div className="inline-flex shrink-0 items-center rounded-xl border border-slate-800 bg-slate-950/90 p-0.5 text-[11px] font-semibold">
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+              {/* Button 1: Studio Mix */}
               <button
                 type="button"
                 onClick={() => void handleCarrierSwitch('studio_library')}
-                className={`rounded-lg px-2.5 py-1 transition ${
-                  carrierMode !== 'lyria_realtime'
-                    ? 'bg-cyan-400/20 text-cyan-100'
-                    : 'text-slate-400 hover:text-white'
+                className={`group relative flex flex-col justify-between rounded-2xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
+                  carrierMode === 'studio_library'
+                    ? 'border-cyan-400/65 bg-cyan-400/[0.12] text-white shadow-[0_0_22px_rgba(34,211,238,0.16)]'
+                    : 'border-slate-800/90 bg-slate-950/65 text-slate-300 hover:border-cyan-400/40 hover:bg-slate-900/80 hover:text-white'
                 }`}
               >
-                Studio Mix
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold sm:text-sm">
+                    <Music2
+                      className={`h-4 w-4 shrink-0 ${
+                        carrierMode === 'studio_library'
+                          ? 'text-cyan-300'
+                          : 'text-slate-400 group-hover:text-cyan-300'
+                      }`}
+                    />
+                    <span>Studio Mix</span>
+                  </span>
+                  {carrierMode === 'studio_library' && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/40 bg-cyan-400/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-cyan-100">
+                      <Check className="h-2.5 w-2.5" />
+                      Active
+                    </span>
+                  )}
+                </div>
+                <p
+                  className={`mt-1.5 text-[11px] leading-snug ${
+                    carrierMode === 'studio_library' ? 'text-cyan-100/85' : 'text-slate-400'
+                  }`}
+                >
+                  {carrierMode === 'studio_library'
+                    ? 'Curated tracks · Smooth crossfade'
+                    : 'Curated tracks · Instant start'}
+                </p>
               </button>
+
+              {/* Button 2: Infinite Live AI */}
               <button
                 type="button"
                 disabled={connectingLyria}
                 onClick={() => void handleCarrierSwitch('lyria_realtime')}
-                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 transition ${
+                className={`group relative flex flex-col justify-between rounded-2xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
                   carrierMode === 'lyria_realtime'
-                    ? 'bg-indigo-500/35 text-indigo-100 shadow-[0_0_12px_rgba(129,140,248,0.3)]'
-                    : 'text-slate-300 hover:text-white'
+                    ? 'border-indigo-400/75 bg-gradient-to-br from-indigo-500/[0.20] via-indigo-500/[0.10] to-cyan-400/[0.10] text-white shadow-[0_0_24px_rgba(129,140,248,0.24)]'
+                    : connectingLyria
+                      ? 'border-indigo-400/50 bg-indigo-500/[0.12] text-indigo-100'
+                      : 'border-indigo-400/25 bg-indigo-950/25 text-slate-200 hover:border-indigo-400/55 hover:bg-indigo-500/[0.12] hover:text-white'
                 }`}
               >
-                {connectingLyria ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                {connectingLyria ? 'Starting…' : 'Infinite AI'}
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold sm:text-sm">
+                    {connectingLyria ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-indigo-300" />
+                    ) : (
+                      <Sparkles
+                        className={`h-4 w-4 shrink-0 ${
+                          carrierMode === 'lyria_realtime'
+                            ? 'text-indigo-300'
+                            : 'text-indigo-300/80 group-hover:text-indigo-200'
+                        }`}
+                      />
+                    )}
+                    <span>Infinite Live AI</span>
+                  </span>
+                  {connectingLyria ? (
+                    <span className="rounded-full border border-indigo-400/40 bg-indigo-500/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-indigo-100">
+                      Starting…
+                    </span>
+                  ) : carrierMode === 'lyria_realtime' ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/45 bg-emerald-500/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Live
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-indigo-400/30 bg-indigo-500/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-indigo-200">
+                      Zero Loops
+                    </span>
+                  )}
+                </div>
+                <p
+                  className={`mt-1.5 text-[11px] leading-snug ${
+                    carrierMode === 'lyria_realtime' ? 'text-indigo-100/90' : 'text-slate-400'
+                  }`}
+                >
+                  {connectingLyria
+                    ? 'Connecting real-time AI stream…'
+                    : carrierMode === 'lyria_realtime'
+                      ? 'Streaming live · Never repeats'
+                      : 'Generated live · Never repeats'}
+                </p>
               </button>
             </div>
+
+            {lyriaNotice && openDrawer !== 'tune' && (
+              <div className="rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                {lyriaNotice}
+              </div>
+            )}
           </div>
         )}
 
