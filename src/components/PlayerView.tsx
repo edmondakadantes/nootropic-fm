@@ -1066,12 +1066,22 @@ export function PlayerView({
           </div>
         </div>
 
-        {/* Centerpiece 36-Band Studio Spectrum Analyzer */}
-        <NeuralVisualizer
+        {/* Centerpiece #1 Hero Instrument: Live HiDPI Dual-Trace Web Audio Oscilloscope */}
+        <LiveEnvelopeProof
           engine={engineRef.current}
           isPlaying={isPlaying}
-          safetyMode={recommendation.safetyMode}
-          modulationHz={telemetry.currentModHz}
+          entrainmentType={telemetry.entrainmentType}
+          frequencyHz={telemetry.currentModHz}
+          depth={telemetry.currentModDepth}
+          carrierLabel={activeSourceShort}
+          tuningA4Hz={telemetry.tuningA4Hz}
+          layerMode={layerMonitor}
+          isPureWave={layerMonitor === 'science_only'}
+          onTogglePureWave={() =>
+            void handleLayerMonitorChange(
+              layerMonitor === 'science_only' ? 'full_mix' : 'science_only'
+            )
+          }
         />
 
         {/* Synchronized 0.1 Hz HRV Breathing Guide (only shown on calm breathing protocols) */}
@@ -1379,21 +1389,12 @@ export function PlayerView({
           </button>
         </div>
 
-        {/* ALWAYS-VISIBLE 100%-Measured Real-Time Web Audio Oscilloscope */}
-        <LiveEnvelopeProof
+        {/* 36-Band Studio Spectrum Analyzer */}
+        <NeuralVisualizer
           engine={engineRef.current}
           isPlaying={isPlaying}
-          entrainmentType={telemetry.entrainmentType}
-          frequencyHz={telemetry.currentModHz}
-          depth={telemetry.currentModDepth}
-          carrierLabel={activeSourceShort}
-          tuningA4Hz={telemetry.tuningA4Hz}
-          isPureWave={layerMonitor === 'science_only'}
-          onTogglePureWave={() =>
-            void handleLayerMonitorChange(
-              layerMonitor === 'science_only' ? 'full_mix' : 'science_only'
-            )
-          }
+          safetyMode={recommendation.safetyMode}
+          modulationHz={telemetry.currentModHz}
         />
 
         {/* Optional 5-Second Profession Claim (only if entering from an anonymous quick-try link) */}
