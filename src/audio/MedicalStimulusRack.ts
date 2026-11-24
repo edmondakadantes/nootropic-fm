@@ -160,6 +160,7 @@ export class MedicalStimulusRack {
   private isControlTrial = false;
   private speakerSafeEQ = false;
   private pureStimulusMode = false;
+  private scienceMuted = false;
   private modMult = 1.0;
   private intensityMult = 1.0;
   private phaseModFactor = 1.0;
@@ -198,6 +199,7 @@ export class MedicalStimulusRack {
     this.speakerSafeEQ = speakerSafeEQ;
     this.isControlTrial = isControlTrial;
     this.pureStimulusMode = pureStimulusMode;
+    this.scienceMuted = false;
     this.phaseModFactor = 1.0;
     this.currentHz = spec.entrainment.startFrequencyHz ?? spec.entrainment.frequencyHz;
 
@@ -437,13 +439,13 @@ export class MedicalStimulusRack {
   }
 
   private computeEffectiveHrvDepth(): number {
-    if (!this.spec || this.isControlTrial || this.hrvBaseDepth <= 0) return 0;
+    if (!this.spec || this.isControlTrial || this.scienceMuted || this.hrvBaseDepth <= 0) return 0;
     const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
     return Math.min(0.68, Math.max(0, this.hrvBaseDepth * this.modMult * phaseScale));
   }
 
   private computeStimulusTargetGain(): number {
-    if (!this.spec || this.isControlTrial) return 0.0001;
+    if (!this.spec || this.isControlTrial || this.scienceMuted) return 0.0001;
     const baseDepth = Math.max(0.1, Math.min(0.8, this.spec.entrainment.modulationDepth || 0.26));
     const type = this.spec.entrainment.type;
     let base = 0.08;
@@ -457,11 +459,18 @@ export class MedicalStimulusRack {
   }
 
   private computeNoiseTargetGain(): number {
-    if (!this.spec || this.spec.noise.color === 'none' || this.spec.noise.snrDb <= -34) return 0.0001;
+    if (!this.spec || this.scienceMuted || this.spec.noise.color === 'none' || this.spec.noise.snrDb <= -34) {
+      return 0.0001;
+    }
     const linear = snrDbToLinearGain(this.spec.noise.snrDb);
     const boosted = this.pureStimulusMode ? Math.min(0.68, linear * 1.35) : linear;
     const capped = this.speakerSafeEQ ? Math.min(0.06, boosted) : boosted;
     return Math.max(0.0001, capped * this.intensityMult);
+  }
+
+  public setScienceMuted(muted: boolean): void {
+    this.scienceMuted = muted;
+    this.refreshLevels();
   }
 
   public setPureStimulusMode(pure: boolean): void {
@@ -579,6 +588,7 @@ export class MedicalStimulusRack {
     this.beatCenterHz = 200;
     this.beatSymmetric = false;
     this.phaseModFactor = 1.0;
+    this.scienceMuted = false;
     this.ctx = null;
   }
 }

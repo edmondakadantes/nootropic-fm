@@ -18,6 +18,7 @@ import { createCalibratedNoiseBuffer, MedicalStimulusRack } from './MedicalStimu
 import { StereoRainBed } from './StereoRainBed';
 
 export type SessionPhase = 'entry' | 'plateau' | 'landing';
+export type LayerMonitorMode = 'full_mix' | 'science_only' | 'music_only';
 
 export interface StudioTrackRef {
   key: string;
@@ -57,6 +58,7 @@ export interface EngineTelemetry {
   lyriaStatus: LyriaRealtimeStatus;
   usingRealSamples?: boolean;
   studioRetuned432?: boolean;
+  layerMonitorMode: LayerMonitorMode;
 }
 
 /**
@@ -207,6 +209,7 @@ export class PsychoacousticEngine {
   private proceduralMaster: GainNode | null = null;
   private studioBus: GainNode | null = null;
   private studioFilter: BiquadFilterNode | null = null;
+  private musicAuditionGain: GainNode | null = null;
   private pureAmCarrierGain: GainNode | null = null;
   private pureAmCarrierSrc: AudioBufferSourceNode | null = null;
 
@@ -255,6 +258,7 @@ export class PsychoacousticEngine {
   private params: AcousticParams | null = null;
   private studySpec: ExecutableStudySpec | null = null;
   private carrierMode: CarrierEngineMode = 'generative_live';
+  private layerMonitorMode: LayerMonitorMode = 'full_mix';
   private genre: ResolvedGenre = 'deep_electronic';
   private isControlTrial = false;
   private isPlaying = false;
@@ -289,6 +293,7 @@ export class PsychoacousticEngine {
     this.intensityMultiplier = 1.0;
     this.modDepthMultiplier = 1.0;
     this.carrierMode = initialCarrierMode ?? this.studySpec.music.defaultCarrierMode ?? 'generative_live';
+    this.layerMonitorMode = this.carrierMode === 'pure_stimulus' ? 'science_only' : 'full_mix';
 
     const AudioCtx =
       window.AudioContext ||
@@ -417,10 +422,18 @@ export class PsychoacousticEngine {
       preHrvBus.connect(musicMixBus);
     }
 
+    const musicAuditionGain = ctx.createGain();
+    musicAuditionGain.gain.setValueAtTime(
+      this.layerMonitorMode === 'science_only' ? 0.0001 : 1.0,
+      ctx.currentTime
+    );
+    musicAuditionGain.connect(preHrvBus);
+    this.musicAuditionGain = musicAuditionGain;
+
     const startWithMusic = this.carrierMode === 'generative_live';
     const proceduralMaster = ctx.createGain();
     proceduralMaster.gain.setValueAtTime(startWithMusic ? 1.0 : 0.0001, ctx.currentTime);
-    proceduralMaster.connect(preHrvBus);
+    proceduralMaster.connect(musicAuditionGain);
     this.proceduralMaster = proceduralMaster;
 
     const studioBus = ctx.createGain();
@@ -430,7 +443,7 @@ export class PsychoacousticEngine {
     studioFilter.Q.value = 0.62;
     studioFilter.frequency.setValueAtTime(this.computeStudioCutoffHz(), ctx.currentTime);
     studioBus.connect(studioFilter);
-    studioFilter.connect(preHrvBus);
+    studioFilter.connect(musicAuditionGain);
     this.studioBus = studioBus;
     this.studioFilter = studioFilter;
 
@@ -681,8 +694,45 @@ export class PsychoacousticEngine {
   }
 
   private syncRainBed(): void {
-    const shouldPlayRain = this.genre === 'nature_rain' && this.carrierMode !== 'pure_stimulus';
+    const shouldPlayRain =
+      this.genre === 'nature_rain' &&
+      this.carrierMode !== 'pure_stimulus' &&
+      this.layerMonitorMode !== 'science_only';
     this.rainBed.setActive(shouldPlayRain);
+  }
+
+  /**
+   * Real-time 3-way A/B/C Layer Monitor (~180 ms click-free crossfade, zero track reload):
+   * - 'full_mix': Layer 1 Medical DSP + Layer 2 Music
+   * - 'science_only': Isolated Layer 1 scientific wave & noise (music muted)
+   * - 'music_only': Raw Layer 2 music only (0% scientific modulation, noise muted)
+   */
+  public setLayerMonitorMode(mode: LayerMonitorMode): void {
+    this.layerMonitorMode = mode;
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const muteMusic = mode === 'science_only' || this.carrierMode === 'pure_stimulus';
+    const muteScience = mode === 'music_only';
+
+    this.musicAuditionGain?.gain.setTargetAtTime(muteMusic ? 0.0001 : 1.0, now, 0.18);
+    if (this.cleanSubBus) {
+      const wantSub = this.carrierMode === 'generative_live' && !muteMusic;
+      this.cleanSubBus.gain.setTargetAtTime(wantSub ? 0.9 : 0.0001, now, 0.18);
+    }
+    this.stimulusRack.setScienceMuted(muteScience);
+    this.stimulusRack.setPureStimulusMode(muteMusic && !muteScience);
+
+    const needsPureCarrier = muteMusic && !muteScience && this.specNeedsPureReferenceCarrier();
+    this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureCarrier ? 0.34 : 0.0001, now, 0.18);
+    this.syncRainBed();
+
+    if (this.isPlaying) {
+      this.updateElapsed(this.elapsedSec);
+    }
+  }
+
+  public getLayerMonitorMode(): LayerMonitorMode {
+    return this.layerMonitorMode;
   }
 
   /**
@@ -705,6 +755,12 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = false;
       this.usingCustomTrack = false;
       this.activeTrackName = null;
+      if (this.layerMonitorMode === 'science_only') {
+        this.layerMonitorMode = 'full_mix';
+      }
+      const muteScience = this.layerMonitorMode === 'music_only';
+      this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
+      this.stimulusRack.setScienceMuted(muteScience);
       this.stimulusRack.setPureStimulusMode(false);
       this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, now, 0.4);
       this.proceduralMaster.gain.setTargetAtTime(1.0, now, 0.65);
@@ -714,12 +770,21 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = false;
       this.usingCustomTrack = false;
       this.activeTrackName = null;
+      this.layerMonitorMode = 'science_only';
+      this.musicAuditionGain?.gain.setTargetAtTime(0.0001, now, 0.25);
+      this.stimulusRack.setScienceMuted(false);
       this.stimulusRack.setPureStimulusMode(true);
       this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.45);
       this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.45);
       const needsPureAm = this.specNeedsPureReferenceCarrier();
       this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureAm ? 0.34 : 0.0001, now, 0.45);
     } else if (mode === 'studio_library') {
+      if (this.layerMonitorMode === 'science_only') {
+        this.layerMonitorMode = 'full_mix';
+      }
+      const muteScience = this.layerMonitorMode === 'music_only';
+      this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
+      this.stimulusRack.setScienceMuted(muteScience);
       this.stimulusRack.setPureStimulusMode(false);
       this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, now, 0.4);
       void this.activateStudioForGenre(this.genre);
@@ -739,6 +804,12 @@ export class PsychoacousticEngine {
   ): Promise<boolean> {
     if (!this.ctx || !this.studioBus || !this.studySpec || !this.isPlaying) return false;
     this.clearStudioDeck(1.2);
+    if (this.layerMonitorMode === 'science_only') {
+      this.layerMonitorMode = 'full_mix';
+    }
+    const muteScience = this.layerMonitorMode === 'music_only';
+    this.musicAuditionGain?.gain.setTargetAtTime(1.0, this.ctx.currentTime, 0.25);
+    this.stimulusRack.setScienceMuted(muteScience);
     this.stimulusRack.setPureStimulusMode(false);
     this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.4);
 
@@ -757,6 +828,10 @@ export class PsychoacousticEngine {
         if (st === 'streaming' && this.ctx && this.proceduralMaster && this.cleanSubBus) {
           const now = this.ctx.currentTime;
           this.carrierMode = 'lyria_realtime';
+          if (this.layerMonitorMode === 'science_only') {
+            this.layerMonitorMode = 'full_mix';
+          }
+          this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
           this.usingStudioAudio = false;
           this.usingCustomTrack = false;
           this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.85);
@@ -1259,10 +1334,12 @@ export class PsychoacousticEngine {
     this.composer.updateProgress(progressRatio, antiMonotonyActive);
 
     const spec = this.studySpec;
+    const scienceMuted = this.layerMonitorMode === 'music_only';
+    const activePhaseFactor = this.layerMonitorMode === 'science_only' ? 1.0 : phaseModFactor;
     const amActive = spec?.entrainment.type === 'amplitude_modulation' && spec.entrainment.frequencyHz > 0;
     const baseDepth = amActive ? spec.entrainment.modulationDepth : 0;
-    const nominalDepth = Math.min(0.75, Math.max(0, baseDepth * this.modDepthMultiplier * phaseModFactor));
-    const effectiveDepth = this.isControlTrial ? 0 : nominalDepth;
+    const nominalDepth = Math.min(0.75, Math.max(0, baseDepth * this.modDepthMultiplier * activePhaseFactor));
+    const effectiveDepth = this.isControlTrial || scienceMuted ? 0 : nominalDepth;
 
     // Iso-Principle live frequency ramp (startFrequencyHz -> target frequencyHz during entry)
     let liveAmHz = spec?.entrainment.frequencyHz ?? this.params?.modulationHz ?? 16;
@@ -1306,16 +1383,18 @@ export class PsychoacousticEngine {
       }
     }
 
-    this.stimulusRack.updateProgress(progressRatio, phaseModFactor);
+    this.stimulusRack.updateProgress(progressRatio, activePhaseFactor);
     const stim = this.stimulusRack.getTelemetry(elapsedSec);
     return {
       phase,
       phaseLabel,
       progressRatio,
       currentModHz: amActive ? liveAmHz : stim.activeHz,
-      currentModDepth: Number(
-        (amActive ? nominalDepth : (spec?.entrainment.modulationDepth ?? 0) * this.modDepthMultiplier).toFixed(2)
-      ),
+      currentModDepth: scienceMuted
+        ? 0
+        : Number(
+            (amActive ? nominalDepth : (spec?.entrainment.modulationDepth ?? 0) * this.modDepthMultiplier).toFixed(2)
+          ),
       crossoverHz: spec?.entrainment.modulationBandHz[0] ?? this.params?.crossoverHz ?? 190,
       upperCrossoverHz: spec?.entrainment.modulationBandHz[1] ?? this.params?.upperCrossoverHz ?? 4500,
       stereoAmActive: Boolean(this.amGainR),
@@ -1340,6 +1419,7 @@ export class PsychoacousticEngine {
       lyriaStatus: this.lyriaStatus,
       usingRealSamples: this.composer.isUsingRealSamples(),
       studioRetuned432: this.usingStudioAudio && spec?.music.tuningA4Hz === 432,
+      layerMonitorMode: this.layerMonitorMode,
     };
   }
 
@@ -1599,6 +1679,8 @@ export class PsychoacousticEngine {
     this.proceduralMaster = null;
     this.studioBus = null;
     this.studioFilter = null;
+    this.musicAuditionGain = null;
+    this.layerMonitorMode = 'full_mix';
     if (this.ctx) {
       this.ctx.close().catch(() => {});
       this.ctx = null;

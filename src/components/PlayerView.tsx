@@ -37,7 +37,11 @@ import type {
   UserProfile,
 } from '../../shared/types';
 import { DEVICE_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
-import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
+import {
+  PsychoacousticEngine,
+  type EngineTelemetry,
+  type LayerMonitorMode,
+} from '../audio/PsychoacousticEngine';
 import { API_BASE, api, saveStoredProfileAuth } from '../lib/api';
 import { LiveEnvelopeProof } from './LiveEnvelopeProof';
 import {
@@ -136,6 +140,9 @@ export function PlayerView({
     recommendation.params.genre ?? 'deep_electronic'
   );
   const [carrierMode, setCarrierMode] = useState<CarrierEngineMode>(initialCarrier);
+  const [layerMonitor, setLayerMonitor] = useState<LayerMonitorMode>(
+    initialCarrier === 'pure_stimulus' ? 'science_only' : 'full_mix'
+  );
   const [lyriaNotice, setLyriaNotice] = useState<string | null>(null);
   const [connectingLyria, setConnectingLyria] = useState(false);
   const [audioSource, setAudioSource] = useState<AudioSourceType>(
@@ -212,6 +219,7 @@ export function PlayerView({
     lyriaStatus: 'idle',
     usingRealSamples: false,
     studioRetuned432: false,
+    layerMonitorMode: initialCarrier === 'pure_stimulus' ? 'science_only' : 'full_mix',
   });
 
   const plannedSec = recommendation.plannedDurationMin * 60;
@@ -243,8 +251,9 @@ export function PlayerView({
     setClaimError(null);
     setPreviewLocked(false);
     setUnlockError(null);
+    setLayerMonitor(initialCarrier === 'pure_stimulus' ? 'science_only' : 'full_mix');
     milestonesSentRef.current = new Set();
-  }, [recommendation.sessionId, recommendation.ephemeralMode]);
+  }, [recommendation.sessionId, recommendation.ephemeralMode, initialCarrier]);
 
   useEffect(() => {
     if (isPro && previewLocked) {
@@ -596,15 +605,69 @@ export function PlayerView({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [previewLocked, showPrePvt]);
 
+  const handleLayerMonitorChange = async (nextMode: LayerMonitorMode) => {
+    if (!isPro && previewLocked) {
+      return;
+    }
+    setLayerMonitor(nextMode);
+    if (!audioStarted) {
+      await engineRef.current?.start(
+        recommendation.params,
+        recommendation.plannedDurationMin,
+        recommendation.arm.name,
+        recommendation.isControlTrial,
+        recommendation.executableSpec,
+        initialCarrier === 'pure_stimulus' ? 'studio_library' : initialCarrier,
+        API_BASE
+      );
+      engineRef.current?.setLayerMonitorMode(nextMode);
+      setAudioStarted(true);
+      setIsPlaying(true);
+      setTelemetry((prev) =>
+        engineRef.current
+          ? engineRef.current.updateElapsed(elapsedRef.current)
+          : { ...prev, layerMonitorMode: nextMode }
+      );
+      return;
+    }
+    if (!isPlaying) {
+      await engineRef.current?.resume();
+      setIsPlaying(true);
+    }
+    if (carrierMode === 'pure_stimulus' && nextMode !== 'science_only') {
+      setCarrierMode('studio_library');
+      setAudioSource('studio_library');
+      engineRef.current?.setCarrierMode('studio_library');
+    }
+    engineRef.current?.setLayerMonitorMode(nextMode);
+    setTelemetry((prev) =>
+      engineRef.current
+        ? engineRef.current.updateElapsed(elapsedRef.current)
+        : { ...prev, layerMonitorMode: nextMode }
+    );
+  };
+
   const handleCarrierSwitch = async (nextMode: CarrierEngineMode) => {
     if (!isPro && previewLocked) {
       return;
     }
-    if (audioStarted && isPlaying && carrierMode === nextMode && !connectingLyria) {
+    if (
+      audioStarted &&
+      isPlaying &&
+      carrierMode === nextMode &&
+      (nextMode === 'pure_stimulus' || layerMonitor !== 'science_only') &&
+      !connectingLyria
+    ) {
       return;
     }
 
     setLyriaNotice(null);
+    if (nextMode !== 'pure_stimulus' && layerMonitor === 'science_only') {
+      setLayerMonitor('full_mix');
+      engineRef.current?.setLayerMonitorMode('full_mix');
+    } else if (nextMode === 'pure_stimulus') {
+      setLayerMonitor('science_only');
+    }
     if (nextMode === 'lyria_realtime') {
       if (connectingLyria) return;
       setConnectingLyria(true);
@@ -723,6 +786,10 @@ export function PlayerView({
   const tweakModulation = (delta: number) => {
     const next = Number(Math.max(0.3, Math.min(1.5, modMult + delta)).toFixed(2));
     setModMult(next);
+    if (layerMonitor === 'music_only') {
+      setLayerMonitor('full_mix');
+      engineRef.current?.setLayerMonitorMode('full_mix');
+    }
     engineRef.current?.adjustModDepth(next);
     setAdjustments((prev) => [...prev, { atSec: elapsedRef.current, control: 'modulation', delta }]);
   };
@@ -731,6 +798,10 @@ export function PlayerView({
     const clamped = Number(Math.max(0.3, Math.min(1.5, targetMult)).toFixed(2));
     const delta = Number((clamped - modMult).toFixed(2));
     setModMult(clamped);
+    if (layerMonitor === 'music_only') {
+      setLayerMonitor('full_mix');
+      engineRef.current?.setLayerMonitorMode('full_mix');
+    }
     engineRef.current?.adjustModDepth(clamped);
     if (delta !== 0) {
       setAdjustments((prev) => [...prev, { atSec: elapsedRef.current, control: 'modulation', delta }]);
@@ -748,6 +819,10 @@ export function PlayerView({
       setCarrierMode('studio_library');
       setAudioSource('studio_library');
       engineRef.current?.setCarrierMode('studio_library');
+    }
+    if (layerMonitor === 'science_only') {
+      setLayerMonitor('full_mix');
+      engineRef.current?.setLayerMonitorMode('full_mix');
     }
     engineRef.current?.setGenre(style);
     setAdjustments((prev) => [
@@ -878,15 +953,17 @@ export function PlayerView({
     : getGenreDisplayMeta(genre);
 
   const activeSourceShort =
-    telemetry.carrierMode === 'lyria_realtime'
-      ? `${activeVibeDisplay.label} · Endless Stream`
-      : telemetry.carrierMode === 'pure_stimulus'
-        ? 'Pure Signal'
-        : telemetry.usingCustomTrack || audioSource === 'community_cache'
-          ? activeVibeDisplay.label
-          : telemetry.usingStudioAudio
-            ? `${activeVibeDisplay.label} · Studio`
-            : activeVibeDisplay.label;
+    layerMonitor === 'science_only' || telemetry.carrierMode === 'pure_stimulus'
+      ? 'Layer 1 · Science Signal'
+      : layerMonitor === 'music_only'
+        ? `${activeVibeDisplay.label} · Plain Music`
+        : telemetry.carrierMode === 'lyria_realtime'
+          ? `${activeVibeDisplay.label} · Endless Stream`
+          : telemetry.usingCustomTrack || audioSource === 'community_cache'
+            ? activeVibeDisplay.label
+            : telemetry.usingStudioAudio
+              ? `${activeVibeDisplay.label} · Studio`
+              : activeVibeDisplay.label;
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
@@ -939,9 +1016,11 @@ export function PlayerView({
             <div className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-white/10 bg-[#14161A] px-2.5 py-1 font-mono-tech text-[11px] text-[#D4D4CE]">
               <Music2 className="h-3 w-3 shrink-0 text-[#34D399]" />
               <span className="truncate">{activeSourceShort}</span>
-              {telemetry.currentModHz > 0 && (
+              {telemetry.currentModHz > 0 && layerMonitor !== 'music_only' ? (
                 <span className="shrink-0 text-[#34D399]">· {telemetry.currentModHz} Hz</span>
-              )}
+              ) : layerMonitor === 'music_only' ? (
+                <span className="shrink-0 text-[#8E8E88]">· 0% Mod</span>
+              ) : null}
             </div>
             <h1 className="font-display text-xl font-semibold text-[#F3F1EC] sm:text-2xl leading-tight">
               {TARGET_LABELS[recommendation.targetState]}
@@ -1151,14 +1230,84 @@ export function PlayerView({
           </div>
         )}
 
+        {/* 3-Way Audio Layer Monitor: Compare Nootropic Mix vs Science Only (Layer 1) vs Plain Music (Layer 2) */}
+        <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 font-mono-tech text-[10px]">
+            <span className="uppercase tracking-[0.14em] text-[#8E8E88]">
+              Audio Layer Monitor · A/B Compare
+            </span>
+            {layerMonitor === 'full_mix' ? (
+              <span className="text-[#34D399]">Layer 1 + 2 Active</span>
+            ) : layerMonitor === 'science_only' ? (
+              <span className="text-[#F59E0B]">
+                Isolating {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz ` : ''}Science Wave
+              </span>
+            ) : (
+              <span className="text-[#D4D4CE]">Science Bypassed (Plain Music)</span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-1.5">
+            {(
+              [
+                {
+                  mode: 'full_mix' as const,
+                  title: 'Nootropic Mix',
+                  sub: 'Layer 1 + 2',
+                  dot: 'bg-[#34D399]',
+                  activeCls: 'border-emerald-400/55 bg-emerald-500/[0.10] text-[#F3F1EC]',
+                },
+                {
+                  mode: 'science_only' as const,
+                  title: 'Science Only',
+                  sub: telemetry.currentModHz > 0 ? `Layer 1 · ${telemetry.currentModHz} Hz` : 'Layer 1 · Wave',
+                  dot: 'bg-[#F59E0B]',
+                  activeCls: 'border-amber-400/60 bg-amber-400/[0.12] text-[#F3F1EC]',
+                },
+                {
+                  mode: 'music_only' as const,
+                  title: 'Plain Music',
+                  sub: 'Layer 2 · Raw',
+                  dot: 'bg-[#D4D4CE]',
+                  activeCls: 'border-white/35 bg-[#191C22] text-[#F3F1EC]',
+                },
+              ]
+            ).map((opt) => {
+              const active = layerMonitor === opt.mode;
+              return (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  onClick={() => void handleLayerMonitorChange(opt.mode)}
+                  className={`rounded-lg border px-2.5 py-2 text-left transition-all ${
+                    active
+                      ? opt.activeCls
+                      : 'border-white/[0.08] bg-[#121418] text-[#9E9E98] hover:border-white/20 hover:text-[#F3F1EC]'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? opt.dot : 'bg-white/25'}`} />
+                    <span className="truncate">{opt.title}</span>
+                  </div>
+                  <div className="mt-0.5 truncate font-mono-tech text-[9px] text-[#7E7E78]">{opt.sub}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Direct Hardware Modulation Depth Selector (Subtle / Standard / Deep) */}
         <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/[0.08] bg-[#0B0C0E] px-3.5 py-2.5">
           <div className="flex flex-wrap items-center gap-2 font-mono-tech text-[10px]">
             <span className="uppercase tracking-[0.14em] text-[#8E8E88]">Modulation Depth</span>
-            <span className="text-[#34D399]">
-              {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz · ` : ''}
-              {Math.round(telemetry.currentModDepth * 100)}%
-            </span>
+            {layerMonitor === 'music_only' ? (
+              <span className="text-[#8E8E88]">Bypassed · 0%</span>
+            ) : (
+              <span className="text-[#34D399]">
+                {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz · ` : ''}
+                {Math.round(telemetry.currentModDepth * 100)}%
+              </span>
+            )}
           </div>
           <div className="inline-flex rounded-lg border border-white/12 bg-[#141518] p-0.5 text-[11px] font-semibold">
             {[
@@ -1239,10 +1388,10 @@ export function PlayerView({
           depth={telemetry.currentModDepth}
           carrierLabel={activeSourceShort}
           tuningA4Hz={telemetry.tuningA4Hz}
-          isPureWave={carrierMode === 'pure_stimulus'}
+          isPureWave={layerMonitor === 'science_only'}
           onTogglePureWave={() =>
-            void handleCarrierSwitch(
-              carrierMode === 'pure_stimulus' ? 'studio_library' : 'pure_stimulus'
+            void handleLayerMonitorChange(
+              layerMonitor === 'science_only' ? 'full_mix' : 'science_only'
             )
           }
         />
