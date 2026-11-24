@@ -76,14 +76,21 @@ export function UpgradeProModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-md">
       <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-3xl border border-amber-400/35 p-5 sm:p-6 space-y-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/12 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
-              <Crown className="h-3 w-3" />
-              {isPro ? 'Pro Membership Active' : 'nootropic.fm Pro'}
+          <div className="flex items-center gap-3">
+            <img
+              src="/brand/pro-checkout-banner.png"
+              alt="nootropic.fm Pro"
+              className="h-14 w-14 shrink-0 rounded-2xl border border-cyan-400/35 object-cover shadow-[0_0_20px_rgba(34,211,238,0.2)]"
+            />
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/12 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
+                <Crown className="h-3 w-3" />
+                {isPro ? 'Pro Membership Active' : 'nootropic.fm Pro'}
+              </div>
+              <h3 className="text-base font-bold text-white sm:text-lg leading-tight">
+                {isPro ? 'Your Pro Subscription Is Active' : 'Unlock Any Music Style & Full Science Lab'}
+              </h3>
             </div>
-            <h3 className="text-lg font-bold text-white sm:text-xl">
-              {isPro ? 'Your Pro Subscription Is Active' : 'Unlock Any Music Style & Full Science Lab'}
-            </h3>
           </div>
           <button
             type="button"
@@ -226,7 +233,7 @@ export function UpgradeProModal({
 
             <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Secured by Stripe · Cancel anytime · Promo codes supported</span>
+              <span>Secured by Stripe · Tax included · Cancel anytime · Promo codes supported</span>
             </div>
           </>
         )}

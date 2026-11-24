@@ -82,6 +82,23 @@ export async function createStripeCheckoutSession(opts: {
   form.set('metadata[plan]', opts.plan);
   form.set('subscription_data[metadata][profile_id]', opts.profileId);
   form.set('subscription_data[metadata][plan]', opts.plan);
+
+  // Per-session nootropic.fm Checkout Branding (does NOT affect Playrify or other brands on the same Stripe account!)
+  const brandBase = 'https://www.nootropic.fm/brand';
+  form.set('branding_settings[display_name]', 'nootropic.fm');
+  form.set('branding_settings[background_color]', '#05070d');
+  form.set('branding_settings[button_color]', '#06b6d4');
+  form.set('branding_settings[border_style]', 'rounded');
+  form.set('branding_settings[font_family]', 'inter');
+  form.set('branding_settings[logo][type]', 'url');
+  form.set('branding_settings[logo][url]', `${brandBase}/stripe-logo.png`);
+  form.set('branding_settings[icon][type]', 'url');
+  form.set('branding_settings[icon][url]', `${brandBase}/stripe-icon.png`);
+  form.set(
+    'custom_text[submit][message]',
+    'Instant unlock for unlimited full sessions, any music style & all science studies. Cancel anytime in 1 click.'
+  );
+
   if (opts.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(opts.email)) {
     form.set('customer_email', opts.email);
   }
@@ -95,6 +112,7 @@ export async function createStripeCheckoutSession(opts: {
   } else {
     form.set('line_items[0][quantity]', '1');
     form.set('line_items[0][price_data][currency]', 'usd');
+    form.set('line_items[0][price_data][tax_behavior]', 'inclusive');
     form.set(
       'line_items[0][price_data][unit_amount]',
       opts.plan === 'annual' ? '5900' : '999'
@@ -105,11 +123,15 @@ export async function createStripeCheckoutSession(opts: {
     );
     form.set(
       'line_items[0][price_data][product_data][name]',
-      opts.plan === 'annual' ? 'nootropic.fm Pro (Annual)' : 'nootropic.fm Pro (Monthly)'
+      opts.plan === 'annual' ? 'nootropic.fm Pro (Annual · Save 50%)' : 'nootropic.fm Pro (Monthly)'
     );
     form.set(
       'line_items[0][price_data][product_data][description]',
-      'Unlimited custom music styles, live AI streaming, all science studies & personal adaptive sound tuning.'
+      'Unlimited full sessions, any music style you type (Reggae, Lo-Fi, Jazz, Rock & more), live AI streaming & all science studies.'
+    );
+    form.set(
+      'line_items[0][price_data][product_data][images][0]',
+      `${brandBase}/pro-checkout-banner.png`
     );
     // Required by Stripe Managed Payments (Software as a service (SaaS) - personal use)
     form.set('line_items[0][price_data][product_data][tax_code]', 'txcd_10103000');
