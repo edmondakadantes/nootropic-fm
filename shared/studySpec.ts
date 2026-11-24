@@ -376,7 +376,8 @@ export const GENRE_LYRIA_PROMPTS: Record<
  */
 export function buildLyriaRealtimeConfig(
   spec: ExecutableStudySpec,
-  genreOverride?: ResolvedGenre
+  genreOverride?: ResolvedGenre,
+  bpmOverride?: number
 ): {
   weightedPrompts: Array<{ text: string; weight: number }>;
   config: {
@@ -389,7 +390,8 @@ export function buildLyriaRealtimeConfig(
     guidance: number;
   };
 } {
-  const bpm = Math.max(60, Math.min(160, Math.round(spec.music.bpm || 82)));
+  const rawBpm = bpmOverride ?? spec.music.bpmRamp?.start ?? spec.music.bpm ?? 82;
+  const bpm = Math.max(60, Math.min(160, Math.round(rawBpm > 0 ? rawBpm : 64)));
   const genrePreset = genreOverride ? GENRE_LYRIA_PROMPTS[genreOverride] : undefined;
   const weightedPrompts =
     genrePreset?.prompts ??
@@ -412,7 +414,11 @@ export function buildLyriaRealtimeConfig(
       muteBass:
         (spec.music.tonalMode === 'drone' && spec.music.density < 0.25) ||
         genreOverride === 'solo_piano',
-      muteDrums: Boolean(spec.music.percussion === 'none' || genrePreset?.muteDrums),
+      muteDrums: Boolean(
+        spec.music.percussion === 'none' ||
+          (spec.music.bpm === 0 && !spec.music.bpmRamp) ||
+          genrePreset?.muteDrums
+      ),
       guidance: 4.2,
     },
   };

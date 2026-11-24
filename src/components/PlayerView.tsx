@@ -1110,6 +1110,9 @@ export function PlayerView({
               ) : layerMonitor === 'music_only' ? (
                 <span className="shrink-0 text-[#8E8E88]">· 0% Mod</span>
               ) : null}
+              {telemetry.currentBpm > 0 && layerMonitor !== 'science_only' && (
+                <span className="shrink-0 text-[#A3A39E]">· {telemetry.currentBpm} BPM</span>
+              )}
             </div>
             <h1 className="font-display text-xl font-semibold text-[#F3F1EC] sm:text-2xl leading-tight">
               {TARGET_LABELS[recommendation.targetState]}
@@ -1768,6 +1771,12 @@ export function PlayerView({
               <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#F3F1EC]">
                 {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Beatless'}
               </div>
+              {recommendation.executableSpec?.music.bpmRamp && (
+                <div className="mt-0.5 font-mono-tech text-[10px] text-[#8E8E88]">
+                  Ramp {recommendation.executableSpec.music.bpmRamp.start} →{' '}
+                  {recommendation.executableSpec.music.bpmRamp.end} BPM
+                </div>
+              )}
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
               <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Noise Bed</div>

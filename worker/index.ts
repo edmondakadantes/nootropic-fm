@@ -639,7 +639,7 @@ async function getCoreStudioCatalog(env: Env) {
 
   const tracksByGenre: Record<
     ResolvedGenre,
-    Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier }>
+    Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier; bpm: number }>
   > = {
     lofi_keys: [],
     deep_electronic: [],
@@ -657,6 +657,32 @@ async function getCoreStudioCatalog(env: Env) {
     if (g === 'nature_rain' || g === 'ambient_space' || g === 'solo_piano') return 'calm';
     if (g === 'deep_electronic') return 'drive';
     return 'focus';
+  };
+
+  const inferStudioTrackBpm = (g: ResolvedGenre, energy: EnergyTier, cleanName: string): number => {
+    const explicitMatch =
+      cleanName.match(/\b(4[89]|[5-9]\d|1[0-6]\d|17[0-5])\s*bpm\b/i) ??
+      cleanName.match(/\b(4[89]|[5-9]\d|1[0-6]\d|17[0-5])(?:\s+\d+)?$/i);
+    if (explicitMatch) return Number(explicitMatch[1]);
+    switch (g) {
+      case 'nature_rain':
+        return 0;
+      case 'ambient_space':
+        return 64;
+      case 'solo_piano':
+        return energy === 'calm' ? 72 : 86;
+      case 'lofi_keys':
+      case 'dub_reggae':
+        return 88;
+      case 'acoustic_pluck':
+        return 90;
+      case 'cinematic_strings':
+      case 'jazz_rhodes':
+      case 'bossa_nova':
+        return 92;
+      case 'deep_electronic':
+        return 112;
+    }
   };
 
   if (env.AUDIO_BUCKET) {
@@ -693,13 +719,15 @@ async function getCoreStudioCatalog(env: Env) {
           .replace(/[-_]+/g, ' ')
           .trim();
 
+        const resolvedName = cleanName || 'Studio Track';
         const encodedPath = segments.map((s) => encodeURIComponent(s)).join('/');
         tracksByGenre[genreKey].push({
           key: obj.key,
-          name: cleanName || 'Studio Track',
+          name: resolvedName,
           url: `/api/audio/stream/${encodedPath}`,
           size: obj.size,
           energy,
+          bpm: inferStudioTrackBpm(genreKey, energy, resolvedName),
         });
       }
       if (!listed.truncated || !listed.cursor) break;

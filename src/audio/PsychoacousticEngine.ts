@@ -25,6 +25,7 @@ export interface StudioTrackRef {
   name: string;
   url: string;
   energy: EnergyTier;
+  bpm?: number;
 }
 
 export interface EngineTelemetry {
@@ -313,6 +314,8 @@ export class PsychoacousticEngine {
   private usingCustomTrack = false;
   private activeCustomTrack: { url: string; label: string } | null = null;
   private activeTrackName: string | null = null;
+  private activeTrackNativeBpm = 0;
+  private activeStudioAppliedBpm = 0;
 
   // Active state
   private params: AcousticParams | null = null;
@@ -872,6 +875,8 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = false;
       this.usingCustomTrack = false;
       this.activeTrackName = null;
+      this.activeTrackNativeBpm = 0;
+      this.activeStudioAppliedBpm = 0;
       if (this.layerMonitorMode === 'science_only') {
         this.layerMonitorMode = 'full_mix';
       }
@@ -887,6 +892,8 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = false;
       this.usingCustomTrack = false;
       this.activeTrackName = null;
+      this.activeTrackNativeBpm = 0;
+      this.activeStudioAppliedBpm = 0;
       this.layerMonitorMode = 'science_only';
       this.musicAuditionGain?.gain.setTargetAtTime(0.0001, now, 0.25);
       this.stimulusRack.setScienceMuted(false);
@@ -951,6 +958,8 @@ export class PsychoacousticEngine {
           this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
           this.usingStudioAudio = false;
           this.usingCustomTrack = false;
+          this.activeTrackNativeBpm = 0;
+          this.activeStudioAppliedBpm = 0;
           this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.85);
           this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.85);
           this.syncRainBed();
@@ -1095,6 +1104,81 @@ export class PsychoacousticEngine {
     }
   }
 
+  private inferTrackNativeBpm(track: StudioTrackRef | null, genre: ResolvedGenre): number {
+    if (track && typeof track.bpm === 'number' && Number.isFinite(track.bpm)) {
+      return Math.max(0, Math.round(track.bpm));
+    }
+    const name = track?.name ?? '';
+    const explicitMatch =
+      name.match(/\b(4[89]|[5-9]\d|1[0-6]\d|17[0-5])\s*bpm\b/i) ??
+      name.match(/\b(4[89]|[5-9]\d|1[0-6]\d|17[0-5])(?:\s+\d+)?$/i);
+    if (explicitMatch) return Number(explicitMatch[1]);
+    switch (genre) {
+      case 'nature_rain':
+        return 0;
+      case 'ambient_space':
+        return 64;
+      case 'solo_piano':
+        return track?.energy === 'calm' ? 72 : 86;
+      case 'lofi_keys':
+      case 'dub_reggae':
+        return 88;
+      case 'acoustic_pluck':
+        return 90;
+      case 'cinematic_strings':
+      case 'jazz_rhodes':
+      case 'bossa_nova':
+        return 92;
+      case 'deep_electronic':
+        return 112;
+    }
+  }
+
+  private getTargetStudyBpm(
+    progressRatio = Math.min(1, Math.max(0, this.elapsedSec / Math.max(1, this.plannedSec)))
+  ): number {
+    const ramp = this.studySpec?.music.bpmRamp;
+    if (ramp) {
+      return Math.round(ramp.start + (ramp.end - ramp.start) * progressRatio);
+    }
+    return Math.round(this.studySpec?.music.bpm ?? this.params?.bpm ?? 0);
+  }
+
+  private computeStudioTempoAlignment(
+    nativeBpm: number,
+    targetBpm: number,
+    isCustom = this.usingCustomTrack
+  ): { rate: number; effectiveBpm: number } {
+    if (this.studySpec?.music.tuningA4Hz === 432) {
+      const r432 = 432 / 440;
+      return {
+        rate: r432,
+        effectiveBpm: nativeBpm > 0 ? Math.round(nativeBpm * r432) : 0,
+      };
+    }
+    if (isCustom || nativeBpm <= 0 || targetBpm <= 0) {
+      return {
+        rate: 1.0,
+        effectiveBpm: nativeBpm > 0 ? nativeBpm : 0,
+      };
+    }
+    const candidates = [nativeBpm, nativeBpm * 0.5, nativeBpm * 2];
+    let metricBase = nativeBpm;
+    let bestDist = Math.abs(nativeBpm - targetBpm);
+    for (const cand of candidates) {
+      const dist = Math.abs(cand - targetBpm);
+      if (dist < bestDist) {
+        bestDist = dist;
+        metricBase = cand;
+      }
+    }
+    const rate = Number(Math.max(0.88, Math.min(1.12, targetBpm / metricBase)).toFixed(4));
+    return {
+      rate,
+      effectiveBpm: Math.round(metricBase * rate),
+    };
+  }
+
   private async playStreamingTrack(
     url: string,
     trackName: string,
@@ -1102,7 +1186,8 @@ export class PsychoacousticEngine {
     targetGain: number,
     isCustom: boolean,
     onCrossfade?: () => void,
-    fadeInSec = 1.8
+    fadeInSec = 1.8,
+    nativeBpm = 0
   ): Promise<boolean> {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return false;
     try {
@@ -1111,14 +1196,22 @@ export class PsychoacousticEngine {
       el.preload = 'auto';
       el.loop = !onCrossfade;
       (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+      const pitchEl = el as HTMLAudioElement & {
+        preservesPitch?: boolean;
+        mozPreservesPitch?: boolean;
+        webkitPreservesPitch?: boolean;
+      };
+      const alignment = this.computeStudioTempoAlignment(nativeBpm, this.getTargetStudyBpm(), isCustom);
       if (this.studySpec?.music.tuningA4Hz === 432) {
-        el.playbackRate = 432 / 440;
-        const pitchEl = el as HTMLAudioElement & {
-          preservesPitch?: boolean;
-          webkitPreservesPitch?: boolean;
-        };
+        el.playbackRate = alignment.rate;
         if ('preservesPitch' in pitchEl) pitchEl.preservesPitch = false;
+        if ('mozPreservesPitch' in pitchEl) pitchEl.mozPreservesPitch = false;
         if ('webkitPreservesPitch' in pitchEl) pitchEl.webkitPreservesPitch = false;
+      } else {
+        if ('preservesPitch' in pitchEl) pitchEl.preservesPitch = true;
+        if ('mozPreservesPitch' in pitchEl) pitchEl.mozPreservesPitch = true;
+        if ('webkitPreservesPitch' in pitchEl) pitchEl.webkitPreservesPitch = true;
+        el.playbackRate = alignment.rate;
       }
       el.src = url;
 
@@ -1195,7 +1288,7 @@ export class PsychoacousticEngine {
             !crossfadeTriggered &&
             Number.isFinite(el.duration) &&
             el.duration > 12 &&
-            el.currentTime >= el.duration - 4.2
+            el.currentTime >= el.duration - 4.2 * Math.max(0.88, el.playbackRate)
           ) {
             triggerOnce();
           }
@@ -1216,6 +1309,8 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = true;
       this.usingCustomTrack = isCustom;
       this.activeTrackName = trackName;
+      this.activeTrackNativeBpm = nativeBpm;
+      this.activeStudioAppliedBpm = alignment.effectiveBpm;
       return true;
     } catch {
       return false;
@@ -1281,21 +1376,34 @@ export class PsychoacousticEngine {
     const token = ++this.studioLoadToken;
     this.usingCustomTrack = false;
     this.activeCustomTrack = null;
-    // Prefer all tracks in the genre (energy-matched first) so 2-track genres always alternate smoothly!
+    // Prefer all tracks in the genre (energy-matched + closest study BPM first) so 2-track genres always alternate smoothly!
     const allGenreTracks = this.studioCatalog[genre] ?? [];
-    const energyMatched = this.selectTracksForGenreAndEnergy(genre);
-    const tracks =
-      energyMatched.length >= 2
-        ? energyMatched
-        : [
-            ...energyMatched,
-            ...allGenreTracks.filter((t) => !energyMatched.some((e) => e.key === t.key)),
-          ];
+    const energyMatched = [...this.selectTracksForGenreAndEnergy(genre)];
+    const remainingTracks = allGenreTracks.filter((t) => !energyMatched.some((e) => e.key === t.key));
+
+    const targetBpm = this.getTargetStudyBpm();
+    if (targetBpm > 0) {
+      const scoreTrackBpmDistance = (track: StudioTrackRef): number => {
+        const nb = this.inferTrackNativeBpm(track, genre);
+        if (nb <= 0) return 999;
+        return Math.min(
+          Math.abs(nb - targetBpm),
+          Math.abs(nb * 0.5 - targetBpm),
+          Math.abs(nb * 2 - targetBpm)
+        );
+      };
+      energyMatched.sort((a, b) => scoreTrackBpmDistance(a) - scoreTrackBpmDistance(b));
+      remainingTracks.sort((a, b) => scoreTrackBpmDistance(a) - scoreTrackBpmDistance(b));
+    }
+
+    const tracks = energyMatched.length >= 2 ? energyMatched : [...energyMatched, ...remainingTracks];
 
     if (tracks.length === 0 || !this.ctx || !this.studioBus) {
       this.clearStudioDeck(1.2);
       this.usingStudioAudio = false;
       this.activeTrackName = null;
+      this.activeTrackNativeBpm = 0;
+      this.activeStudioAppliedBpm = 0;
       if (this.ctx && this.proceduralMaster && this.cleanSubBus) {
         const now = this.ctx.currentTime;
         this.proceduralMaster.gain.setTargetAtTime(1.0, now, 0.7);
@@ -1306,6 +1414,7 @@ export class PsychoacousticEngine {
 
     const chosenIdx = this.studioTrackIdx % tracks.length;
     const track = tracks[chosenIdx];
+    const nativeBpm = this.inferTrackNativeBpm(track, genre);
     // For Soft Rain & Nature, gently tuck warm pads so our stereo rain & raindrops stay crystal clear!
     const studioTargetGain = genre === 'nature_rain' ? 0.54 : 0.96;
 
@@ -1321,7 +1430,8 @@ export class PsychoacousticEngine {
         this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
         void this.activateStudioForGenre(genre, 4.0);
       },
-      fadeSec
+      fadeSec,
+      nativeBpm
     );
     if (streamed) return;
     if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return;
@@ -1332,11 +1442,18 @@ export class PsychoacousticEngine {
       return;
     }
 
-    this.playStudioBuffer(buffer, track.name, token, studioTargetGain, () => {
-      if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
-      this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
-      void this.activateStudioForGenre(genre, 4.0);
-    });
+    this.playStudioBuffer(
+      buffer,
+      track.name,
+      token,
+      studioTargetGain,
+      () => {
+        if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
+        this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
+        void this.activateStudioForGenre(genre, 4.0);
+      },
+      nativeBpm
+    );
   }
 
   private scheduleDeckCrossfade(delaySec: number, onCrossfade: () => void): void {
@@ -1359,7 +1476,8 @@ export class PsychoacousticEngine {
     trackName: string,
     token: number,
     targetGain: number,
-    onCrossfade: () => void
+    onCrossfade: () => void,
+    nativeBpm = 0
   ): void {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return;
     const ctx = this.ctx;
@@ -1376,7 +1494,8 @@ export class PsychoacousticEngine {
     src.buffer = buffer;
 
     // Futuristic Studio Retuning: mathematically detune real R2 studio tracks to exact A=432 Hz (-31.77 cents) when study requires it!
-    if (this.studySpec?.music.tuningA4Hz === 432) {
+    const is432 = this.studySpec?.music.tuningA4Hz === 432;
+    if (is432) {
       src.playbackRate.setValueAtTime(432 / 440, now);
     }
 
@@ -1392,6 +1511,9 @@ export class PsychoacousticEngine {
     this.activeStudioGain = deckGain;
     this.usingStudioAudio = true;
     this.activeTrackName = trackName;
+    this.activeTrackNativeBpm = nativeBpm;
+    this.activeStudioAppliedBpm =
+      is432 && nativeBpm > 0 ? Math.round(nativeBpm * (432 / 440)) : nativeBpm;
 
     const crossfadeLeadSec = Math.min(7, Math.max(2.5, buffer.duration * 0.16));
     const delaySec = Math.max(1.5, buffer.duration - crossfadeLeadSec);
@@ -1407,7 +1529,7 @@ export class PsychoacousticEngine {
     this.composer.setPalette(nextPalette);
 
     if (this.carrierMode === 'lyria_realtime' && this.studySpec) {
-      this.lyriaClient.setGenre(style, this.studySpec, this.intensityMultiplier);
+      this.lyriaClient.setGenre(style, this.studySpec, this.intensityMultiplier, this.getTargetStudyBpm());
     } else if (this.carrierMode === 'studio_library') {
       this.studioTrackIdx = 0;
       void this.activateStudioForGenre(style);
@@ -1502,6 +1624,36 @@ export class PsychoacousticEngine {
       }
     }
 
+    const targetBpm = this.getTargetStudyBpm(progressRatio);
+    if (
+      this.activeStreamEl &&
+      this.usingStudioAudio &&
+      !this.usingCustomTrack &&
+      spec?.music.tuningA4Hz !== 432 &&
+      this.activeTrackNativeBpm > 0
+    ) {
+      const alignment = this.computeStudioTempoAlignment(this.activeTrackNativeBpm, targetBpm, false);
+      this.activeStudioAppliedBpm = alignment.effectiveBpm;
+      if (Math.abs(this.activeStreamEl.playbackRate - alignment.rate) >= 0.004) {
+        this.activeStreamEl.playbackRate = alignment.rate;
+      }
+    }
+    if (this.carrierMode === 'lyria_realtime' && spec && targetBpm > 0) {
+      this.lyriaClient.updateBpm(spec, targetBpm, this.intensityMultiplier);
+    }
+
+    const currentBpm =
+      this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus'
+        ? 0
+        : this.carrierMode === 'lyria_realtime'
+          ? (spec?.music.percussion === 'none' && !spec?.music.bpm && !spec?.music.bpmRamp) ||
+            this.genre === 'nature_rain'
+            ? 0
+            : Math.max(60, Math.min(160, targetBpm || 82))
+          : this.carrierMode === 'studio_library' && this.usingStudioAudio
+            ? this.activeStudioAppliedBpm
+            : this.composer.getCurrentBpm();
+
     this.stimulusRack.updateProgress(progressRatio, activePhaseFactor);
     const stim = this.stimulusRack.getTelemetry(elapsedSec);
     return {
@@ -1518,7 +1670,7 @@ export class PsychoacousticEngine {
       upperCrossoverHz: spec?.entrainment.modulationBandHz[1] ?? this.params?.upperCrossoverHz ?? 4500,
       stereoAmActive: Boolean(this.amGainR),
       energyTier: this.params?.energyTier ?? 'focus',
-      currentBpm: this.composer.getCurrentBpm(),
+      currentBpm,
       antiMonotonyActive,
       genre: this.genre,
       backgroundAudioActive: this.backgroundAudioActive,
@@ -1569,7 +1721,12 @@ export class PsychoacousticEngine {
       }
     }
     if (this.carrierMode === 'lyria_realtime' && this.studySpec) {
-      this.lyriaClient.steer(this.studySpec, this.intensityMultiplier, this.genre);
+      this.lyriaClient.steer(
+        this.studySpec,
+        this.intensityMultiplier,
+        this.genre,
+        this.getTargetStudyBpm()
+      );
     }
   }
 
@@ -1736,6 +1893,8 @@ export class PsychoacousticEngine {
       const keepAliveElRef = this.keepAliveEl;
       const keepAliveUrlRef = this.keepAliveUrl;
       this.isPlaying = false;
+      this.activeTrackNativeBpm = 0;
+      this.activeStudioAppliedBpm = 0;
       this.composer.stop();
       this.stimulusRack.stop();
       this.lyriaClient.stop();
@@ -1774,6 +1933,8 @@ export class PsychoacousticEngine {
     this.usingCustomTrack = false;
     this.activeCustomTrack = null;
     this.activeTrackName = null;
+    this.activeTrackNativeBpm = 0;
+    this.activeStudioAppliedBpm = 0;
     this.studioDeckPausedRemainingSec = null;
     this.studioDeckOnCrossfade = null;
     this.lyriaStatus = 'idle';

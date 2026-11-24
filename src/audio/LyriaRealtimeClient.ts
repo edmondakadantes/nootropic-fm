@@ -105,6 +105,7 @@ export class LyriaRealtimeClient {
   private fetchFreshToken?: () => Promise<{ token: string; model?: string } | null>;
   private reconnectCount = 0;
   private reconnectTimer: number | null = null;
+  private lastSentBpm = 0;
 
   public async connect(opts: {
     ctx: AudioContext;
@@ -237,6 +238,7 @@ export class LyriaRealtimeClient {
                 },
               })
             );
+            this.lastSentBpm = lyriaCfg.config.bpm;
             ws.send(JSON.stringify({ playbackControl: 'PLAY' }));
             return;
           }
@@ -315,11 +317,11 @@ export class LyriaRealtimeClient {
   /**
    * Smoothly morphs the active live Infinite AI stream to a new curated genre in <2 seconds.
    */
-  public setGenre(genre: ResolvedGenre, spec: ExecutableStudySpec, intensityMult = 1.0): void {
+  public setGenre(genre: ResolvedGenre, spec: ExecutableStudySpec, intensityMult = 1.0, liveBpm?: number): void {
     this.activeGenre = genre;
     this.activeSpec = spec;
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    const cfg = buildLyriaRealtimeConfig(spec, genre);
+    const cfg = buildLyriaRealtimeConfig(spec, genre, liveBpm);
     const density = Math.max(0.15, Math.min(0.92, cfg.config.density * intensityMult));
     const brightness = Math.max(0.18, Math.min(0.92, cfg.config.brightness * (0.85 + 0.15 * intensityMult)));
     try {
@@ -344,6 +346,7 @@ export class LyriaRealtimeClient {
           },
         })
       );
+      this.lastSentBpm = cfg.config.bpm;
     } catch {
       // ignore transient ws error
     }
@@ -352,13 +355,45 @@ export class LyriaRealtimeClient {
   /**
    * Steers live Lyria RealTime density & brightness as user adjusts controls mid-session.
    */
-  public steer(spec: ExecutableStudySpec, intensityMult: number, genre?: ResolvedGenre): void {
+  public steer(spec: ExecutableStudySpec, intensityMult: number, genre?: ResolvedGenre, liveBpm?: number): void {
     this.activeSpec = spec;
     if (genre) this.activeGenre = genre;
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    const cfg = buildLyriaRealtimeConfig(spec, this.activeGenre);
+    const cfg = buildLyriaRealtimeConfig(spec, this.activeGenre, liveBpm);
     const density = Math.max(0.15, Math.min(0.92, cfg.config.density * intensityMult));
     const brightness = Math.max(0.18, Math.min(0.92, cfg.config.brightness * (0.85 + 0.15 * intensityMult)));
+    try {
+      this.ws.send(
+        JSON.stringify({
+          musicGenerationConfig: {
+            bpm: cfg.config.bpm,
+            density: Number(density.toFixed(2)),
+            brightness: Number(brightness.toFixed(2)),
+            scale: cfg.config.scale,
+            muteBass: cfg.config.muteBass,
+            muteDrums: cfg.config.muteDrums,
+            guidance: cfg.config.guidance,
+            temperature: 1.0,
+          },
+        })
+      );
+      this.lastSentBpm = cfg.config.bpm;
+    } catch {
+      // ignore transient ws error
+    }
+  }
+
+  /**
+   * Updates live Lyria RealTime tempo during Iso-Principle BPM ramps (throttled to >= 2 BPM delta).
+   */
+  public updateBpm(spec: ExecutableStudySpec, liveBpm: number, intensityMult = 1.0): void {
+    this.activeSpec = spec;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.status !== 'streaming') return;
+    const cfg = buildLyriaRealtimeConfig(spec, this.activeGenre, liveBpm);
+    if (Math.abs(cfg.config.bpm - this.lastSentBpm) < 2) return;
+    const density = Math.max(0.15, Math.min(0.92, cfg.config.density * intensityMult));
+    const brightness = Math.max(0.18, Math.min(0.92, cfg.config.brightness * (0.85 + 0.15 * intensityMult)));
+    this.lastSentBpm = cfg.config.bpm;
     try {
       this.ws.send(
         JSON.stringify({
@@ -422,6 +457,7 @@ export class LyriaRealtimeClient {
       }
       this.outputGain = null;
     }
+    this.lastSentBpm = 0;
     this.status = 'idle';
   }
 }
