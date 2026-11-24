@@ -180,13 +180,13 @@ export function HeroLandingView({
         </div>
 
         <h1 className="max-w-3xl font-display text-[2rem] font-semibold tracking-tight text-[#F3F1EC] sm:text-5xl leading-[1.06]">
-          Shift how you feel{' '}
+          Reach your best mental state{' '}
           <span className="text-[#34D399]">with music you can actually measure.</span>
         </h1>
 
         <p className="max-w-2xl text-sm leading-relaxed text-[#A3A39E] sm:text-base">
-          Move from stressed to calm, distracted to focused, or tired to awake. Published acoustic
-          rhythms blended live into 10 instrumental styles, verified on a built-in oscilloscope.
+          The adaptive psychoacoustic platform that blends study-backed sound waves into music you
+          love, helping you achieve your best focus, calm, and flow.
         </p>
 
         {/* Primary Instant-Play + Custom Session CTA Pair */}
