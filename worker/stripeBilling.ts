@@ -94,10 +94,6 @@ export async function createStripeCheckoutSession(opts: {
   form.set('branding_settings[logo][url]', `${brandBase}/stripe-logo.png`);
   form.set('branding_settings[icon][type]', 'url');
   form.set('branding_settings[icon][url]', `${brandBase}/stripe-icon.png`);
-  form.set(
-    'custom_text[submit][message]',
-    'Instant unlock for unlimited full sessions, any music style & all science studies. Cancel anytime in 1 click.'
-  );
 
   if (opts.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(opts.email)) {
     form.set('customer_email', opts.email);
