@@ -880,6 +880,8 @@ export default function App() {
         ) : screen === 'debrief' && debriefContext ? (
           <DebriefView
             {...debriefContext}
+            profile={profile}
+            syncCode={syncCode}
             isPro={profile?.planTier === 'pro'}
             onUpgradePro={() => setShowProModal(true)}
             onStartNew={() => {

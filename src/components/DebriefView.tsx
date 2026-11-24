@@ -5,14 +5,19 @@ import {
   CheckCircle2,
   Crown,
   FlaskConical,
+  Share2,
   ShieldCheck,
   Sparkles,
   ThumbsDown,
   ThumbsUp,
   Zap,
 } from 'lucide-react';
-import type { LiveAdjustment, WorkedRating } from '../../shared/types';
+import type { LiveAdjustment, UserProfile, WorkedRating } from '../../shared/types';
 import { api } from '../lib/api';
+import {
+  NeuralFingerprintSigil,
+  sharePublicNeuralFingerprint,
+} from './NeuralFingerprintPass';
 import { PvtBenchmarkModal } from './PvtBenchmarkModal';
 import { SonicOrb } from './SonicOrb';
 
@@ -31,6 +36,8 @@ interface DebriefViewProps {
   studyTitle?: string;
   entrainmentType?: string;
   frequencyHz?: number;
+  profile?: UserProfile | null;
+  syncCode?: string | null;
   isPro?: boolean;
   onUpgradePro?: () => void;
   onStartNew: () => void;
@@ -63,6 +70,8 @@ export function DebriefView({
   studyTitle,
   entrainmentType,
   frequencyHz,
+  profile = null,
+  syncCode = null,
   isPro = false,
   onUpgradePro,
   onStartNew,
@@ -78,6 +87,8 @@ export function DebriefView({
   const [showPostPvt, setShowPostPvt] = useState(false);
   const [pvtPostMs, setPvtPostMs] = useState<number | null>(null);
   const [pvtLapsesPost, setPvtLapsesPost] = useState<number | null>(null);
+  const [sharingCard, setSharingCard] = useState(false);
+  const [shareNote, setShareNote] = useState<string | null>(null);
   const [learningUpdate, setLearningUpdate] = useState<{
     armName: string;
     cohortLabel: string;
@@ -100,6 +111,32 @@ export function DebriefView({
   const deltaPreview = postScore - baselineScore;
   const pvtDeltaMs =
     typeof pvtPreMs === 'number' && typeof pvtPostMs === 'number' ? pvtPostMs - pvtPreMs : null;
+  const shareSeed = syncCode || profile?.id || sessionId;
+
+  const handleShareFingerprint = async (shiftOverride?: number) => {
+    setSharingCard(true);
+    setShareNote(null);
+    try {
+      const outcome = await sharePublicNeuralFingerprint({
+        seed: shareSeed,
+        profile,
+        highlight: {
+          protocolLabel: armName,
+          frequencyHz,
+          shiftDelta: shiftOverride ?? deltaPreview,
+          pvtDeltaMs,
+        },
+      });
+      setShareNote(
+        outcome === 'shared'
+          ? 'Shared your public Neural Fingerprint card!'
+          : 'Public Card PNG saved + link copied — private sync key hidden!'
+      );
+      window.setTimeout(() => setShareNote(null), 4000);
+    } finally {
+      setSharingCard(false);
+    }
+  };
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -194,11 +231,40 @@ export function DebriefView({
             </button>
           </div>
 
+          {/* Safe Public Viral Share Strip */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/30 bg-cyan-400/[0.06] px-4 py-3 text-left">
+            <div className="flex items-center gap-3 min-w-0">
+              <NeuralFingerprintSigil
+                seed={shareSeed}
+                size={46}
+                className="rounded-xl border border-cyan-400/25 bg-slate-950/90 p-0.5"
+              />
+              <div className="min-w-0 text-xs">
+                <div className="font-bold text-white">Share Your Neural Fingerprint</div>
+                <p className="text-[11px] text-slate-400">
+                  Public 1080×1350 card with your sigil &amp; shift · zero private key.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={sharingCard}
+              onClick={() => void handleShareFingerprint(deltaPreview)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/45 bg-cyan-400/15 px-3.5 py-2 text-xs font-bold text-cyan-100 transition hover:bg-cyan-400/25 disabled:opacity-60"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              {sharingCard ? 'Exporting...' : 'Share Card'}
+            </button>
+            {shareNote && (
+              <p className="w-full text-[11px] font-medium text-emerald-300">{shareNote}</p>
+            )}
+          </div>
+
           {!isPro && onUpgradePro && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/35 bg-amber-400/[0.08] px-4 py-3 text-left">
               <div className="text-xs text-amber-100">
-                <strong className="text-white">Felt the difference?</strong> Unlock unlimited custom
-                music styles &amp; all science studies with Pro.
+                <strong className="text-white">Felt the difference?</strong> Unlock full sessions
+                (15–60 min), all 10 curated styles &amp; Infinite Live AI with Pro.
               </div>
               <button
                 type="button"
@@ -319,11 +385,40 @@ export function DebriefView({
             </button>
           </div>
 
+          {/* Safe Public Viral Share Strip */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/30 bg-cyan-400/[0.06] px-4 py-3 text-left">
+            <div className="flex items-center gap-3 min-w-0">
+              <NeuralFingerprintSigil
+                seed={shareSeed}
+                size={46}
+                className="rounded-xl border border-cyan-400/25 bg-slate-950/90 p-0.5"
+              />
+              <div className="min-w-0 text-xs">
+                <div className="font-bold text-white">Share Your Neural Fingerprint</div>
+                <p className="text-[11px] text-slate-400">
+                  Public 1080×1350 card with your sigil &amp; shift · zero private key.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={sharingCard}
+              onClick={() => void handleShareFingerprint(deltaPreview)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-cyan-400/45 bg-cyan-400/15 px-3.5 py-2 text-xs font-bold text-cyan-100 transition hover:bg-cyan-400/25 disabled:opacity-60"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              {sharingCard ? 'Exporting...' : 'Share Card'}
+            </button>
+            {shareNote && (
+              <p className="w-full text-[11px] font-medium text-emerald-300">{shareNote}</p>
+            )}
+          </div>
+
           {!isPro && onUpgradePro && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/35 bg-amber-400/[0.08] px-4 py-3 text-left">
               <div className="text-xs text-amber-100">
-                <strong className="text-white">Felt the difference?</strong> Unlock unlimited custom
-                music styles &amp; all science studies with Pro.
+                <strong className="text-white">Felt the difference?</strong> Unlock full sessions
+                (15–60 min), all 10 curated styles &amp; Infinite Live AI with Pro.
               </div>
               <button
                 type="button"
