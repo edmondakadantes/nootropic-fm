@@ -111,6 +111,8 @@ export async function createStripeCheckoutSession(opts: {
       'line_items[0][price_data][product_data][description]',
       'Unlimited custom music styles, live AI streaming, all science studies & personal adaptive sound tuning.'
     );
+    // Required by Stripe Managed Payments (Software as a service (SaaS) - personal use)
+    form.set('line_items[0][price_data][product_data][tax_code]', 'txcd_10103000');
   }
 
   const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
