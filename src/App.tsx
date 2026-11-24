@@ -44,42 +44,7 @@ import {
   getStoredProfileAuth,
   saveStoredProfileAuth,
 } from './lib/api';
-import type { QuickTryId } from './lib/quickTryProtocols';
-
-const HERO_MOOD_PRESETS: Record<QuickTryId, MoodPresetSelection> = {
-  focus_lofi: {
-    id: 'focus_lofi',
-    label: 'Distracted → Focused',
-    microStateId: 'distracted_scattered',
-    targetState: 'deep_flow',
-    requestedGenre: 'lofi_keys',
-    durationMin: 35,
-  },
-  mood_uplift: {
-    id: 'mood_uplift',
-    label: 'Sad → Happy',
-    microStateId: 'low_mood',
-    targetState: 'energy_lift',
-    requestedGenre: 'acoustic_pluck',
-    durationMin: 20,
-  },
-  calm_rain: {
-    id: 'calm_rain',
-    label: 'Stressed → Calm',
-    microStateId: 'overwhelmed',
-    targetState: 'calm_reset',
-    requestedGenre: 'nature_rain',
-    durationMin: 20,
-  },
-  energy_electronic: {
-    id: 'energy_electronic',
-    label: 'Tired → Awake',
-    microStateId: 'sleep_deprived',
-    targetState: 'energy_lift',
-    requestedGenre: 'deep_electronic',
-    durationMin: 20,
-  },
-};
+import { buildInstantQuickTryRecommendation, type QuickTryId } from './lib/quickTryProtocols';
 
 const StudyLabView = lazy(() =>
   import('./components/StudyLabView').then((m) => ({ default: m.StudyLabView }))
@@ -279,13 +244,13 @@ export default function App() {
     return 'focus';
   }, []);
 
-  const handleSelectMoodPreset = useCallback(
+  const handleInstantHeroPlay = useCallback(
     (id: QuickTryId) => {
       setErrorBanner(null);
-      const preset = HERO_MOOD_PRESETS[id];
-      setSelectedPreset(preset);
-      setFieldMood(moodFromTarget('office', preset.targetState));
-      setScreen('checkin');
+      const rec = buildInstantQuickTryRecommendation(id);
+      setActiveRec(rec);
+      setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+      setScreen('player');
     },
     [moodFromTarget]
   );
@@ -781,7 +746,7 @@ export default function App() {
           </div>
         ) : screen === 'landing' ? (
           <HeroLandingView
-            onSelectMoodPreset={handleSelectMoodPreset}
+            onInstantPlay={handleInstantHeroPlay}
             onStartCustomize={() => {
               setSelectedPreset(null);
               setScreen('checkin');
@@ -867,6 +832,10 @@ export default function App() {
             stripeAvailable={runtimeConfig?.stripeBillingAvailable ?? false}
             onUpgradePro={() => setShowProModal(true)}
             onStartDirectCheckout={handleStartDirectCheckout}
+            onOpenCustomCheckIn={() => {
+              setAudioActive(false);
+              setScreen('checkin');
+            }}
             onPlayingChange={setAudioActive}
             onSessionClaimed={(claimed) => {
               setProfile(claimed.profile);

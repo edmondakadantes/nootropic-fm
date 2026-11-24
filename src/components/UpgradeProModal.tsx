@@ -19,9 +19,9 @@ interface UpgradeProModalProps {
 }
 
 const PRO_BENEFITS = [
-  'Unlimited full sessions (15, 30, 45, 60 min with zero 5-minute cutoffs)',
+  'Unlimited full sessions (15, 30, 45, 60 min with zero cutoffs)',
   'All 10 curated instrumental styles + Endless Stream (never repeats)',
-  'Real-time oscilloscope proof & 1-tap Pure Sound Wave isolation (verifiable on any scope)',
+  'Real-time oscilloscope proof (Y/t & X/Y Lissajous) & 1-tap Pure Wave isolation',
   'Full Science Study Lab + reaction-speed tracking & instant QR sync across devices',
 ];
 
@@ -147,14 +147,14 @@ export function UpgradeProModal({
                 }`}
               >
                 <span className="absolute -top-2.5 right-3 rounded bg-amber-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#0A0B0C]">
-                  Save 50%
+                  7-Day Free Trial · Save 50%
                 </span>
-                <div className="text-xs font-semibold text-amber-200">Annual Pro</div>
+                <div className="text-xs font-semibold text-amber-200">Annual Studio Pass</div>
                 <div className="mt-1 flex items-baseline gap-1">
                   <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$59</span>
                   <span className="text-xs text-[#8E8E88]">/ year</span>
                 </div>
-                <div className="mt-1 text-[11px] text-[#8E8E88]">$4.92/mo · billed yearly</div>
+                <div className="mt-1 text-[11px] text-[#8E8E88]">$0.00 today · $4.92/mo after trial</div>
               </button>
 
               <button
@@ -166,7 +166,7 @@ export function UpgradeProModal({
                     : 'border-white/10 bg-[#121316] hover:border-white/25'
                 }`}
               >
-                <div className="text-xs font-semibold text-[#34D399]">Monthly Pro</div>
+                <div className="text-xs font-semibold text-[#34D399]">Monthly Pass</div>
                 <div className="mt-1 flex items-baseline gap-1">
                   <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$9.99</span>
                   <span className="text-xs text-[#8E8E88]">/ month</span>
@@ -174,6 +174,16 @@ export function UpgradeProModal({
                 <div className="mt-1 text-[11px] text-[#8E8E88]">Cancel anytime in 1 click</div>
               </button>
             </div>
+
+            {plan === 'annual' && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 font-mono-tech text-[10px] text-amber-100">
+                <span>Today: $0.00</span>
+                <span className="text-[#8E8E88]">→</span>
+                <span>Day 5: Reminder email</span>
+                <span className="text-[#8E8E88]">→</span>
+                <span>Day 7: $59/yr (cancel anytime)</span>
+              </div>
+            )}
 
             {/* Benefits */}
             <ul className="space-y-2 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-4 text-xs text-[#D4D4CE]">
@@ -226,7 +236,7 @@ export function UpgradeProModal({
               {busy
                 ? 'Opening Secure Stripe Checkout...'
                 : plan === 'annual'
-                  ? 'Continue to Stripe · $59/year'
+                  ? 'Start 7-Day Free Trial · Then $59/yr'
                   : 'Continue to Stripe · $9.99/month'}
             </button>
 

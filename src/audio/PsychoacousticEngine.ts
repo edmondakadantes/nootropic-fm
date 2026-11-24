@@ -198,6 +198,8 @@ export class PsychoacousticEngine {
   private analyser: AnalyserNode | null = null;
   private scopeMasterAnalyser: AnalyserNode | null = null;
   private scopeModAnalyser: AnalyserNode | null = null;
+  private scopeLeftAnalyser: AnalyserNode | null = null;
+  private scopeRightAnalyser: AnalyserNode | null = null;
   private masterGain: GainNode | null = null;
 
   // Core routing buses
@@ -340,6 +342,19 @@ export class PsychoacousticEngine {
     compressor.connect(masterGain);
     masterGain.connect(analyser);
     masterGain.connect(scopeMasterAnalyser);
+
+    const scopeSplitter = ctx.createChannelSplitter(2);
+    const scopeLeftAnalyser = ctx.createAnalyser();
+    scopeLeftAnalyser.fftSize = 1024;
+    scopeLeftAnalyser.smoothingTimeConstant = 0.0;
+    const scopeRightAnalyser = ctx.createAnalyser();
+    scopeRightAnalyser.fftSize = 1024;
+    scopeRightAnalyser.smoothingTimeConstant = 0.0;
+    masterGain.connect(scopeSplitter);
+    scopeSplitter.connect(scopeLeftAnalyser, 0);
+    scopeSplitter.connect(scopeRightAnalyser, 1);
+    this.scopeLeftAnalyser = scopeLeftAnalyser;
+    this.scopeRightAnalyser = scopeRightAnalyser;
 
     // Lock-screen / Car Bluetooth audio bridge
     this.backgroundAudioActive = false;
@@ -1392,6 +1407,20 @@ export class PsychoacousticEngine {
   }
 
   /**
+   * Captures synchronized Left & Right raw IEEE-754 audio channels from master output
+   * for genuine stereo X/Y Lissajous phase vectorscope visualization & correlation telemetry.
+   */
+  public getScopeStereoXY(
+    left: Float32Array<ArrayBuffer>,
+    right: Float32Array<ArrayBuffer>
+  ): boolean {
+    if (!this.scopeLeftAnalyser || !this.scopeRightAnalyser || !this.isPlaying) return false;
+    this.scopeLeftAnalyser.getFloatTimeDomainData(left);
+    this.scopeRightAnalyser.getFloatTimeDomainData(right);
+    return true;
+  }
+
+  /**
    * Computes the strongest real FFT spectral peak (Hz) from the live Web Audio master output.
    */
   public getMeasuredPeakHz(): number | null {
@@ -1453,6 +1482,8 @@ export class PsychoacousticEngine {
       this.analyser = null;
       this.scopeMasterAnalyser = null;
       this.scopeModAnalyser = null;
+      this.scopeLeftAnalyser = null;
+      this.scopeRightAnalyser = null;
       return;
     }
     this.stopImmediate();
@@ -1508,6 +1539,8 @@ export class PsychoacousticEngine {
     this.analyser = null;
     this.scopeMasterAnalyser = null;
     this.scopeModAnalyser = null;
+    this.scopeLeftAnalyser = null;
+    this.scopeRightAnalyser = null;
   }
 
   private async requestWakeLock(): Promise<void> {

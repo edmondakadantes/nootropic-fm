@@ -1359,7 +1359,7 @@ export function CheckInView({
                       genreChoice !== 'auto' ? GENRE_META[genreChoice].label : 'Auto Music';
                     return profile?.planTier === 'pro'
                       ? `Play ${activeMusicName} · Pro`
-                      : `Play ${activeMusicName} · 5 Min Free`;
+                      : `Play ${activeMusicName} · 15 Min Free`;
                   })()}
             </button>
           </div>

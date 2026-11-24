@@ -202,7 +202,7 @@ export function buildInstantQuickTryRecommendation(id: QuickTryId): ProtocolReco
       ],
       formulaIngredients: [
         { role: 'Layer 1 · Active AM', compound: '12 Hz SMR Lift · 3-Band LR4', dose: '11%→22% (200Hz–4.2kHz)', evidenceTag: 'Husain 2002' },
-        { role: 'Layer 2 · Music', compound: 'Acoustic Pluck · Bright Major', dose: 'Studio R2', evidenceTag: 'Lyric-Free' },
+        { role: 'Layer 2 · Music', compound: 'Acoustic Pluck · Bright Major', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
       ],
       rationale:
         'Pairs uplifting major-mode Acoustic Pluck studio stems with gentle 12 Hz mid-band clarity modulation to shift low energy smoothly toward positive momentum.',
@@ -345,7 +345,7 @@ export function buildInstantQuickTryRecommendation(id: QuickTryId): ProtocolReco
       ],
       formulaIngredients: [
         { role: 'Layer 1 · Active AM', compound: '18 Hz Beta · 3-Band LR4', dose: '13%→26% (220Hz–4.5kHz)', evidenceTag: 'Husain 2002' },
-        { role: 'Layer 2 · Music', compound: 'Deep Electronic · Drive', dose: 'Studio R2', evidenceTag: 'Lyric-Free' },
+        { role: 'Layer 2 · Music', compound: 'Deep Electronic · Drive', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
       ],
       rationale:
         'Combines upbeat 114 BPM Deep Electronic studio stems with phase-coherent 18 Hz mid-band amplitude modulation while keeping sub-bass and highs untouched.',
@@ -488,7 +488,7 @@ export function buildInstantQuickTryRecommendation(id: QuickTryId): ProtocolReco
       ],
       formulaIngredients: [
         { role: 'Layer 1 · Breath Tide', compound: '0.10 Hz HRV Swell', dose: '5s inhale / 5s exhale', evidenceTag: 'Lehrer 2014' },
-        { role: 'Layer 2 · Music', compound: 'Nature & Rain · Calm', dose: 'Studio R2', evidenceTag: 'Lyric-Free' },
+        { role: 'Layer 2 · Music', compound: 'Nature & Rain · Calm', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
       ],
       rationale:
         'Synchronizes a smooth 0.1 Hz breathing volume tide (6 breaths/min) with calm stereo rain pads so your nervous system can settle naturally.',
@@ -632,7 +632,7 @@ export function buildInstantQuickTryRecommendation(id: QuickTryId): ProtocolReco
     ],
     formulaIngredients: [
       { role: 'Layer 1 · Active AM', compound: '16 Hz Beta · 3-Band LR4', dose: '14%→28% (190Hz–4.5kHz)', evidenceTag: 'Woods et al. 2024' },
-      { role: 'Layer 2 · Music', compound: 'Lo-Fi Warm Keys · Focus', dose: 'Studio R2', evidenceTag: 'Lyric-Free' },
+      { role: 'Layer 2 · Music', compound: 'Lo-Fi Warm Keys · Focus', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
     ],
     rationale:
       'Applies phase-coherent 16 Hz Beta modulation strictly to the 190 Hz–4.5 kHz mid-band of mastered Lo-Fi Warm Keys studio audio so sub-bass warmth and crisp highs stay completely intact.',

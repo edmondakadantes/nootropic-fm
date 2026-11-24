@@ -71,6 +71,7 @@ export async function createStripeCheckoutSession(opts: {
   email?: string;
   priceMonthly?: string;
   priceAnnual?: string;
+  eligibleForTrial?: boolean;
 }): Promise<{ id: string; url: string }> {
   const form = new URLSearchParams();
   form.set('mode', 'subscription');
@@ -82,12 +83,15 @@ export async function createStripeCheckoutSession(opts: {
   form.set('metadata[plan]', opts.plan);
   form.set('subscription_data[metadata][profile_id]', opts.profileId);
   form.set('subscription_data[metadata][plan]', opts.plan);
+  if (opts.plan === 'annual' && (opts.eligibleForTrial ?? true)) {
+    form.set('subscription_data[trial_period_days]', '7');
+  }
 
   // Per-session nootropic.fm Checkout Branding (does NOT affect Playrify or other brands on the same Stripe account!)
   const brandBase = 'https://www.nootropic.fm/brand';
   form.set('branding_settings[display_name]', 'nootropic.fm');
-  form.set('branding_settings[background_color]', '#05070d');
-  form.set('branding_settings[button_color]', '#06b6d4');
+  form.set('branding_settings[background_color]', '#0A0B0C');
+  form.set('branding_settings[button_color]', '#10b981');
   form.set('branding_settings[border_style]', 'rounded');
   form.set('branding_settings[font_family]', 'inter');
   form.set('branding_settings[logo][type]', 'url');
@@ -123,7 +127,7 @@ export async function createStripeCheckoutSession(opts: {
     );
     form.set(
       'line_items[0][price_data][product_data][description]',
-      'Unlimited full sessions (15–60 min), all 10 curated instrumental styles, infinite live AI streaming & full science study lab.'
+      'Unlimited full sessions (20–60 min), all 10 curated instrumental styles, Endless Stream & full science study lab.'
     );
     form.set(
       'line_items[0][price_data][product_data][images][0]',

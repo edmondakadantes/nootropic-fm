@@ -3524,6 +3524,7 @@ export default {
         const plan: BillingPlanCycle = body.plan === 'monthly' ? 'monthly' : 'annual';
 
         let targetProfileId = body.profileId?.trim() || '';
+        let hadPriorSub = false;
         let createdAuth:
           | { profile: UserProfile; profileToken: string; syncCode: string }
           | undefined;
@@ -3532,6 +3533,8 @@ export default {
           const check = await verifyProfileAccess(env.DB, targetProfileId, request);
           if (!check.ok || !check.row) {
             targetProfileId = '';
+          } else {
+            hadPriorSub = Boolean(check.row.stripe_subscription_id);
           }
         }
 
@@ -3585,6 +3588,7 @@ export default {
           email: body.email,
           priceMonthly: env.STRIPE_PRICE_MONTHLY,
           priceAnnual: env.STRIPE_PRICE_ANNUAL,
+          eligibleForTrial: !hadPriorSub,
         });
 
         return json(
@@ -3738,7 +3742,12 @@ export default {
             const email =
               (obj.customer_details as { email?: string } | undefined)?.email ||
               (obj.customer_email ? String(obj.customer_email) : null);
-            const fallbackDays = meta.plan === 'annual' ? 370 : 35;
+            const isZeroUpfrontTrial = Number(obj.amount_total ?? 1) === 0;
+            const fallbackDays = isZeroUpfrontTrial
+              ? 8
+              : meta.plan === 'annual'
+                ? 370
+                : 35;
             const fallbackUntil = new Date(
               Date.now() + fallbackDays * 24 * 60 * 60 * 1000
             ).toISOString();

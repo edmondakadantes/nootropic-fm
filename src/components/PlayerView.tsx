@@ -48,7 +48,7 @@ import { NeuralVisualizer } from './NeuralVisualizer';
 import { PvtBenchmarkModal } from './PvtBenchmarkModal';
 import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
-const FREE_PREVIEW_LIMIT_SEC = 300; // 5 minutes initial free preview
+const FREE_PREVIEW_LIMIT_SEC = 900; // 15-minute free calibration session (past 6-12 min entrainment threshold)
 const SHARE_BONUS_SEC = 1800; // +30 minutes free when sharing your 1-of-1 Neural Fingerprint Card
 const SHARE_BONUS_DAY_KEY = 'nootropic_fm_share_bonus_day_v1';
 
@@ -73,6 +73,7 @@ interface PlayerViewProps {
   stripeAvailable?: boolean;
   onUpgradePro?: () => void;
   onStartDirectCheckout?: (plan: 'annual' | 'monthly') => Promise<void>;
+  onOpenCustomCheckIn?: () => void;
   onPlayingChange?: (playing: boolean) => void;
   onSessionClaimed?: (claimed: {
     profile: UserProfile;
@@ -105,6 +106,7 @@ export function PlayerView({
   stripeAvailable = false,
   onUpgradePro,
   onStartDirectCheckout,
+  onOpenCustomCheckIn,
   onPlayingChange,
   onSessionClaimed,
   onFinishToDebrief,
@@ -576,6 +578,24 @@ export function PlayerView({
     }
   };
 
+  const togglePlayRef = useRef<() => Promise<void>>(async () => {});
+  togglePlayRef.current = togglePlay;
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      if (previewLocked || showPrePvt) return;
+      const activeTag = (document.activeElement?.tagName ?? '').toUpperCase();
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT' || activeTag === 'BUTTON') {
+        return;
+      }
+      e.preventDefault();
+      void togglePlayRef.current();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [previewLocked, showPrePvt]);
+
   const handleCarrierSwitch = async (nextMode: CarrierEngineMode) => {
     if (!isPro && previewLocked) {
       return;
@@ -705,6 +725,16 @@ export function PlayerView({
     setModMult(next);
     engineRef.current?.adjustModDepth(next);
     setAdjustments((prev) => [...prev, { atSec: elapsedRef.current, control: 'modulation', delta }]);
+  };
+
+  const setDirectModDepth = (targetMult: number) => {
+    const clamped = Number(Math.max(0.3, Math.min(1.5, targetMult)).toFixed(2));
+    const delta = Number((clamped - modMult).toFixed(2));
+    setModMult(clamped);
+    engineRef.current?.adjustModDepth(clamped);
+    if (delta !== 0) {
+      setAdjustments((prev) => [...prev, { atSec: elapsedRef.current, control: 'modulation', delta }]);
+    }
   };
 
   const switchGenre = (style: ResolvedGenre) => {
@@ -943,7 +973,7 @@ export function PlayerView({
                 title={
                   shareBonusSec > 0
                     ? '+30 min Share Bonus active! Upgrade to Pro for unlimited full sessions.'
-                    : 'Free preview lasts 5 minutes. Share your Neural Fingerprint for +30 min free or upgrade to Pro.'
+                    : 'Free calibration lasts 15 minutes. Share your Neural Fingerprint for +30 min free or try Pro free for 7 days.'
                 }
               >
                 <Clock className="h-3 w-3" />
@@ -1006,6 +1036,11 @@ export function PlayerView({
               style={{ width: `${Math.max(2, progressPct)}%` }}
             />
           </div>
+          {!isPro && elapsedSec >= 300 && elapsedSec < 325 && plannedSec > effectiveFreeLimitSec && (
+            <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-[#34D399]">
+              5:00 Entrainment Phase-Locked · {formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))} remaining in your free calibration session
+            </div>
+          )}
         </div>
 
         {/* Prominent 2-Button Music Engine Selector: Studio Mix vs Endless Stream */}
@@ -1116,6 +1151,37 @@ export function PlayerView({
           </div>
         )}
 
+        {/* Direct Hardware Modulation Depth Selector (Subtle / Standard / Deep) */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/[0.08] bg-[#0B0C0E] px-3.5 py-2.5">
+          <div className="flex flex-wrap items-center gap-2 font-mono-tech text-[10px]">
+            <span className="uppercase tracking-[0.14em] text-[#8E8E88]">Modulation Depth</span>
+            <span className="text-[#34D399]">
+              {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz · ` : ''}
+              {Math.round(telemetry.currentModDepth * 100)}%
+            </span>
+          </div>
+          <div className="inline-flex rounded-lg border border-white/12 bg-[#141518] p-0.5 text-[11px] font-semibold">
+            {[
+              { label: 'Subtle', val: 0.65, active: modMult <= 0.78 },
+              { label: 'Standard', val: 1.0, active: modMult > 0.78 && modMult < 1.18 },
+              { label: 'Deep', val: 1.35, active: modMult >= 1.18 },
+            ].map((tier) => (
+              <button
+                key={tier.label}
+                type="button"
+                onClick={() => setDirectModDepth(tier.val)}
+                className={`rounded-md px-3 py-1 transition ${
+                  tier.active
+                    ? 'bg-[#22252A] text-[#F3F1EC] ring-1 ring-white/15'
+                    : 'text-[#8E8E88] hover:text-[#D4D4CE]'
+                }`}
+              >
+                {tier.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Primary Hardware Transport Dock: Play/Pause + Volume + End & Rate */}
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3.5 sm:px-5 sm:py-4">
           <div className="flex flex-1 items-center gap-3.5 min-w-[190px]">
@@ -1132,10 +1198,13 @@ export function PlayerView({
               )}
             </button>
 
-            <div className="flex-1 max-w-[180px] space-y-1">
+            <div className="flex-1 max-w-[190px] space-y-1">
               <div className="flex items-center justify-between text-[11px] text-[#8E8E88]">
-                <span className="inline-flex items-center gap-1">
+                <span className="inline-flex items-center gap-1.5">
                   <Volume2 className="h-3.5 w-3.5" /> Volume
+                  <kbd className="hidden rounded border border-white/12 bg-[#141518] px-1 py-0.5 font-mono-tech text-[9px] text-[#7E7E78] sm:inline">
+                    SPACE
+                  </kbd>
                 </span>
                 <span className="font-mono-tech text-[#D4D4CE]">{Math.round(volume * 100)}%</span>
               </div>
@@ -1194,8 +1263,22 @@ export function PlayerView({
               onSubmit={(e) => void handleClaimProfile(e)}
               className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3 space-y-2"
             >
-              <div className="text-[11px] font-semibold text-[#D4D4CE]">
-                Save your progress while you listen (anonymous):
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-[#D4D4CE]">
+                  Save your progress while you listen (anonymous):
+                </span>
+                {onOpenCustomCheckIn && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      engineRef.current?.stop();
+                      onOpenCustomCheckIn();
+                    }}
+                    className="font-mono-tech text-[10px] font-semibold text-[#34D399] hover:text-emerald-300"
+                  >
+                    Full 4-Step Calibration →
+                  </button>
+                )}
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
@@ -1542,18 +1625,19 @@ export function PlayerView({
         </div>
       )}
 
-      {/* 5-Minute Free Preview Complete -> Stripe Pro Unlock Overlay */}
+      {/* 15-Minute Free Session Complete -> Stripe Pro Unlock Overlay */}
       {previewLocked && !isPro && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/85 p-4 backdrop-blur-md">
           <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-2xl border border-white/15 p-5 sm:p-7 space-y-5">
             <div className="space-y-2 text-center">
-              <div className="inline-flex items-center gap-1.5 rounded-md border border-amber-400/35 bg-amber-400/10 px-2.5 py-1 font-mono-tech text-[10px] font-bold uppercase tracking-wider text-amber-200">
+              <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-400/35 bg-emerald-500/10 px-2.5 py-1 font-mono-tech text-[10px] font-bold uppercase tracking-wider text-[#34D399]">
                 <Lock className="h-3 w-3" />
-                5-Minute Free Preview Complete
+                15-Minute Free Session Complete
+                {telemetry.currentModHz > 0 ? ` · ${telemetry.currentModHz} Hz Phase-Locked` : ''}
               </div>
               <h2 className="font-display text-2xl font-semibold text-[#F3F1EC] sm:text-[1.65rem] leading-tight">
-                Keep this session running.{' '}
-                <span className="text-[#34D399]">Unlock full sessions.</span>
+                Your signal is calibrated.{' '}
+                <span className="text-[#34D399]">Keep full sessions open.</span>
               </h2>
               <p className="text-xs leading-relaxed text-[#A3A39E] sm:text-sm">
                 Your <strong className="text-[#F3F1EC]">{activeVibeDisplay.label}</strong> and{' '}
@@ -1574,14 +1658,14 @@ export function PlayerView({
                 }`}
               >
                 <span className="absolute -top-2.5 right-3 rounded bg-amber-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#0A0B0C]">
-                  Save 50%
+                  7-Day Free Trial · Save 50%
                 </span>
-                <div className="text-xs font-semibold text-amber-200">Annual Pro</div>
+                <div className="text-xs font-semibold text-amber-200">Annual Studio Pass</div>
                 <div className="mt-1 flex items-baseline gap-1">
                   <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$59</span>
                   <span className="text-xs text-[#8E8E88]">/ year</span>
                 </div>
-                <div className="mt-1 text-[11px] text-[#8E8E88]">$4.92/mo · billed yearly</div>
+                <div className="mt-1 text-[11px] text-[#8E8E88]">$0.00 today · $4.92/mo after trial</div>
               </button>
 
               <button
@@ -1593,7 +1677,7 @@ export function PlayerView({
                     : 'border-white/10 bg-[#121316] hover:border-white/25'
                 }`}
               >
-                <div className="text-xs font-semibold text-[#34D399]">Monthly Pro</div>
+                <div className="text-xs font-semibold text-[#34D399]">Monthly Pass</div>
                 <div className="mt-1 flex items-baseline gap-1">
                   <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$9.99</span>
                   <span className="text-xs text-[#8E8E88]">/ month</span>
@@ -1601,6 +1685,16 @@ export function PlayerView({
                 <div className="mt-1 text-[11px] text-[#8E8E88]">Cancel anytime in 1 click</div>
               </button>
             </div>
+
+            {selectedPaywallPlan === 'annual' && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 font-mono-tech text-[10px] text-amber-100">
+                <span>Today: $0.00</span>
+                <span className="text-[#8E8E88]">→</span>
+                <span>Day 5: Reminder email</span>
+                <span className="text-[#8E8E88]">→</span>
+                <span>Day 7: $59/yr (cancel anytime)</span>
+              </div>
+            )}
 
             <ul className="space-y-1.5 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3.5 text-xs text-[#D4D4CE]">
               <li className="flex items-start gap-2">
@@ -1613,7 +1707,7 @@ export function PlayerView({
               </li>
               <li className="flex items-start gap-2">
                 <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />
-                <span>Real-time oscilloscope proof, Pure Wave audition &amp; Science Study Lab</span>
+                <span>Real-time Y(t) &amp; X/Y Lissajous oscilloscope + Science Study Lab</span>
               </li>
             </ul>
 
@@ -1652,8 +1746,8 @@ export function PlayerView({
               {unlockingCheckout
                 ? 'Opening Secure Stripe Checkout...'
                 : selectedPaywallPlan === 'annual'
-                  ? 'Unlock Full Session · $59/year'
-                  : 'Unlock Full Session · $9.99/month'}
+                  ? 'Start 7-Day Free Trial · Then $59/yr'
+                  : 'Start Monthly Pass · $9.99/mo'}
             </button>
 
             {/* Viral Share Bonus: Share your 1-of-1 Neural Fingerprint Card -> +30 Min Free Instantly! */}
