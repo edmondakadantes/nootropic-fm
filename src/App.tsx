@@ -865,6 +865,8 @@ export default function App() {
         ) : screen === 'player' && activeRec ? (
           <PlayerView
             recommendation={activeRec}
+            profile={profile}
+            syncCode={syncCode}
             lyriaRealtimeAvailable={runtimeConfig?.lyriaRealtimeAvailable}
             isPro={profile?.planTier === 'pro'}
             stripeAvailable={runtimeConfig?.stripeBillingAvailable ?? false}

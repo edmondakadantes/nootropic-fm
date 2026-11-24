@@ -414,7 +414,7 @@ export async function sharePublicNeuralFingerprint(opts: {
   seed: string;
   profile?: UserProfile | null;
   highlight?: PublicFingerprintShareHighlight;
-}): Promise<'shared' | 'downloaded'> {
+}): Promise<'shared' | 'downloaded' | 'cancelled'> {
   const { blob, hexTag } = await renderPublicFingerprintCardBlob(opts);
   const fileName = `nootropic-neural-fingerprint-${hexTag}.png`;
   const shareText = `My 1-of-1 Neural Fingerprint (Sigil #${hexTag}) on nootropic.fm — real focus & calm sound science you can measure on an oscilloscope. Generate yours free: ${PUBLIC_SHARE_URL}`;
@@ -435,7 +435,7 @@ export async function sharePublicNeuralFingerprint(opts: {
     }
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      return 'shared';
+      return 'cancelled';
     }
     // Fall through to instant download + clipboard copy
   }
@@ -689,6 +689,7 @@ export function NeuralPassCard({ profile, syncCode }: NeuralPassCardProps) {
     setShareFeedback(null);
     try {
       const outcome = await sharePublicNeuralFingerprint({ seed, profile });
+      if (outcome === 'cancelled') return;
       setShareFeedback(
         outcome === 'shared'
           ? 'Public Fingerprint Card shared!'

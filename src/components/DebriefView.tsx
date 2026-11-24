@@ -127,6 +127,7 @@ export function DebriefView({
           pvtDeltaMs,
         },
       });
+      if (outcome === 'cancelled') return;
       setShareNote(
         outcome === 'shared'
           ? 'Shared your public Neural Fingerprint card!'

@@ -16,12 +16,12 @@ import {
   Pause,
   Play,
   Radio,
+  Share2,
   ShieldAlert,
   ShieldCheck,
   Sliders,
   Sparkles,
   Volume2,
-  Waves,
   Zap,
 } from 'lucide-react';
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
@@ -41,14 +41,34 @@ import { DEVICE_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../sh
 import { PsychoacousticEngine, type EngineTelemetry } from '../audio/PsychoacousticEngine';
 import { API_BASE, api, saveStoredProfileAuth } from '../lib/api';
 import { LiveEnvelopeProof } from './LiveEnvelopeProof';
+import {
+  NeuralFingerprintSigil,
+  sharePublicNeuralFingerprint,
+} from './NeuralFingerprintPass';
 import { NeuralVisualizer } from './NeuralVisualizer';
 import { PvtBenchmarkModal } from './PvtBenchmarkModal';
 import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
-const FREE_PREVIEW_LIMIT_SEC = 300; // 5 minutes free preview before Pro unlock
+const FREE_PREVIEW_LIMIT_SEC = 300; // 5 minutes initial free preview
+const SHARE_BONUS_SEC = 1800; // +30 minutes free when sharing your 1-of-1 Neural Fingerprint Card
+const SHARE_BONUS_DAY_KEY = 'nootropic_fm_share_bonus_day_v1';
+
+function getTodayUtcKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function hasClaimedShareBonusToday(): boolean {
+  try {
+    return localStorage.getItem(SHARE_BONUS_DAY_KEY) === getTodayUtcKey();
+  } catch {
+    return false;
+  }
+}
 
 interface PlayerViewProps {
   recommendation: ProtocolRecommendation;
+  profile?: UserProfile | null;
+  syncCode?: string | null;
   lyriaRealtimeAvailable?: boolean;
   isPro?: boolean;
   stripeAvailable?: boolean;
@@ -79,6 +99,8 @@ function formatTimer(sec: number): string {
 
 export function PlayerView({
   recommendation,
+  profile = null,
+  syncCode = null,
   lyriaRealtimeAvailable = false,
   isPro = false,
   stripeAvailable = false,
@@ -133,10 +155,19 @@ export function PlayerView({
   const [pvtPreMs, setPvtPreMs] = useState<number | null>(null);
   const [pvtLapsesPre, setPvtLapsesPre] = useState<number | null>(null);
   const [previewLocked, setPreviewLocked] = useState(false);
+  const [shareBonusSec, setShareBonusSec] = useState<number>(0);
+  const [shareBonusUsedToday, setShareBonusUsedToday] = useState<boolean>(() =>
+    hasClaimedShareBonusToday()
+  );
+  const [sharingForBonus, setSharingForBonus] = useState(false);
+  const [shareBonusToast, setShareBonusToast] = useState<string | null>(null);
   const [selectedPaywallPlan, setSelectedPaywallPlan] = useState<'annual' | 'monthly'>('annual');
   const [unlockingCheckout, setUnlockingCheckout] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('none');
+
+  const effectiveFreeLimitSec = FREE_PREVIEW_LIMIT_SEC + shareBonusSec;
+  const shareSeed = syncCode || profile?.id || recommendation.sessionId;
 
   // Live session promotion (lets 1-Click Quick-Try listeners claim a 5s anonymous profession profile without audio stutter!)
   const [liveSessionId, setLiveSessionId] = useState<string>(recommendation.sessionId);
@@ -480,8 +511,8 @@ export function PlayerView({
             .catch(() => {});
         }
 
-        // 5-Minute Free Preview Gate for non-Pro listeners (smooth 2-second fade-out -> Stripe Unlock)
-        if (!isPro && next >= FREE_PREVIEW_LIMIT_SEC && plannedSec > FREE_PREVIEW_LIMIT_SEC) {
+        // Free Preview Gate for non-Pro listeners (5 min default, +30 min unlocked after sharing Fingerprint Card!)
+        if (!isPro && next >= effectiveFreeLimitSec && plannedSec > effectiveFreeLimitSec) {
           window.clearInterval(id);
           setIsPlaying(false);
           setPreviewLocked(true);
@@ -517,7 +548,7 @@ export function PlayerView({
     }, 1000);
 
     return () => window.clearInterval(id);
-  }, [isPlaying, isPro, plannedSec, liveSessionId, isEphemeral, onFinishToDebrief]);
+  }, [isPlaying, isPro, effectiveFreeLimitSec, plannedSec, liveSessionId, isEphemeral, onFinishToDebrief]);
 
   const togglePlay = async () => {
     if (!isPro && previewLocked) {
@@ -686,6 +717,44 @@ export function PlayerView({
     }
   };
 
+  const handleShareFor30MinBonus = async () => {
+    setSharingForBonus(true);
+    setUnlockError(null);
+    try {
+      const outcome = await sharePublicNeuralFingerprint({
+        seed: shareSeed,
+        profile,
+        highlight: {
+          protocolLabel: recommendation.arm.name,
+          frequencyHz: telemetry.currentModHz,
+        },
+      });
+      if (outcome === 'cancelled') {
+        return;
+      }
+      try {
+        localStorage.setItem(SHARE_BONUS_DAY_KEY, getTodayUtcKey());
+      } catch {
+        // ignore storage restrictions
+      }
+      setShareBonusUsedToday(true);
+      setShareBonusSec(SHARE_BONUS_SEC);
+      setPreviewLocked(false);
+      setShareBonusToast(
+        outcome === 'shared'
+          ? 'Thanks for sharing your Neural Fingerprint! +30 minutes unlocked.'
+          : 'Public Fingerprint Card saved & link copied — +30 minutes unlocked!'
+      );
+      window.setTimeout(() => setShareBonusToast(null), 6000);
+      await engineRef.current?.resume();
+      setIsPlaying(true);
+    } catch {
+      setUnlockError('Could not generate the share card right now — please try again.');
+    } finally {
+      setSharingForBonus(false);
+    }
+  };
+
   const handleEndSession = () => {
     endedByUserRef.current = true;
     engineRef.current?.stop();
@@ -762,6 +831,13 @@ export function PlayerView({
         </div>
       )}
 
+      {shareBonusToast && (
+        <div className="animate-rise flex items-center gap-2 rounded-2xl border border-emerald-400/40 bg-emerald-500/15 px-4 py-2.5 text-xs font-medium text-emerald-100 backdrop-blur-md">
+          <Sparkles className="h-4 w-4 shrink-0 text-emerald-300" />
+          <span>{shareBonusToast}</span>
+        </div>
+      )}
+
       {/* STANDALONE FULL-FOCUS PLAYER STAGE (Distraction-Free) */}
       <div className="animate-rise glass-stage rounded-3xl border border-cyan-400/20 p-5 sm:p-8 space-y-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
         {/* Minimal Header: Goal + Active Music + Timer */}
@@ -790,21 +866,29 @@ export function PlayerView({
             <div className="font-mono-tech text-[11px] text-slate-400">
               of {recommendation.plannedDurationMin}:00 min
             </div>
-            {!isPro && plannedSec > FREE_PREVIEW_LIMIT_SEC && (
+            {!isPro && plannedSec > effectiveFreeLimitSec && (
               <button
                 type="button"
                 onClick={() => onUpgradePro?.()}
                 className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
-                  FREE_PREVIEW_LIMIT_SEC - elapsedSec <= 30
-                    ? 'border-amber-400/60 bg-amber-400/20 text-amber-200 animate-pulse'
-                    : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
+                  shareBonusSec > 0
+                    ? 'border-emerald-400/45 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25'
+                    : effectiveFreeLimitSec - elapsedSec <= 30
+                      ? 'border-amber-400/60 bg-amber-400/20 text-amber-200 animate-pulse'
+                      : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
                 }`}
-                title="Free preview lasts 5 minutes. Upgrade to Pro for unlimited full sessions."
+                title={
+                  shareBonusSec > 0
+                    ? '+30 min Share Bonus active! Upgrade to Pro for unlimited full sessions.'
+                    : 'Free preview lasts 5 minutes. Share your Neural Fingerprint for +30 min free or upgrade to Pro.'
+                }
               >
                 <Clock className="h-3 w-3" />
                 {previewLocked
                   ? 'Preview ended'
-                  : `Free · ${formatTimer(Math.max(0, FREE_PREVIEW_LIMIT_SEC - elapsedSec))}`}
+                  : shareBonusSec > 0
+                    ? `+30m Bonus · ${formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))}`
+                    : `Free · ${formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))}`}
               </button>
             )}
           </div>
@@ -946,6 +1030,23 @@ export function PlayerView({
           </button>
         </div>
 
+        {/* ALWAYS-VISIBLE 100%-Measured Real-Time Web Audio Oscilloscope */}
+        <LiveEnvelopeProof
+          engine={engineRef.current}
+          isPlaying={isPlaying}
+          entrainmentType={telemetry.entrainmentType}
+          frequencyHz={telemetry.currentModHz}
+          depth={telemetry.currentModDepth}
+          carrierLabel={activeSourceShort}
+          tuningA4Hz={telemetry.tuningA4Hz}
+          isPureWave={carrierMode === 'pure_stimulus'}
+          onTogglePureWave={() =>
+            void handleCarrierSwitch(
+              carrierMode === 'pure_stimulus' ? 'studio_library' : 'pure_stimulus'
+            )
+          }
+        />
+
         {/* Optional 5-Second Profession Claim (only if entering from an anonymous quick-try link) */}
         {!recommendation.safetyMode &&
           recommendation.sessionId.startsWith('eph_quick_') &&
@@ -1032,8 +1133,8 @@ export function PlayerView({
               : 'border-white/10 bg-slate-900/60 text-slate-300 hover:border-emerald-400/40 hover:text-white'
           }`}
         >
-          <Waves className="h-3.5 w-3.5 text-emerald-300" />
-          <span>Live Oscilloscope &amp; Science</span>
+          <BookOpen className="h-3.5 w-3.5 text-emerald-300" />
+          <span>Verified Science &amp; Studies</span>
           {openDrawer === 'science' ? (
             <ChevronUp className="h-3.5 w-3.5 opacity-75" />
           ) : (
@@ -1212,26 +1313,9 @@ export function PlayerView({
         </div>
       )}
 
-      {/* Collapsible Drawer 2: Live Signal Scope, Acoustic Telemetry & Verified Studies */}
+      {/* Collapsible Drawer 2: Acoustic Telemetry & Verified Studies */}
       {openDrawer === 'science' && (
         <div className="animate-step glass-card rounded-3xl p-5 sm:p-6 space-y-5">
-          {/* Live 60fps 100%-Measured Real-Time Web Audio Oscilloscope */}
-          <LiveEnvelopeProof
-            engine={engineRef.current}
-            isPlaying={isPlaying}
-            entrainmentType={telemetry.entrainmentType}
-            frequencyHz={telemetry.currentModHz}
-            depth={telemetry.currentModDepth}
-            carrierLabel={activeSourceShort}
-            tuningA4Hz={telemetry.tuningA4Hz}
-            isPureWave={carrierMode === 'pure_stimulus'}
-            onTogglePureWave={() =>
-              void handleCarrierSwitch(
-                carrierMode === 'pure_stimulus' ? 'studio_library' : 'pure_stimulus'
-              )
-            }
-          />
-
           {/* Compact Telemetry Strip */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-xl border border-slate-800/80 bg-slate-900/55 p-3">
@@ -1442,6 +1526,45 @@ export function PlayerView({
                   ? 'Unlock Full Session · $59/year'
                   : 'Unlock Full Session · $9.99/month'}
             </button>
+
+            {/* Viral Share Bonus: Share your 1-of-1 Neural Fingerprint Card -> +30 Min Free Instantly! */}
+            {!shareBonusUsedToday && shareBonusSec === 0 && (
+              <div className="rounded-2xl border border-cyan-400/35 bg-gradient-to-r from-cyan-500/[0.10] via-slate-950/90 to-emerald-500/[0.10] p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <NeuralFingerprintSigil
+                    seed={shareSeed}
+                    size={48}
+                    className="rounded-xl border border-cyan-400/30 bg-slate-950 p-0.5"
+                  />
+                  <div className="min-w-0 space-y-0.5 text-left">
+                    <div className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-200">
+                      <Sparkles className="h-3.5 w-3.5 text-emerald-300" />
+                      Want +30 minutes free right now?
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-slate-300">
+                      Share your unique <strong className="text-white">1-of-1 Neural Fingerprint</strong>{' '}
+                      card (public QR only — your private login key stays hidden) to unlock{' '}
+                      <strong className="text-emerald-300">+30 extra minutes</strong> instantly.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={sharingForBonus}
+                  onClick={() => void handleShareFor30MinBonus()}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-400/50 bg-emerald-400/18 px-4 py-2.5 text-xs font-bold text-emerald-100 transition hover:bg-emerald-400/28 disabled:opacity-60"
+                >
+                  {sharingForBonus ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Share2 className="h-3.5 w-3.5" />
+                  )}
+                  {sharingForBonus
+                    ? 'Preparing Your Fingerprint Card...'
+                    : 'Share My Neural Fingerprint · Unlock +30 Min Free'}
+                </button>
+              </div>
+            )}
 
             <div className="flex flex-col items-center gap-2 pt-0.5 text-center">
               <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
