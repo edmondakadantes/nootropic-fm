@@ -39,7 +39,7 @@ export function NeuralVisualizer({
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const rect = canvas.getBoundingClientRect();
       const width = Math.max(260, Math.floor(rect.width));
-      const height = Math.max(132, Math.floor(rect.height));
+      const height = Math.max(96, Math.floor(rect.height));
 
       if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
         canvas.width = width * dpr;
@@ -56,10 +56,10 @@ export function NeuralVisualizer({
 
       const padLeft = 36;
       const padRight = 12;
-      const padTop = 26;
-      const padBottom = 12;
+      const padTop = 24;
+      const padBottom = 8;
       const plotW = Math.max(120, width - padLeft - padRight);
-      const plotH = Math.max(60, height - padTop - padBottom);
+      const plotH = Math.max(52, height - padTop - padBottom);
 
       // Horizontal dB calibration gridlines (-6, -18, -36 dB)
       const dbMarks = [
@@ -194,7 +194,7 @@ export function NeuralVisualizer({
   return (
     <canvas
       ref={canvasRef}
-      className="h-36 sm:h-40 w-full rounded-xl bg-[#070809] border border-white/[0.08]"
+      className="h-24 sm:h-28 w-full rounded-xl bg-[#070809] border border-white/10"
       aria-label="Live 36-band studio spectrum and peak-hold analyzer"
     />
   );

@@ -1009,7 +1009,7 @@ export function PlayerView({
       )}
 
       {/* STANDALONE STUDIO PLAYER CONSOLE */}
-      <div className="animate-rise glass-stage rounded-2xl p-5 sm:p-7 space-y-5">
+      <div className="animate-rise glass-stage rounded-2xl p-4 sm:p-6 space-y-4">
         {/* Minimal Header: Goal + Active Source Tag + Timer */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1.5">
@@ -1084,6 +1084,14 @@ export function PlayerView({
           }
         />
 
+        {/* Sleek 36-Band Studio Spectrum Analyzer directly under Oscilloscope */}
+        <NeuralVisualizer
+          engine={engineRef.current}
+          isPlaying={isPlaying}
+          safetyMode={recommendation.safetyMode}
+          modulationHz={telemetry.currentModHz}
+        />
+
         {/* Synchronized 0.1 Hz HRV Breathing Guide (only shown on calm breathing protocols) */}
         {telemetry.hrvActive && telemetry.hrvBreathPhase && (
           <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/[0.06] px-4 py-2.5 space-y-1.5">
@@ -1105,31 +1113,85 @@ export function PlayerView({
           </div>
         )}
 
-        {/* Clean Session Progress Bar */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="inline-flex items-center gap-1.5 font-medium text-[#34D399]">
-              <Activity className="h-3.5 w-3.5" />
-              {telemetry.phaseLabel}
-              {telemetry.antiMonotonyActive && (
-                <span className="rounded border border-amber-400/35 bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200">
-                  Fresh pulse
-                </span>
-              )}
-            </span>
-            <span className="font-mono-tech text-[#8E8E88]">{Math.round(progressPct)}%</span>
-          </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        {/* Unified Compact Hardware Transport & Session Progress Deck */}
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0B0C0E]">
+          {/* Edge-to-Edge Thin Progress Rail */}
+          <div className="h-1 w-full bg-white/[0.07]">
             <div
-              className="h-full rounded-full bg-[#34D399] transition-all duration-500"
+              className="h-full bg-[#34D399] transition-all duration-500"
               style={{ width: `${Math.max(2, progressPct)}%` }}
             />
           </div>
-          {!isPro && elapsedSec >= 300 && elapsedSec < 325 && plannedSec > effectiveFreeLimitSec && (
-            <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-[#34D399]">
-              5:00 Entrainment Phase-Locked · {formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))} remaining in your free calibration session
+
+          <div className="px-3.5 py-2.5 sm:px-4 space-y-2">
+            {/* Compact Phase + Progress Telemetry Row */}
+            <div className="flex items-center justify-between gap-2 text-[10px]">
+              <span className="inline-flex items-center gap-1.5 font-medium text-[#34D399]">
+                <Activity className="h-3 w-3 shrink-0" />
+                <span className="truncate">{telemetry.phaseLabel}</span>
+                {telemetry.antiMonotonyActive && (
+                  <span className="rounded border border-amber-400/35 bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200">
+                    Fresh pulse
+                  </span>
+                )}
+              </span>
+              <span className="font-mono-tech text-[#8E8E88]">{Math.round(progressPct)}%</span>
             </div>
-          )}
+
+            {/* Compact Transport Row: 40px Play/Pause + Volume Slider + End Session */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-1 items-center gap-3 min-w-[180px]">
+                <button
+                  type="button"
+                  onClick={() => void togglePlay()}
+                  className="btn-aurora inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#0A0B0C]"
+                  aria-label={isPlaying ? 'Pause' : 'Play'}
+                >
+                  {isPlaying ? (
+                    <Pause className="h-4 w-4 fill-[#0A0B0C]" />
+                  ) : (
+                    <Play className="h-4 w-4 translate-x-0.5 fill-[#0A0B0C]" />
+                  )}
+                </button>
+
+                <div className="flex-1 max-w-[210px] space-y-1">
+                  <div className="flex items-center justify-between text-[10px] text-[#8E8E88]">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Volume2 className="h-3 w-3" /> Volume
+                      <kbd className="hidden rounded border border-white/12 bg-[#141518] px-1 py-0.5 font-mono-tech text-[8.5px] text-[#7E7E78] sm:inline">
+                        SPACE
+                      </kbd>
+                    </span>
+                    <span className="font-mono-tech text-[#D4D4CE]">{Math.round(volume * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.05}
+                    max={1}
+                    step={0.01}
+                    value={volume}
+                    onChange={(e) => handleVolume(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleEndSession}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3.5 py-2 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1C1F24]"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 text-[#34D399]" />
+                {isEphemeral ? 'End Session' : 'End & Rate'}
+              </button>
+            </div>
+
+            {!isPro && elapsedSec >= 300 && elapsedSec < 325 && plannedSec > effectiveFreeLimitSec && (
+              <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-[#34D399]">
+                5:00 Entrainment Phase-Locked · {formatTimer(Math.max(0, effectiveFreeLimitSec - elapsedSec))} remaining in your free calibration session
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Prominent 2-Button Music Engine Selector: Studio Mix vs Endless Stream */}
@@ -1340,62 +1402,6 @@ export function PlayerView({
             ))}
           </div>
         </div>
-
-        {/* Primary Hardware Transport Dock: Play/Pause + Volume + End & Rate */}
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3.5 sm:px-5 sm:py-4">
-          <div className="flex flex-1 items-center gap-3.5 min-w-[190px]">
-            <button
-              type="button"
-              onClick={() => void togglePlay()}
-              className="btn-aurora inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-[#0A0B0C]"
-              aria-label={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? (
-                <Pause className="h-6 w-6 fill-[#0A0B0C]" />
-              ) : (
-                <Play className="h-6 w-6 translate-x-0.5 fill-[#0A0B0C]" />
-              )}
-            </button>
-
-            <div className="flex-1 max-w-[190px] space-y-1">
-              <div className="flex items-center justify-between text-[11px] text-[#8E8E88]">
-                <span className="inline-flex items-center gap-1.5">
-                  <Volume2 className="h-3.5 w-3.5" /> Volume
-                  <kbd className="hidden rounded border border-white/12 bg-[#141518] px-1 py-0.5 font-mono-tech text-[9px] text-[#7E7E78] sm:inline">
-                    SPACE
-                  </kbd>
-                </span>
-                <span className="font-mono-tech text-[#D4D4CE]">{Math.round(volume * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                min={0.05}
-                max={1}
-                step={0.01}
-                value={volume}
-                onChange={(e) => handleVolume(Number(e.target.value))}
-                className="w-full"
-              />
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleEndSession}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/15 bg-[#16181C] px-4 py-2.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1C1F24] sm:px-5 sm:py-3 sm:text-sm"
-          >
-            <CheckCircle2 className="h-4 w-4 text-[#34D399]" />
-            {isEphemeral ? 'End Session' : 'End & Rate'}
-          </button>
-        </div>
-
-        {/* 36-Band Studio Spectrum Analyzer */}
-        <NeuralVisualizer
-          engine={engineRef.current}
-          isPlaying={isPlaying}
-          safetyMode={recommendation.safetyMode}
-          modulationHz={telemetry.currentModHz}
-        />
 
         {/* Optional 5-Second Profession Claim (only if entering from an anonymous quick-try link) */}
         {!recommendation.safetyMode &&
