@@ -483,33 +483,38 @@ export function LiveEnvelopeProof({
   const isMusicOnly = layerMode === 'music_only';
   const ch2WindowLabel = isSlowBreath ? '5.0s' : '750 ms';
 
+  const subtitleLine = `${ENTRAINMENT_LABELS[entrainmentType]}${
+    frequencyHz > 0 ? ` · ${frequencyHz} Hz` : ''
+  }${isMusicOnly ? ' (Bypassed · 0%)' : depth > 0 ? ` (${Math.round(depth * 100)}% depth)` : ''} · ${carrierLabel} · A=${tuningA4Hz} Hz`;
+
   return (
     <div className="rounded-2xl border border-emerald-400/30 bg-[#080B0A] p-4 sm:p-5 shadow-[0_0_32px_rgba(16,185,129,0.07),inset_0_1px_0_rgba(52,211,153,0.14)] space-y-3">
-      {/* Scope Header + Y(t) / X-Y Toggle + 1-Tap Pure Signal Audition */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="space-y-0.5">
-          <div className="flex flex-wrap items-center gap-2 font-mono-tech text-[10px]">
-            <span className="inline-flex items-center gap-1.5 font-semibold uppercase tracking-wider text-[#F3F1EC]">
-              <Activity className="h-3.5 w-3.5 text-[#34D399]" />
+      {/* Scope Header + Y(t) / X-Y Toggle + 1-Tap Pure Signal Audition (zero CLS across narrow mobile viewports) */}
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-2 overflow-hidden font-mono-tech text-[10px]">
+            <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-semibold uppercase tracking-wider text-[#F3F1EC]">
+              <Activity className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
               Oscilloscope · {scopeMode === 'dual_trace' ? 'Dual Trace' : 'X/Y Vector'}
             </span>
-            <span className="rounded border border-emerald-400/35 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#34D399]">
-              Live Measured · Zero Simulation
+            <span className="truncate whitespace-nowrap rounded border border-emerald-400/35 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#34D399]">
+              Live Measured · Zero Sim
             </span>
           </div>
-          <div className="font-mono-tech text-[10px] text-[#8E8E88]">
-            {ENTRAINMENT_LABELS[entrainmentType]}
-            {frequencyHz > 0 ? ` · ${frequencyHz} Hz` : ''}
-            {isMusicOnly ? ' (Bypassed · 0%)' : depth > 0 ? ` (${Math.round(depth * 100)}% depth)` : ''} · {carrierLabel} · A={tuningA4Hz} Hz
+          <div
+            title={subtitleLine}
+            className="truncate whitespace-nowrap font-mono-tech text-[10px] tabular-nums text-[#8E8E88]"
+          >
+            {subtitleLine}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <div className="inline-flex rounded-lg border border-white/12 bg-[#141518] p-0.5 font-mono-tech text-[10px]">
+        <div className="flex shrink-0 items-center justify-between gap-1.5 sm:justify-end">
+          <div className="inline-flex shrink-0 rounded-lg border border-white/12 bg-[#141518] p-0.5 font-mono-tech text-[10px]">
             <button
               type="button"
               onClick={() => setScopeMode('dual_trace')}
-              className={`rounded-md px-2 py-1 font-semibold transition ${
+              className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold transition ${
                 scopeMode === 'dual_trace'
                   ? 'bg-[#22252A] text-[#F3F1EC]'
                   : 'text-[#8E8E88] hover:text-[#D4D4CE]'
@@ -520,7 +525,7 @@ export function LiveEnvelopeProof({
             <button
               type="button"
               onClick={() => setScopeMode('xy_lissajous')}
-              className={`rounded-md px-2 py-1 font-semibold transition ${
+              className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold transition ${
                 scopeMode === 'xy_lissajous'
                   ? 'bg-[#22252A] text-[#34D399]'
                   : 'text-[#8E8E88] hover:text-[#D4D4CE]'
@@ -534,14 +539,14 @@ export function LiveEnvelopeProof({
             <button
               type="button"
               onClick={onTogglePureWave}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition ${
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
                 isPureWave
                   ? 'border-amber-400/60 bg-amber-400/15 text-amber-200'
                   : 'border-white/15 bg-[#16181C] text-[#F3F1EC] hover:border-emerald-400/50 hover:bg-[#1B1E24]'
               }`}
             >
-              {isPureWave ? <Radio className="h-3 w-3" /> : <Waves className="h-3 w-3 text-[#34D399]" />}
-              {isPureWave ? 'Back to Music Mix' : 'Isolate Pure Wave'}
+              {isPureWave ? <Radio className="h-3 w-3 shrink-0" /> : <Waves className="h-3 w-3 shrink-0 text-[#34D399]" />}
+              {isPureWave ? 'Back to Mix' : 'Isolate Pure Wave'}
             </button>
           )}
         </div>
@@ -555,36 +560,50 @@ export function LiveEnvelopeProof({
         className="h-44 sm:h-52 w-full rounded-xl border border-emerald-400/25 bg-[#030706]"
       />
 
-      {/* Legend + Live Hardware Readouts */}
-      <div className="flex flex-wrap items-center justify-between gap-2 font-mono-tech text-[10px] text-[#8E8E88]">
-        {scopeMode === 'dual_trace' ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-[#34D399]" />
-              CH1 Waveform ({readout.windowMs} ms)
+      {/* Fixed Single-Line Legend + Fixed 4-Column Hardware Readouts (0 px vertical shift on digit updates) */}
+      <div className="space-y-1.5">
+        <div className="flex h-4 items-center gap-3 overflow-hidden whitespace-nowrap font-mono-tech text-[10px] tabular-nums text-[#8E8E88]">
+          {scopeMode === 'dual_trace' ? (
+            <>
+              <span className="inline-flex shrink-0 items-center gap-1.5">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-[#34D399]" />
+                <span>
+                  CH1<span className="hidden sm:inline"> Waveform</span> ({readout.windowMs} ms)
+                </span>
+              </span>
+              <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${isMusicOnly ? 'bg-[#94A3B8]' : 'bg-[#FBBF24]'}`} />
+                <span className="truncate">
+                  {isMusicOnly ? (
+                    <>
+                      CH2 Raw<span className="hidden sm:inline"> Dynamics</span> ({ch2WindowLabel})
+                    </>
+                  ) : (
+                    <>
+                      CH2<span className="hidden sm:inline"> Measured RMS</span> Env ({ch2WindowLabel})
+                    </>
+                  )}
+                </span>
+              </span>
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 truncate">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-[#34D399]" />
+              <span>
+                CH1 L / CH2 R Vector · Corr{' '}
+                <strong className="text-[#F3F1EC]">{readout.stereoCorr}</strong>
+              </span>
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${isMusicOnly ? 'bg-[#94A3B8]' : 'bg-[#FBBF24]'}`} />
-              {isMusicOnly ? `CH2 Raw Dynamics (${ch2WindowLabel})` : `CH2 Measured RMS Envelope (${ch2WindowLabel})`}
-            </span>
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-[#34D399]" />
-              CH1 L / CH2 R Vector · Corr{' '}
-              <strong className="text-[#F3F1EC]">{readout.stereoCorr}</strong>
-            </span>
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2.5 text-[#D4D4CE]">
-          <span>{readout.sampleRateKhz} kHz</span>
-          <span>RMS {readout.rmsDbfs} dBFS</span>
-          <span>Peak {readout.peakDbfs} dBFS</span>
-          {readout.peakHz !== null && (
-            <span className="text-[#34D399]">FFT Peak {readout.peakHz} Hz</span>
           )}
+        </div>
+
+        <div className="grid grid-cols-4 gap-1 rounded-lg border border-white/[0.06] bg-[#050706] px-2.5 py-1.5 font-mono-tech text-[10px] tabular-nums text-[#D4D4CE]">
+          <span className="truncate text-left">{readout.sampleRateKhz} kHz</span>
+          <span className="truncate text-center">RMS {readout.rmsDbfs}</span>
+          <span className="truncate text-center">PK {readout.peakDbfs}</span>
+          <span className="truncate text-right text-[#34D399]">
+            {readout.peakHz !== null ? `${readout.peakHz} Hz` : '-- Hz'}
+          </span>
         </div>
       </div>
 
