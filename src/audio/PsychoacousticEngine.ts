@@ -1,4 +1,5 @@
 import {
+  computeHarmonicCarrierHz,
   resolvedGenreToPalette,
   type CarrierEngineMode,
   type EntrainmentType,
@@ -292,6 +293,23 @@ function holdAndRampGain(gainParam: AudioParam, target: number, endTime: number,
   p.exponentialRampToValueAtTime(Math.max(0.0001, target), endTime);
 }
 
+function smoothSetParam(
+  param: AudioParam | null | undefined,
+  target: number,
+  now: number,
+  timeConst: number
+): void {
+  if (!param) return;
+  const p = param as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+  if (typeof p.cancelAndHoldAtTime === 'function') {
+    p.cancelAndHoldAtTime(now);
+  } else {
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(p.value, now);
+  }
+  p.setTargetAtTime(target, now, timeConst);
+}
+
 function createSilentKeepAliveWavUrl(sampleRate = 48000): string {
   const wavBytes = createSilentKeepAliveWavBytes(sampleRate);
   return URL.createObjectURL(new Blob([wavBytes], { type: 'audio/wav' }));
@@ -324,6 +342,14 @@ export class PsychoacousticEngine {
   private spectralPocketNotch: BiquadFilterNode | null = null;
   private pureAmCarrierGain: GainNode | null = null;
   private pureAmCarrierSrc: AudioBufferSourceNode | null = null;
+  private amScienceCarrierGain: GainNode | null = null;
+  private amSciencePulseGain: GainNode | null = null;
+  private amSciencePulseDepth: GainNode | null = null;
+  private amCarrierRootOsc: OscillatorNode | null = null;
+  private amCarrierFifthOsc: OscillatorNode | null = null;
+  private amCarrierOctOsc: OscillatorNode | null = null;
+  private amCarrierNoiseSrc: AudioBufferSourceNode | null = null;
+  private amCarrierRootHz: number | null = null;
 
   // 3-Band LR4 Cortical AM + Velvet Spectral Tilt nodes
   private amGainL: GainNode | null = null;
@@ -696,18 +722,40 @@ export class PsychoacousticEngine {
       this.musicEnvBuf = new Float32Array(new ArrayBuffer(musicEnvAnalyser.fftSize * 4));
     }
 
+    const initMonitorMode = this.layerMonitorMode as LayerMonitorMode;
+    const amSpecActive =
+      this.studySpec.entrainment.type === 'amplitude_modulation' &&
+      this.studySpec.entrainment.frequencyHz > 0;
+    const amCarrierRootHz = amSpecActive
+      ? computeHarmonicCarrierHz(
+          this.studySpec.music.rootMidi,
+          this.studySpec.music.tuningA4Hz,
+          220
+        )
+      : null;
+    this.amCarrierRootHz = amCarrierRootHz;
+
     const spectralPocketNotch = ctx.createBiquadFilter();
     spectralPocketNotch.type = 'peaking';
     const discreteCarrierHz = this.stimulusRack.getPrimaryCarrierHz();
-    spectralPocketNotch.frequency.setValueAtTime(discreteCarrierHz ?? 250, ctx.currentTime);
-    spectralPocketNotch.Q.value = 2.6;
-    const wantPocket = Boolean(discreteCarrierHz && !this.isControlTrial);
-    spectralPocketNotch.gain.setValueAtTime(wantPocket ? -4.5 : 0, ctx.currentTime);
+    const pocketHz = discreteCarrierHz ?? amCarrierRootHz;
+    spectralPocketNotch.frequency.setValueAtTime(pocketHz ?? 250, ctx.currentTime);
+    spectralPocketNotch.Q.value = discreteCarrierHz ? 2.6 : 2.1;
+    const wantPocket = Boolean(
+      pocketHz &&
+        !this.isControlTrial &&
+        initMonitorMode !== 'music_only' &&
+        initMonitorMode !== 'science_only'
+    );
+    spectralPocketNotch.gain.setValueAtTime(
+      wantPocket ? (discreteCarrierHz ? -4.5 : -3.2) : 0,
+      ctx.currentTime
+    );
     this.spectralPocketNotch = spectralPocketNotch;
 
     const musicAuditionGain = ctx.createGain();
     musicAuditionGain.gain.setValueAtTime(
-      this.layerMonitorMode === 'science_only' ? 0 : 1.0,
+      initMonitorMode === 'science_only' ? 0 : 1.0,
       ctx.currentTime
     );
     musicAuditionGain.connect(spectralPocketNotch);
@@ -717,13 +765,11 @@ export class PsychoacousticEngine {
     spectralRot.type = 'peaking';
     spectralRot.frequency.setValueAtTime(950, ctx.currentTime);
     spectralRot.Q.setValueAtTime(0.75, ctx.currentTime);
-    const amSpecActive =
-      this.studySpec.entrainment.type === 'amplitude_modulation' &&
-      this.studySpec.entrainment.frequencyHz > 0;
     const allowInitRot =
       amSpecActive &&
       !this.isControlTrial &&
-      this.layerMonitorMode !== 'science_only' &&
+      initMonitorMode !== 'science_only' &&
+      initMonitorMode !== 'music_only' &&
       this.carrierMode !== 'pure_stimulus';
     spectralRot.gain.setValueAtTime(allowInitRot ? 1.5 : 0, ctx.currentTime);
     this.band2SpectralRotNode = spectralRot;
@@ -788,15 +834,16 @@ export class PsychoacousticEngine {
     subPhaseAlignHigh.connect(masterSumBus);
     this.cleanSubBus = cleanSubBus;
 
-    // Gentle calibrated pink carrier specifically for Pure Clinical Signal auditing of AM & 0.1 Hz HRV studies
+    // Gentle calibrated pink carrier specifically for Pure Clinical Signal auditing of 0.1 Hz HRV studies (non-AM)
     const pureAmBuf = createCalibratedNoiseBuffer(ctx, 'pink', 6);
     const pureAmSrc = ctx.createBufferSource();
     pureAmSrc.buffer = pureAmBuf;
     pureAmSrc.loop = true;
     const pureAmGain = ctx.createGain();
-    const needsPureAmCarrier =
-      this.carrierMode === 'pure_stimulus' && this.specNeedsPureReferenceCarrier();
-    pureAmGain.gain.setValueAtTime(needsPureAmCarrier ? 0.21 : 0, ctx.currentTime);
+    const needsPureHrvCarrier =
+      (this.carrierMode === 'pure_stimulus' || this.layerMonitorMode === 'science_only') &&
+      this.specNeedsPureHrvReferenceCarrier();
+    pureAmGain.gain.setValueAtTime(needsPureHrvCarrier ? 0.24 : 0, ctx.currentTime);
     pureAmSrc.connect(pureAmGain);
     pureAmGain.connect(preHrvBus);
     pureAmSrc.start();
@@ -837,9 +884,9 @@ export class PsychoacousticEngine {
     const targetAmDepth = amActiveForSpec ? this.studySpec.entrainment.modulationDepth : 0;
     const initialDepth = this.isControlTrial
       ? 0
-      : Math.min(0.74, Math.max(0, targetAmDepth * 0.76 * this.modDepthMultiplier));
+      : Math.min(0.75, Math.max(0, targetAmDepth * 1.32 * 0.76 * this.modDepthMultiplier));
 
-    let midInputForAm: AudioNode = midBand.output;
+    let flattenedMidOutput: AudioNode = midBand.output;
     if (this.workletsReady) {
       const flattenerNode = new AudioWorkletNode(ctx, 'nootropic-env-flattener', {
         numberOfInputs: 1,
@@ -849,16 +896,19 @@ export class PsychoacousticEngine {
       const wantFlatten =
         amActiveForSpec &&
         !this.isControlTrial &&
-        this.layerMonitorMode !== 'science_only' &&
+        initMonitorMode !== 'science_only' &&
+        initMonitorMode !== 'music_only' &&
         this.carrierMode !== 'pure_stimulus';
       // Gentler 0.50 exponent keeps more natural groove dynamics (less inverse-pumping on kick-driven genres)
       flattenerNode.parameters.get('gamma')?.setValueAtTime(wantFlatten ? 0.5 : 0, ctx.currentTime);
       midBand.output.connect(flattenerNode);
-      midInputForAm = flattenerNode;
+      flattenedMidOutput = flattenerNode;
       this.band2FlattenerNode = flattenerNode;
     } else {
       this.band2FlattenerNode = null;
     }
+
+    const midInputForAm: AudioNode = flattenedMidOutput;
 
     const useStereoSpread = Boolean(
       amActiveForSpec &&
@@ -889,7 +939,7 @@ export class PsychoacousticEngine {
       : startWithSalience
         ? this.amSaliencePeakFrac
         : 0.25;
-    const initialAmGains = this.computeAmGainPair(initialDepth);
+    const initialAmGains = this.computeActiveAmGainPair(initialDepth);
 
     const amLfoL = ctx.createOscillator();
     if (isRaisedCosine) {
@@ -1026,6 +1076,103 @@ export class PsychoacousticEngine {
       midOutput.connect(scopeModAnalyser);
     }
     midOutput.connect(masterSumBus);
+
+    // Dedicated 94%-depth phase-locked Layer 1 Cortical AM Harmonic + Velvet Pulse Bus:
+    // Driven by the exact same `amLfoL` oscillator so crests lock 0.000 rad to Band-2 music AM,
+    // delivering unmistakable isolated clarity in Science Only AND audible rhythmic fusion in Nootropic Mix
+    // even across sparse sub-bass/pluck bars, while muting to 0.0000 in Plain Music!
+    if (amActiveForSpec) {
+      const f0 = amCarrierRootHz ?? 220;
+      const fifthRatio = Math.pow(2, 7 / 12);
+      const rootOsc = ctx.createOscillator();
+      rootOsc.type = 'sine';
+      rootOsc.frequency.setValueAtTime(f0, ctx.currentTime);
+      const rootGain = ctx.createGain();
+      rootGain.gain.value = 0.58;
+
+      const fifthOsc = ctx.createOscillator();
+      fifthOsc.type = 'sine';
+      fifthOsc.frequency.setValueAtTime(Number((f0 * fifthRatio).toFixed(2)), ctx.currentTime);
+      const fifthGain = ctx.createGain();
+      fifthGain.gain.value = 0.21;
+
+      const octOsc = ctx.createOscillator();
+      octOsc.type = 'sine';
+      octOsc.frequency.setValueAtTime(Number((f0 * 2).toFixed(2)), ctx.currentTime);
+      const octGain = ctx.createGain();
+      octGain.gain.value = 0.11;
+
+      const amNoiseSrc = ctx.createBufferSource();
+      amNoiseSrc.buffer = createCalibratedNoiseBuffer(ctx, 'pink', 6, { hpHz: 240, lpHz: 2100 });
+      amNoiseSrc.loop = true;
+      const amNoiseHp = ctx.createBiquadFilter();
+      amNoiseHp.type = 'highpass';
+      amNoiseHp.frequency.value = 240;
+      amNoiseHp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
+      const amNoiseLp = ctx.createBiquadFilter();
+      amNoiseLp.type = 'lowpass';
+      amNoiseLp.frequency.value = 2100;
+      amNoiseLp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
+      const amNoiseGain = ctx.createGain();
+      amNoiseGain.gain.value = 0.24;
+
+      const amCarrierWarmLp = ctx.createBiquadFilter();
+      amCarrierWarmLp.type = 'lowpass';
+      amCarrierWarmLp.frequency.value = params.speakerSafeEQ ? 920 : 1320;
+      amCarrierWarmLp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
+
+      const pulsePair = this.computeAmPulseModPair();
+      const pulseGain = ctx.createGain();
+      pulseGain.gain.setValueAtTime(pulsePair.bias, ctx.currentTime);
+      const pulseDepth = ctx.createGain();
+      pulseDepth.gain.setValueAtTime(pulsePair.swing, ctx.currentTime);
+      amLfoL.connect(pulseDepth);
+      pulseDepth.connect(pulseGain.gain);
+
+      const amScienceGain = ctx.createGain();
+      amScienceGain.gain.setValueAtTime(
+        this.computeAmScienceCarrierTarget(0.76),
+        ctx.currentTime
+      );
+
+      rootOsc.connect(rootGain);
+      fifthOsc.connect(fifthGain);
+      octOsc.connect(octGain);
+      rootGain.connect(amCarrierWarmLp);
+      fifthGain.connect(amCarrierWarmLp);
+      octGain.connect(amCarrierWarmLp);
+
+      amNoiseSrc.connect(amNoiseHp);
+      amNoiseHp.connect(amNoiseLp);
+      amNoiseLp.connect(amNoiseGain);
+      amNoiseGain.connect(amCarrierWarmLp);
+
+      amCarrierWarmLp.connect(pulseGain);
+      pulseGain.connect(amScienceGain);
+      amScienceGain.connect(masterSumBus);
+      amScienceGain.connect(scopeModAnalyser);
+
+      rootOsc.start(ctx.currentTime);
+      fifthOsc.start(ctx.currentTime);
+      octOsc.start(ctx.currentTime);
+      amNoiseSrc.start(ctx.currentTime);
+
+      this.amScienceCarrierGain = amScienceGain;
+      this.amSciencePulseGain = pulseGain;
+      this.amSciencePulseDepth = pulseDepth;
+      this.amCarrierRootOsc = rootOsc;
+      this.amCarrierFifthOsc = fifthOsc;
+      this.amCarrierOctOsc = octOsc;
+      this.amCarrierNoiseSrc = amNoiseSrc;
+    } else {
+      this.amScienceCarrierGain = null;
+      this.amSciencePulseGain = null;
+      this.amSciencePulseDepth = null;
+      this.amCarrierRootOsc = null;
+      this.amCarrierFifthOsc = null;
+      this.amCarrierOctOsc = null;
+      this.amCarrierNoiseSrc = null;
+    }
 
     this.amGainL = amGainL;
     this.amLfoL = amLfoL;
@@ -1186,13 +1333,82 @@ export class PsychoacousticEngine {
     }
   }
 
-  private specNeedsPureReferenceCarrier(): boolean {
-    return Boolean(
-      this.studySpec &&
-        (this.studySpec.entrainment.type === 'amplitude_modulation' ||
-          this.studySpec.entrainment.type === 'hrv_breathing_swell' ||
-          (this.studySpec.entrainment.hrvBreathHz ?? 0) > 0)
+  private specNeedsPureHrvReferenceCarrier(): boolean {
+    if (!this.studySpec) return false;
+    const isAm =
+      this.studySpec.entrainment.type === 'amplitude_modulation' &&
+      this.studySpec.entrainment.frequencyHz > 0;
+    if (isAm) return false;
+    return (
+      this.studySpec.entrainment.type === 'hrv_breathing_swell' ||
+      (this.studySpec.entrainment.hrvBreathHz ?? 0) > 0
     );
+  }
+
+  private computeAmPulseModPair(): { bias: number; swing: number } {
+    if (this.layerMonitorMode === 'music_only') {
+      return { bias: 0, swing: 0 };
+    }
+    const pulseDepth = Math.min(
+      0.96,
+      Math.max(0.78, 0.9 * (0.76 + 0.24 * this.modDepthMultiplier))
+    );
+    const span = Math.max(0.5, this.amWaveStats.max - this.amWaveStats.min);
+    const swing = Number((pulseDepth / span).toFixed(4));
+    const bias = Number((1.0 - swing * this.amWaveStats.max).toFixed(4));
+    return { bias, swing };
+  }
+
+  private computeAmScienceCarrierTarget(activePhaseFactor = 1.0): number {
+    if (
+      !this.studySpec ||
+      this.studySpec.entrainment.type !== 'amplitude_modulation' ||
+      this.studySpec.entrainment.frequencyHz <= 0
+    ) {
+      return 0;
+    }
+    if (this.layerMonitorMode === 'music_only') {
+      return 0;
+    }
+    if (this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus') {
+      // Matched ~ -16.0 LUFS isolated neural reference chord + band-limited pink carrier
+      return Number(
+        Math.min(0.52, Math.max(0.32, 0.44 * (0.82 + 0.18 * this.modDepthMultiplier))).toFixed(4)
+      );
+    }
+    if (this.isControlTrial) {
+      return 0;
+    }
+    // In Nootropic Mix (full_mix), blend 94%-pulsed key-locked open-fifth harmonic AM carrier underneath music
+    // so Layer 1 + Layer 2 clearly overlap and remain unmistakably audible even across sparse bass/pluck bars
+    const baseDepth = Math.max(0.18, Math.min(0.65, this.studySpec.entrainment.modulationDepth || 0.36));
+    const speakerScale = this.params?.speakerSafeEQ ? 0.72 : 1.0;
+    const raw = 0.22 * (0.58 + baseDepth) * this.modDepthMultiplier * activePhaseFactor * speakerScale;
+    return Number(Math.min(0.34, Math.max(0, raw)).toFixed(4));
+  }
+
+  private computeActiveAmGainPair(nominalDepth: number): { bias: number; swing: number } {
+    const amActive =
+      this.studySpec?.entrainment.type === 'amplitude_modulation' &&
+      this.studySpec.entrainment.frequencyHz > 0;
+    if (!amActive || this.layerMonitorMode === 'music_only') {
+      return { bias: 1.0, swing: 0 };
+    }
+    if (this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus') {
+      // Deep, crisp isolated pulse (76%..95% peak-to-trough depth) on pure [-1, +1] sine/cosine wave
+      const isoDepth = Math.min(
+        0.95,
+        Math.max(0.74, 0.86 * (0.72 + 0.28 * this.modDepthMultiplier))
+      );
+      const swing = Number((0.5 * isoDepth).toFixed(4));
+      const bias = Number((1.0 - swing).toFixed(4));
+      return { bias, swing };
+    }
+    if (this.isControlTrial) {
+      return { bias: 1.0, swing: 0 };
+    }
+    const mixDriveDepth = Math.min(0.75, Math.max(0, nominalDepth * 1.32));
+    return this.computeAmGainPair(mixDriveDepth);
   }
 
   private computeStudioCutoffHz(): number {
@@ -1322,10 +1538,10 @@ export class PsychoacousticEngine {
   }
 
   /**
-   * Real-time 3-way A/B/C Layer Monitor (~180 ms click-free crossfade, zero track reload):
-   * - 'full_mix': Layer 1 Medical DSP + Layer 2 Music
-   * - 'science_only': Isolated Layer 1 scientific wave & noise (music muted)
-   * - 'music_only': Raw Layer 2 music only (0% scientific modulation, noise muted)
+   * Real-time 3-way A/B/C Layer Monitor (~65 ms snappy click-free crossfade, zero track reload):
+   * - 'full_mix': Layer 1 Medical DSP + Layer 2 Music overlapped in key-locked consonance
+   * - 'science_only': 100% Isolated Layer 1 scientific wave & noise (0% music bleed)
+   * - 'music_only': 100% Raw Layer 2 music only (0% scientific modulation, 0% carrier, 0% noise)
    */
   public setLayerMonitorMode(mode: LayerMonitorMode): void {
     this.layerMonitorMode = mode;
@@ -1334,28 +1550,39 @@ export class PsychoacousticEngine {
     const muteMusic = mode === 'science_only' || this.carrierMode === 'pure_stimulus';
     const muteScience = mode === 'music_only';
 
-    this.musicAuditionGain?.gain.setTargetAtTime(muteMusic ? 0 : 1.0, now, 0.18);
+    smoothSetParam(this.musicAuditionGain?.gain, muteMusic ? 0 : 1.0, now, 0.065);
     if (this.cleanSubBus) {
       const wantSub = this.carrierMode === 'generative_live' && !muteMusic;
-      this.cleanSubBus.gain.setTargetAtTime(wantSub ? 0.9 : 0, now, 0.18);
+      smoothSetParam(this.cleanSubBus.gain, wantSub ? 0.9 : 0, now, 0.065);
     }
     this.stimulusRack.setScienceMuted(muteScience);
     this.stimulusRack.setPureStimulusMode(muteMusic && !muteScience);
 
-    const wantPocket = Boolean(
-      this.stimulusRack.getPrimaryCarrierHz() && !this.isControlTrial && !muteScience
+    const discreteHz = this.stimulusRack.getPrimaryCarrierHz();
+    const pocketHz = discreteHz ?? this.amCarrierRootHz;
+    const wantPocket = Boolean(pocketHz && !this.isControlTrial && !muteScience && !muteMusic);
+    smoothSetParam(
+      this.spectralPocketNotch?.gain,
+      wantPocket ? (discreteHz ? -4.5 : -3.2) : 0,
+      now,
+      0.08
     );
-    this.spectralPocketNotch?.gain.setTargetAtTime(wantPocket ? -4.5 : 0, now, 0.18);
 
-    const needsPureCarrier = muteMusic && !muteScience && this.specNeedsPureReferenceCarrier();
-    this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureCarrier ? 0.22 : 0, now, 0.18);
+    const needsPureHrv = muteMusic && !muteScience && this.specNeedsPureHrvReferenceCarrier();
+    smoothSetParam(this.pureAmCarrierGain?.gain, needsPureHrv ? 0.24 : 0, now, 0.08);
+    smoothSetParam(
+      this.amScienceCarrierGain?.gain,
+      this.computeAmScienceCarrierTarget(1.0),
+      now,
+      0.065
+    );
     this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(muteMusic ? 0 : 1, now);
     this.syncAmWaveformForMonitorMode(muteMusic && !muteScience);
     this.syncBand2Flattener();
     this.syncRainBed();
 
     if (this.isPlaying) {
-      this.updateElapsed(this.elapsedSec);
+      this.updateElapsed(this.elapsedSec, 0.065);
     }
   }
 
@@ -1392,15 +1619,21 @@ export class PsychoacousticEngine {
         this.layerMonitorMode = 'full_mix';
       }
       const muteScience = this.layerMonitorMode === 'music_only';
-      this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
+      smoothSetParam(this.musicAuditionGain?.gain, 1.0, now, 0.12);
       this.stimulusRack.setScienceMuted(muteScience);
       this.stimulusRack.setPureStimulusMode(false);
-      this.pureAmCarrierGain?.gain.setTargetAtTime(0, now, 0.4);
+      smoothSetParam(this.pureAmCarrierGain?.gain, 0, now, 0.12);
+      smoothSetParam(
+        this.amScienceCarrierGain?.gain,
+        this.computeAmScienceCarrierTarget(1.0),
+        now,
+        0.12
+      );
       this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(1, now);
       this.syncAmWaveformForMonitorMode(false);
       this.composer.setStandby(false);
-      this.proceduralMaster.gain.setTargetAtTime(0.94, now, 0.65);
-      this.cleanSubBus.gain.setTargetAtTime(0.9, now, 0.65);
+      smoothSetParam(this.proceduralMaster.gain, 0.94, now, 0.45);
+      smoothSetParam(this.cleanSubBus.gain, 0.9, now, 0.45);
     } else if (mode === 'pure_stimulus') {
       this.clearStudioDeck(1.2);
       this.usingStudioAudio = false;
@@ -1412,14 +1645,20 @@ export class PsychoacousticEngine {
       this.activeStemCodecLabel = null;
       this.activeStemSubHarmonicLocked = false;
       this.layerMonitorMode = 'science_only';
-      this.musicAuditionGain?.gain.setTargetAtTime(0, now, 0.25);
+      smoothSetParam(this.musicAuditionGain?.gain, 0, now, 0.08);
       this.stimulusRack.setScienceMuted(false);
       this.stimulusRack.setPureStimulusMode(true);
       this.composer.setStandby(true);
-      this.proceduralMaster.gain.setTargetAtTime(0, now, 0.45);
-      this.cleanSubBus.gain.setTargetAtTime(0, now, 0.45);
-      const needsPureAm = this.specNeedsPureReferenceCarrier();
-      this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureAm ? 0.22 : 0, now, 0.45);
+      smoothSetParam(this.proceduralMaster.gain, 0, now, 0.25);
+      smoothSetParam(this.cleanSubBus.gain, 0, now, 0.25);
+      const needsPureHrv = this.specNeedsPureHrvReferenceCarrier();
+      smoothSetParam(this.pureAmCarrierGain?.gain, needsPureHrv ? 0.24 : 0, now, 0.12);
+      smoothSetParam(
+        this.amScienceCarrierGain?.gain,
+        this.computeAmScienceCarrierTarget(1.0),
+        now,
+        0.12
+      );
       this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(0, now);
       this.syncAmWaveformForMonitorMode(true);
     } else if (mode === 'studio_library') {
@@ -1427,16 +1666,25 @@ export class PsychoacousticEngine {
         this.layerMonitorMode = 'full_mix';
       }
       const muteScience = this.layerMonitorMode === 'music_only';
-      this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
+      smoothSetParam(this.musicAuditionGain?.gain, 1.0, now, 0.12);
       this.stimulusRack.setScienceMuted(muteScience);
       this.stimulusRack.setPureStimulusMode(false);
-      this.pureAmCarrierGain?.gain.setTargetAtTime(0, now, 0.4);
+      smoothSetParam(this.pureAmCarrierGain?.gain, 0, now, 0.12);
+      smoothSetParam(
+        this.amScienceCarrierGain?.gain,
+        this.computeAmScienceCarrierTarget(1.0),
+        now,
+        0.12
+      );
       this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(1, now);
       this.syncAmWaveformForMonitorMode(false);
       void this.activateStudioForGenre(this.genre);
     }
     this.syncBand2Flattener();
     this.syncRainBed();
+    if (this.isPlaying) {
+      this.updateElapsed(this.elapsedSec, 0.08);
+    }
   }
 
   /**
@@ -1455,10 +1703,16 @@ export class PsychoacousticEngine {
       this.layerMonitorMode = 'full_mix';
     }
     const muteScience = this.layerMonitorMode === 'music_only';
-    this.musicAuditionGain?.gain.setTargetAtTime(1.0, this.ctx.currentTime, 0.25);
+    smoothSetParam(this.musicAuditionGain?.gain, 1.0, this.ctx.currentTime, 0.12);
     this.stimulusRack.setScienceMuted(muteScience);
     this.stimulusRack.setPureStimulusMode(false);
-    this.pureAmCarrierGain?.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4);
+    smoothSetParam(this.pureAmCarrierGain?.gain, 0, this.ctx.currentTime, 0.12);
+    smoothSetParam(
+      this.amScienceCarrierGain?.gain,
+      this.computeAmScienceCarrierTarget(1.0),
+      this.ctx.currentTime,
+      0.12
+    );
     this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(1, this.ctx.currentTime);
     this.syncAmWaveformForMonitorMode(false);
 
@@ -1481,7 +1735,13 @@ export class PsychoacousticEngine {
           if (this.layerMonitorMode === 'science_only') {
             this.layerMonitorMode = 'full_mix';
           }
-          this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
+          smoothSetParam(this.musicAuditionGain?.gain, 1.0, now, 0.12);
+          smoothSetParam(
+            this.amScienceCarrierGain?.gain,
+            this.computeAmScienceCarrierTarget(1.0),
+            now,
+            0.12
+          );
           this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(1, now);
           this.syncAmWaveformForMonitorMode(false);
           this.usingStudioAudio = false;
@@ -1492,8 +1752,8 @@ export class PsychoacousticEngine {
           this.activeStemCodecLabel = null;
           this.activeStemSubHarmonicLocked = false;
           this.composer.setStandby(true);
-          this.proceduralMaster.gain.setTargetAtTime(0, now, 0.85);
-          this.cleanSubBus.gain.setTargetAtTime(0, now, 0.85);
+          smoothSetParam(this.proceduralMaster.gain, 0, now, 0.65);
+          smoothSetParam(this.cleanSubBus.gain, 0, now, 0.65);
           this.syncRainBed();
         } else if ((st === 'error' || st === 'unavailable') && this.carrierMode === 'lyria_realtime') {
           this.setCarrierMode('studio_library');
@@ -2407,12 +2667,24 @@ export class PsychoacousticEngine {
 
     const alignHarmonicRootToTrack = () => {
       if (typeof track.rootMidi !== 'number' || !this.ctx || !this.studySpec) return;
-      const retunedHz = this.stimulusRack.retuneToMusicalRoot(
-        track.rootMidi,
-        this.studySpec.music.tuningA4Hz
-      );
-      if (retunedHz && this.spectralPocketNotch) {
-        this.spectralPocketNotch.frequency.setTargetAtTime(retunedHz, this.ctx.currentTime, 0.45);
+      const now = this.ctx.currentTime;
+      const tuning = this.studySpec.music.tuningA4Hz;
+      const retunedHz = this.stimulusRack.retuneToMusicalRoot(track.rootMidi, tuning);
+      if (this.amCarrierRootOsc && this.amCarrierFifthOsc && this.amCarrierOctOsc) {
+        const f0 = computeHarmonicCarrierHz(track.rootMidi, tuning, 220);
+        this.amCarrierRootHz = f0;
+        smoothSetParam(this.amCarrierRootOsc.frequency, f0, now, 0.35);
+        smoothSetParam(
+          this.amCarrierFifthOsc.frequency,
+          Number((f0 * Math.pow(2, 7 / 12)).toFixed(2)),
+          now,
+          0.35
+        );
+        smoothSetParam(this.amCarrierOctOsc.frequency, Number((f0 * 2).toFixed(2)), now, 0.35);
+      }
+      const pocketHz = retunedHz ?? this.amCarrierRootHz;
+      if (pocketHz && this.spectralPocketNotch) {
+        smoothSetParam(this.spectralPocketNotch.frequency, pocketHz, now, 0.35);
       }
     };
 
@@ -2423,10 +2695,9 @@ export class PsychoacousticEngine {
     };
 
     // 1. v7.0 Zero-WSOLA Sub-Harmonic Worklet Path: Decodes 48 kHz Opus/AAC directly into AudioWorklet
-    //    with sample-accurate AM crest phase lock (skipped only if continuous bpmRamp is active).
+    //    with sample-accurate AM crest phase lock (never degrades remastered stems via WSOLA MP3 slicing).
     if (
       this.workletsReady &&
-      !this.studySpec?.music.bpmRamp &&
       track.v7Remastered &&
       (track.opusUrl || track.aacUrl)
     ) {
@@ -2691,7 +2962,7 @@ export class PsychoacousticEngine {
     return pos > cycleSec - 25;
   }
 
-  public updateElapsed(elapsedSec: number): EngineTelemetry {
+  public updateElapsed(elapsedSec: number, gainTimeConst = 0.14): EngineTelemetry {
     this.elapsedSec = elapsedSec;
     const progressRatio = Math.min(1, Math.max(0, elapsedSec / this.plannedSec));
     let phase: SessionPhase = 'plateau';
@@ -2714,21 +2985,22 @@ export class PsychoacousticEngine {
 
     const spec = this.studySpec;
     const scienceMuted = this.layerMonitorMode === 'music_only';
-    const activePhaseFactor = this.layerMonitorMode === 'science_only' ? 1.0 : phaseModFactor;
-    // Slow 0.004 Hz (~4 min) macro-dynamic breathing prevents N1 cortical habituation across 30–90m sessions
+    const isIsolatedScience =
+      this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus';
+    const activePhaseFactor = isIsolatedScience ? 1.0 : phaseModFactor;
+    // Gentle 0.004 Hz (~4 min) macro-dynamic breathing prevents N1 cortical habituation without ever dropping AM audibility
     const antiHabFactor =
-      this.layerMonitorMode === 'science_only' ||
-      this.carrierMode === 'pure_stimulus' ||
-      this.isControlTrial
+      isIsolatedScience || this.isControlTrial
         ? 1.0
-        : 0.85 + 0.15 * Math.cos(2 * Math.PI * 0.004 * elapsedSec);
+        : 0.92 + 0.08 * Math.cos(2 * Math.PI * 0.004 * elapsedSec);
     const amActive = spec?.entrainment.type === 'amplitude_modulation' && spec.entrainment.frequencyHz > 0;
     const baseDepth = amActive ? spec.entrainment.modulationDepth : 0;
     const nominalDepth = Math.min(
       0.75,
       Math.max(0, baseDepth * this.modDepthMultiplier * activePhaseFactor * antiHabFactor)
     );
-    const effectiveDepth = this.isControlTrial || scienceMuted ? 0 : nominalDepth;
+    const effectiveDepth =
+      scienceMuted || (this.isControlTrial && !isIsolatedScience) ? 0 : nominalDepth;
 
     // Iso-Principle live frequency ramp (startFrequencyHz -> target frequencyHz within 90s)
     const isAlphaSpec =
@@ -2751,30 +3023,42 @@ export class PsychoacousticEngine {
 
     if (this.ctx && this.amGainL && this.amDepthGainL && this.amLfoL) {
       const now = this.ctx.currentTime;
-      const amGains = this.computeAmGainPair(effectiveDepth);
+      const amGains = this.computeActiveAmGainPair(effectiveDepth);
       // Restrict ZDF peaking-EQ tilt strictly to <= 12 Hz so 16–40 Hz protocols have zero off-center FM/PM warble
       const tiltDbGain =
         amActive &&
         liveAmHz <= 12 &&
         !scienceMuted &&
-        this.layerMonitorMode !== 'science_only' &&
-        this.carrierMode !== 'pure_stimulus'
+        !isIsolatedScience &&
+        !this.isControlTrial
           ? effectiveDepth * 4.2
           : 0;
-      this.amGainL.gain.setTargetAtTime(amGains.bias, now, 0.35);
-      this.amDepthGainL.gain.setTargetAtTime(amGains.swing, now, 0.35);
-      this.amTiltDepthL?.gain.setTargetAtTime(tiltDbGain, now, 0.35);
+      smoothSetParam(this.amGainL.gain, amGains.bias, now, gainTimeConst);
+      smoothSetParam(this.amDepthGainL.gain, amGains.swing, now, gainTimeConst);
+      smoothSetParam(this.amTiltDepthL?.gain, tiltDbGain, now, gainTimeConst);
       if (amActive) {
-        this.amLfoL.frequency.setTargetAtTime(Math.max(0.5, liveAmHz), now, 0.5);
+        smoothSetParam(this.amLfoL.frequency, Math.max(0.5, liveAmHz), now, 0.35);
       }
 
       if (this.amGainR && this.amDepthGainR && this.amLfoR) {
-        this.amGainR.gain.setTargetAtTime(amGains.bias, now, 0.35);
-        this.amDepthGainR.gain.setTargetAtTime(amGains.swing, now, 0.35);
-        this.amTiltDepthR?.gain.setTargetAtTime(tiltDbGain, now, 0.35);
+        smoothSetParam(this.amGainR.gain, amGains.bias, now, gainTimeConst);
+        smoothSetParam(this.amDepthGainR.gain, amGains.swing, now, gainTimeConst);
+        smoothSetParam(this.amTiltDepthR?.gain, tiltDbGain, now, gainTimeConst);
         if (amActive) {
-          this.amLfoR.frequency.setTargetAtTime(Math.max(0.5, liveAmHz), now, 0.5);
+          smoothSetParam(this.amLfoR.frequency, Math.max(0.5, liveAmHz), now, 0.35);
         }
+      }
+
+      if (this.amScienceCarrierGain) {
+        const pulsePair = this.computeAmPulseModPair();
+        smoothSetParam(this.amSciencePulseGain?.gain, pulsePair.bias, now, gainTimeConst);
+        smoothSetParam(this.amSciencePulseDepth?.gain, pulsePair.swing, now, gainTimeConst);
+        smoothSetParam(
+          this.amScienceCarrierGain.gain,
+          this.computeAmScienceCarrierTarget(activePhaseFactor),
+          now,
+          gainTimeConst
+        );
       }
 
       if (this.band2SpectralRotNode) {
@@ -2782,12 +3066,11 @@ export class PsychoacousticEngine {
           amActive &&
           !this.isControlTrial &&
           !scienceMuted &&
-          this.layerMonitorMode !== 'science_only' &&
-          this.carrierMode !== 'pure_stimulus';
+          !isIsolatedScience;
         // Smooth 0.0028 Hz (~6-min cycle) spectral focus sweep between 600 Hz (warm low-mid) & 2050 Hz (presence)
         const rotHz = 1325 + 725 * Math.sin(2 * Math.PI * 0.0028 * elapsedSec);
-        this.band2SpectralRotNode.frequency.setTargetAtTime(rotHz, now, 0.45);
-        this.band2SpectralRotNode.gain.setTargetAtTime(allowRot ? 1.8 : 0, now, 0.45);
+        smoothSetParam(this.band2SpectralRotNode.frequency, rotHz, now, 0.35);
+        smoothSetParam(this.band2SpectralRotNode.gain, allowRot ? 1.8 : 0, now, gainTimeConst);
       }
     }
 
@@ -2813,7 +3096,7 @@ export class PsychoacousticEngine {
       this.activeTrackNativeBpm > 0
     ) {
       const now = this.ctx.currentTime;
-      if (this.activeStemPlayerNode && !spec?.music.bpmRamp) {
+      if (this.activeStemPlayerNode) {
         // Constant unity rate (only 432/440 tuning) — never chase the live Iso-ramp with pitch-altering varispeed
         const tune432 = spec?.music.tuningA4Hz === 432 ? 432 / 440 : 1.0;
         const lockNow = pickPlaybackGridRate(this.activeTrackNativeBpm, this.getActiveTargetNeuralHz(), tune432);
@@ -2872,9 +3155,13 @@ export class PsychoacousticEngine {
       currentModHz: amActive ? liveAmHz : stim.activeHz,
       currentModDepth: scienceMuted
         ? 0
-        : Number(
-            (amActive ? nominalDepth : (spec?.entrainment.modulationDepth ?? 0) * this.modDepthMultiplier).toFixed(2)
-          ),
+        : isIsolatedScience && amActive
+          ? Number(
+              Math.min(0.95, Math.max(0.74, 0.86 * (0.72 + 0.28 * this.modDepthMultiplier))).toFixed(2)
+            )
+          : Number(
+              (amActive ? nominalDepth : (spec?.entrainment.modulationDepth ?? 0) * this.modDepthMultiplier).toFixed(2)
+            ),
       crossoverHz: spec?.entrainment.modulationBandHz[0] ?? this.params?.crossoverHz ?? 190,
       upperCrossoverHz: spec?.entrainment.modulationBandHz[1] ?? this.params?.upperCrossoverHz ?? 4500,
       stereoAmActive: Boolean(this.amGainR),
@@ -2953,7 +3240,7 @@ export class PsychoacousticEngine {
     this.modDepthMultiplier = Math.max(0.0, Math.min(1.65, multiplier));
     this.stimulusRack.setModMultiplier(this.modDepthMultiplier);
     if (this.isPlaying) {
-      this.updateElapsed(this.elapsedSec);
+      this.updateElapsed(this.elapsedSec, 0.08);
     }
   }
 
@@ -3230,6 +3517,10 @@ export class PsychoacousticEngine {
       this.amLfoL?.stop();
       this.amLfoR?.stop();
       this.pureAmCarrierSrc?.stop();
+      this.amCarrierRootOsc?.stop();
+      this.amCarrierFifthOsc?.stop();
+      this.amCarrierOctOsc?.stop();
+      this.amCarrierNoiseSrc?.stop();
     } catch {
       // ignore
     }
@@ -3291,6 +3582,14 @@ export class PsychoacousticEngine {
     this.activeWsolaMode = 'none';
     this.pureAmCarrierGain = null;
     this.pureAmCarrierSrc = null;
+    this.amScienceCarrierGain = null;
+    this.amSciencePulseGain = null;
+    this.amSciencePulseDepth = null;
+    this.amCarrierRootOsc = null;
+    this.amCarrierFifthOsc = null;
+    this.amCarrierOctOsc = null;
+    this.amCarrierNoiseSrc = null;
+    this.amCarrierRootHz = null;
     this.cleanSubBus = null;
     this.proceduralMaster = null;
     this.studioBus = null;

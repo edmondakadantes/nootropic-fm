@@ -780,6 +780,9 @@ export function buildCheckInExecutableSpec(input: {
   template.entrainment.frequencyHz = input.modulationHz;
   template.entrainment.modulationDepth = input.modulationDepth;
   template.music.bpm = input.bpm;
+  if (input.bpm > 0 && input.armId !== 'theta-drift-6hz') {
+    delete template.music.bpmRamp;
+  }
   template.noise.color = input.noiseColor;
   template.noise.snrDb =
     input.noiseColor === 'none' || input.noiseLevel <= 0.005

@@ -11,6 +11,8 @@ import type { QuickTryId } from '../lib/quickTryProtocols';
 import { CohortIntelligenceShowcase } from './CohortIntelligenceShowcase';
 
 interface HeroLandingViewProps {
+  isPro?: boolean;
+  hasProfile?: boolean;
   onInstantPlay: (id: QuickTryId) => void;
   onStartCustomize: () => void;
   onOpenStudyLab: () => void;
@@ -233,6 +235,8 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
 }
 
 export function HeroLandingView({
+  isPro = false,
+  hasProfile = false,
   onInstantPlay,
   onStartCustomize,
   onOpenStudyLab,
@@ -280,7 +284,9 @@ export function HeroLandingView({
         </div>
 
         <p className="max-w-lg font-mono-tech text-[11px] leading-relaxed text-[#7E7E78]">
-          5-min free calibration · Share for +30 min free · No card or login required · 18+
+          {isPro
+            ? 'nootropic.fm Pro Active · Unlimited full-length sessions & all 10 styles · 18+'
+            : '5-min free calibration · Share for +30 min free · No card or login required · 18+'}
         </p>
 
         {/* Interactive Oscilloscope Preview Strip */}
@@ -299,7 +305,7 @@ export function HeroLandingView({
             className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#A3A39E] transition hover:text-[#F3F1EC]"
           >
             <KeyRound className="h-3 w-3 text-[#34D399]" />
-            Restore Sync Key
+            {hasProfile ? 'Your Neural Pass' : 'Restore Sync Key'}
           </button>
         </div>
 

@@ -172,6 +172,23 @@ export function createPeriodicPulseBuffer(
   return buf;
 }
 
+function smoothSetParam(
+  param: AudioParam | null | undefined,
+  target: number,
+  now: number,
+  timeConst: number
+): void {
+  if (!param) return;
+  const p = param as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+  if (typeof p.cancelAndHoldAtTime === 'function') {
+    p.cancelAndHoldAtTime(now);
+  } else {
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(p.value, now);
+  }
+  p.setTargetAtTime(target, now, timeConst);
+}
+
 /**
  * Precision Clinical Stimulus Rack:
  * Executes 100% of peer-reviewed neuroacoustic primitives directly from ExecutableStudySpec:
@@ -284,7 +301,7 @@ export class MedicalStimulusRack {
         : spec.entrainment.hrvBreathHz ?? 0;
 
     let hrvBusInput: GainNode | null = null;
-    if (hrvHz > 0 && !speakerSafeEQ && !isControlTrial) {
+    if (hrvHz > 0 && !speakerSafeEQ) {
       const hrvGain = ctx.createGain();
       this.hrvBaseDepth =
         spec.entrainment.type === 'hrv_breathing_swell'
@@ -312,7 +329,7 @@ export class MedicalStimulusRack {
 
     // 2. Discrete Clinical Entrainment Generators (40 Hz GENUS, Isochronic, Binaural, Monaural)
     const eType = spec.entrainment.type;
-    if (!isControlTrial && eType !== 'none' && eType !== 'amplitude_modulation' && eType !== 'hrv_breathing_swell') {
+    if (eType !== 'none' && eType !== 'amplitude_modulation' && eType !== 'hrv_breathing_swell') {
       const stimGain = ctx.createGain();
       stimGain.gain.setValueAtTime(0.0001, now);
       stimGain.connect(masterDestination);
@@ -531,7 +548,11 @@ export class MedicalStimulusRack {
           : `${leftHz} + ${rightHz} Hz Monaural (${startBeatHz} Hz Beat)`;
       }
 
-      stimGain.gain.exponentialRampToValueAtTime(Math.max(0.001, targetLevel), now + 1.8);
+      if (targetLevel <= 0.0002) {
+        stimGain.gain.setValueAtTime(0, now);
+      } else {
+        stimGain.gain.exponentialRampToValueAtTime(Math.max(0.001, targetLevel), now + 1.8);
+      }
     } else if (eType === 'amplitude_modulation') {
       this.carrierLabel = `${effectiveTargetHz} Hz LR4 AM (${spec.entrainment.modulationBandHz[0]}–${spec.entrainment.modulationBandHz[1]} Hz)`;
     } else if (eType === 'hrv_breathing_swell') {
@@ -601,13 +622,15 @@ export class MedicalStimulusRack {
   }
 
   private computeEffectiveHrvDepth(): number {
-    if (!this.spec || this.isControlTrial || this.scienceMuted || this.hrvBaseDepth <= 0) return 0;
+    if (!this.spec || this.scienceMuted || this.hrvBaseDepth <= 0) return 0;
+    if (this.isControlTrial && !this.pureStimulusMode) return 0;
     const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
     return Math.min(0.68, Math.max(0, this.hrvBaseDepth * this.modMult * phaseScale));
   }
 
   private computeStimulusTargetGain(): number {
-    if (!this.spec || this.isControlTrial || this.scienceMuted) return 0.0001;
+    if (!this.spec || this.scienceMuted) return 0;
+    if (this.isControlTrial && !this.pureStimulusMode) return 0;
     const baseDepth = Math.max(0.1, Math.min(0.8, this.spec.entrainment.modulationDepth || 0.26));
     const type = this.spec.entrainment.type;
     let base = 0.08;
@@ -615,14 +638,14 @@ export class MedicalStimulusRack {
       base =
         this.gammaMode === 'harmonic_mbi'
           ? this.pureStimulusMode
-            ? 0.24
-            : 0.12
+            ? 0.25
+            : 0.145
           : this.pureStimulusMode
-            ? 0.28
-            : 0.165;
-    } else if (type === 'isochronic_pulse') base = this.pureStimulusMode ? 0.26 : 0.15;
+            ? 0.29
+            : 0.18;
+    } else if (type === 'isochronic_pulse') base = this.pureStimulusMode ? 0.27 : 0.165;
     else if (type === 'binaural_beat' || type === 'monaural_beat') {
-      base = this.pureStimulusMode ? 0.26 : 0.135;
+      base = this.pureStimulusMode ? 0.27 : 0.155;
     }
     const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
     const dynScale = this.pureStimulusMode ? 1.0 : this.dynamicMusicScale;
@@ -789,23 +812,27 @@ export class MedicalStimulusRack {
 
   private computeNoiseTargetGain(): number {
     if (!this.spec || this.scienceMuted || this.spec.noise.color === 'none' || this.spec.noise.snrDb <= -34) {
-      return 0.0001;
+      return 0;
     }
     const linear = snrDbToLinearGain(this.spec.noise.snrDb);
-    const dynScale = this.pureStimulusMode ? 1.0 : 0.72 + 0.28 * this.dynamicMusicScale;
-    const boosted = this.pureStimulusMode ? Math.min(0.68, linear * 1.35) : Math.min(0.68, linear * dynScale);
+    const eType = this.spec.entrainment.type;
+    // In isolated Science Only mode on active rhythmic protocols, keep unmodulated noise subtle so the rhythmic wave stays crisp
+    const pureScale =
+      eType === 'none' || this.spec.noise.snrDb >= -14 ? 1.25 : 0.28;
+    const dynScale = this.pureStimulusMode ? pureScale : 0.78 + 0.28 * this.dynamicMusicScale;
+    const boosted = Math.min(0.68, linear * dynScale);
     const capped = this.speakerSafeEQ ? Math.min(0.06, boosted) : boosted;
-    return Math.max(0.0001, capped * this.intensityMult);
+    return Math.max(0, capped * this.intensityMult);
   }
 
   public setScienceMuted(muted: boolean): void {
     this.scienceMuted = muted;
-    this.refreshLevels();
+    this.refreshLevels(0.065);
   }
 
   public setPureStimulusMode(pure: boolean): void {
     this.pureStimulusMode = pure;
-    this.refreshLevels();
+    this.refreshLevels(0.065);
   }
 
   public setModMultiplier(mult: number): void {
@@ -859,23 +886,22 @@ export class MedicalStimulusRack {
     this.refreshLevels();
   }
 
-  private refreshLevels(timeConst = 0.25): void {
+  private refreshLevels(timeConst = 0.16): void {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     if (this.stimulusGain) {
-      this.stimulusGain.gain.setTargetAtTime(
-        this.scienceMuted || this.isControlTrial ? 0 : this.computeStimulusTargetGain(),
-        now,
-        timeConst
-      );
+      const targetStim =
+        this.scienceMuted || (this.isControlTrial && !this.pureStimulusMode)
+          ? 0
+          : this.computeStimulusTargetGain();
+      smoothSetParam(this.stimulusGain.gain, targetStim, now, timeConst);
     }
     if (this.noiseGain) {
       const wantNoise =
         !this.scienceMuted &&
-        this.spec &&
-        this.spec.noise.color !== 'none' &&
-        this.spec.noise.snrDb > -34;
-      this.noiseGain.gain.setTargetAtTime(
+        Boolean(this.spec && this.spec.noise.color !== 'none' && this.spec.noise.snrDb > -34);
+      smoothSetParam(
+        this.noiseGain.gain,
         wantNoise ? this.computeNoiseTargetGain() : 0,
         now,
         timeConst
@@ -883,11 +909,11 @@ export class MedicalStimulusRack {
     }
     if (this.hrvCarrierGain && this.hrvDepthGain) {
       const effHrv = this.computeEffectiveHrvDepth();
-      this.hrvCarrierGain.gain.setTargetAtTime(1 - effHrv / 2, now, 0.35);
+      smoothSetParam(this.hrvCarrierGain.gain, 1 - effHrv / 2, now, Math.min(0.25, timeConst * 1.5));
       for (const extra of this.hrvExtraGains) {
-        extra.gain.setTargetAtTime(1 - effHrv / 2, now, 0.35);
+        smoothSetParam(extra.gain, 1 - effHrv / 2, now, Math.min(0.25, timeConst * 1.5));
       }
-      this.hrvDepthGain.gain.setTargetAtTime(effHrv / 2, now, 0.35);
+      smoothSetParam(this.hrvDepthGain.gain, effHrv / 2, now, Math.min(0.25, timeConst * 1.5));
     }
   }
 

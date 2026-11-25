@@ -613,9 +613,13 @@ export default function App() {
             type="button"
             onClick={() => {
               setSelectedPreset(null);
-              setScreen(profile ? 'checkin' : 'landing');
+              setAudioActive(false);
+              setFieldMood('default');
+              setScreen('landing');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             className="group flex shrink-0 items-center gap-2 text-left sm:gap-2.5"
+            title="Return to nootropic.fm main page"
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-[#131518] text-[#34D399] transition group-hover:border-white/30 sm:h-9 sm:w-9">
               <Radio className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
@@ -779,6 +783,8 @@ export default function App() {
           </div>
         ) : screen === 'landing' ? (
           <HeroLandingView
+            isPro={profile?.planTier === 'pro'}
+            hasProfile={Boolean(profile)}
             onInstantPlay={handleInstantHeroPlay}
             onStartCustomize={() => {
               setSelectedPreset(null);
