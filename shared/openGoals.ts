@@ -279,32 +279,34 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
   },
 ];
 
-/** Bounded Levenshtein edit distance for typo-tolerant US English matching (e.g. "creaitve" -> "creative") */
+/** Bounded Damerau-Levenshtein distance (treats adjacent letter swaps like "creaitve" / "memroy" as 1 edit!) */
 function editDistanceWithin(a: string, b: string, maxDist: number): boolean {
   if (Math.abs(a.length - b.length) > maxDist) return false;
   if (a === b) return true;
   const m = a.length;
   const n = b.length;
-  const dp = new Array<number>(n + 1);
-  for (let j = 0; j <= n; j++) dp[j] = j;
+  const rows: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) rows[i][0] = i;
+  for (let j = 0; j <= n; j++) rows[0][j] = j;
+
   for (let i = 1; i <= m; i++) {
-    let prev = dp[0];
-    dp[0] = i;
-    let rowMin = dp[0];
+    let rowMin = Infinity;
     for (let j = 1; j <= n; j++) {
-      const temp = dp[j];
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[j] = Math.min(
-        dp[j] + 1,
-        dp[j - 1] + 1,
-        prev + cost
+      let val = Math.min(
+        rows[i - 1][j] + 1,
+        rows[i][j - 1] + 1,
+        rows[i - 1][j - 1] + cost
       );
-      prev = temp;
-      if (dp[j] < rowMin) rowMin = dp[j];
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        val = Math.min(val, rows[i - 2][j - 2] + 1);
+      }
+      rows[i][j] = val;
+      if (val < rowMin) rowMin = val;
     }
     if (rowMin > maxDist) return false;
   }
-  return dp[n] <= maxDist;
+  return rows[m][n] <= maxDist;
 }
 
 const STOP_WORDS = new Set([
@@ -314,6 +316,7 @@ const STOP_WORDS = new Set([
   'help', 'me', 'make', 'reach', 'enter', 'into', 'state', 'mode', 'session', 'minutes', 'minute',
   'min', 'mins', 'hour', 'hours', 'hr', 'hrs', 'stop', 'not', 'no', 'longer', 'without',
   'boost', 'improve', 'increase', 'enhance', 'build', 'gain', 'find', 'have', 'some', 'good', 'deep',
+  'fall', 'falling', 'stay', 'staying', 'keep', 'keeping', 'start', 'starting',
 ]);
 
 function titleCaseWords(words: string[]): string {
@@ -457,11 +460,13 @@ export function resolveOpenGoalIntent(
       topicPhrase
     );
 
-  const coreTarget: TargetState = isCalmTopic
-    ? 'calm_reset'
-    : isHighArousalTopic
-      ? 'energy_lift'
-      : 'deep_flow';
+  const coreTarget: TargetState = isDriving
+    ? 'alert_focus'
+    : isCalmTopic
+      ? 'calm_reset'
+      : isHighArousalTopic
+        ? 'energy_lift'
+        : 'deep_flow';
   const coords: NeuralCoords = isCalmTopic
     ? { energy: 36, clarity: 82 }
     : isHighArousalTopic
