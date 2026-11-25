@@ -656,15 +656,12 @@ export function swapRecommendationGenre(
     newGenre === 'deep_electronic'
   ) {
     nextParams.genreSelectionMode = 'iso_adapted';
-    nextParams.bpm = rec.targetState === 'sleep_winddown' ? 0 : 68;
-    nextParams.pulseIntensity = rec.targetState === 'sleep_winddown' ? 0 : 0.16;
-    nextParams.filterCutoffHz = Math.min(nextParams.filterCutoffHz, 860);
     genreAdaptationNote =
-      'Kept your preferred Deep Electronic timbre, automatically routed to our Calm energy pool and low-pass softened for autonomic down-regulation (Iso-Principle).';
+      'Kept your Layer 1 scientific parameters 100% locked while routing Deep Electronic to our Calm energy pool.';
   } else if (!customVibe && isDriving && newGenre === 'nature_rain') {
     nextParams.genreSelectionMode = 'iso_adapted';
     genreAdaptationNote =
-      'Kept your Nature & Rain aesthetic while strictly capping rain density and keeping road alertness frequencies open.';
+      'Kept your Layer 1 scientific parameters 100% locked while keeping road alertness frequencies open.';
   }
 
   const audioSource: AudioSourceType = customVibe

@@ -757,11 +757,10 @@ export class MedicalStimulusRack {
     return this.primaryCarrierHz;
   }
 
-  public setDynamicMusicEnvelope(scale: number): void {
-    const clamped = Math.max(0.52, Math.min(1.28, scale));
-    if (Math.abs(clamped - this.dynamicMusicScale) < 0.004) return;
-    this.dynamicMusicScale = clamped;
-    this.refreshLevels(0.22);
+  public setDynamicMusicEnvelope(_scale: number): void {
+    // STRICT LAYER-1 SCIENCE INVARIANCE: Layer 1 scientific stimulus & calibrated noise floor
+    // must remain 100% constant in amplitude and frequency across all Layer 2 music genre swaps.
+    this.dynamicMusicScale = 1.0;
   }
 
   public retuneToMusicalRoot(rootMidi: number, tuningA4Hz: 440 | 432): number | null {

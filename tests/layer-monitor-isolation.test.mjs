@@ -373,3 +373,44 @@ test('4. 2-Stage Iso-Bridge: stabilizes Anxious/Stressed/Burned-Out -> Focus at 
   });
   assert.equal(tiredTier.tier, 'max');
 });
+
+test('5. Strict Layer-1 Science Invariance when switching Music Genres (zero carrier retuning, zero RMS pumping, zero param drift)', () => {
+  const engineSrc = fs.readFileSync(path.join(ROOT, 'src/audio/PsychoacousticEngine.ts'), 'utf8');
+  const rackSrc = fs.readFileSync(path.join(ROOT, 'src/audio/MedicalStimulusRack.ts'), 'utf8');
+  const playerSrc = fs.readFileSync(path.join(ROOT, 'src/components/PlayerView.tsx'), 'utf8');
+  const protoSrc = fs.readFileSync(path.join(ROOT, 'shared/protocols.ts'), 'utf8');
+
+  // 1. PsychoacousticEngine alignHarmonicRootToTrack must NEVER call stimulusRack.retuneToMusicalRoot or mutate amCarrierRootOsc.frequency
+  const alignMatch = engineSrc.match(/const alignHarmonicRootToTrack = \(\) => \{[\s\S]*?\n    \};/);
+  assert.ok(alignMatch, 'Expected alignHarmonicRootToTrack block in PsychoacousticEngine.ts');
+  assert.ok(
+    !alignMatch[0].includes('retuneToMusicalRoot') && !alignMatch[0].includes('amCarrierRootOsc'),
+    'Layer 1 carriers must never retune when switching Layer 2 music tracks/genres'
+  );
+
+  // 2. MedicalStimulusRack setDynamicMusicEnvelope must lock dynamicMusicScale = 1.0 (zero music RMS pumping on Layer 1)
+  const dynMatch = rackSrc.match(/public setDynamicMusicEnvelope\([\s\S]*?\n  \}/);
+  assert.ok(dynMatch, 'Expected setDynamicMusicEnvelope in MedicalStimulusRack.ts');
+  assert.ok(
+    dynMatch[0].includes('this.dynamicMusicScale = 1.0') && !dynMatch[0].includes('refreshLevels'),
+    'Layer 1 amplitude & noise floor must remain invariant across music genre volume differences'
+  );
+
+  // 3. PlayerView switchGenre must NOT kick listener out of science_only monitor mode
+  const switchMatch = playerSrc.match(/const switchGenre = \(style: ResolvedGenre\) => \{[\s\S]*?\n  \};/);
+  assert.ok(switchMatch, 'Expected switchGenre in PlayerView.tsx');
+  assert.ok(
+    !switchMatch[0].includes("layerMonitor === 'science_only'"),
+    'Switching music genres must preserve active Layer Monitor mode (including Science Only)'
+  );
+
+  // 4. swapRecommendationGenre in shared/protocols.ts must NEVER mutate filterCutoffHz, bpm, or pulseIntensity
+  const swapMatch = protoSrc.match(/export function swapRecommendationGenre\([\s\S]*?\n\}/);
+  assert.ok(swapMatch, 'Expected swapRecommendationGenre in shared/protocols.ts');
+  assert.ok(
+    !swapMatch[0].includes('nextParams.bpm =') &&
+      !swapMatch[0].includes('nextParams.pulseIntensity =') &&
+      !swapMatch[0].includes('nextParams.filterCutoffHz ='),
+    'swapRecommendationGenre must keep all Layer 1 acoustic parameters 100% locked across genres'
+  );
+});

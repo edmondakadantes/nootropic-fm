@@ -1106,10 +1106,6 @@ export function PlayerView({
       setAudioSource('studio_library');
       engineRef.current?.setCarrierMode('studio_library');
     }
-    if (layerMonitor === 'science_only') {
-      setLayerMonitor('full_mix');
-      engineRef.current?.setLayerMonitorMode('full_mix');
-    }
     engineRef.current?.setGenre(style);
     setAdjustments((prev) => [
       ...prev,

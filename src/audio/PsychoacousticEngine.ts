@@ -2707,23 +2707,12 @@ export class PsychoacousticEngine {
     const studioTargetGain = this.computeTrackLufsGain(track, genre);
 
     const alignHarmonicRootToTrack = () => {
-      if (typeof track.rootMidi !== 'number' || !this.ctx || !this.studySpec) return;
+      if (!this.ctx || !this.studySpec) return;
       const now = this.ctx.currentTime;
-      const tuning = this.studySpec.music.tuningA4Hz;
-      const retunedHz = this.stimulusRack.retuneToMusicalRoot(track.rootMidi, tuning);
-      if (this.amCarrierRootOsc && this.amCarrierFifthOsc && this.amCarrierOctOsc) {
-        const f0 = computeHarmonicCarrierHz(track.rootMidi, tuning, 220);
-        this.amCarrierRootHz = f0;
-        smoothSetParam(this.amCarrierRootOsc.frequency, f0, now, 0.35);
-        smoothSetParam(
-          this.amCarrierFifthOsc.frequency,
-          Number((f0 * Math.pow(2, 7 / 12)).toFixed(2)),
-          now,
-          0.35
-        );
-        smoothSetParam(this.amCarrierOctOsc.frequency, Number((f0 * 2).toFixed(2)), now, 0.35);
-      }
-      const pocketHz = retunedHz ?? this.amCarrierRootHz;
+      // STRICT LAYER-1 SCIENCE INVARIANCE: Never retune Layer 1 scientific carriers (binaural,
+      // monaural, gamma, or AM harmonic carriers) when switching Layer 2 music genres/tracks!
+      // Keep the spectral pocket notch on the music bus aimed at Layer 1's fixed carrier frequency.
+      const pocketHz = this.stimulusRack.getPrimaryCarrierHz() ?? this.amCarrierRootHz;
       if (pocketHz && this.spectralPocketNotch) {
         smoothSetParam(this.spectralPocketNotch.frequency, pocketHz, now, 0.35);
       }
