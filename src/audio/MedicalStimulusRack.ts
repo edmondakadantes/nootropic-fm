@@ -75,7 +75,7 @@ export function createCalibratedNoiseBuffer(
         b6 = white * 0.115926;
         sampleVal =
           color === 'soft_rain'
-            ? pink * (0.48 + 0.14 * Math.sin((2 * Math.PI * ((i + length) % length)) / length + ch * 1.4))
+            ? pink * (0.48 + 0.10 * Math.sin((2 * Math.PI * ((i + length) % length)) / length + ch * Math.PI))
             : pink;
       }
       if (i >= 0) raw[i] = sampleVal;
@@ -86,17 +86,18 @@ export function createCalibratedNoiseBuffer(
     // while keeping uniform frame-by-frame RMS parity across head & body for zero-seam looping.
     if (color === 'soft_rain') {
       const bucketFrames = Math.max(240, Math.round(sampleRate * 0.012)); // ~83 micro-impacts/sec uniform grid
-      for (let pos = 0; pos + bucketFrames < totalGen; pos += bucketFrames) {
+      let bucketIdx = 0;
+      for (let pos = 0; pos + bucketFrames < totalGen; pos += bucketFrames, bucketIdx++) {
         const jitter = Math.floor(Math.random() * (bucketFrames * 0.65));
         const start = pos + jitter;
-        const isPlink = Math.random() < 0.18;
+        const isPlink = (bucketIdx + ch * 3) % 6 === 2;
         const dropLen = Math.min(
           totalGen - start,
           Math.max(18, Math.round(sampleRate * (isPlink ? 0.011 : 0.005)))
         );
         const rawBaseHz = isPlink ? 720 + Math.random() * 1450 : 1200 + Math.random() * 2800;
         const baseHz = Math.min(sampleRate * 0.32, rawBaseHz);
-        const amp = isPlink ? 0.042 + Math.random() * 0.032 : 0.026 + Math.random() * 0.024;
+        const amp = isPlink ? 0.036 + Math.random() * 0.022 : 0.024 + Math.random() * 0.018;
         let phase = Math.random() * Math.PI * 2;
         let lp = 0;
         for (let j = 0; j < dropLen; j++) {

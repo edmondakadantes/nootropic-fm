@@ -2301,6 +2301,47 @@ test('P1 #7 (Live OpenAlex + PubMed Literature Regression): resolves open custom
   assert.ok(postWorkout && postWorkout.isOpenCustomTopic);
   assert.match(postWorkout.pubmedQuery, /exercise\[Title\/Abstract\]/i);
 
+  const preInterview = resolveOpenGoalIntent('pre-interview jitters');
+  assert.ok(preInterview && preInterview.isOpenCustomTopic);
+  assert.match(preInterview.pubmedQuery, /"performance anxiety"\[Title\/Abstract\]/i);
+
+  const hzCoding = resolveOpenGoalIntent('40hz coding stamina');
+  assert.ok(hzCoding && hzCoding.isOpenCustomTopic);
+  assert.match(hzCoding.pubmedQuery, /"40 Hz"\[Title\/Abstract\]/i);
+  assert.match(hzCoding.pubmedQuery, /"cognitive performance"\[Title\/Abstract\]/i);
+
+  // Verify broader preclinical auditory-model rejections (frogs, insect phonotaxis, ferrets, barn owls)
+  // without false-positiving human chronotype ("night owls") or Beat Alignment Test ("BAT")
+  assert.equal(
+    isNonAuditoryOrAnimalStudy(
+      'Sound-by-sound thalamic stimulation modulates midbrain auditory excitability and relative binaural sensitivity in frogs'
+    ),
+    true,
+    'Must reject amphibian/frog auditory midbrain studies'
+  );
+  assert.equal(
+    isNonAuditoryOrAnimalStudy(
+      'Symmetrical binaural coding in the auditory periphery directs phonotaxis in a mechanically coupled system'
+    ),
+    true,
+    'Must reject insect phonotaxis studies'
+  );
+  assert.equal(
+    isNonAuditoryOrAnimalStudy(
+      "Corrigendum: It's not a virus! Reconceptualizing and de-pathologizing music performance anxiety"
+    ),
+    true,
+    'Must reject Corrigendum/Erratum/Retraction notices'
+  );
+  assert.equal(
+    isNonAuditoryOrAnimalStudy(
+      'Evening acoustic relaxation improves sleep onset in healthy human night owls',
+      'Thirty-two adult participants completed the Beat Alignment Test (BAT) and listened to calm instrumental music.'
+    ),
+    false,
+    'Must NOT false-positive on human "night owls" chronotype or Beat Alignment Test (BAT)'
+  );
+
   // Verify every curated preset openAlexTerm has balanced parentheses & no commas
   for (const preset of CURATED_GOAL_PRESETS) {
     assert.ok(!preset.openAlexTerm.includes(','), `Preset ${preset.slug} openAlexTerm must not contain commas`);
@@ -2420,6 +2461,17 @@ test('P1 #7 (Live OpenAlex + PubMed Literature Regression): resolves open custom
     assert.ok(recovered.some((p) => p.source === 'pubmed' && p.pmid === '42307797'));
     assert.ok(recovered.some((p) => p.source === 'openalex' && p.url === 'https://doi.org/10.3766/jaaa.18027'));
     assert.ok(recovered.every((p) => !isNonAuditoryOrAnimalStudy(p.title)));
+    const epmcFallbackCalls = seenUrls.filter((u) => u.includes('ebi.ac.uk/europepmc/webservices/rest/search'));
+    assert.ok(
+      epmcFallbackCalls.length >= 1 &&
+        epmcFallbackCalls.every(
+          (u) =>
+            u.includes('resultType=core') &&
+            decodeURIComponent(u).includes('NOT (TITLE:mice') &&
+            decodeURIComponent(u).includes('LANG:"eng"')
+        ),
+      'Europe PMC fallback MUST request resultType=core (for real abstractText) with LANG:"eng" + animal/non-auditory NOT guard'
+    );
     const oaRelaxCalls = seenUrls.filter((u) => u.includes('api.openalex.org/works'));
     assert.ok(
       !oaRelaxCalls.some((u) => /\bAND\s+human\b/i.test(decodeURIComponent(u))),
@@ -2427,10 +2479,16 @@ test('P1 #7 (Live OpenAlex + PubMed Literature Regression): resolves open custom
     );
 
     // Verify Cloudflare shared-IP OpenAlex 429 recovery via $0-credit `/works/https://doi.org/{doi}` single-work lookup
+    // AND strict fail-closed rejection of 404s, non-English works, animal-only MeSH, and animal inverted-index abstracts!
     globalThis.fetch = async (input) => {
       const u = typeof input === 'string' ? input : input.url;
       if (u.includes('esearch.fcgi')) {
-        return new Response(JSON.stringify({ esearchresult: { idlist: ['10001', '10002', '10003'] } }), { status: 200 });
+        return new Response(
+          JSON.stringify({
+            esearchresult: { idlist: ['10001', '10002', '10003', '10004', '10005', '10006'] },
+          }),
+          { status: 200 }
+        );
       }
       if (u.includes('esummary.fcgi')) {
         return new Response(
@@ -2439,6 +2497,24 @@ test('P1 #7 (Live OpenAlex + PubMed Literature Regression): resolves open custom
               '10001': { title: 'Music listening lowers speaking stress.', pubdate: '2025', authors: [{ name: 'Lee A' }] },
               '10002': { title: 'Binaural beats support attention.', pubdate: '2024', authors: [{ name: 'Kim B' }] },
               '10003': {
+                title: 'Gamma auditory steady-state responses in cortex.',
+                pubdate: '2024',
+                authors: [{ name: 'Rodent Stealth' }],
+                articleids: [{ idtype: 'doi', value: '10.1000/stealth.rat.1' }],
+              },
+              '10004': {
+                title: 'Acoustic tone modulation of neural circuits.',
+                pubdate: '2023',
+                authors: [{ name: 'Mesh Animal' }],
+                articleids: [{ idtype: 'doi', value: '10.1000/mesh.animal.2' }],
+              },
+              '10005': {
+                title: 'Binaural sound production essay.',
+                pubdate: '2021',
+                authors: [{ name: 'NonEng X' }],
+                articleids: [{ idtype: 'doi', value: '10.1000/non.eng.3' }],
+              },
+              '10006': {
                 title: 'Happy creativity: Listening to happy music facilitates divergent thinking.',
                 pubdate: '2017',
                 authors: [{ name: 'Ritter S' }],
@@ -2453,11 +2529,50 @@ test('P1 #7 (Live OpenAlex + PubMed Literature Regression): resolves open custom
         return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), { status: 429 });
       }
       if (u.includes('api.openalex.org/works/https%3A%2F%2Fdoi.org%2F')) {
+        const decoded = decodeURIComponent(u);
+        if (decoded.includes('10.1000/stealth.rat.1')) {
+          // Title looks clean, abstract_inverted_index reveals Wistar rats -> MUST NOT fail open!
+          return new Response(
+            JSON.stringify({
+              id: 'https://openalex.org/W900001',
+              doi: 'https://doi.org/10.1000/stealth.rat.1',
+              title: 'Gamma auditory steady-state responses in cortex',
+              language: 'en',
+              abstract_inverted_index: { Adult: [0], Wistar: [1], rats: [2], were: [3], anesthetized: [4] },
+            }),
+            { status: 200 }
+          );
+        }
+        if (decoded.includes('10.1000/mesh.animal.2')) {
+          // MeSH has Animals without Humans -> MUST reject!
+          return new Response(
+            JSON.stringify({
+              id: 'https://openalex.org/W900002',
+              doi: 'https://doi.org/10.1000/mesh.animal.2',
+              title: 'Acoustic tone modulation of neural circuits',
+              language: 'en',
+              mesh: [{ descriptor_name: 'Animals' }],
+            }),
+            { status: 200 }
+          );
+        }
+        if (decoded.includes('10.1000/non.eng.3')) {
+          return new Response(
+            JSON.stringify({
+              id: 'https://openalex.org/W900003',
+              doi: 'https://doi.org/10.1000/non.eng.3',
+              title: 'Konsep Binaural Beats dalam Produksi Musik Digital',
+              language: 'id',
+            }),
+            { status: 200 }
+          );
+        }
         return new Response(
           JSON.stringify({
             id: 'https://openalex.org/W2753403062',
             doi: 'https://doi.org/10.1371/journal.pone.0182210',
             title: 'Happy creativity: Listening to happy music facilitates divergent thinking',
+            language: 'en',
             publication_year: 2017,
             authorships: [{ author: { display_name: 'Simone M. Ritter' } }],
             primary_location: { source: { display_name: 'PLoS ONE' } },
@@ -2465,10 +2580,19 @@ test('P1 #7 (Live OpenAlex + PubMed Literature Regression): resolves open custom
           { status: 200 }
         );
       }
-      return new Response(JSON.stringify({ message: { items: [] } }), { status: 200 });
+      return new Response(JSON.stringify({ resultList: { result: [] } }), { status: 200 });
     };
     const sharedIpRecovered = await fetchVerifiedLiveLiterature({ DB: dbMock }, 'deep_flow', 'study');
     assert.ok(sharedIpRecovered.some((p) => p.source === 'pubmed' && p.pmid === '10001'));
+    assert.ok(
+      !sharedIpRecovered.some(
+        (p) =>
+          p.url.includes('stealth.rat.1') ||
+          p.url.includes('mesh.animal.2') ||
+          p.url.includes('non.eng.3')
+      ),
+      `Fail-closed OpenAlex lookup must NEVER leak stealth-rat abstract, animal-only MeSH, or non-English papers: ${JSON.stringify(sharedIpRecovered)}`
+    );
     assert.ok(
       sharedIpRecovered.some(
         (p) =>
@@ -2477,6 +2601,42 @@ test('P1 #7 (Live OpenAlex + PubMed Literature Regression): resolves open custom
           p.url === 'https://doi.org/10.1371/journal.pone.0182210'
       ),
       'Must recover canonical OA:W... work via $0-credit single-DOI OpenAlex lookup when /works?filter= returns 429'
+    );
+
+    // Verify Driving Safety override on curated sleep_winddown never queries insomnia/sleep literature
+    const drivingSeenUrls = [];
+    globalThis.fetch = async (input) => {
+      const u = typeof input === 'string' ? input : input.url;
+      drivingSeenUrls.push(decodeURIComponent(u));
+      return new Response(JSON.stringify({ esearchresult: { idlist: [] }, results: [] }), { status: 200 });
+    };
+    const drvRes = await worker.fetch(
+      new Request('https://www.nootropic.fm/api/protocol/start', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://www.nootropic.fm',
+          'cf-connecting-ip': '198.51.100.49',
+        },
+        body: JSON.stringify({
+          ephemeralMode: true,
+          customGoalSlug: 'sleep_winddown',
+          currentState: 'fatigued',
+          baselineScore: 2,
+          targetState: 'sleep_winddown',
+          environment: 'driving',
+          device: 'car_audio',
+          durationMin: 25,
+        }),
+      }),
+      { DB: dbMock },
+      createExecCtx()
+    );
+    assert.equal(drvRes.status, 200);
+    assert.ok(
+      drivingSeenUrls.some((u) => u.includes('driving')) &&
+        !drivingSeenUrls.some((u) => u.includes('insomnia')),
+      `Driving safety override must query driving vigilance, NEVER insomnia: ${JSON.stringify(drivingSeenUrls)}`
     );
   } finally {
     globalThis.fetch = origFetch;
@@ -2490,6 +2650,8 @@ test('P1 #7 (Live OpenAlex + PubMed Literature Regression): resolves open custom
     { label: 'public speaking confidence', ip: '198.51.100.41' },
     { label: 'creative flow', ip: '198.51.100.42' },
     { label: 'sharp focus', ip: '198.51.100.43' },
+    { label: 'pre-interview jitters', ip: '198.51.100.44' },
+    { label: '40hz coding stamina', ip: '198.51.100.45' },
   ];
 
   for (const [idx, c] of liveCases.entries()) {

@@ -1,7 +1,11 @@
 import { getMicroStateById } from '../shared/neuralStates';
 import {
+  EUROPEPMC_HUMAN_AUDITORY_EXCLUSION,
+  GENERIC_GOAL_OUTCOME_MODIFIERS,
   OPENALEX_HUMAN_AUDITORY_EXCLUSION,
   appendPubMedHumanAuditoryGuard,
+  formatOpenAlexWordTerm,
+  formatPubMedWordTerm,
   isNonAuditoryOrAnimalStudy,
 } from '../shared/openGoals';
 import type { LivePubMedPaper, SessionEnvironment, TargetState } from '../shared/types';
@@ -21,6 +25,36 @@ function stripInlineTags(s: string): string {
     .replace(/&#39;|&apos;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeTitleDedupKey(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 48);
+}
+
+function reconstructOpenAlexAbstract(inv?: Record<string, number[]> | null): string {
+  if (!inv || typeof inv !== 'object') return '';
+  const words: string[] = [];
+  for (const [token, positions] of Object.entries(inv)) {
+    if (!Array.isArray(positions)) continue;
+    for (const pos of positions) {
+      if (typeof pos === 'number' && pos >= 0 && pos < 600) {
+        words[pos] = token;
+      }
+    }
+  }
+  return words.filter(Boolean).join(' ');
+}
+
+function hasAnimalOnlyMesh(mesh?: Array<{ descriptor_name?: string }> | null): boolean {
+  if (!Array.isArray(mesh) || mesh.length === 0) return false;
+  let hasAnimals = false;
+  let hasHumans = false;
+  for (const m of mesh) {
+    const name = (m.descriptor_name ?? '').trim().toLowerCase();
+    if (name === 'animals') hasAnimals = true;
+    if (name === 'humans') hasHumans = true;
+  }
+  return hasAnimals && !hasHumans;
 }
 
 function inferAppliedMechanism(
@@ -73,34 +107,58 @@ interface DoiSeedCandidate {
 interface PubMedFetchBundle {
   papers: LivePubMedPaper[];
   extraDois: DoiSeedCandidate[];
+  usedDois: Set<string>;
+  usedTitleKeys: Set<string>;
+}
+
+interface UpstreamQuotaState {
+  pmRateLimited: boolean;
+  oaSearchRateLimited: boolean;
+  epmcDegraded: boolean;
 }
 
 const AUDITORY_TITLE_GUARD_RE =
   /\b(music|musical|auditory|acoustic|sound|binaural|monaural|isochronic|listening|noise|tempo|rhythmic|harmonic|melody|tone|tinnitus|entrainment|piano)\b/i;
 
+function emptyPubMedBundle(): PubMedFetchBundle {
+  return {
+    papers: [],
+    extraDois: [],
+    usedDois: new Set<string>(),
+    usedTitleKeys: new Set<string>(),
+  };
+}
+
 /**
  * Official Europe PMC MEDLINE (`SRC:MED`) backup for NIH PubMed `pmid` records when
  * `eutils.ncbi.nlm.nih.gov` rate-limits (`429`) or times out under burst load.
- * Every returned record is an authentic NIH PubMed/MEDLINE indexed article with a verified numeric `pmid`.
+ * Uses `resultType=core` so full `abstractText` is inspected by `isNonAuditoryOrAnimalStudy`,
+ * plus `LANG:"eng"` and `EUROPEPMC_HUMAN_AUDITORY_EXCLUSION`.
  */
 async function fetchPubMedViaEuropePmcFallback(
   rawQuery: string,
   targetState: TargetState,
-  environment: SessionEnvironment
+  environment: SessionEnvironment,
+  quotaState?: UpstreamQuotaState
 ): Promise<PubMedFetchBundle> {
+  if (quotaState?.epmcDegraded) return emptyPubMedBundle();
   try {
     const withoutPmExcl = rawQuery.replace(/\s*NOT\s+\(\(Animals\[MeSH Terms\][\s\S]*$/i, '').trim();
-    const converted = withoutPmExcl.replace(/\[(?:Title\/Abstract|Title|MeSH Terms|tiab|mh)\]/gi, '');
-    const epmcQuery = `SRC:MED AND (${converted})`;
-    const url = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(epmcQuery)}&resultType=lite&pageSize=8&format=json`;
+    const converted = withoutPmExcl.replace(/\[(?:Title\/Abstract|Title|MeSH Terms|tiab|mh)\]/gi, '').trim();
+    if (!converted) return emptyPubMedBundle();
+    const epmcQuery = `SRC:MED AND LANG:"eng" AND (${converted}) ${EUROPEPMC_HUMAN_AUDITORY_EXCLUSION}`;
+    const url = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(epmcQuery)}&resultType=core&pageSize=6&format=json`;
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(3800),
       headers: {
         accept: 'application/json',
         'user-agent': 'nootropic.fm/3.0 (mailto:music@nootropic.fm)',
       },
     });
-    if (!res.ok) return { papers: [], extraDois: [] };
+    if (!res.ok) {
+      if (res.status >= 500 && quotaState) quotaState.epmcDegraded = true;
+      return emptyPubMedBundle();
+    }
     const data = (await res.json()) as {
       resultList?: {
         result?: Array<{
@@ -115,8 +173,15 @@ async function fetchPubMedViaEuropePmcFallback(
       };
     };
 
-    const papers: LivePubMedPaper[] = [];
-    const extraDois: DoiSeedCandidate[] = [];
+    const parsed: Array<{
+      pmid: string;
+      cleanTitle: string;
+      authorLabel: string;
+      year: string;
+      journal: string;
+      doiClean?: string;
+      hasAuditoryTitle: boolean;
+    }> = [];
     for (const r of data.resultList?.result ?? []) {
       const pmid = r.pmid?.replace(/[^0-9]/g, '') ?? '';
       if (!pmid || !r.title) continue;
@@ -131,26 +196,54 @@ async function fetchPubMedViaEuropePmcFallback(
       const authorLabel = authorParts.length > 1 ? `${firstAuthor} et al.` : firstAuthor;
       const year = r.pubYear?.match(/\d{4}/)?.[0] ?? 'Peer-Reviewed';
       const journal = r.journalTitle || 'PubMed Indexed Journal';
-      const doiClean = r.doi?.replace(/^https?:\/\/doi\.org\//i, '').trim();
+      const doiRaw = r.doi?.replace(/^https?:\/\/doi\.org\//i, '').trim();
+      const doiClean = doiRaw && /^10\.\d{4,9}\//i.test(doiRaw) ? doiRaw : undefined;
+      parsed.push({
+        pmid,
+        cleanTitle,
+        authorLabel,
+        year,
+        journal,
+        doiClean,
+        hasAuditoryTitle: AUDITORY_TITLE_GUARD_RE.test(cleanTitle),
+      });
+    }
+
+    parsed.sort((a, b) => Number(b.hasAuditoryTitle) - Number(a.hasAuditoryTitle));
+
+    const papers: LivePubMedPaper[] = [];
+    const extraDois: DoiSeedCandidate[] = [];
+    const usedDois = new Set<string>();
+    const usedTitleKeys = new Set<string>();
+    for (const entry of parsed) {
       if (papers.length < 2) {
         papers.push({
-          pmid,
+          pmid: entry.pmid,
           source: 'pubmed',
-          title: cleanTitle,
-          authors: authorLabel,
-          journal,
-          year,
-          url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
-          ...(doiClean ? { doiUrl: `https://doi.org/${doiClean}` } : {}),
-          appliedMechanism: inferAppliedMechanism(cleanTitle, targetState, environment),
+          title: entry.cleanTitle,
+          authors: entry.authorLabel,
+          journal: entry.journal,
+          year: entry.year,
+          url: `https://pubmed.ncbi.nlm.nih.gov/${entry.pmid}/`,
+          ...(entry.doiClean ? { doiUrl: `https://doi.org/${entry.doiClean}` } : {}),
+          appliedMechanism: inferAppliedMechanism(entry.cleanTitle, targetState, environment),
         });
-      } else if (doiClean && /^10\.\d{4,9}\//i.test(doiClean) && extraDois.length < 4) {
-        extraDois.push({ doi: doiClean, title: cleanTitle, authors: authorLabel, journal, year });
+        if (entry.doiClean) usedDois.add(entry.doiClean.toLowerCase());
+        usedTitleKeys.add(normalizeTitleDedupKey(entry.cleanTitle));
+      } else if (entry.doiClean && extraDois.length < 4) {
+        extraDois.push({
+          doi: entry.doiClean,
+          title: entry.cleanTitle,
+          authors: entry.authorLabel,
+          journal: entry.journal,
+          year: entry.year,
+        });
       }
     }
-    return { papers, extraDois };
+    return { papers, extraDois, usedDois, usedTitleKeys };
   } catch {
-    return { papers: [], extraDois: [] };
+    if (quotaState) quotaState.epmcDegraded = true;
+    return emptyPubMedBundle();
   }
 }
 
@@ -158,7 +251,8 @@ async function fetchPubMed(
   env: Env,
   targetState: TargetState,
   environment: SessionEnvironment,
-  queryOverride?: string
+  queryOverride?: string,
+  quotaState?: UpstreamQuotaState
 ): Promise<PubMedFetchBundle> {
   const rawQuery =
     queryOverride ??
@@ -177,28 +271,33 @@ async function fetchPubMed(
       }
       return '("amplitude modulation"[Title/Abstract] OR "background music"[Title/Abstract] OR "white noise"[Title/Abstract]) AND ("sustained attention"[Title/Abstract] OR "cognitive performance"[Title/Abstract])';
     })();
-  const query = appendPubMedHumanAuditoryGuard(rawQuery);
 
+  if (quotaState?.pmRateLimited) {
+    return fetchPubMedViaEuropePmcFallback(rawQuery, targetState, environment, quotaState);
+  }
+
+  const query = appendPubMedHumanAuditoryGuard(rawQuery);
   const apiKeyParam = env.NCBI_API_KEY ? `&api_key=${encodeURIComponent(env.NCBI_API_KEY)}` : '';
   try {
-    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=8&sort=relevance&term=${encodeURIComponent(query)}${apiKeyParam}`;
+    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=10&sort=relevance&term=${encodeURIComponent(query)}${apiKeyParam}`;
     let searchRes = await fetch(searchUrl, {
       signal: AbortSignal.timeout(2500),
       headers: { 'user-agent': 'nootropic.fm/2.0 (mailto:music@nootropic.fm)' },
     });
     if (searchRes.status === 429) {
-      await new Promise((r) => setTimeout(r, 480));
+      await new Promise((r) => setTimeout(r, 760 + Math.floor(Math.random() * 340)));
       searchRes = await fetch(searchUrl, {
         signal: AbortSignal.timeout(2500),
         headers: { 'user-agent': 'nootropic.fm/2.0 (mailto:music@nootropic.fm)' },
       });
     }
     if (!searchRes.ok) {
-      return fetchPubMedViaEuropePmcFallback(rawQuery, targetState, environment);
+      if (searchRes.status === 429 && quotaState) quotaState.pmRateLimited = true;
+      return fetchPubMedViaEuropePmcFallback(rawQuery, targetState, environment, quotaState);
     }
     const searchData = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
-    const ids = (searchData.esearchresult?.idlist ?? []).slice(0, 8);
-    if (ids.length === 0) return { papers: [], extraDois: [] };
+    const ids = (searchData.esearchresult?.idlist ?? []).slice(0, 10);
+    if (ids.length === 0) return emptyPubMedBundle();
 
     const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(',')}${apiKeyParam}`;
     let sumRes = await fetch(summaryUrl, {
@@ -206,14 +305,15 @@ async function fetchPubMed(
       headers: { 'user-agent': 'nootropic.fm/2.0 (mailto:music@nootropic.fm)' },
     });
     if (sumRes.status === 429) {
-      await new Promise((r) => setTimeout(r, 480));
+      await new Promise((r) => setTimeout(r, 760 + Math.floor(Math.random() * 340)));
       sumRes = await fetch(summaryUrl, {
         signal: AbortSignal.timeout(2500),
         headers: { 'user-agent': 'nootropic.fm/2.0 (mailto:music@nootropic.fm)' },
       });
     }
     if (!sumRes.ok) {
-      return fetchPubMedViaEuropePmcFallback(rawQuery, targetState, environment);
+      if (sumRes.status === 429 && quotaState) quotaState.pmRateLimited = true;
+      return fetchPubMedViaEuropePmcFallback(rawQuery, targetState, environment, quotaState);
     }
     const sumData = (await sumRes.json()) as {
       result?: Record<
@@ -268,6 +368,8 @@ async function fetchPubMed(
 
     const papers: LivePubMedPaper[] = [];
     const extraDois: DoiSeedCandidate[] = [];
+    const usedDois = new Set<string>();
+    const usedTitleKeys = new Set<string>();
     for (const entry of parsedItems) {
       if (papers.length < 2) {
         papers.push({
@@ -281,7 +383,9 @@ async function fetchPubMed(
           ...(entry.doiClean ? { doiUrl: `https://doi.org/${entry.doiClean}` } : {}),
           appliedMechanism: inferAppliedMechanism(entry.cleanTitle, targetState, environment),
         });
-      } else if (entry.doiClean && entry.hasAuditoryTitle && extraDois.length < 4) {
+        if (entry.doiClean) usedDois.add(entry.doiClean.toLowerCase());
+        usedTitleKeys.add(normalizeTitleDedupKey(entry.cleanTitle));
+      } else if (entry.doiClean && extraDois.length < 5) {
         extraDois.push({
           doi: entry.doiClean,
           title: entry.cleanTitle,
@@ -291,9 +395,9 @@ async function fetchPubMed(
         });
       }
     }
-    return { papers, extraDois };
+    return { papers, extraDois, usedDois, usedTitleKeys };
   } catch {
-    return fetchPubMedViaEuropePmcFallback(rawQuery, targetState, environment);
+    return fetchPubMedViaEuropePmcFallback(rawQuery, targetState, environment, quotaState);
   }
 }
 
@@ -316,20 +420,102 @@ function sanitizeOpenAlexBooleanTerm(term: string): string {
   return balanced ? noCommas : noCommas.replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-async function fetchCrossrefDoiSeeds(cleanTerm: string): Promise<DoiSeedCandidate[]> {
+/**
+ * Boolean + full-abstract English DOI discovery via Europe PMC (`HAS_DOI:y AND LANG:"eng" AND TITLE_ABS:(...)`)
+ * so OpenAlex `$0.00` single-work lookups receive strictly on-topic, human-auditory screened DOIs
+ * (never OR-bag-of-words bibliographic noise).
+ */
+async function fetchEuropePmcDoiSeeds(
+  cleanTerm: string,
+  quotaState?: UpstreamQuotaState
+): Promise<DoiSeedCandidate[]> {
+  if (quotaState?.epmcDegraded) return [];
   try {
-    const plainQuery = cleanTerm
-      .replace(/\b(AND|OR|NOT)\b/g, ' ')
-      .replace(/[()"]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!plainQuery) return [];
-    const url = `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(plainQuery)}&filter=type:journal-article&rows=8&select=DOI,title,author,published,container-title&mailto=music@nootropic.fm`;
+    if (!cleanTerm) return [];
+    const epmcQuery = `HAS_DOI:y AND LANG:"eng" AND (${cleanTerm}) ${EUROPEPMC_HUMAN_AUDITORY_EXCLUSION}`;
+    const url = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(epmcQuery)}&resultType=core&pageSize=8&format=json`;
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(2500),
+      signal: AbortSignal.timeout(2200),
       headers: {
         accept: 'application/json',
-        'user-agent': 'nootropic.fm/2.0 (mailto:music@nootropic.fm)',
+        'user-agent': 'nootropic.fm/3.0 (mailto:music@nootropic.fm)',
+      },
+    });
+    if (!res.ok) {
+      if (res.status >= 500 && quotaState) quotaState.epmcDegraded = true;
+      return [];
+    }
+    const data = (await res.json()) as {
+      resultList?: {
+        result?: Array<{
+          doi?: string;
+          title?: string;
+          authorString?: string;
+          journalTitle?: string;
+          pubYear?: string;
+          abstractText?: string;
+        }>;
+      };
+    };
+
+    const scored: Array<DoiSeedCandidate & { hasAuditoryTitle: boolean }> = [];
+    for (const r of data.resultList?.result ?? []) {
+      const doi = r.doi?.replace(/^https?:\/\/doi\.org\//i, '').trim() ?? '';
+      if (!doi || !/^10\.\d{4,9}\//i.test(doi) || !r.title) continue;
+      const cleanTitle = stripInlineTags(r.title).replace(/\.$/, '');
+      const cleanAbstract = r.abstractText ? stripInlineTags(r.abstractText) : '';
+      if (isNonAuditoryOrAnimalStudy(cleanTitle, cleanAbstract)) continue;
+      const authorParts = (r.authorString ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const firstAuthor = authorParts[0] || 'Research Team';
+      const authorLabel = authorParts.length > 1 ? `${firstAuthor} et al.` : firstAuthor;
+      scored.push({
+        doi,
+        title: cleanTitle,
+        authors: authorLabel,
+        journal: r.journalTitle || 'Peer-Reviewed Journal (DOI)',
+        year: r.pubYear?.match(/\d{4}/)?.[0] ?? 'Peer-Reviewed',
+        hasAuditoryTitle: AUDITORY_TITLE_GUARD_RE.test(cleanTitle),
+      });
+    }
+
+    scored.sort((a, b) => Number(b.hasAuditoryTitle) - Number(a.hasAuditoryTitle));
+    return scored.slice(0, 6);
+  } catch {
+    if (quotaState) quotaState.epmcDegraded = true;
+    return [];
+  }
+}
+
+/**
+ * Clean, single-acoustic-word Crossref Polite Pool backup used ONLY when Europe PMC is degraded/unreachable.
+ * Avoids multi-word acoustic stuffing so domain keywords dominate BM25, and every returned DOI is still
+ * gated fail-closed through OpenAlex `/works/https://doi.org/{doi}` (`abstract_inverted_index` + `mesh` + `language:en`).
+ */
+async function fetchCleanCrossrefDoiSeeds(cleanTerm: string): Promise<DoiSeedCandidate[]> {
+  try {
+    const domainWords = Array.from(
+      new Set(
+        cleanTerm
+          .replace(/[()"]/g, ' ')
+          .replace(
+            /\b(AND|OR|NOT|music|musical|auditory|stimulation|acoustic|sound|therapy|binaural|monaural|isochronic|background|noise|listening)\b/gi,
+            ' '
+          )
+          .split(/\s+/)
+          .map((w) => w.trim().toLowerCase())
+          .filter((w) => w.length >= 3)
+      )
+    ).slice(0, 3);
+    const plainQuery = domainWords.length > 0 ? `music ${domainWords.join(' ')}` : 'music attention cognition';
+    const url = `https://api.crossref.org/works?query.title=${encodeURIComponent(plainQuery)}&filter=type:journal-article,from-pub-date:1995&rows=8&select=DOI,title,author,published,container-title&mailto=music@nootropic.fm`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(2000),
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'nootropic.fm/3.0 (mailto:music@nootropic.fm)',
       },
     });
     if (!res.ok) return [];
@@ -353,10 +539,9 @@ async function fetchCrossrefDoiSeeds(cleanTerm: string): Promise<DoiSeedCandidat
       if (!AUDITORY_TITLE_GUARD_RE.test(cleanTitle)) continue;
       if (isNonAuditoryOrAnimalStudy(cleanTitle)) continue;
       const authors = item.author ?? [];
-      const first =
-        authors[0]?.family
-          ? `${authors[0].family}${authors[0].given ? ` ${authors[0].given[0]}` : ''}`
-          : authors[0]?.name || 'Research Team';
+      const first = authors[0]?.family
+        ? `${authors[0].family}${authors[0].given ? ` ${authors[0].given[0]}` : ''}`
+        : authors[0]?.name || 'Research Team';
       const authorLabel = authors.length > 1 ? `${first} et al.` : first;
       const yearNum = item.published?.['date-parts']?.[0]?.[0];
       out.push({
@@ -366,7 +551,7 @@ async function fetchCrossrefDoiSeeds(cleanTerm: string): Promise<DoiSeedCandidat
         journal: item['container-title']?.[0] || 'Peer-Reviewed Journal (DOI)',
         year: yearNum ? String(yearNum) : 'Peer-Reviewed',
       });
-      if (out.length >= 3) break;
+      if (out.length >= 4) break;
     }
     return out;
   } catch {
@@ -374,31 +559,103 @@ async function fetchCrossrefDoiSeeds(cleanTerm: string): Promise<DoiSeedCandidat
   }
 }
 
+interface OpenAlexWorkRecord {
+  id?: string;
+  doi?: string;
+  title?: string;
+  publication_year?: number;
+  language?: string | null;
+  authorships?: Array<{ author?: { display_name?: string } }>;
+  primary_location?: { source?: { display_name?: string } };
+  mesh?: Array<{ descriptor_name?: string }> | null;
+  abstract_inverted_index?: Record<string, number[]> | null;
+}
+
+const OPENALEX_SELECT_FIELDS =
+  'id,doi,title,publication_year,language,authorships,primary_location,mesh,abstract_inverted_index';
+
+function validateAndFormatOpenAlexWork(
+  w: OpenAlexWorkRecord,
+  targetState: TargetState,
+  environment: SessionEnvironment,
+  fallbackMeta?: { authors: string; journal: string; year: string }
+): LivePubMedPaper | null {
+  if (!w.title || !w.doi || !w.doi.startsWith('https://doi.org/')) return null;
+  if (w.publication_year && w.publication_year < 1990) return null;
+  if (w.language && w.language.toLowerCase() !== 'en') return null;
+  if (hasAnimalOnlyMesh(w.mesh)) return null;
+  const cleanTitle = stripInlineTags(w.title).replace(/\.$/, '');
+  const cleanAbstract = reconstructOpenAlexAbstract(w.abstract_inverted_index);
+  if (isNonAuditoryOrAnimalStudy(cleanTitle, cleanAbstract)) return null;
+
+  const authors = w.authorships ?? [];
+  const first = authors[0]?.author?.display_name?.trim() || fallbackMeta?.authors || 'Research Team';
+  const authorLabel = authors.length > 1 ? `${first} et al.` : first;
+  const oaId = (w.id ?? w.doi).split('/').pop() ?? w.doi;
+  return {
+    pmid: `OA:${oaId}`,
+    source: 'openalex',
+    title: cleanTitle,
+    authors: authorLabel,
+    journal:
+      w.primary_location?.source?.display_name ||
+      fallbackMeta?.journal ||
+      'Peer-Reviewed Journal (OpenAlex)',
+    year: w.publication_year ? String(w.publication_year) : fallbackMeta?.year || 'Peer-Reviewed',
+    url: w.doi,
+    doiUrl: w.doi,
+    appliedMechanism: inferAppliedMechanism(cleanTitle, targetState, environment),
+  };
+}
+
 /**
  * Resolves verified journal DOIs against OpenAlex's `$0.00` (0-credit) single-work endpoint
  * `/works/https://doi.org/{doi}` when shared Cloudflare egress IPs hit OpenAlex's unkeyed
- * `$0.10/day` or `1/s` search filter limit (`HTTP 429`).
+ * `$0.10/day` search filter limit (`HTTP 429`).
+ * Strictly fail-closed: rejects any work that 404s, fails MeSH/abstract human-auditory screening, or isn't English.
  */
 async function resolveOpenAlexViaFreeDoiLookup(
   env: Env,
   cleanTerm: string,
-  seedDois: DoiSeedCandidate[],
+  pmContext: {
+    extraDois: DoiSeedCandidate[];
+    usedDois: Set<string>;
+    usedTitleKeys: Set<string>;
+  },
   targetState: TargetState,
-  environment: SessionEnvironment
+  environment: SessionEnvironment,
+  quotaState?: UpstreamQuotaState
 ): Promise<LivePubMedPaper[]> {
-  const crossrefSeeds = seedDois.length >= 2 ? [] : await fetchCrossrefDoiSeeds(cleanTerm);
-  const seenDois = new Set<string>();
+  const seenDois = new Set<string>(pmContext.usedDois);
+  const seenTitles = new Set<string>(pmContext.usedTitleKeys);
   const candidates: DoiSeedCandidate[] = [];
-  for (const s of [...crossrefSeeds, ...seedDois]) {
-    const key = s.doi.toLowerCase();
-    if (seenDois.has(key)) continue;
-    seenDois.add(key);
-    candidates.push(s);
-    if (candidates.length >= 3) break;
+
+  const pushUniqueSeeds = (seeds: DoiSeedCandidate[]) => {
+    for (const s of seeds) {
+      const dKey = s.doi.toLowerCase();
+      const tKey = normalizeTitleDedupKey(s.title);
+      if (seenDois.has(dKey) || seenTitles.has(tKey)) continue;
+      seenDois.add(dKey);
+      seenTitles.add(tKey);
+      candidates.push(s);
+      if (candidates.length >= 4) break;
+    }
+  };
+
+  pushUniqueSeeds(pmContext.extraDois);
+
+  if (candidates.length < 3) {
+    const epmcSeeds = await fetchEuropePmcDoiSeeds(cleanTerm, quotaState);
+    pushUniqueSeeds(epmcSeeds);
   }
+
+  if (candidates.length < 2) {
+    const crSeeds = await fetchCleanCrossrefDoiSeeds(cleanTerm);
+    pushUniqueSeeds(crSeeds);
+  }
+
   if (candidates.length === 0) return [];
 
-  const select = 'id,doi,title,publication_year,authorships,primary_location';
   const keyParam = env.OPENALEX_API_KEY
     ? `&api_key=${encodeURIComponent(env.OPENALEX_API_KEY)}`
     : '';
@@ -406,56 +663,22 @@ async function resolveOpenAlexViaFreeDoiLookup(
   const resolved = await Promise.all(
     candidates.map(async (cand): Promise<LivePubMedPaper | null> => {
       const fullDoiUrl = `https://doi.org/${cand.doi}`;
-      const oaUrl = `https://api.openalex.org/works/${encodeURIComponent(fullDoiUrl)}?select=${select}&mailto=music@nootropic.fm${keyParam}`;
+      const oaUrl = `https://api.openalex.org/works/${encodeURIComponent(fullDoiUrl)}?select=${OPENALEX_SELECT_FIELDS}&mailto=music@nootropic.fm${keyParam}`;
       try {
         const res = await fetch(oaUrl, {
-          signal: AbortSignal.timeout(2200),
+          signal: AbortSignal.timeout(2500),
           headers: { 'user-agent': 'nootropic.fm/2.0 (mailto:music@nootropic.fm)' },
         });
-        if (res.ok) {
-          const w = (await res.json()) as {
-            id?: string;
-            doi?: string;
-            title?: string;
-            publication_year?: number;
-            authorships?: Array<{ author?: { display_name?: string } }>;
-            primary_location?: { source?: { display_name?: string } };
-          };
-          if (w.title && w.doi && w.doi.startsWith('https://doi.org/')) {
-            const cleanTitle = stripInlineTags(w.title).replace(/\.$/, '');
-            if (!isNonAuditoryOrAnimalStudy(cleanTitle)) {
-              const authors = w.authorships ?? [];
-              const first = authors[0]?.author?.display_name ?? cand.authors;
-              const authorLabel = authors.length > 1 ? `${first} et al.` : first;
-              const oaId = (w.id ?? w.doi).split('/').pop() ?? cand.doi;
-              return {
-                pmid: `OA:${oaId}`,
-                source: 'openalex',
-                title: cleanTitle,
-                authors: authorLabel,
-                journal: w.primary_location?.source?.display_name ?? cand.journal,
-                year: w.publication_year ? String(w.publication_year) : cand.year,
-                url: w.doi,
-                doiUrl: w.doi,
-                appliedMechanism: inferAppliedMechanism(cleanTitle, targetState, environment),
-              };
-            }
-          }
-        }
+        if (!res.ok) return null;
+        const w = (await res.json()) as OpenAlexWorkRecord;
+        return validateAndFormatOpenAlexWork(w, targetState, environment, {
+          authors: cand.authors,
+          journal: cand.journal,
+          year: cand.year,
+        });
       } catch {
-        // Fall through to verified DOI seed metadata if OpenAlex edge is unreachable/429
+        return null;
       }
-      return {
-        pmid: `OA:${cand.doi}`,
-        source: 'openalex',
-        title: cand.title,
-        authors: cand.authors,
-        journal: cand.journal,
-        year: cand.year,
-        url: fullDoiUrl,
-        doiUrl: fullDoiUrl,
-        appliedMechanism: inferAppliedMechanism(cand.title, targetState, environment),
-      };
     })
   );
 
@@ -464,14 +687,15 @@ async function resolveOpenAlexViaFreeDoiLookup(
 
 /**
  * Live OpenAlex peer-reviewed search using strict `filter=` boolean queries sorted by BM25 `relevance_score:desc`
- * and accepting ONLY works with verified `https://doi.org/...` external URLs.
+ * and accepting ONLY English human-auditory works with verified `https://doi.org/...` external URLs.
  */
 async function fetchOpenAlex(
   env: Env,
   targetState: TargetState,
   environment: SessionEnvironment,
   termOverride?: string,
-  seedDoisPromise?: Promise<DoiSeedCandidate[]>
+  pmBundlePromise?: Promise<PubMedFetchBundle>,
+  quotaState?: UpstreamQuotaState
 ): Promise<LivePubMedPaper[]> {
   const term =
     termOverride ??
@@ -493,12 +717,35 @@ async function fetchOpenAlex(
 
   const cleanTerm = sanitizeOpenAlexBooleanTerm(term);
   if (!cleanTerm) return [];
-  const filter = `title_and_abstract.search:(${cleanTerm}) ${OPENALEX_HUMAN_AUDITORY_EXCLUSION},has_doi:true,type:article`;
-  const select = 'id,doi,title,publication_year,authorships,primary_location';
+
+  const getPmContext = async () => {
+    if (!pmBundlePromise) {
+      return {
+        extraDois: [] as DoiSeedCandidate[],
+        usedDois: new Set<string>(),
+        usedTitleKeys: new Set<string>(),
+      };
+    }
+    const b = await pmBundlePromise.catch(() => emptyPubMedBundle());
+    return { extraDois: b.extraDois, usedDois: b.usedDois, usedTitleKeys: b.usedTitleKeys };
+  };
+
+  if (quotaState?.oaSearchRateLimited) {
+    return resolveOpenAlexViaFreeDoiLookup(
+      env,
+      cleanTerm,
+      await getPmContext(),
+      targetState,
+      environment,
+      quotaState
+    );
+  }
+
+  const filter = `title_and_abstract.search:(${cleanTerm}) ${OPENALEX_HUMAN_AUDITORY_EXCLUSION},has_doi:true,type:article,language:en`;
   const keyParam = env.OPENALEX_API_KEY
     ? `&api_key=${encodeURIComponent(env.OPENALEX_API_KEY)}`
     : '';
-  const url = `https://api.openalex.org/works?filter=${encodeURIComponent(filter)}&select=${select}&sort=relevance_score:desc&per-page=8&mailto=music@nootropic.fm${keyParam}`;
+  const url = `https://api.openalex.org/works?filter=${encodeURIComponent(filter)}&select=${OPENALEX_SELECT_FIELDS}&sort=relevance_score:desc&per-page=8&mailto=music@nootropic.fm${keyParam}`;
 
   try {
     let res = await fetch(url, {
@@ -506,53 +753,42 @@ async function fetchOpenAlex(
       headers: { 'user-agent': 'nootropic.fm/2.0 (mailto:music@nootropic.fm)' },
     });
     if (res.status === 429 && env.OPENALEX_API_KEY) {
-      await new Promise((r) => setTimeout(r, 650));
+      await new Promise((r) => setTimeout(r, 500));
       res = await fetch(url, {
         signal: AbortSignal.timeout(2500),
         headers: { 'user-agent': 'nootropic.fm/2.0 (mailto:music@nootropic.fm)' },
       });
     }
     if (!res.ok) {
-      const seeds = seedDoisPromise ? await seedDoisPromise : [];
-      return resolveOpenAlexViaFreeDoiLookup(env, cleanTerm, seeds, targetState, environment);
+      if (res.status === 429 && quotaState) quotaState.oaSearchRateLimited = true;
+      return resolveOpenAlexViaFreeDoiLookup(
+        env,
+        cleanTerm,
+        await getPmContext(),
+        targetState,
+        environment,
+        quotaState
+      );
     }
-    const data = (await res.json()) as {
-      results?: Array<{
-        id?: string;
-        doi?: string;
-        title?: string;
-        publication_year?: number;
-        authorships?: Array<{ author?: { display_name?: string } }>;
-        primary_location?: { source?: { display_name?: string } };
-      }>;
-    };
+    const data = (await res.json()) as { results?: OpenAlexWorkRecord[] };
 
     const papers: LivePubMedPaper[] = [];
     for (const w of data.results ?? []) {
-      if (!w.title || !w.doi || !w.doi.startsWith('https://doi.org/')) continue;
-      const cleanTitle = stripInlineTags(w.title).replace(/\.$/, '');
-      if (isNonAuditoryOrAnimalStudy(cleanTitle)) continue;
-      const authors = w.authorships ?? [];
-      const first = authors[0]?.author?.display_name ?? 'Research Team';
-      const authorLabel = authors.length > 1 ? `${first} et al.` : first;
-      const oaId = (w.id ?? w.doi).split('/').pop() ?? w.doi;
-      papers.push({
-        pmid: `OA:${oaId}`,
-        source: 'openalex',
-        title: cleanTitle,
-        authors: authorLabel,
-        journal: w.primary_location?.source?.display_name ?? 'Peer-Reviewed Journal (OpenAlex)',
-        year: w.publication_year ? String(w.publication_year) : 'Peer-Reviewed',
-        url: w.doi,
-        doiUrl: w.doi,
-        appliedMechanism: inferAppliedMechanism(cleanTitle, targetState, environment),
-      });
+      const formatted = validateAndFormatOpenAlexWork(w, targetState, environment);
+      if (!formatted) continue;
+      papers.push(formatted);
       if (papers.length >= 4) break;
     }
     return papers;
   } catch {
-    const seeds = seedDoisPromise ? await seedDoisPromise.catch(() => []) : [];
-    return resolveOpenAlexViaFreeDoiLookup(env, cleanTerm, seeds, targetState, environment);
+    return resolveOpenAlexViaFreeDoiLookup(
+      env,
+      cleanTerm,
+      await getPmContext(),
+      targetState,
+      environment,
+      quotaState
+    );
   }
 }
 
@@ -596,8 +832,16 @@ function extractPrimaryCustomDomainKeyword(customGoal: {
   openAlexTerm: string;
   topicWords?: string[];
 }): string {
-  const fromTopics = customGoal.topicWords?.find((w) => w.length >= 3);
-  if (fromTopics) return fromTopics.replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  if (customGoal.topicWords && customGoal.topicWords.length > 0) {
+    const preferred =
+      customGoal.topicWords.find(
+        (w) =>
+          w.length >= 3 &&
+          !/^\d{1,3}hz$/i.test(w) &&
+          !GENERIC_GOAL_OUTCOME_MODIFIERS.has(w.toLowerCase())
+      ) ?? customGoal.topicWords.find((w) => w.length >= 3);
+    if (preferred) return preferred.replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  }
 
   const cleanedTerm = customGoal.openAlexTerm
     .replace(/["()[\],]/g, ' ')
@@ -606,8 +850,14 @@ function extractPrimaryCustomDomainKeyword(customGoal: {
       ' '
     )
     .trim();
-  const word = cleanedTerm.split(/\s+/).find((w) => w.length >= 3);
-  if (word) return word.replace(/[^a-z0-9-]/gi, '').toLowerCase();
+  const tokens = cleanedTerm
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-z0-9-]/gi, '').toLowerCase())
+    .filter((w) => w.length >= 3);
+  const preferredFromTerm =
+    tokens.find((w) => !/^\d{1,3}hz$/i.test(w) && !GENERIC_GOAL_OUTCOME_MODIFIERS.has(w)) ??
+    tokens[0];
+  if (preferredFromTerm) return preferredFromTerm;
 
   const fromSlug = customGoal.slug
     .replace(/^custom:/i, '')
@@ -635,8 +885,8 @@ export async function fetchVerifiedLiveLiterature(
   const micro = environment === 'driving' ? undefined : getMicroStateById(microStateId);
   const goalSlugKey = customGoal?.slug || targetState;
   const cacheKey = micro
-    ? `v8:${environment}:${goalSlugKey}:${micro.id}`
-    : `v8:${environment}:${goalSlugKey}`;
+    ? `v11:${environment}:${goalSlugKey}:${micro.id}`
+    : `v11:${environment}:${goalSlugKey}`;
   const mem = memoryLitCache.get(cacheKey);
   if (mem && mem.expiresAt > Date.now()) {
     return mem.papers;
@@ -648,10 +898,22 @@ export async function fetchVerifiedLiveLiterature(
     return d1Cached;
   }
 
+  const quotaState: UpstreamQuotaState = {
+    pmRateLimited: false,
+    oaSearchRateLimited: false,
+    epmcDegraded: false,
+  };
+
   const primaryPubmedQuery = customGoal?.pubmedQuery ?? micro?.pubmedTerm;
   const primaryOpenAlexTerm = customGoal?.openAlexTerm ?? micro?.openAlexTerm;
 
-  const pmPrimaryPromise = fetchPubMed(env, targetState, environment, primaryPubmedQuery);
+  const pmPrimaryPromise = fetchPubMed(
+    env,
+    targetState,
+    environment,
+    primaryPubmedQuery,
+    quotaState
+  );
   const [pmPrimary, oaPrimary] = await Promise.all([
     pmPrimaryPromise,
     fetchOpenAlex(
@@ -659,31 +921,30 @@ export async function fetchVerifiedLiveLiterature(
       targetState,
       environment,
       primaryOpenAlexTerm,
-      pmPrimaryPromise.then((b) => b.extraDois)
+      pmPrimaryPromise,
+      quotaState
     ),
   ]);
-  let pubmed = pmPrimary.papers;
-  let extraDois = pmPrimary.extraDois;
+  let pmBundle = pmPrimary;
   let openalex = oaPrimary;
 
   // Independent per-source relaxation for open custom multi-word topics:
   // only re-query whichever source returned 0 papers (preserving hits & avoiding burst rate limits).
-  if (customGoal && (pubmed.length === 0 || openalex.length === 0)) {
+  if (customGoal && (pmBundle.papers.length === 0 || openalex.length === 0)) {
     const primaryKeyword = extractPrimaryCustomDomainKeyword(customGoal);
     if (primaryKeyword && primaryKeyword.length >= 3) {
-      const quotedPm = primaryKeyword.includes('-')
-        ? `"${primaryKeyword}"[Title/Abstract]`
-        : `${primaryKeyword}[Title/Abstract]`;
-      const quotedOa = primaryKeyword.includes('-') ? `"${primaryKeyword}"` : primaryKeyword;
+      const relaxedPmTerm = formatPubMedWordTerm(primaryKeyword);
+      const relaxedOaTerm = formatOpenAlexWordTerm(primaryKeyword);
       const pmRelaxPromise =
-        pubmed.length === 0
+        pmBundle.papers.length === 0
           ? fetchPubMed(
               env,
               targetState,
               environment,
-              `(music[Title/Abstract] OR "auditory stimulation"[Title/Abstract] OR binaural[Title/Abstract]) AND ${quotedPm}`
+              `(music[Title/Abstract] OR "auditory stimulation"[Title/Abstract] OR binaural[Title/Abstract]) AND ${relaxedPmTerm}`,
+              quotaState
             )
-          : Promise.resolve({ papers: pubmed, extraDois });
+          : Promise.resolve(pmBundle);
       const [relaxedPm, relaxedOa] = await Promise.all([
         pmRelaxPromise,
         openalex.length === 0
@@ -691,56 +952,55 @@ export async function fetchVerifiedLiveLiterature(
               env,
               targetState,
               environment,
-              `(music OR "auditory stimulation" OR "binaural") AND ${quotedOa}`,
-              pmRelaxPromise.then((b) => b.extraDois)
+              `(music OR "auditory stimulation" OR "binaural") AND ${relaxedOaTerm}`,
+              pmRelaxPromise,
+              quotaState
             )
           : Promise.resolve(openalex),
       ]);
-      pubmed = relaxedPm.papers;
-      extraDois = relaxedPm.extraDois;
+      pmBundle = relaxedPm;
       openalex = relaxedOa;
     }
   }
 
   // Independent per-source graceful fallback to targetState query if either source still returned 0 papers
-  if ((micro || customGoal) && (pubmed.length === 0 || openalex.length === 0)) {
+  if ((micro || customGoal) && (pmBundle.papers.length === 0 || openalex.length === 0)) {
     const pmFallbackPromise =
-      pubmed.length === 0
-        ? fetchPubMed(env, targetState, environment)
-        : Promise.resolve({ papers: pubmed, extraDois });
+      pmBundle.papers.length === 0
+        ? fetchPubMed(env, targetState, environment, undefined, quotaState)
+        : Promise.resolve(pmBundle);
     const [fallbackPm, fallbackOa] = await Promise.all([
       pmFallbackPromise,
       openalex.length === 0
-        ? fetchOpenAlex(
-            env,
-            targetState,
-            environment,
-            undefined,
-            pmFallbackPromise.then((b) => b.extraDois)
-          )
+        ? fetchOpenAlex(env, targetState, environment, undefined, pmFallbackPromise, quotaState)
         : Promise.resolve(openalex),
     ]);
-    pubmed = fallbackPm.papers;
+    pmBundle = fallbackPm;
     openalex = fallbackOa;
   }
 
-  // Deduplicate by normalized title while preserving up to 2 PubMed + 2 OpenAlex papers
+  // Deduplicate by normalized title and DOI while preserving up to 2 PubMed + 2 OpenAlex papers
   const seenTitles = new Set<string>();
+  const seenDois = new Set<string>();
   const combined: LivePubMedPaper[] = [];
   let pubmedKept = 0;
   let openAlexKept = 0;
-  for (const p of pubmed) {
-    const normTitle = p.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 48);
-    if (seenTitles.has(normTitle)) continue;
+  for (const p of pmBundle.papers) {
+    const normTitle = normalizeTitleDedupKey(p.title);
+    const normDoi = p.doiUrl?.toLowerCase();
+    if (seenTitles.has(normTitle) || (normDoi && seenDois.has(normDoi))) continue;
     seenTitles.add(normTitle);
+    if (normDoi) seenDois.add(normDoi);
     combined.push(p);
     pubmedKept++;
     if (pubmedKept >= 2) break;
   }
   for (const p of openalex) {
-    const normTitle = p.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 48);
-    if (seenTitles.has(normTitle)) continue;
+    const normTitle = normalizeTitleDedupKey(p.title);
+    const normDoi = (p.doiUrl ?? p.url).toLowerCase();
+    if (seenTitles.has(normTitle) || (normDoi && seenDois.has(normDoi))) continue;
     seenTitles.add(normTitle);
+    if (normDoi) seenDois.add(normDoi);
     combined.push(p);
     openAlexKept++;
     if (openAlexKept >= 2) break;

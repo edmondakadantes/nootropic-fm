@@ -335,34 +335,34 @@ function titleCaseWords(words: string[]): string {
 }
 
 export const PUBMED_HUMAN_AUDITORY_EXCLUSION =
-  'NOT ((Animals[MeSH Terms] NOT Humans[MeSH Terms]) OR mice[Title] OR mouse[Title] OR rat[Title] OR rats[Title] OR murine[Title] OR rodent[Title] OR optogenetics[Title/Abstract] OR optogenetic[Title/Abstract] OR "visual flicker"[Title/Abstract] OR photic[Title/Abstract] OR tDCS[Title/Abstract] OR TMS[Title/Abstract] OR rTMS[Title/Abstract] OR tACS[Title/Abstract])';
+  'NOT ((Animals[MeSH Terms] NOT Humans[MeSH Terms]) OR mice[Title] OR mouse[Title] OR rat[Title] OR rats[Title] OR murine[Title] OR rodent[Title] OR frogs[Title] OR frog[Title] OR ferret[Title] OR gerbil[Title] OR songbird[Title] OR phonotaxis[Title/Abstract] OR optogenetics[Title/Abstract] OR optogenetic[Title/Abstract] OR "visual flicker"[Title/Abstract] OR photic[Title/Abstract] OR tDCS[Title/Abstract] OR TMS[Title/Abstract] OR rTMS[Title/Abstract] OR tACS[Title/Abstract])';
 
 export const EUROPEPMC_HUMAN_AUDITORY_EXCLUSION =
-  'NOT (TITLE:mice OR TITLE:mouse OR TITLE:rat OR TITLE:rats OR TITLE:murine OR TITLE:rodent OR optogenetics OR optogenetic OR TITLE:"visual flicker" OR TITLE:photic OR TITLE:tDCS OR TITLE:TMS OR TITLE:rTMS OR TITLE:tACS)';
+  'NOT (TITLE:mice OR TITLE:mouse OR TITLE:rat OR TITLE:rats OR TITLE:murine OR TITLE:rodent OR TITLE:frogs OR TITLE:frog OR TITLE:ferret OR TITLE:gerbil OR TITLE:zebrafish OR TITLE:songbird OR phonotaxis OR optogenetics OR optogenetic OR TITLE:"visual flicker" OR TITLE:photic OR TITLE:tDCS OR TITLE:TMS OR TITLE:rTMS OR TITLE:tACS)';
 
 export const OPENALEX_HUMAN_AUDITORY_EXCLUSION =
-  'NOT (mice OR murine OR rodent OR optogenetics OR optogenetic OR tdcs OR rtms OR tacs)';
+  'NOT (mice OR murine OR rodent OR optogenetics OR optogenetic OR rats OR frogs OR phonotaxis OR tdcs OR rtms OR tacs)';
 
 export function appendPubMedHumanAuditoryGuard(query: string): string {
   const q = query.trim();
   if (!q) return q;
   if (/optogenetics\[Title\/Abstract\]/i.test(q)) return q;
   const hasAuditory =
-    /\b(music|auditory|acoustic|sound|binaural|monaural|isochronic|noise|listening)\b/i.test(q);
-  const base = hasAuditory
+    /\b(music|auditory|acoustic|sound|binaural|monaural|isochronic|noise|listening)\b/i;
+  const base = hasAuditory.test(q)
     ? `(${q})`
     : `(music[Title/Abstract] OR "auditory stimulation"[Title/Abstract] OR acoustic[Title/Abstract]) AND (${q})`;
   return `${base} ${PUBMED_HUMAN_AUDITORY_EXCLUSION}`;
 }
 
 const UI_MOUSE_PHRASE_RE =
-  /\b(?:computer\s+mouse(?:\s+buttons?|\s+clicks?|\s+cursors?|\s+pointers?)?|mouse\s+(?:buttons?|clicks?|clicking|cursors?|pointers?|tracking|movements?|wheel|pad))\b/gi;
+  /\b(?:computer\s+mouse(?:\s+buttons?|\s+clicks?|\s+cursors?|\s+pointers?)?|mouse\s+(?:buttons?|clicks?|clicking|cursors?|pointers?|tracking|movements?|wheel|pad)|night\s+owls?)\b/gi;
 
 const ANIMAL_OR_INVASIVE_RE =
-  /\b(mice|mouse|murine|rat|rats|rodent|rodents|guinea\s+pig|zebrafish|drosophila|macaque|rhesus|non-human\s+primate|hippocampal\s+slice|brain\s+slice|in\s+vitro|optogenetic|optogenetics|chemogenetic|transgenic|5xfad|app\/ps1|c57bl|wistar|sprague-dawley)\b/i;
+  /\b(mice|mouse|murine|rat|rats|rodent|rodents|guinea\s+pigs?|zebrafish|drosophila|macaques?|rhesus|non-human\s+primates?|marmosets?|monkeys?|frogs?|bullfrogs?|amphibians?|tadpoles?|xenopus|barn\s+owls?|songbirds?|zebra\s+finch(?:es)?|avian|ferrets?|gerbils?|chinchillas?|rabbits?|felines?|(?:anesthetized|awake|deafened|decerebrate)\s+cats?\b|in\s+cats\b|canines?|in\s+dogs\b|porcine|piglets?|echolocating|in\s+bats\b|crickets?|locusts?|katydids?|phonotaxis|ormia|c\.\s*elegans|nematodes?|hippocampal\s+slices?|brain\s+slices?|in\s+vitro|optogenetics?|chemogenetics?|transgenic|5xfad|app\/ps1|c57bl|wistar|sprague-dawley)\b/i;
 
 const DIRECT_PRECLINICAL_EXEC_RE =
-  /\b(hippocampal\s+slice|brain\s+slice|in\s+vitro|sacrificed|euthanized|anesthetized\s+(?:mice|rats|animals|rodents)|(?:male|female|adult)\s+(?:wistar|sprague-dawley|c57bl|balb\/c|mice|rats)|(?:mice|rats|rodents|animals)\s+were)\b/i;
+  /\b(hippocampal\s+slices?|brain\s+slices?|in\s+vitro|sacrificed|euthanized|anesthetized\s+(?:mice|rats|animals|rodents|frogs|cats|ferrets|gerbils)|(?:male|female|adult)\s+(?:wistar|sprague-dawley|c57bl|balb\/c|mice|rats|frogs|ferrets|gerbils|zebrafish)|(?:mice|rats|rodents|animals|frogs|ferrets|gerbils|monkeys)\s+were)\b/i;
 
 const EXPLICIT_HUMAN_TRIAL_RE =
   /\b(human\s+(?:adults|participants|volunteers|subjects|patients|listeners)|healthy\s+(?:adults|participants|volunteers|subjects)|patients\s+with|randomized\s+(?:controlled|clinical|crossover|placebo-controlled)\s+trial|double-blind\s+(?:clinical|placebo-controlled|randomized)|clinical\s+trial\s+in\s+(?:humans|patients|adults))\b/i;
@@ -373,12 +373,17 @@ const NON_AUDITORY_STIM_RE =
 const EXPLICIT_AUDITORY_RE =
   /\b(music|musical|auditory|acoustic|sound|binaural|monaural|isochronic|listening|pink\s+noise|white\s+noise|brown\s+noise)\b/i;
 
+const RETRACTED_OR_ERRATUM_RE =
+  /^\s*(?:corrigendum|erratum|retraction|retracted|author\s+correction|publisher\s+correction|expression\s+of\s+concern)\b/i;
+
 /**
- * Rejects preclinical animal/in-vitro studies and non-auditory stimulation modalities
- * (visual flicker, optogenetics, TMS, tDCS, tACS) while retaining human auditory clinical trials
- * that mention UI computer-mouse clicks or cite prior animal work in background context.
+ * Rejects preclinical animal/in-vitro studies, non-auditory stimulation modalities
+ * (visual flicker, optogenetics, TMS, tDCS, tACS), and corrigendum/retraction notices,
+ * while retaining human auditory clinical trials that mention UI computer-mouse clicks
+ * or cite prior animal work in background context.
  */
 export function isNonAuditoryOrAnimalStudy(title: string, abstractText = ''): boolean {
+  if (RETRACTED_OR_ERRATUM_RE.test(title)) return true;
   const cleanTitle = title.replace(UI_MOUSE_PHRASE_RE, 'button response').trim();
   const cleanAbstract = abstractText.replace(UI_MOUSE_PHRASE_RE, 'button response').trim();
   const combined = `${cleanTitle} ${cleanAbstract}`.trim();
@@ -584,7 +589,7 @@ export function resolveOpenGoalIntent(
   };
 }
 
-const GENERIC_GOAL_OUTCOME_MODIFIERS = new Set([
+export const GENERIC_GOAL_OUTCOME_MODIFIERS = new Set([
   'confidence',
   'confident',
   'relief',
@@ -614,6 +619,8 @@ const GENERIC_GOAL_OUTCOME_MODIFIERS = new Set([
   'prep',
   'preparation',
   'routine',
+  'poise',
+  'immersion',
 ]);
 
 const BIOMEDICAL_COLLOQUIAL_SYNONYMS: Record<string, string[]> = {
@@ -622,11 +629,44 @@ const BIOMEDICAL_COLLOQUIAL_SYNONYMS: Record<string, string[]> = {
   'pre-workout': ['pre-exercise', 'exercise'],
   gym: ['exercise', 'resistance training'],
   cardio: ['aerobic exercise'],
+  marathon: ['endurance exercise', 'running'],
+  pacing: ['tempo', 'running'],
   math: ['arithmetic', 'mathematics'],
+  'pre-interview': ['interview', 'performance anxiety', 'social anxiety'],
+  interview: ['performance anxiety', 'public speaking'],
+  jitters: ['anxiety', 'performance anxiety', 'arousal'],
+  nerves: ['performance anxiety', 'anxiety'],
+  fright: ['performance anxiety', 'stage fright'],
+  paralysis: ['executive function', 'attention', 'motivation'],
+  coding: ['cognitive performance', 'working memory', 'sustained attention'],
+  stamina: ['mental fatigue', 'sustained attention'],
+  negotiation: ['decision making', 'executive function', 'stress'],
+  boardroom: ['workplace stress', 'executive function'],
+  chess: ['problem solving', 'working memory', 'executive function'],
+  endgame: ['decision making', 'problem solving'],
+  calculation: ['mental arithmetic', 'working memory'],
+  vocabulary: ['verbal memory', 'word learning', 'memory consolidation'],
 };
 
-function formatPubMedWordTerm(word: string): string {
-  const syns = BIOMEDICAL_COLLOQUIAL_SYNONYMS[word];
+function expandHzSynonyms(word: string): string[] | null {
+  const m = word.match(/^(\d{1,3})hz$/i);
+  if (!m) return null;
+  const hz = Number(m[1]);
+  const band =
+    hz >= 30 && hz <= 50
+      ? 'gamma'
+      : hz >= 13 && hz < 30
+        ? 'beta'
+        : hz >= 8 && hz <= 12
+          ? 'alpha'
+          : hz >= 4 && hz <= 7
+            ? 'theta'
+            : null;
+  return band ? [`${hz} Hz`, band] : [`${hz} Hz`];
+}
+
+export function formatPubMedWordTerm(word: string): string {
+  const syns = BIOMEDICAL_COLLOQUIAL_SYNONYMS[word] ?? expandHzSynonyms(word) ?? undefined;
   const base = word.includes('-') ? `"${word}"[Title/Abstract]` : `${word}[Title/Abstract]`;
   if (!syns || syns.length === 0) return base;
   const synParts = syns.map((s) =>
@@ -635,8 +675,8 @@ function formatPubMedWordTerm(word: string): string {
   return `(${[base, ...synParts].join(' OR ')})`;
 }
 
-function formatOpenAlexWordTerm(word: string): string {
-  const syns = BIOMEDICAL_COLLOQUIAL_SYNONYMS[word];
+export function formatOpenAlexWordTerm(word: string): string {
+  const syns = BIOMEDICAL_COLLOQUIAL_SYNONYMS[word] ?? expandHzSynonyms(word) ?? undefined;
   const base = word.includes('-') ? `"${word}"` : word;
   if (!syns || syns.length === 0) return base;
   const synParts = syns.map((s) => (s.includes(' ') || s.includes('-') ? `"${s}"` : s));
@@ -688,7 +728,7 @@ export function buildOpenTopicLiteratureQueries(topicWords: string[]): {
 
   const effectiveDomainWords = coreWords.length >= 1 ? coreWords : topicWords;
   const rawDomainPhrase = effectiveDomainWords
-    .map((w) => BIOMEDICAL_COLLOQUIAL_SYNONYMS[w]?.[0] ?? w)
+    .map((w) => BIOMEDICAL_COLLOQUIAL_SYNONYMS[w]?.[0] ?? expandHzSynonyms(w)?.[0] ?? w)
     .join(' ');
   const rawTopicQuery = `music auditory ${rawDomainPhrase}`;
 

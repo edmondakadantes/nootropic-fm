@@ -1,5 +1,9 @@
 import { parseNaturalCheckIn } from '../shared/parser';
-import { getCuratedGoalBySlug, resolveOpenGoalIntent } from '../shared/openGoals';
+import {
+  appendPubMedHumanAuditoryGuard,
+  getCuratedGoalBySlug,
+  resolveOpenGoalIntent,
+} from '../shared/openGoals';
 import { STUDIO_STEM_V7_MANIFEST } from '../shared/studioStemManifest';
 import {
   composeScientificMusicPrompt,
@@ -2118,7 +2122,7 @@ export default {
                 coords: preset.coords,
                 defaultMin: preset.defaultMin,
                 dspOverride: isDrivingEnv ? undefined : preset.dspOverride,
-                pubmedQuery: preset.pubmedQuery,
+                pubmedQuery: appendPubMedHumanAuditoryGuard(preset.pubmedQuery),
                 openAlexTerm: preset.openAlexTerm,
                 isOpenCustomTopic: false,
                 rawTopicQuery: undefined,
@@ -2338,7 +2342,7 @@ export default {
             effectiveTarget,
             body.environment,
             body.microStateId,
-            openGoal
+            openGoal && effectiveGoalSlug
               ? {
                   slug: openGoal.slug,
                   pubmedQuery: openGoal.pubmedQuery,
@@ -2348,14 +2352,17 @@ export default {
               : null
           ),
           openGoal?.isOpenCustomTopic && openGoal.rawTopicQuery
-            ? compileMedicalStudy(env, {
-                queryOrText: openGoal.rawTopicQuery,
-                device: body.device,
-                environment: body.environment,
-                skipNcbiDirect: !env.NCBI_API_KEY,
-              })
-                .then((r) => r.spec)
-                .catch(() => null)
+            ? Promise.race([
+                compileMedicalStudy(env, {
+                  queryOrText: openGoal.rawTopicQuery,
+                  device: body.device,
+                  environment: body.environment,
+                  skipNcbiDirect: !env.NCBI_API_KEY,
+                })
+                  .then((r) => r.spec)
+                  .catch(() => null),
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+              ])
             : Promise.resolve(null),
           validCustom ? lookupCachedCustomTrack(env.DB, validCustom.slug, energyTier) : Promise.resolve(null),
           env.DB.prepare('SELECT music_gen_calls FROM api_usage_daily WHERE day = ?')
