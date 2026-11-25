@@ -414,3 +414,32 @@ test('5. Strict Layer-1 Science Invariance when switching Music Genres (zero car
     'swapRecommendationGenre must keep all Layer 1 acoustic parameters 100% locked across genres'
   );
 });
+
+test('6. Hybrid Open-Goal Science Resolver: handles US English typos ("creaitve") and arbitrary open science topics ("public speaking confidence")', async () => {
+  const { resolveOpenGoalIntent } = await import('../shared/openGoals.ts');
+
+  // 1. Typo-resilient Creative Ideation ("I want to feel creaitve")
+  const creative = resolveOpenGoalIntent('I want to feel creaitve for 25 min');
+  assert.ok(creative, 'Expected creative goal resolution');
+  assert.equal(creative.slug, 'creative_ideation');
+  assert.equal(creative.dspOverride?.modulationHz, 10);
+  assert.equal(creative.isOpenCustomTopic, false);
+  assert.match(creative.pubmedQuery, /divergent thinking/i);
+
+  // 2. Memory & Study Retention ("memroy for exam")
+  const memory = resolveOpenGoalIntent('boost my memroy for exam');
+  assert.ok(memory && memory.slug === 'memory_learning');
+  assert.equal(memory.dspOverride?.modulationHz, 14);
+
+  // 3. Open scientific topic outside the 8 preset cards ("public speaking confidence")
+  const openTopic = resolveOpenGoalIntent('I need public speaking confidence');
+  assert.ok(openTopic, 'Expected open custom topic resolution');
+  assert.equal(openTopic.isOpenCustomTopic, true);
+  assert.equal(openTopic.slug, 'custom:public_speaking_confidence');
+  assert.equal(openTopic.label, 'Public Speaking Confidence');
+  assert.match(openTopic.pubmedQuery, /public\[Title\/Abstract\]/i);
+
+  // 4. Driving safety guardrail on sleep/calm requests while driving
+  const drivingSafe = resolveOpenGoalIntent('help me fall asleep', true);
+  assert.ok(drivingSafe && drivingSafe.coreTarget === 'alert_focus');
+});

@@ -11,6 +11,15 @@ function inferAppliedMechanism(
   environment: SessionEnvironment
 ): string {
   const t = title.toLowerCase();
+  if (/(creativ|divergent|ideation|brainstorm|imagination)/.test(t)) {
+    return 'Supports 10 Hz associative Alpha modulation & open suspended voicings linked to divergent creative thinking.';
+  }
+  if (/(memory|recall|retention|consolidation|learning|hippocamp)/.test(t)) {
+    return 'Calibrates 14 Hz SMR / 40 Hz Gamma rhythmic framing for working memory encoding and study recall.';
+  }
+  if (/(dopamine|striat|mood|positive affect|reward|joy)/.test(t)) {
+    return 'Guides bright major-mode harmonic voicings & 12 Hz SMR lift for positive mood and intrinsic motivation.';
+  }
   if (/(amplitude modulation|entrainment|beta|gamma|alpha|oscillation)/.test(t)) {
     return 'Supports our 3-Band LR4 cortical amplitude modulation (190 Hz–4.5 kHz) while keeping sub-bass & highs untouched.';
   }
@@ -228,12 +237,18 @@ export async function fetchVerifiedLiveLiterature(
   env: Env,
   targetState: TargetState,
   environment: SessionEnvironment,
-  microStateId?: string
+  microStateId?: string,
+  customGoal?: {
+    slug: string;
+    pubmedQuery: string;
+    openAlexTerm: string;
+  } | null
 ): Promise<LivePubMedPaper[]> {
   const micro = environment === 'driving' ? undefined : getMicroStateById(microStateId);
+  const goalSlugKey = customGoal?.slug || targetState;
   const cacheKey = micro
-    ? `v2:${environment}:${targetState}:${micro.id}`
-    : `v2:${environment}:${targetState}`;
+    ? `v3:${environment}:${goalSlugKey}:${micro.id}`
+    : `v3:${environment}:${goalSlugKey}`;
   const mem = memoryLitCache.get(cacheKey);
   if (mem && mem.expiresAt > Date.now()) {
     return mem.papers;
@@ -245,13 +260,35 @@ export async function fetchVerifiedLiveLiterature(
     return d1Cached;
   }
 
+  const primaryPubmedQuery = customGoal?.pubmedQuery ?? micro?.pubmedTerm;
+  const primaryOpenAlexTerm = customGoal?.openAlexTerm ?? micro?.openAlexTerm;
+
   let [pubmed, openalex] = await Promise.all([
-    fetchPubMed(env, targetState, environment, micro?.pubmedTerm),
-    fetchOpenAlex(env, targetState, environment, micro?.openAlexTerm),
+    fetchPubMed(env, targetState, environment, primaryPubmedQuery),
+    fetchOpenAlex(env, targetState, environment, primaryOpenAlexTerm),
   ]);
 
-  // Graceful fallback to broader verified query if a specific micro-state query returned zero hits
-  if (micro && pubmed.length === 0 && openalex.length === 0) {
+  // If an open custom multi-word topic was too specific, relax to first keyword + music/auditory before target fallback
+  if (customGoal && pubmed.length === 0 && openalex.length === 0) {
+    const firstWord = customGoal.openAlexTerm
+      .replace(/\b(music|auditory|stimulation|acoustic)\b/gi, '')
+      .trim()
+      .split(/\s+/)[0];
+    if (firstWord && firstWord.length >= 3) {
+      [pubmed, openalex] = await Promise.all([
+        fetchPubMed(
+          env,
+          targetState,
+          environment,
+          `(music[Title/Abstract] OR auditory[Title/Abstract]) AND ${firstWord}[Title/Abstract]`
+        ),
+        fetchOpenAlex(env, targetState, environment, `music ${firstWord}`),
+      ]);
+    }
+  }
+
+  // Graceful fallback to broader verified query if still zero hits
+  if ((micro || customGoal) && pubmed.length === 0 && openalex.length === 0) {
     [pubmed, openalex] = await Promise.all([
       fetchPubMed(env, targetState, environment),
       fetchOpenAlex(env, targetState, environment),

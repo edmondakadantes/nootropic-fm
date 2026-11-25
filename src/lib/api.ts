@@ -159,6 +159,9 @@ export const api = {
     clarityPct?: number;
     baselineScore: number;
     targetState: TargetState;
+    customGoalText?: string;
+    customGoalSlug?: string;
+    customGoalLabel?: string;
     environment: SessionEnvironment;
     device: OutputDevice;
     durationMin: number;

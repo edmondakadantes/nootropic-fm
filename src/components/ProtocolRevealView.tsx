@@ -210,7 +210,7 @@ export function ProtocolRevealView({
               typeof recommendation.arousalPct === 'number' && typeof recommendation.clarityPct === 'number'
                 ? ` (${recommendation.arousalPct}% Energy · ${recommendation.clarityPct}% Clarity)`
                 : ''
-            } → ${TARGET_LABELS[recommendation.targetState]} for ${recommendation.plannedDurationMin} min`
+            } → ${recommendation.customGoalLabel || TARGET_LABELS[recommendation.targetState]} for ${recommendation.plannedDurationMin} min`
           : 'Mapping your profile, arousal × clarity coordinates & target state...',
       },
       {
@@ -391,7 +391,11 @@ export function ProtocolRevealView({
           <strong className="text-[#F3F1EC]">
             {recommendation.microStateLabel ?? STATE_LABELS[recommendation.currentState].split(' ')[0]}
           </strong>{' '}
-          to <strong className="text-[#34D399]">{TARGET_LABELS[recommendation.targetState]}</strong> for{' '}
+          to{' '}
+          <strong className="text-[#34D399]">
+            {recommendation.customGoalLabel || TARGET_LABELS[recommendation.targetState]}
+          </strong>{' '}
+          for{' '}
           <strong className="text-[#F3F1EC]">{recommendation.plannedDurationMin} minutes</strong>, below
           are the peer-reviewed studies and exact audio synthesis parameters ready for playback.
         </p>

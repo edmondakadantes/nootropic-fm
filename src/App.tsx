@@ -333,6 +333,9 @@ export default function App() {
         clarityPct?: number;
         baselineScore: number;
         targetState: TargetState;
+        customGoalText?: string;
+        customGoalSlug?: string;
+        customGoalLabel?: string;
         environment: SessionEnvironment;
         device: OutputDevice;
         durationMin: number;
@@ -442,6 +445,9 @@ export default function App() {
     clarityPct?: number;
     baselineScore: number;
     targetState: TargetState;
+    customGoalText?: string;
+    customGoalSlug?: string;
+    customGoalLabel?: string;
     environment: SessionEnvironment;
     device: OutputDevice;
     durationMin: number;

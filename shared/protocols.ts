@@ -1,4 +1,5 @@
 import { getMicroStateById } from './neuralStates';
+import { getCuratedGoalBySlug } from './openGoals';
 import {
   composeScientificMusicPrompt,
   getGenreDisplayMeta,
@@ -25,7 +26,7 @@ export {
   type NeuralEffectTier,
 };
 import { buildCheckInExecutableSpec } from './studyPresets';
-import { resolvedGenreToPalette } from './studySpec';
+import { resolvedGenreToPalette, type ExecutableStudySpec } from './studySpec';
 import type {
   AcousticParams,
   AgeBand,
@@ -270,33 +271,50 @@ export function buildCohortKey(
   environment: SessionEnvironment,
   targetState: TargetState,
   role?: UserRole,
-  currentState?: CurrentState
+  currentState?: CurrentState,
+  customGoalSlug?: string
 ): string {
+  const goalKey = customGoalSlug || targetState;
   if (role && currentState) {
-    return `${ageBand}|${role}|${currentState}|${targetState}|${environment}`;
+    return `${ageBand}|${role}|${currentState}|${goalKey}|${environment}`;
   }
-  return `${ageBand}|${environment}|${targetState}`;
+  return `${ageBand}|${environment}|${goalKey}`;
 }
 
 export function formatCohortLabel(cohortKey: string): string {
+  const formatGoal = (g: string): string => {
+    const curated = getCuratedGoalBySlug(g);
+    if (curated) return curated.label;
+    if (g in TARGET_LABELS) return TARGET_LABELS[g as TargetState];
+    if (g.startsWith('custom:')) {
+      return g
+        .slice(7)
+        .split('_')
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    }
+    return g;
+  };
+
   const parts = cohortKey.split('|');
   if (parts.length >= 5) {
-    const [ageBand, role, currentState, target, env] = parts as [
+    const [ageBand, role, currentState, goalKey, env] = parts as [
       AgeBand,
       UserRole,
       CurrentState,
-      TargetState,
+      string,
       SessionEnvironment,
     ];
     const roleLabel = ROLE_SHORT_LABELS[role] ?? role;
     const stateShort = (STATE_LABELS[currentState] ?? currentState).split(' / ')[0];
-    const targetLabel = TARGET_LABELS[target] ?? target;
+    const targetLabel = formatGoal(goalKey);
     const envShort = env === 'driving' ? ' · Driving' : '';
     return `Age ${ageBand} · ${roleLabel}${envShort} · ${stateShort} → ${targetLabel}`;
   }
-  const [ageBand, env, target] = parts as [AgeBand, SessionEnvironment, TargetState];
+  const [ageBand, env, goalKey] = parts as [AgeBand, SessionEnvironment, string];
   const envLabel = ENV_LABELS[env] ?? env;
-  const targetLabel = TARGET_LABELS[target] ?? target;
+  const targetLabel = formatGoal(goalKey);
   return `Age ${ageBand} · ${envLabel} · ${targetLabel}`;
 }
 
@@ -738,6 +756,9 @@ export function selectProtocolRecommendation(input: {
   clarityPct?: number;
   baselineScore: number;
   targetState: TargetState;
+  customGoalSlug?: string;
+  customGoalLabel?: string;
+  compiledCustomSpec?: ExecutableStudySpec | null;
   environment: SessionEnvironment;
   device: OutputDevice;
   durationMin: number;
@@ -923,6 +944,24 @@ export function selectProtocolRecommendation(input: {
     }
   }
 
+  // Apply specialized curated goal DSP overrides (e.g. Creative Ideation 10 Hz Alpha, Memory 14 Hz SMR, Mood 12 Hz Major)
+  // or live compiled PubMed/EuropePMC paper Hz when user searched an open scientific goal!
+  const curatedGoal = !isDriving ? getCuratedGoalBySlug(input.customGoalSlug) : undefined;
+  if (curatedGoal?.dspOverride) {
+    const ov = curatedGoal.dspOverride;
+    params.modulationHz = ov.modulationHz;
+    if (typeof ov.bpm === 'number') params.bpm = ov.bpm;
+    if (ov.harmonicMode) params.harmonicMode = ov.harmonicMode;
+    if (ov.noiseColor) params.noiseColor = ov.noiseColor;
+    if (typeof ov.noiseLevel === 'number') params.noiseLevel = ov.noiseLevel;
+    if (typeof ov.filterCutoffHz === 'number') params.filterCutoffHz = ov.filterCutoffHz;
+  } else if (!isDriving && input.compiledCustomSpec && input.compiledCustomSpec.entrainment.frequencyHz > 0) {
+    params.modulationHz = input.compiledCustomSpec.entrainment.frequencyHz;
+    if (input.compiledCustomSpec.music.bpm >= 0) {
+      params.bpm = input.compiledCustomSpec.music.bpm;
+    }
+  }
+
   // Stratified 25% Blind A/B Control strictly gated on explicit Research Consent (1 sham per 4-session block)
   const isControlTrial = assignStratifiedShamControl({
     recentControlFlags: input.recentControlFlags ?? [],
@@ -937,7 +976,8 @@ export function selectProtocolRecommendation(input: {
     input.environment,
     effectiveTarget,
     input.profile.role,
-    input.currentState
+    input.currentState,
+    input.customGoalSlug
   );
   const confidencePct = Math.round(chosen.expectedMean * 100);
 
@@ -1004,21 +1044,52 @@ export function selectProtocolRecommendation(input: {
     ? ' (Includes a controlled exploration trial so the engine can test whether a slightly different acoustic profile works even better for you.)'
     : '';
 
-  const baseExecutableSpec = buildCheckInExecutableSpec({
-    armId: chosen.arm.id,
-    currentState: input.currentState,
-    targetState: effectiveTarget,
-    bpm: params.bpm,
-    modulationHz: params.modulationHz,
-    modulationDepth: params.modulationDepth,
-    noiseColor: params.noiseColor,
-    noiseLevel: params.noiseLevel,
-    genre: params.genre,
-    durationMin: input.durationMin,
-    device: effectiveDevice,
-    environment: input.environment,
-    microStateId: microState?.id ?? input.microStateId,
-  });
+  const baseExecutableSpec =
+    !isDriving && input.compiledCustomSpec
+      ? {
+          ...input.compiledCustomSpec,
+          music: {
+            ...input.compiledCustomSpec.music,
+            instrumentPalette: resolvedGenreToPalette(params.genre),
+          },
+        }
+      : buildCheckInExecutableSpec({
+          armId: chosen.arm.id,
+          currentState: input.currentState,
+          targetState: effectiveTarget,
+          bpm: params.bpm,
+          modulationHz: params.modulationHz,
+          modulationDepth: params.modulationDepth,
+          noiseColor: params.noiseColor,
+          noiseLevel: params.noiseLevel,
+          genre: params.genre,
+          durationMin: input.durationMin,
+          device: effectiveDevice,
+          environment: input.environment,
+          microStateId: microState?.id ?? input.microStateId,
+        });
+
+  const coreStudies = getStudiesByIds(chosen.arm.studyIds);
+  const compiledTopStudy =
+    input.compiledCustomSpec && input.compiledCustomSpec.studyRef.source !== 'core'
+      ? [
+          {
+            id: input.compiledCustomSpec.id,
+            authors: input.compiledCustomSpec.studyRef.authors,
+            year: Number(input.compiledCustomSpec.studyRef.year) || 2024,
+            journal: input.compiledCustomSpec.studyRef.journal,
+            title: input.compiledCustomSpec.studyRef.title,
+            mechanism: `${input.compiledCustomSpec.entrainment.frequencyHz || params.modulationHz} Hz ${input.compiledCustomSpec.entrainment.type.replace(/_/g, ' ')}`,
+            soundEffect:
+              input.compiledCustomSpec.evidenceMap[0]?.executedValue ??
+              `Compiled ${params.modulationHz} Hz acoustic stimulus for ${input.customGoalLabel ?? 'your custom goal'}`,
+            summary: input.compiledCustomSpec.abstractExcerpt,
+            caveat: 'Compiled live from peer-reviewed literature; adjust intensity to comfort.',
+            doiOrUrl: input.compiledCustomSpec.studyRef.url,
+            applicableTargets: [effectiveTarget],
+          },
+        ]
+      : [];
 
   const executableSpec = validCustom
     ? {
@@ -1061,7 +1132,7 @@ export function selectProtocolRecommendation(input: {
     personalizationSummary,
     formulaIngredients,
     rationale: `${chosen.arm.description} ${evidenceNote}${explorationNote}`,
-    studies: getStudiesByIds(chosen.arm.studyIds),
+    studies: [...compiledTopStudy, ...coreStudies],
     executableSpec,
     confidencePct,
     cohortTrials: chosen.cohortTrials,
@@ -1073,6 +1144,8 @@ export function selectProtocolRecommendation(input: {
     arousalPct: input.arousalPct ?? microState?.energy,
     clarityPct: input.clarityPct ?? microState?.clarity,
     targetState: effectiveTarget,
+    customGoalSlug: input.customGoalSlug,
+    customGoalLabel: input.customGoalLabel ?? curatedGoal?.label,
     baselineScore: input.baselineScore,
     environment: input.environment,
     device: effectiveDevice,

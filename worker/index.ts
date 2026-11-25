@@ -1,4 +1,5 @@
 import { parseNaturalCheckIn } from '../shared/parser';
+import { getCuratedGoalBySlug, resolveOpenGoalIntent } from '../shared/openGoals';
 import { STUDIO_STEM_V7_MANIFEST } from '../shared/studioStemManifest';
 import {
   composeScientificMusicPrompt,
@@ -1820,6 +1821,9 @@ export default {
           clarityPct?: number;
           baselineScore: number;
           targetState: TargetState;
+          customGoalText?: string;
+          customGoalSlug?: string;
+          customGoalLabel?: string;
           environment: SessionEnvironment;
           device: OutputDevice;
           durationMin: number;
@@ -1877,25 +1881,55 @@ export default {
           }
         }
 
+        const isDrivingEnv = body.environment === 'driving';
+        const openGoal = body.customGoalText?.trim()
+          ? resolveOpenGoalIntent(body.customGoalText, isDrivingEnv)
+          : (() => {
+              const preset = getCuratedGoalBySlug(body.customGoalSlug);
+              if (!preset) return null;
+              return {
+                slug: preset.slug,
+                label: preset.label,
+                subtitle: preset.subtitle,
+                coreTarget: preset.coreTarget,
+                coords: preset.coords,
+                defaultMin: preset.defaultMin,
+                dspOverride: isDrivingEnv ? undefined : preset.dspOverride,
+                pubmedQuery: preset.pubmedQuery,
+                openAlexTerm: preset.openAlexTerm,
+                isOpenCustomTopic: false,
+                rawTopicQuery: undefined,
+              };
+            })();
+
+        const rawTarget = openGoal?.coreTarget ?? body.targetState;
         const effectiveTarget: TargetState =
-          body.environment === 'driving' &&
-          (body.targetState === 'sleep_winddown' || body.targetState === 'calm_reset')
+          isDrivingEnv && (rawTarget === 'sleep_winddown' || rawTarget === 'calm_reset')
             ? 'alert_focus'
-            : body.targetState;
+            : rawTarget;
+        const effectiveGoalSlug =
+          openGoal &&
+          !(isDrivingEnv && (openGoal.coreTarget === 'sleep_winddown' || openGoal.coreTarget === 'calm_reset'))
+            ? openGoal.slug
+            : undefined;
+        const effectiveGoalLabel =
+          openGoal && effectiveGoalSlug ? (body.customGoalLabel || openGoal.label) : undefined;
+
         const energyTier = resolveEnergyTier(effectiveTarget, body.environment, body.currentState);
         const cohortKey = buildCohortKey(
           profile.ageBand,
           body.environment,
           effectiveTarget,
           profile.role,
-          body.currentState
+          body.currentState,
+          effectiveGoalSlug
         );
         const legacyBroadCohortKey = buildCohortKey(
           profile.ageBand,
           body.environment,
           effectiveTarget
         );
-        const profileStateKey = `${profile.id}|${body.currentState}|${effectiveTarget}`;
+        const profileStateKey = `${profile.id}|${body.currentState}|${effectiveGoalSlug || effectiveTarget}`;
 
         // Map core genre aliases typed as custom text (e.g. "rain", "ploaie", "lo-fi") straight to instant Studio R2!
         const coreAliasFromCustom = matchCoreGenreAlias(body.customGenreInput);
@@ -1924,6 +1958,7 @@ export default {
           profileGenreStats,
           cohortArmGenreStats,
           livePubMedPapers,
+          compiledCustomSpec,
           cachedCustom,
           usageRow,
           recentShamRows,
@@ -1939,7 +1974,28 @@ export default {
             : body.requestedGenre && body.requestedGenre !== 'auto'
               ? fetchBanditRows(env.DB, 'cohort_arm_genre', `${cohortKey}|${body.requestedGenre}`)
               : Promise.resolve([]),
-          fetchVerifiedLiveLiterature(env, effectiveTarget, body.environment, body.microStateId),
+          fetchVerifiedLiveLiterature(
+            env,
+            effectiveTarget,
+            body.environment,
+            body.microStateId,
+            openGoal
+              ? {
+                  slug: openGoal.slug,
+                  pubmedQuery: openGoal.pubmedQuery,
+                  openAlexTerm: openGoal.openAlexTerm,
+                }
+              : null
+          ),
+          openGoal?.isOpenCustomTopic && openGoal.rawTopicQuery
+            ? compileMedicalStudy(env, {
+                queryOrText: openGoal.rawTopicQuery,
+                device: body.device,
+                environment: body.environment,
+              })
+                .then((r) => r.spec)
+                .catch(() => null)
+            : Promise.resolve(null),
           validCustom ? lookupCachedCustomTrack(env.DB, validCustom.slug, energyTier) : Promise.resolve(null),
           env.DB.prepare('SELECT music_gen_calls FROM api_usage_daily WHERE day = ?')
             .bind(today)
@@ -2077,7 +2133,10 @@ export default {
                 ? Math.max(0, Math.min(100, Math.round(body.clarityPct)))
                 : undefined,
             baselineScore: Math.max(1, Math.min(5, Number(body.baselineScore ?? 2))),
-            targetState: body.targetState,
+            targetState: effectiveTarget,
+            customGoalSlug: effectiveGoalSlug,
+            customGoalLabel: effectiveGoalLabel,
+            compiledCustomSpec,
             environment: body.environment,
             device: body.device,
             durationMin: Math.max(5, Math.min(120, Number(body.durationMin ?? 30))),

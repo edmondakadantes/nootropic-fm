@@ -326,6 +326,8 @@ interface NeuralTrajectoryPreviewProps {
   fromCoords: NeuralCoords;
   fromLabel: string;
   targetState: TargetState | null;
+  customDestCoords?: NeuralCoords | null;
+  customDestLabel?: string | null;
   durationMin: number;
   effectTierLabel?: string | null;
   isoBridgeLabel?: string | null;
@@ -334,17 +336,23 @@ interface NeuralTrajectoryPreviewProps {
 /**
  * Compact Beat 3 Iso-Principle Vector Map visualizing the live trajectory
  * from the listener's current 2D state coordinate -> chosen target state coordinate.
- * Draws the trajectory bar ONLY after the listener explicitly picks their target state.
+ * Draws the trajectory bar ONLY after the listener explicitly picks or types their target state.
  */
 export function NeuralTrajectoryPreview({
   fromCoords,
   fromLabel,
   targetState,
+  customDestCoords = null,
+  customDestLabel = null,
   durationMin,
   effectTierLabel = null,
   isoBridgeLabel = null,
 }: NeuralTrajectoryPreviewProps) {
-  const dest = targetState ? TARGET_COORDS[targetState] : null;
+  const baseDest = targetState ? TARGET_COORDS[targetState] : null;
+  const dest =
+    customDestCoords && customDestLabel
+      ? { energy: customDestCoords.energy, clarity: customDestCoords.clarity, label: customDestLabel }
+      : baseDest;
   const x1 = fromCoords.clarity;
   const y1 = 100 - fromCoords.energy;
   const x2 = dest ? dest.clarity : x1;

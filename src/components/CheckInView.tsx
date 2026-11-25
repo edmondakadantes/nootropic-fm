@@ -32,6 +32,11 @@ import {
   pickSmartInitialEffectTier,
 } from '../../shared/psychometrics';
 import {
+  CURATED_GOAL_PRESETS,
+  resolveOpenGoalIntent,
+  type OpenGoalResolution,
+} from '../../shared/openGoals';
+import {
   parseNaturalCheckIn,
   parseOnboardingAnswers,
   parseProfileSentence,
@@ -95,6 +100,9 @@ interface CheckInViewProps {
     clarityPct?: number;
     baselineScore: number;
     targetState: TargetState;
+    customGoalText?: string;
+    customGoalSlug?: string;
+    customGoalLabel?: string;
     environment: SessionEnvironment;
     device: OutputDevice;
     durationMin: number;
@@ -106,44 +114,6 @@ interface CheckInViewProps {
 
 const DEFAULT_MICRO_STATE =
   NEURAL_MICRO_STATES.find((s) => s.id === 'brain_fog') ?? NEURAL_MICRO_STATES[0];
-
-const TARGET_CARDS: Array<{
-  target: TargetState;
-  label: string;
-  sub: string;
-  defaultMin: number;
-}> = [
-  {
-    target: 'energy_lift',
-    label: 'Stop Feeling Tired · Energy Lift',
-    sub: 'Shake off fatigue & feel awake',
-    defaultMin: 20,
-  },
-  {
-    target: 'alert_focus',
-    label: 'Sharp Alert Focus',
-    sub: 'Clear attention & zero drift',
-    defaultMin: 35,
-  },
-  {
-    target: 'deep_flow',
-    label: 'Deep Uninterrupted Flow',
-    sub: 'Coding, writing, studying',
-    defaultMin: 45,
-  },
-  {
-    target: 'calm_reset',
-    label: 'Calm Down & Reset',
-    sub: 'Lower tension & steady breathing',
-    defaultMin: 20,
-  },
-  {
-    target: 'sleep_winddown',
-    label: 'Wind Down for Sleep',
-    sub: 'Quiet thoughts gently before bed',
-    defaultMin: 30,
-  },
-];
 
 interface SpeechRecognitionInstance {
   lang: string;
@@ -226,11 +196,15 @@ export function CheckInView({
   const [baselineScore, setBaselineScore] = useState<number>(presetMicro?.defaultBaseline ?? 3);
   const [stateError, setStateError] = useState<string | null>(null);
 
-  // Beat 3: Target state, duration & output (targetPicked starts false until user chooses where to go!)
+  // Beat 3: Target state, open-goal intent, duration & output
   const [goalText, setGoalText] = useState('');
   const [targetState, setTargetState] = useState<TargetState>(
     initialPreset?.targetState ?? 'energy_lift'
   );
+  const [selectedGoalSlug, setSelectedGoalSlug] = useState<string | null>(
+    initialPreset?.targetState ?? null
+  );
+  const [openGoalIntent, setOpenGoalIntent] = useState<OpenGoalResolution | null>(null);
   const [targetPicked, setTargetPicked] = useState<boolean>(Boolean(initialPreset));
   const [targetError, setTargetError] = useState<string | null>(null);
   const [durationMin, setDurationMin] = useState<number>(initialPreset?.durationMin ?? 20);
@@ -407,12 +381,30 @@ export function CheckInView({
 
   const handleGoalChange = (text: string) => {
     setGoalText(text);
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      setOpenGoalIntent(null);
+      return;
+    }
     const parsed = parseNaturalCheckIn(text, { age: effectiveAge, role: effectiveRole, defaultDevice: device });
-    setTargetState(parsed.targetState);
-    setTargetPicked(true);
-    setTargetError(null);
-    setDurationMin(parsed.durationMin);
+    const hasExplicitMin = /\b(\d{1,3})\s*(?:minutes|minute|mins|min|m|hours|hour|hrs|hr|h)\b|(?:an?\s+hour)/i.test(
+      text
+    );
+    const resolved = resolveOpenGoalIntent(text, isDriving);
+    if (resolved) {
+      setOpenGoalIntent(resolved);
+      setSelectedGoalSlug(resolved.slug);
+      setTargetState(resolved.coreTarget);
+      setTargetPicked(true);
+      setTargetError(null);
+      setDurationMin(hasExplicitMin ? parsed.durationMin : resolved.defaultMin);
+    } else {
+      setOpenGoalIntent(null);
+      setTargetState(parsed.targetState);
+      setSelectedGoalSlug(parsed.targetState);
+      setTargetPicked(true);
+      setTargetError(null);
+      if (hasExplicitMin) setDurationMin(parsed.durationMin);
+    }
     if (parsed.environment === 'driving') {
       setEnvironment('driving');
       setDevice('car_audio');
@@ -584,6 +576,12 @@ export function CheckInView({
         researchConsent,
       };
 
+      const activeCuratedGoal = CURATED_GOAL_PRESETS.find((g) => g.slug === selectedGoalSlug);
+      const effectiveCustomGoalSlug =
+        openGoalIntent?.slug ?? activeCuratedGoal?.slug ?? undefined;
+      const effectiveCustomGoalLabel =
+        openGoalIntent?.label ?? activeCuratedGoal?.label ?? undefined;
+
       await onLaunchUnifiedSession({
         profileUpdate,
         ephemeralMode,
@@ -595,6 +593,9 @@ export function CheckInView({
         clarityPct: activeCoords.clarity,
         baselineScore,
         targetState: effectiveTarget,
+        customGoalText: goalText.trim() || undefined,
+        customGoalSlug: effectiveCustomGoalSlug,
+        customGoalLabel: effectiveCustomGoalLabel,
         environment: effectiveEnv,
         device: effectiveDevice,
         durationMin,
@@ -767,7 +768,11 @@ export function CheckInView({
         {beat === 4 && (
           <>
             <p className="mt-3 font-mono-tech text-[11px] text-[#34D399]">
-              Target locked: {TARGET_LABELS[targetState]} · {durationMin} min · {DEVICE_LABELS[device]}
+              Target locked:{' '}
+              {openGoalIntent?.label ??
+                CURATED_GOAL_PRESETS.find((g) => g.slug === selectedGoalSlug)?.label ??
+                TARGET_LABELS[targetState]}{' '}
+              · {durationMin} min · {DEVICE_LABELS[device]}
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#F3F1EC] sm:text-3xl leading-[1.12]">
               Choose your <span className="text-[#34D399]">music style</span>
@@ -825,7 +830,11 @@ export function CheckInView({
                 onClick={() => setBeat(3)}
                 className="rounded-md border border-white/15 bg-[#181A1F] px-2.5 py-0.5 text-[#F3F1EC] transition hover:border-white/30"
               >
-                Goal: {TARGET_LABELS[targetState]} · {durationMin}m
+                Goal:{' '}
+                {openGoalIntent?.label ??
+                  CURATED_GOAL_PRESETS.find((g) => g.slug === selectedGoalSlug)?.label ??
+                  TARGET_LABELS[targetState]}{' '}
+                · {durationMin}m
               </button>
             )}
           </div>
@@ -1160,8 +1169,17 @@ export function CheckInView({
               energy: activeMicro.energy,
               clarity: activeMicro.clarity,
             };
+            const activePreset = CURATED_GOAL_PRESETS.find((g) => g.slug === selectedGoalSlug);
+            const customCoords = targetPicked
+              ? (openGoalIntent?.coords ?? activePreset?.coords ?? null)
+              : null;
+            const customLabel = targetPicked
+              ? (openGoalIntent?.label ?? activePreset?.label ?? null)
+              : null;
             const previewTargetHz =
-              targetState === 'energy_lift'
+              openGoalIntent?.dspOverride?.modulationHz ??
+              activePreset?.dspOverride?.modulationHz ??
+              (targetState === 'energy_lift'
                 ? 18
                 : targetState === 'alert_focus'
                   ? 16
@@ -1169,7 +1187,7 @@ export function CheckInView({
                     ? 15
                     : targetState === 'calm_reset'
                       ? 10
-                      : 6;
+                      : 6);
             const iso =
               targetPicked && previewTargetHz > 12
                 ? computeIsoBridgeForState({
@@ -1208,74 +1226,124 @@ export function CheckInView({
                 fromCoords={activeFrom}
                 fromLabel={activeMicro.shortLabel}
                 targetState={targetPicked ? targetState : null}
+                customDestCoords={customCoords}
+                customDestLabel={customLabel}
                 durationMin={durationMin}
                 effectTierLabel={effectTierLabel}
                 isoBridgeLabel={isoBridgeLabel}
               />
             );
           })()}
-          <div className="glow-input-wrap">
-            <div className="relative flex items-start rounded-[0.8rem] bg-[#0B0C0E]">
-              <textarea
-                rows={2}
-                value={goalText}
-                onChange={(e) => handleGoalChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (!targetPicked) {
-                      setTargetError('Please choose the state you want to reach.');
-                      return;
+
+          {/* Free-form Open Scientific Goal Input (works with ANY cognitive/wellness goal + typos!) */}
+          <div className="space-y-2">
+            <div className="glow-input-wrap">
+              <div className="relative flex items-start rounded-[0.8rem] bg-[#0B0C0E]">
+                <textarea
+                  rows={2}
+                  value={goalText}
+                  onChange={(e) => handleGoalChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!targetPicked) {
+                        setTargetError('Type any goal above or select one below to continue.');
+                        return;
+                      }
+                      setBeat(4);
                     }
-                    setBeat(4);
-                  }
-                }}
-                placeholder='Tell us your goal, e.g. "I want to stop feeling tired for the next 20 minutes" or "Deep focus for 45 min"'
-                className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-[#F3F1EC] placeholder-[#5F605C] focus:outline-none sm:text-base"
-              />
-              <button
-                type="button"
-                onClick={() => toggleVoiceForBeat(3)}
-                className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-lg border transition-all ${
-                  listeningBeat === 3
-                    ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
-                    : 'border-white/12 bg-[#141518] text-[#34D399] hover:border-emerald-400/50 hover:bg-[#191B1F]'
-                }`}
-                title="Speak your goal & duration"
-              >
-                {listeningBeat === 3 ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-              </button>
+                  }}
+                  placeholder='Type any goal freely — e.g. "I want to feel creative", "memorize for my exam", "public speaking confidence", "deep focus for 45 min"...'
+                  className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-[#F3F1EC] placeholder-[#5F605C] focus:outline-none sm:text-base"
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleVoiceForBeat(3)}
+                  className={`absolute right-2.5 top-2.5 inline-flex h-10 w-10 items-center justify-center rounded-lg border transition-all ${
+                    listeningBeat === 3
+                      ? 'animate-pulse border-rose-400 bg-rose-500/20 text-rose-300'
+                      : 'border-white/12 bg-[#141518] text-[#34D399] hover:border-emerald-400/50 hover:bg-[#191B1F]'
+                  }`}
+                  title="Speak your goal & duration"
+                >
+                  {listeningBeat === 3 ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
+
+            {goalText.trim().length > 0 && openGoalIntent && (
+              <div className="animate-step flex items-start gap-2.5 rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-[#D4D4CE]">
+                <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                <div className="space-y-0.5">
+                  <div>
+                    <strong className="text-[#34D399]">
+                      {openGoalIntent.isOpenCustomTopic
+                        ? 'Custom Science Search Ready:'
+                        : 'Matched Scientific Goal:'}
+                    </strong>{' '}
+                    <strong className="text-[#F3F1EC]">{openGoalIntent.label}</strong>
+                    {openGoalIntent.dspOverride && (
+                      <span className="ml-1.5 rounded border border-emerald-400/30 bg-[#0B0C0E] px-1.5 py-0.5 font-mono-tech text-[10px] text-[#34D399]">
+                        {openGoalIntent.dspOverride.modulationHz} Hz
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-[#A3A39E]">
+                    {openGoalIntent.isOpenCustomTopic
+                      ? `Will search NIH PubMed, Europe PMC & OpenAlex live for "${openGoalIntent.label}" and compile the matching Hz & audio layers.`
+                      : `${openGoalIntent.subtitle} · PubMed & OpenAlex query locked.`}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Target State Pills */}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {TARGET_CARDS.map((card) => {
-              const disabledForDriving =
-                isDriving && (card.target === 'sleep_winddown' || card.target === 'calm_reset');
-              const active = targetPicked && targetState === card.target;
-              return (
-                <button
-                  key={card.target}
-                  type="button"
-                  disabled={disabledForDriving}
-                  onClick={() => {
-                    setTargetState(card.target);
-                    setTargetPicked(true);
-                    setTargetError(null);
-                    if (!goalText.trim()) setDurationMin(card.defaultMin);
-                  }}
-                  className={`rounded-xl border px-3.5 py-2.5 text-left transition-all disabled:opacity-35 ${
-                    active
-                      ? 'border-emerald-400/60 bg-emerald-400/12 text-[#F3F1EC]'
-                      : 'border-white/[0.08] bg-[#131417] text-[#D4D4CE] hover:border-white/25'
-                  }`}
-                >
-                  <div className="text-xs font-semibold text-[#F3F1EC]">{card.label}</div>
-                  <div className="mt-0.5 text-[10px] text-[#8E8E88]">{card.sub}</div>
-                </button>
-              );
-            })}
+          {/* Optional Expanded Quick-Select Scientific Goals */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] text-[#8E8E88]">
+              <span>Or quick-select a verified goal (optional if you typed above):</span>
+              <span className="font-mono-tech text-[10px] text-[#34D399]">8 Core Categories</span>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {CURATED_GOAL_PRESETS.map((card) => {
+                const disabledForDriving =
+                  isDriving &&
+                  (card.coreTarget === 'sleep_winddown' || card.coreTarget === 'calm_reset');
+                const active =
+                  targetPicked &&
+                  !openGoalIntent?.isOpenCustomTopic &&
+                  selectedGoalSlug === card.slug;
+                return (
+                  <button
+                    key={card.slug}
+                    type="button"
+                    disabled={disabledForDriving}
+                    onClick={() => {
+                      setGoalText('');
+                      setOpenGoalIntent(null);
+                      setSelectedGoalSlug(card.slug);
+                      setTargetState(card.coreTarget);
+                      setTargetPicked(true);
+                      setTargetError(null);
+                      setDurationMin(card.defaultMin);
+                    }}
+                    className={`rounded-xl border px-3.5 py-2.5 text-left transition-all disabled:opacity-35 ${
+                      active
+                        ? 'border-emerald-400/60 bg-emerald-400/12 text-[#F3F1EC]'
+                        : 'border-white/[0.08] bg-[#131417] text-[#D4D4CE] hover:border-white/25'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-[#F3F1EC]">{card.shortLabel}</span>
+                      <span className="shrink-0 rounded border border-white/10 bg-[#0B0C0E] px-1.5 py-0.5 font-mono-tech text-[9.5px] text-[#34D399]">
+                        {card.hzBadge}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-[#8E8E88]">{card.subtitle}</div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {targetError && <p className="text-xs font-medium text-amber-300">{targetError}</p>}

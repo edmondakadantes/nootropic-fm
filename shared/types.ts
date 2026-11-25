@@ -245,6 +245,8 @@ export interface ProtocolRecommendation {
   arousalPct?: number;
   clarityPct?: number;
   targetState: TargetState;
+  customGoalSlug?: string;
+  customGoalLabel?: string;
   baselineScore: number;
   environment: SessionEnvironment;
   device: OutputDevice;
