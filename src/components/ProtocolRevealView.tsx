@@ -109,7 +109,7 @@ function SoundWavePreview({
           Live DSP Envelope Preview
         </span>
         <span>
-          {modulationHz} Hz AM · {Math.round(modulationDepth * 100)}% depth
+          {modulationHz} Hz AM · {Math.min(98, Math.round(modulationDepth * 172))}% effect
         </span>
       </div>
       <svg viewBox="0 0 320 52" className="h-11 w-full overflow-visible">
@@ -590,6 +590,29 @@ export function ProtocolRevealView({
           </div>
 
           <p className="text-xs leading-relaxed text-[#A3A39E]">{recommendation.rationale}</p>
+
+          {recommendation.executableSpec?.entrainment.isoBridge && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-400/35 bg-amber-500/[0.08] p-3 text-xs text-amber-100">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+              <span>
+                <strong className="text-amber-300">2-Stage Iso-Bridge Active:</strong> Starts with{' '}
+                {Math.round(
+                  recommendation.executableSpec.entrainment.isoBridge.stabilizeDurationSec / 60
+                )}{' '}
+                min at {recommendation.executableSpec.entrainment.isoBridge.stabilizeHz} Hz Alpha (~
+                {Math.min(
+                  98,
+                  Math.round(
+                    recommendation.params.modulationDepth *
+                      recommendation.executableSpec.entrainment.isoBridge.stabilizeEffectScale *
+                      172
+                  )
+                )}
+                % effect) to settle tension first, then glides smoothly into{' '}
+                {recommendation.params.modulationHz} Hz.
+              </span>
+            </div>
+          )}
 
           {recommendation.personalizationSummary && recommendation.personalizationSummary.length > 0 && (
             <div className="flex flex-wrap gap-1.5 text-[11px]">

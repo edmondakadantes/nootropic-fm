@@ -60,12 +60,15 @@ import {
 } from './lib/api';
 import {
   buildInstantQuickTryRecommendation,
-  buildMicroStateGoalRecommendation,
   buildStateGoalQuickRecommendation,
   type QuickFeelingId,
   type QuickTryId,
 } from './lib/quickTryProtocols';
-import type { NeuralCoords, NeuralMicroState } from '../shared/neuralStates';
+import {
+  coordsToBaselineScore,
+  type NeuralCoords,
+  type NeuralMicroState,
+} from '../shared/neuralStates';
 
 const StudyLabView = lazy(() =>
   import('./components/StudyLabView').then((m) => ({ default: m.StudyLabView }))
@@ -96,6 +99,7 @@ export default function App() {
   const [syncCode, setSyncCode] = useState<string | null>(null);
   const [pendingDebrief, setPendingDebrief] = useState<SessionRecord | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<MoodPresetSelection | null>(null);
+  const [revealOrigin, setRevealOrigin] = useState<'landing' | 'checkin'>('landing');
   const [activeRec, setActiveRec] = useState<ProtocolRecommendation | null>(null);
   const [researching, setResearching] = useState(false);
   const [fieldMood, setFieldMood] = useState<FieldMood>('default');
@@ -302,17 +306,6 @@ export default function App() {
     [moodFromTarget, profile]
   );
 
-  const handleLaunchMicroStateGoal = useCallback(
-    (microState: NeuralMicroState, coords: NeuralCoords, target: TargetState) => {
-      setErrorBanner(null);
-      const rec = buildMicroStateGoalRecommendation(microState, coords, target, profile);
-      setActiveRec(rec);
-      setFieldMood(moodFromTarget(rec.environment, rec.targetState));
-      setScreen('player');
-    },
-    [moodFromTarget, profile]
-  );
-
   const handleStartDirectCheckout = useCallback(
     async (plan: 'annual' | 'monthly') => {
       const res = await api.createStripeCheckout({
@@ -330,28 +323,32 @@ export default function App() {
   );
 
   const startSession = useCallback(
-    async (payload: {
-      profileId?: string;
-      ephemeralMode?: boolean;
-      ephemeralProfile?: Partial<UserProfile>;
-      rawInputText: string;
-      currentState: CurrentState;
-      microStateId?: string;
-      microStateLabel?: string;
-      arousalPct?: number;
-      clarityPct?: number;
-      baselineScore: number;
-      targetState: TargetState;
-      environment: SessionEnvironment;
-      device: OutputDevice;
-      durationMin: number;
-      ageOverride?: number;
-      requestedGenre?: MusicGenreChoice;
-      customGenreInput?: string;
-    }) => {
+    async (
+      payload: {
+        profileId?: string;
+        ephemeralMode?: boolean;
+        ephemeralProfile?: Partial<UserProfile>;
+        rawInputText: string;
+        currentState: CurrentState;
+        microStateId?: string;
+        microStateLabel?: string;
+        arousalPct?: number;
+        clarityPct?: number;
+        baselineScore: number;
+        targetState: TargetState;
+        environment: SessionEnvironment;
+        device: OutputDevice;
+        durationMin: number;
+        ageOverride?: number;
+        requestedGenre?: MusicGenreChoice;
+        customGenreInput?: string;
+      },
+      originScreen: 'landing' | 'checkin' = 'checkin'
+    ) => {
       setErrorBanner(null);
       setActiveRec(null);
       setResearching(true);
+      setRevealOrigin(originScreen);
       setFieldMood(moodFromTarget(payload.environment, payload.targetState));
       setScreen('reveal');
       try {
@@ -361,12 +358,54 @@ export default function App() {
         setFieldMood(moodFromTarget(recommendation.environment, recommendation.targetState));
       } catch (err) {
         setErrorBanner(err instanceof Error ? err.message : 'Unable to start protocol');
-        setScreen('checkin');
+        setScreen(originScreen);
       } finally {
         setResearching(false);
       }
     },
     [moodFromTarget]
+  );
+
+  const handleDiscoverFromHero = useCallback(
+    (
+      microState: NeuralMicroState,
+      coords: NeuralCoords,
+      target: TargetState,
+      durationMin: number
+    ) => {
+      const isDriver = profile?.role === 'driver';
+      const environment: SessionEnvironment = isDriver
+        ? 'driving'
+        : target === 'calm_reset' || target === 'sleep_winddown'
+          ? 'home_relax'
+          : 'office';
+      const device: OutputDevice = isDriver
+        ? 'car_audio'
+        : (profile?.defaultDevice ?? 'headphones');
+      const baselineScore = coordsToBaselineScore(coords.energy, coords.clarity);
+      const isEphemeral = !profile;
+
+      void startSession(
+        {
+          profileId: profile?.id,
+          ephemeralMode: isEphemeral,
+          ephemeralProfile: profile ?? undefined,
+          rawInputText: `${microState.label} (${coords.energy}% energy, ${coords.clarity}% clarity) -> ${target}`,
+          currentState: microState.coreState,
+          microStateId: microState.id,
+          microStateLabel: microState.label,
+          arousalPct: coords.energy,
+          clarityPct: coords.clarity,
+          baselineScore,
+          targetState: target,
+          environment,
+          device,
+          durationMin,
+        },
+        'landing'
+      );
+    },
+    [profile, startSession]
   );
 
   const handleSaveProfile = async (data: Partial<UserProfile>) => {
@@ -817,7 +856,7 @@ export default function App() {
             profile={profile}
             onInstantPlay={handleInstantHeroPlay}
             onLaunchStateGoal={handleLaunchStateGoal}
-            onLaunchMicroStateGoal={handleLaunchMicroStateGoal}
+            onDiscoverProtocol={handleDiscoverFromHero}
             onStartCustomize={() => {
               setSelectedPreset(null);
               setScreen('checkin');
@@ -915,7 +954,7 @@ export default function App() {
               }}
               onBack={() => {
                 setActiveRec(null);
-                setScreen('checkin');
+                setScreen(revealOrigin);
               }}
             />
           </Suspense>

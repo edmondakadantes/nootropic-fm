@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ArrowRight,
+  BookOpen,
   Compass,
   Crosshair,
   FlaskConical,
   KeyRound,
-  Play,
+  Search,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -33,10 +34,11 @@ interface HeroLandingViewProps {
   profile?: UserProfile | null;
   onInstantPlay: (id: QuickTryId) => void;
   onLaunchStateGoal: (feelingId: QuickFeelingId, targetState: TargetState) => void;
-  onLaunchMicroStateGoal?: (
+  onDiscoverProtocol?: (
     microState: NeuralMicroState,
     coords: NeuralCoords,
-    targetState: TargetState
+    targetState: TargetState,
+    durationMin: number
   ) => void;
   onStartCustomize: () => void;
   onOpenStudyLab: () => void;
@@ -46,43 +48,42 @@ interface HeroLandingViewProps {
 const GOAL_CARDS: Array<{
   target: TargetState;
   title: string;
-  tag: string;
   sub: string;
+  defaultMin: number;
 }> = [
   {
     target: 'energy_lift',
     title: 'Energy Lift',
-    tag: 'WAKE UP',
     sub: 'Clear brain fog & afternoon slump',
+    defaultMin: 20,
   },
   {
     target: 'alert_focus',
     title: 'Sharp Focus',
-    tag: 'LOCK IN',
     sub: 'Sustained attention & zero drift',
+    defaultMin: 25,
   },
   {
     target: 'deep_flow',
     title: 'Deep Flow',
-    tag: 'DEEP WORK',
     sub: 'Uninterrupted coding, writing, study',
+    defaultMin: 45,
   },
   {
     target: 'calm_reset',
     title: 'Calm Reset',
-    tag: 'UNWIND',
     sub: 'Drop tension & slow racing thoughts',
+    defaultMin: 20,
   },
   {
     target: 'sleep_winddown',
     title: 'Sleep Wind-Down',
-    tag: 'DRIFT OFF',
     sub: 'Quiet mind gently before sleep',
+    defaultMin: 30,
   },
 ];
 
-const INITIAL_MICRO =
-  NEURAL_MICRO_STATES.find((s) => s.id === 'brain_fog') ?? NEURAL_MICRO_STATES[0];
+const DURATION_CHOICES = [15, 25, 45, 60];
 
 function HeroScopeStrip({ onStart }: { onStart: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -206,7 +207,7 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
       ctx.fillText('CH2 NEURAL ENVELOPE', 8, divY + 4);
       ctx.textAlign = 'right';
       ctx.fillStyle = 'rgba(243, 241, 236, 0.78)';
-      ctx.fillText('CLICK TO LAUNCH', w - 8, 5);
+      ctx.fillText('DEMO ENGINE', w - 8, 5);
 
       ctx.restore();
 
@@ -238,7 +239,7 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
           </span>
         </div>
         <span className="inline-flex items-center gap-1 font-semibold text-[#F3F1EC] group-hover:text-[#34D399]">
-          Unmute Live Engine
+          Listen Live Demo
           <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
         </span>
       </div>
@@ -256,8 +257,8 @@ export function HeroLandingView({
   isPro = false,
   hasProfile = false,
   profile = null,
-  onLaunchStateGoal,
-  onLaunchMicroStateGoal,
+  onInstantPlay,
+  onDiscoverProtocol,
   onStartCustomize,
   onOpenStudyLab,
   onOpenIdentityModal,
@@ -265,21 +266,41 @@ export function HeroLandingView({
   const padRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const [showAllStates, setShowAllStates] = useState(false);
-  const [coords, setCoords] = useState<NeuralCoords>({
-    energy: INITIAL_MICRO.energy,
-    clarity: INITIAL_MICRO.clarity,
-  });
-  const [selectedState, setSelectedState] = useState<NeuralMicroState>(INITIAL_MICRO);
-  const [selectedGoal, setSelectedGoal] = useState<TargetState>(INITIAL_MICRO.suggestedTarget);
+
+  // Clean zero-assumption initial state: NO auto-selected state and NO auto-drawn trajectory bar!
+  const [coords, setCoords] = useState<NeuralCoords | null>(null);
+  const [selectedState, setSelectedState] = useState<NeuralMicroState | null>(null);
+  const [selectedGoal, setSelectedGoal] = useState<TargetState | null>(null);
+  const [durationMin, setDurationMin] = useState<number>(25);
+  const [durationTouched, setDurationTouched] = useState(false);
+  const [stepError, setStepError] = useState<string | null>(null);
 
   const landmarks = NEURAL_MICRO_STATES.filter((s) => s.landmark);
-  const nearbyStates = findNearbyMicroStates(coords.energy, coords.clarity, 6)
-    .filter((s) => s.id !== selectedState.id)
-    .slice(0, 5);
+  const quickStarterStates = NEURAL_MICRO_STATES.filter((s) =>
+    [
+      'stressed',
+      'tired_sluggish',
+      'brain_fog',
+      'distracted_scattered',
+      'anxious_racing',
+      'calm_balanced',
+    ].includes(s.id)
+  );
+  const nearbyStates =
+    coords && selectedState
+      ? findNearbyMicroStates(coords.energy, coords.clarity, 6)
+          .filter((s) => s.id !== selectedState.id)
+          .slice(0, 5)
+      : quickStarterStates;
 
-  const preview = previewMicroStateTrajectory(selectedState, coords, selectedGoal, profile);
-  const activeGoalMeta = GOAL_CARDS.find((g) => g.target === selectedGoal) ?? GOAL_CARDS[0];
-  const destCoords = TARGET_COORDS[selectedGoal];
+  const preview =
+    selectedState && coords && selectedGoal
+      ? previewMicroStateTrajectory(selectedState, coords, selectedGoal, profile)
+      : null;
+  const activeGoalMeta = selectedGoal
+    ? GOAL_CARDS.find((g) => g.target === selectedGoal) ?? null
+    : null;
+  const destCoords = selectedGoal ? TARGET_COORDS[selectedGoal] : null;
 
   const updateFromClientPoint = (clientX: number, clientY: number) => {
     const el = padRef.current;
@@ -293,34 +314,52 @@ export function HeroLandingView({
     const closest = findClosestMicroState(energy, clarity);
     setCoords(nextCoords);
     setSelectedState(closest);
-    setSelectedGoal(closest.suggestedTarget);
+    setStepError(null);
+    // IMPORTANT: Never auto-select selectedGoal here so no trajectory bar draws on its own!
   };
 
   const handleSelectMicro = (st: NeuralMicroState) => {
     setSelectedState(st);
     setCoords({ energy: st.energy, clarity: st.clarity });
-    setSelectedGoal(st.suggestedTarget);
+    setStepError(null);
+    // IMPORTANT: Never auto-select selectedGoal here — wait for user's explicit Step 2 choice!
   };
 
-  const triggerLaunch = (goal: TargetState) => {
-    if (onLaunchMicroStateGoal) {
-      onLaunchMicroStateGoal(selectedState, coords, goal);
+  const handleSelectGoal = (goal: TargetState, defaultMin: number) => {
+    setSelectedGoal(goal);
+    if (!durationTouched) {
+      setDurationMin(defaultMin);
+    }
+    setStepError(null);
+  };
+
+  const handleDiscoverStudies = () => {
+    if (!selectedState || !coords) {
+      setStepError('Step 1: Tap or drag how you feel right now on the 2D Brain Map.');
       return;
     }
-    onLaunchStateGoal('tired_fog', goal);
+    if (!selectedGoal) {
+      setStepError('Step 2: Choose where you want your mind to go next.');
+      return;
+    }
+    setStepError(null);
+    if (onDiscoverProtocol) {
+      onDiscoverProtocol(selectedState, coords, selectedGoal, durationMin);
+    }
   };
 
-  // SVG vector geometry on the 2D Brain Map (from current state -> optional Iso-Bridge waypoint -> target state)
-  const x1 = coords.clarity;
-  const y1 = 100 - coords.energy;
-  const x2 = destCoords.clarity;
-  const y2 = 100 - destCoords.energy;
-  const wp = preview.isoWaypointCoords;
+  // SVG coordinates (trajectory vector ONLY renders when BOTH Step 1 & Step 2 are explicitly chosen!)
+  const hasBothSteps = Boolean(coords && destCoords && selectedState && selectedGoal);
+  const x1 = coords ? coords.clarity : 50;
+  const y1 = coords ? 100 - coords.energy : 50;
+  const x2 = destCoords ? destCoords.clarity : 50;
+  const y2 = destCoords ? 100 - destCoords.energy : 50;
+  const wp = preview?.isoWaypointCoords;
   const mx = wp ? wp.clarity : (x1 + x2) / 2;
   const my = wp ? 100 - wp.energy : Math.max(10, Math.min(90, (y1 + y2) / 2 - 12));
 
   const cursorColor =
-    coords.clarity < 48 && coords.energy >= 55 ? '#F59E0B' : '#34D399';
+    coords && coords.clarity < 48 && coords.energy >= 55 ? '#F59E0B' : '#34D399';
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center space-y-6 py-2 sm:space-y-8 sm:py-5">
@@ -330,27 +369,27 @@ export function HeroLandingView({
           <span className="h-1.5 w-1.5 rounded-full bg-[#34D399]" />
           <span className="font-semibold text-[#34D399]">2D Neural Brain Map</span>
           <span className="text-white/25">·</span>
-          <span>Iso-Principle Acoustic Calibration</span>
+          <span>Peer-Reviewed Study Matching (PubMed &amp; DOI)</span>
         </div>
 
         <h1 className="max-w-3xl font-display text-2xl font-semibold tracking-tight text-[#F3F1EC] sm:text-5xl leading-[1.1]">
-          Pinpoint how your mind feels.{' '}
-          <span className="text-[#34D399]">Hear the exact shift live.</span>
+          Map how you feel now.{' '}
+          <span className="text-[#34D399]">Match the science to get where you want.</span>
         </h1>
 
         <p className="max-w-2xl text-xs leading-relaxed text-[#A3A39E] sm:text-base">
-          Touch or drag anywhere on the 2D Neural Map below — your starting frequency, effect
-          intensity (36%–94%), and Iso-Bridge adapt in real time.
+          1. Mark your current state on the 2D Brain Map. 2. Pick your target state — we search
+          verified peer-reviewed studies and build your exact 2-layer psychoacoustic session.
         </p>
       </section>
 
-      {/* UNIFIED 2D BRAIN MAP + DESTINATION LAUNCHER CONSOLE */}
+      {/* UNIFIED 2D BRAIN MAP + STUDY MATCHER CONSOLE */}
       <section className="animate-step w-full rounded-2xl border border-white/12 bg-[#101216] p-3.5 sm:p-6 space-y-5 shadow-[0_14px_44px_rgba(0,0,0,0.5)]">
         {/* Top Instrument Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1.5 font-mono-tech text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#34D399]">
             <Compass className="h-3.5 w-3.5 shrink-0" />
-            Step 1 · Touch or Drag Your Current State on the 2D Brain Map
+            Step 1 · Tap or Drag How You Feel Right Now
           </span>
           <button
             type="button"
@@ -362,9 +401,9 @@ export function HeroLandingView({
           </button>
         </div>
 
-        {/* Main 2-Column Studio Split on Desktop (Brain Map Left + Destination & Trajectory Right) */}
+        {/* Main 2-Column Studio Split on Desktop */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
-          {/* LEFT (7 cols): Interactive 2D Russell Circumplex Brain Map + Live Trajectory Vector */}
+          {/* LEFT (7 cols): Interactive 2D Russell Circumplex Brain Map */}
           <div className="min-w-0 space-y-3 lg:col-span-7">
             <div
               ref={padRef}
@@ -390,9 +429,9 @@ export function HeroLandingView({
               onPointerCancel={() => setDragging(false)}
               role="application"
               aria-label="Interactive 2D Neural Brain Map"
-              className="relative h-[340px] w-full touch-none select-none overflow-hidden rounded-xl border border-emerald-400/20 bg-[#07090B] cursor-crosshair sm:h-[390px]"
+              className="relative h-[340px] w-full touch-none select-none overflow-hidden rounded-xl border border-emerald-400/20 bg-[#07090B] cursor-crosshair sm:h-[395px]"
             >
-              {/* Radar Grid, Concentric Rings, Crosshair Lines & Live Iso-Trajectory Vector */}
+              {/* Radar Grid, Concentric Rings, Crosshair Lines & Explicit Trajectory Vector */}
               <svg
                 viewBox="0 0 100 100"
                 preserveAspectRatio="none"
@@ -418,27 +457,35 @@ export function HeroLandingView({
                 <circle cx="50" cy="50" r="18" fill="none" stroke="rgba(52,211,153,0.09)" strokeWidth="0.3" />
                 <circle cx="50" cy="50" r="36" fill="none" stroke="rgba(52,211,153,0.06)" strokeWidth="0.3" />
 
-                {/* Crosshair projection */}
-                <line x1={x1} y1="0" x2={x1} y2="100" stroke={cursorColor} strokeOpacity="0.26" strokeWidth="0.3" />
-                <line x1="0" y1={y1} x2="100" y2={y1} stroke={cursorColor} strokeOpacity="0.26" strokeWidth="0.3" />
+                {/* Crosshair projection ONLY after Step 1 is selected */}
+                {coords && (
+                  <>
+                    <line x1={x1} y1="0" x2={x1} y2="100" stroke={cursorColor} strokeOpacity="0.26" strokeWidth="0.3" />
+                    <line x1="0" y1={y1} x2="100" y2={y1} stroke={cursorColor} strokeOpacity="0.26" strokeWidth="0.3" />
+                  </>
+                )}
 
-                {/* Live Curved Iso-Trajectory Vector from Current State -> Destination Goal */}
-                <path
-                  d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
-                  fill="none"
-                  stroke="url(#heroBrainVec)"
-                  strokeWidth="0.95"
-                  strokeDasharray="2.2 1.4"
-                />
-                {wp && (
-                  <circle
-                    cx={wp.clarity}
-                    cy={100 - wp.energy}
-                    r="1.3"
-                    fill="#FBBF24"
-                    stroke="#0A0B0C"
-                    strokeWidth="0.4"
-                  />
+                {/* Trajectory Bar ONLY drawn after user explicitly selects BOTH Step 1 & Step 2 */}
+                {hasBothSteps && (
+                  <>
+                    <path
+                      d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
+                      fill="none"
+                      stroke="url(#heroBrainVec)"
+                      strokeWidth="0.95"
+                      strokeDasharray="2.2 1.4"
+                    />
+                    {wp && (
+                      <circle
+                        cx={wp.clarity}
+                        cy={100 - wp.energy}
+                        r="1.3"
+                        fill="#FBBF24"
+                        stroke="#0A0B0C"
+                        strokeWidth="0.4"
+                      />
+                    )}
+                  </>
                 )}
               </svg>
 
@@ -456,9 +503,16 @@ export function HeroLandingView({
                 Clear / Calm
               </div>
 
+              {/* Prompt pill before Step 1 is selected */}
+              {!coords && (
+                <div className="pointer-events-none absolute left-1/2 top-9 z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-emerald-400/30 bg-[#101417]/95 px-3 py-1 text-[11px] font-medium text-[#F3F1EC]">
+                  Tap or drag anywhere on the map
+                </div>
+              )}
+
               {/* Constellation Landmarks */}
               {landmarks.map((st) => {
-                const isSelected = selectedState.id === st.id;
+                const isSelected = selectedState?.id === st.id;
                 return (
                   <button
                     key={st.id}
@@ -491,68 +545,84 @@ export function HeroLandingView({
                 );
               })}
 
-              {/* Destination Beacon on Map */}
-              <div
-                style={{ left: `${x2}%`, top: `${y2}%` }}
-                className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
-              >
-                <span className="h-3.5 w-3.5 rounded-full border-2 border-[#F3F1EC] bg-[#34D399] shadow-[0_0_12px_rgba(52,211,153,0.85)]" />
-                <span className="-mt-6 whitespace-nowrap rounded border border-emerald-400/40 bg-[#0B1210]/95 px-1.5 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
-                  ★ {activeGoalMeta.title}
-                </span>
-              </div>
-
-              {/* Active Draggable Reticle ("NOW") */}
-              <div
-                style={{
-                  left: `${x1}%`,
-                  top: `${y1}%`,
-                  transition: dragging ? 'none' : 'left 180ms ease-out, top 180ms ease-out',
-                }}
-                className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
-              >
-                <span
-                  className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#F3F1EC] shadow-[0_0_14px_rgba(0,0,0,0.7)]"
-                  style={{ backgroundColor: cursorColor }}
+              {/* Destination Beacon ONLY when user explicitly chose Step 2 */}
+              {destCoords && activeGoalMeta && (
+                <div
+                  style={{ left: `${x2}%`, top: `${y2}%` }}
+                  className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
                 >
-                  <Crosshair className="h-3.5 w-3.5 text-[#0A0B0C]" />
-                </span>
-              </div>
+                  <span className="h-3.5 w-3.5 rounded-full border-2 border-[#F3F1EC] bg-[#34D399] shadow-[0_0_12px_rgba(52,211,153,0.85)]" />
+                  <span className="-mt-6 whitespace-nowrap rounded border border-emerald-400/40 bg-[#0B1210]/95 px-1.5 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
+                    ★ {activeGoalMeta.title}
+                  </span>
+                </div>
+              )}
+
+              {/* Active Draggable Reticle ("NOW") ONLY after Step 1 is selected */}
+              {coords && (
+                <div
+                  style={{
+                    left: `${x1}%`,
+                    top: `${y1}%`,
+                    transition: dragging ? 'none' : 'left 180ms ease-out, top 180ms ease-out',
+                  }}
+                  className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
+                >
+                  <span
+                    className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#F3F1EC] shadow-[0_0_14px_rgba(0,0,0,0.7)]"
+                    style={{ backgroundColor: cursorColor }}
+                  >
+                    <Crosshair className="h-3.5 w-3.5 text-[#0A0B0C]" />
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Pinpointed Micro-State Readout + Expandable All-19 Nuances */}
             <div className="rounded-xl border border-white/10 bg-[#0C0E11] p-3 space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: cursorColor }}
-                  />
-                  <span className="text-xs font-semibold text-[#F3F1EC] sm:text-sm">
-                    Now: {selectedState.label}
+              {selectedState && coords ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: cursorColor }}
+                    />
+                    <span className="text-xs font-semibold text-[#F3F1EC] sm:text-sm">
+                      Current State: {selectedState.label}
+                    </span>
+                  </div>
+                  <span className="font-mono-tech text-[10px] text-[#8E8E88]">
+                    Energy <strong className="text-[#34D399]">{coords.energy}%</strong> · Clarity{' '}
+                    <strong className="text-[#F3F1EC]">{coords.clarity}%</strong>
                   </span>
                 </div>
-                <span className="font-mono-tech text-[10px] text-[#8E8E88]">
-                  Energy <strong className="text-[#34D399]">{coords.energy}%</strong> · Clarity{' '}
-                  <strong className="text-[#F3F1EC]">{coords.clarity}%</strong>
-                </span>
-              </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-[#A3A39E]">
+                    No current state selected yet — tap the map above or pick a state below:
+                  </span>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2 text-[10px]">
                 <span className="text-[#7E7E78]">
-                  {showAllStates ? `All ${NEURAL_MICRO_STATES.length} states:` : 'Nearby nuances:'}
+                  {showAllStates
+                    ? `All ${NEURAL_MICRO_STATES.length} states:`
+                    : selectedState
+                      ? 'Refine to a nearby nuance:'
+                      : 'Quick states:'}
                 </span>
                 <button
                   type="button"
                   onClick={() => setShowAllStates((v) => !v)}
                   className="font-medium text-[#34D399] hover:text-emerald-300"
                 >
-                  {showAllStates ? 'Show nearby only' : `All ${NEURAL_MICRO_STATES.length} states`}
+                  {showAllStates ? 'Show fewer' : `All ${NEURAL_MICRO_STATES.length} states`}
                 </button>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {(showAllStates ? NEURAL_MICRO_STATES : nearbyStates).map((st) => {
-                  const active = selectedState.id === st.id;
+                  const active = selectedState?.id === st.id;
                   return (
                     <button
                       key={st.id}
@@ -572,94 +642,141 @@ export function HeroLandingView({
             </div>
           </div>
 
-          {/* RIGHT (5 cols): Step 2 Destination Selector + Live Trajectory & 1-Click Play */}
-          <div className="flex flex-col justify-between space-y-3.5 lg:col-span-5">
+          {/* RIGHT (5 cols): Step 2 Destination + Session Duration + Find Scientific Studies CTA */}
+          <div className="flex min-w-0 flex-col justify-between space-y-3.5 lg:col-span-5">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono-tech text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#F3F1EC]">
-                  Step 2 · Where do you want to go?
+                  Step 2 · Where Do You Want to Go?
                 </span>
-                <span className="font-mono-tech text-[9.5px] text-[#8E8E88]">Tap to play</span>
+                {selectedGoal && (
+                  <span className="font-mono-tech text-[9.5px] text-[#34D399]">Selected ✓</span>
+                )}
               </div>
 
               <div className="space-y-2">
                 {GOAL_CARDS.map((goal) => {
                   const active = goal.target === selectedGoal;
-                  const isRec = goal.target === selectedState.suggestedTarget;
                   return (
                     <button
                       key={goal.target}
                       type="button"
-                      onMouseEnter={() => setSelectedGoal(goal.target)}
-                      onClick={() => {
-                        setSelectedGoal(goal.target);
-                        triggerLaunch(goal.target);
-                      }}
+                      onClick={() => handleSelectGoal(goal.target, goal.defaultMin)}
                       className={`group flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
                         active
-                          ? 'border-emerald-400/60 bg-[#16201D] text-[#F3F1EC]'
-                          : 'border-white/[0.08] bg-[#14161B] text-[#D4D4CE] hover:border-emerald-400/45 hover:bg-[#171B20]'
+                          ? 'border-emerald-400/70 bg-[#16231E] text-[#F3F1EC] shadow-[0_0_18px_rgba(52,211,153,0.12)]'
+                          : 'border-white/[0.08] bg-[#14161B] text-[#D4D4CE] hover:border-emerald-400/40 hover:bg-[#171B20]'
                       }`}
                     >
                       <div className="min-w-0 space-y-0.5">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-xs font-semibold text-[#F3F1EC] sm:text-sm">
-                            {goal.title}
-                          </span>
-                          {isRec && (
-                            <span className="rounded border border-emerald-400/35 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
-                              Best Match
-                            </span>
-                          )}
+                        <div className="text-xs font-semibold text-[#F3F1EC] sm:text-sm">
+                          {goal.title}
                         </div>
                         <div className="truncate text-[11px] text-[#8E8E88]">{goal.sub}</div>
                       </div>
 
-                      <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-emerald-400/35 bg-emerald-400/12 px-2.5 py-1 font-mono-tech text-[10px] font-bold text-[#34D399] transition group-hover:bg-[#34D399] group-hover:text-[#0A0B0C]">
-                        <Play className="h-2.5 w-2.5 fill-current" />
-                        Play
+                      <span
+                        className={`inline-flex shrink-0 items-center rounded-lg border px-2.5 py-1 font-mono-tech text-[10px] font-semibold transition ${
+                          active
+                            ? 'border-emerald-400 bg-[#34D399] text-[#0A0B0C]'
+                            : 'border-white/12 bg-[#0E1014] text-[#A3A39E] group-hover:border-emerald-400/40 group-hover:text-[#34D399]'
+                        }`}
+                      >
+                        {active ? 'Target ✓' : 'Select'}
                       </span>
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            {/* Live Computed Protocol Card + Primary CTA */}
-            <div className="rounded-xl border border-emerald-400/30 bg-[#0B0E0D] p-3.5 space-y-3">
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center justify-between gap-1.5">
-                  <span className="font-mono-tech text-[9.5px] uppercase tracking-wider text-[#8E8E88]">
-                    Computed Trajectory
-                  </span>
-                  {preview.isIsoBridge && (
-                    <span className="inline-flex items-center gap-1 rounded border border-amber-400/40 bg-amber-400/12 px-1.5 py-0.5 font-mono-tech text-[9px] font-semibold text-amber-200">
-                      <ShieldCheck className="h-2.5 w-2.5" />
-                      2-Stage Iso-Bridge
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
-                  <span>{selectedState.shortLabel}</span>
-                  <ArrowRight className="h-3.5 w-3.5 text-[#34D399]" />
-                  <span className="text-[#34D399]">{activeGoalMeta.title}</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono-tech text-[10.5px] text-[#A3A39E]">
-                  <span className="text-[#34D399]">{preview.hzSummary}</span>
-                  <span className="text-white/20">·</span>
-                  <span className="text-[#F3F1EC]">{preview.effectLabel}</span>
-                  <span className="text-white/20">·</span>
-                  <span>{preview.genreLabel}</span>
+              {/* Compact Session Duration Selector */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
+                  Session length:
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {DURATION_CHOICES.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setDurationTouched(true);
+                        setDurationMin(m);
+                      }}
+                      className={`rounded-lg border px-2.5 py-1 font-mono-tech text-[10.5px] font-semibold transition ${
+                        durationMin === m
+                          ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
+                          : 'border-white/[0.08] bg-[#14161B] text-[#8E8E88] hover:border-white/25 hover:text-[#D4D4CE]'
+                      }`}
+                    >
+                      {m}m
+                    </button>
+                  ))}
                 </div>
               </div>
+            </div>
+
+            {/* Step 3: Live Trajectory Summary + Find Peer-Reviewed Studies CTA */}
+            <div className="rounded-xl border border-emerald-400/30 bg-[#0B0E0D] p-3.5 space-y-3">
+              {preview && selectedState && activeGoalMeta ? (
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <span className="inline-flex items-center gap-1 font-mono-tech text-[9.5px] uppercase tracking-wider text-[#34D399]">
+                      <BookOpen className="h-3 w-3" />
+                      Ready to Match Peer-Reviewed Studies
+                    </span>
+                    {preview.isIsoBridge && (
+                      <span className="inline-flex items-center gap-1 rounded border border-amber-400/40 bg-amber-400/12 px-1.5 py-0.5 font-mono-tech text-[9px] font-semibold text-amber-200">
+                        <ShieldCheck className="h-2.5 w-2.5" />
+                        2-Stage Iso-Bridge
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                    <span>{selectedState.shortLabel}</span>
+                    <ArrowRight className="h-3.5 w-3.5 text-[#34D399]" />
+                    <span className="text-[#34D399]">{activeGoalMeta.title}</span>
+                    <span className="font-mono-tech text-[10.5px] font-normal text-[#8E8E88]">
+                      ({durationMin} min)
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono-tech text-[10.5px] text-[#A3A39E]">
+                    <span className="text-[#34D399]">{preview.hzSummary}</span>
+                    <span className="text-white/20">·</span>
+                    <span className="text-[#F3F1EC]">{preview.effectLabel}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1 text-xs text-[#A3A39E]">
+                  <div className="font-mono-tech text-[9.5px] uppercase tracking-wider text-[#8E8E88]">
+                    Scientific Study Matcher (PubMed + OpenAlex + DOI)
+                  </div>
+                  <p className="leading-relaxed">
+                    {!selectedState
+                      ? 'Select how you feel on the 2D Brain Map (Step 1), then pick where you want to go (Step 2).'
+                      : `Current state: ${selectedState.label}. Now choose your target destination in Step 2 above to plot your trajectory and find matching studies.`}
+                  </p>
+                </div>
+              )}
+
+              {stepError && (
+                <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-2.5 py-1.5 text-[11px] font-medium text-amber-200">
+                  {stepError}
+                </div>
+              )}
 
               <button
                 type="button"
-                onClick={() => triggerLaunch(selectedGoal)}
-                className="btn-aurora flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold"
+                onClick={handleDiscoverStudies}
+                className={`flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold transition ${
+                  hasBothSteps
+                    ? 'btn-aurora'
+                    : 'border border-emerald-400/35 bg-emerald-500/12 text-[#F3F1EC] hover:border-emerald-400/60 hover:bg-emerald-500/20'
+                }`}
               >
-                <Play className="h-4 w-4 shrink-0 fill-[#0A0B0C]" />
-                <span>Listen Live · Start Session</span>
+                <Search className="h-4 w-4 shrink-0" />
+                <span>Find Scientific Studies &amp; Build Sound</span>
+                <ArrowRight className="h-4 w-4 shrink-0" />
               </button>
             </div>
           </div>
@@ -680,7 +797,7 @@ export function HeroLandingView({
               className="inline-flex items-center gap-1 font-medium text-[#D4D4CE] transition hover:text-[#34D399]"
             >
               <SlidersHorizontal className="h-3.5 w-3.5 text-[#34D399]" />
-              <span>Pick Music Style &amp; Duration First</span>
+              <span>Full 4-Step Studio Setup</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
             <button
@@ -689,47 +806,47 @@ export function HeroLandingView({
               className="inline-flex items-center gap-1 font-medium text-[#34D399] transition hover:text-emerald-300"
             >
               <FlaskConical className="h-3.5 w-3.5" />
-              <span>Browse Published Studies</span>
+              <span>Browse Study Lab Directly</span>
             </button>
           </div>
         </div>
       </section>
 
-      {/* Live Dual-Trace Oscilloscope Strip */}
-      <HeroScopeStrip onStart={() => triggerLaunch(selectedGoal)} />
+      {/* Live Dual-Trace Oscilloscope Demo Strip */}
+      <HeroScopeStrip onStart={() => onInstantPlay('focus_lofi')} />
 
       {/* 3-Column Instrument Spec Grid */}
       <section className="animate-rise delay-150 grid w-full grid-cols-1 divide-y divide-white/[0.08] rounded-2xl border border-white/10 bg-[#0E0F12] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <div className="p-5 space-y-2">
           <div className="font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#34D399]">
-            01 / 2D Brain Map Start
+            01 / Peer-Reviewed Studies First
           </div>
-          <h2 className="text-sm font-semibold text-[#F3F1EC]">Calibrated From Second 1</h2>
+          <h2 className="text-sm font-semibold text-[#F3F1EC]">Matched From PubMed &amp; DOIs</h2>
           <p className="text-xs leading-relaxed text-[#A3A39E]">
-            Tired or distracted states launch at Max Effect (94%) for immediate lock-in, while
-            anxious or depleted minds receive a 3-minute 10 Hz stabilization bridge first.
+            Before a single note plays, you inspect the exact peer-reviewed acoustic studies matched
+            to shift your brain from your current coordinates to your chosen goal.
           </p>
         </div>
 
         <div className="p-5 space-y-2">
           <div className="font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#34D399]">
-            02 / Measurable Signal
+            02 / Iso-Principle Calibration
           </div>
-          <h2 className="text-sm font-semibold text-[#F3F1EC]">3-Way Layer Monitor &amp; Scope</h2>
+          <h2 className="text-sm font-semibold text-[#F3F1EC]">36%–94% Effect &amp; Iso-Bridge</h2>
           <p className="text-xs leading-relaxed text-[#A3A39E]">
-            Compare Nootropic Mix, isolated Science Only, and Plain Music in real time on our
-            built-in Y(t) and X/Y Lissajous oscilloscope.
+            Tired or distracted states launch at Max Effect (94%), while stressed or anxious states
+            stabilize for 3 minutes at 10 Hz Alpha before gliding into Focus.
           </p>
         </div>
 
         <div className="p-5 space-y-2">
           <div className="font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#34D399]">
-            03 / 10 Styles + Endless
+            03 / 2-Layer Fusion
           </div>
-          <h2 className="text-sm font-semibold text-[#F3F1EC]">Key-Locked With Real Music</h2>
+          <h2 className="text-sm font-semibold text-[#F3F1EC]">Science + Your Preferred Music</h2>
           <p className="text-xs leading-relaxed text-[#A3A39E]">
-            Every neural carrier automatically tunes to the musical root of Lo-Fi, Deep Electronic,
-            Solo Piano, Jazz, Dub Reggae, Bossa Nova, Strings, or Soft Rain.
+            Swap freely between Lo-Fi, Deep Electronic, Solo Piano, Jazz, Dub Reggae, Acoustic, or
+            Soft Rain, and isolate Layer 1 vs Layer 2 anytime on the live oscilloscope.
           </p>
         </div>
       </section>
