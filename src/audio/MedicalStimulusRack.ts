@@ -835,6 +835,11 @@ export class MedicalStimulusRack {
     this.refreshLevels(0.065);
   }
 
+  public setControlTrial(flag: boolean): void {
+    this.isControlTrial = flag;
+    this.refreshLevels(0.065);
+  }
+
   public setModMultiplier(mult: number): void {
     this.modMult = Math.max(0, Math.min(1.65, mult));
     this.refreshLevels();

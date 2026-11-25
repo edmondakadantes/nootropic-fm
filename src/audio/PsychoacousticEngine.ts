@@ -755,7 +755,7 @@ export class PsychoacousticEngine {
 
     const musicAuditionGain = ctx.createGain();
     musicAuditionGain.gain.setValueAtTime(
-      initMonitorMode === 'science_only' ? 0 : 1.0,
+      initMonitorMode === 'science_only' ? 0 : initMonitorMode === 'music_only' ? 1.0 : 0.9,
       ctx.currentTime
     );
     musicAuditionGain.connect(spectralPocketNotch);
@@ -1382,9 +1382,9 @@ export class PsychoacousticEngine {
     // In Nootropic Mix (full_mix), blend 94%-pulsed key-locked open-fifth harmonic AM carrier underneath music
     // so Layer 1 + Layer 2 clearly overlap and remain unmistakably audible even across sparse bass/pluck bars
     const baseDepth = Math.max(0.18, Math.min(0.65, this.studySpec.entrainment.modulationDepth || 0.36));
-    const speakerScale = this.params?.speakerSafeEQ ? 0.72 : 1.0;
-    const raw = 0.22 * (0.58 + baseDepth) * this.modDepthMultiplier * activePhaseFactor * speakerScale;
-    return Number(Math.min(0.34, Math.max(0, raw)).toFixed(4));
+    const speakerScale = this.params?.speakerSafeEQ ? 0.78 : 1.0;
+    const raw = 0.27 * (0.6 + baseDepth) * this.modDepthMultiplier * activePhaseFactor * speakerScale;
+    return Number(Math.min(0.38, Math.max(0, raw)).toFixed(4));
   }
 
   private computeActiveAmGainPair(nominalDepth: number): { bias: number; swing: number } {
@@ -1543,6 +1543,15 @@ export class PsychoacousticEngine {
    * - 'science_only': 100% Isolated Layer 1 scientific wave & noise (0% music bleed)
    * - 'music_only': 100% Raw Layer 2 music only (0% scientific modulation, 0% carrier, 0% noise)
    */
+  public setControlTrial(flag: boolean): void {
+    this.isControlTrial = flag;
+    this.stimulusRack.setControlTrial(flag);
+    this.syncBand2Flattener();
+    if (this.isPlaying) {
+      this.updateElapsed(this.elapsedSec, 0.065);
+    }
+  }
+
   public setLayerMonitorMode(mode: LayerMonitorMode): void {
     this.layerMonitorMode = mode;
     if (!this.ctx) return;
@@ -1550,7 +1559,8 @@ export class PsychoacousticEngine {
     const muteMusic = mode === 'science_only' || this.carrierMode === 'pure_stimulus';
     const muteScience = mode === 'music_only';
 
-    smoothSetParam(this.musicAuditionGain?.gain, muteMusic ? 0 : 1.0, now, 0.065);
+    const targetMusicGain = muteMusic ? 0 : muteScience ? 1.0 : 0.9;
+    smoothSetParam(this.musicAuditionGain?.gain, targetMusicGain, now, 0.065);
     if (this.cleanSubBus) {
       const wantSub = this.carrierMode === 'generative_live' && !muteMusic;
       smoothSetParam(this.cleanSubBus.gain, wantSub ? 0.9 : 0, now, 0.065);

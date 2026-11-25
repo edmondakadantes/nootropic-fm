@@ -1825,6 +1825,7 @@ export default {
           ageOverride?: number;
           requestedGenre?: MusicGenreChoice;
           customGenreInput?: string;
+          blindControlOptIn?: boolean;
         };
 
         let profile: UserProfile;
@@ -2061,6 +2062,7 @@ export default {
             profileGenreStats,
             cohortArmGenreStats,
             recentControlFlags,
+            allowControlTrial: Boolean(body.blindControlOptIn) && profile.planTier !== 'pro',
             returnBonusAwarded,
           }),
           livePubMedPapers,

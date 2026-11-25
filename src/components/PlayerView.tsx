@@ -443,7 +443,7 @@ export function PlayerView({
           recommendation.params,
           recommendation.plannedDurationMin,
           `${recommendation.arm.name} · ${titleLabel}`,
-          recommendation.isControlTrial,
+          isPro ? false : recommendation.isControlTrial,
           recommendation.executableSpec,
           initialCarrier,
           API_BASE,
@@ -746,7 +746,7 @@ export function PlayerView({
         recommendation.params,
         recommendation.plannedDurationMin,
         recommendation.arm.name,
-        recommendation.isControlTrial,
+        isPro ? false : recommendation.isControlTrial,
         recommendation.executableSpec,
         carrierMode,
         API_BASE
@@ -858,12 +858,13 @@ export function PlayerView({
       return;
     }
     setLayerMonitor(nextMode);
+    engineRef.current?.setControlTrial(false);
     if (!audioStarted) {
       await engineRef.current?.start(
         recommendation.params,
         recommendation.plannedDurationMin,
         recommendation.arm.name,
-        recommendation.isControlTrial,
+        false,
         recommendation.executableSpec,
         initialCarrier === 'pure_stimulus' ? 'studio_library' : initialCarrier,
         API_BASE
@@ -1046,6 +1047,7 @@ export function PlayerView({
     const clamped = Number(Math.max(0.3, Math.min(1.55, targetMult)).toFixed(2));
     const delta = Number((clamped - modMult).toFixed(2));
     setModMult(clamped);
+    engineRef.current?.setControlTrial(false);
     if (layerMonitor === 'music_only') {
       setLayerMonitor('full_mix');
       engineRef.current?.setLayerMonitorMode('full_mix');
