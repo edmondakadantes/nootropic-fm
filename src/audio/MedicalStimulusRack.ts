@@ -12,7 +12,7 @@ import {
   normalizeStereoBufferRms,
 } from './dspMath';
 
-export type GammaStimulusMode = 'harmonic_mbi' | 'clinical_clicks';
+export type GammaStimulusMode = 'harmonic_mbi' | 'gamma_chirp' | 'clinical_clicks';
 
 export interface StimulusTelemetry {
   entrainmentType: EntrainmentType;
@@ -327,6 +327,7 @@ export class MedicalStimulusRack {
         const rateHz = spec.entrainment.frequencyHz || 40;
         const duty = spec.entrainment.dutyCycle ?? 0.048;
         const useHarmonicMbi = this.gammaMode === 'harmonic_mbi';
+        const useChirp = this.gammaMode === 'gamma_chirp';
         const carrierHz = useHarmonicMbi
           ? Math.round(computeHarmonicCarrierHz(spec.music.rootMidi, spec.music.tuningA4Hz, 220))
           : spec.entrainment.carrierLeftHz ??
@@ -341,11 +342,11 @@ export class MedicalStimulusRack {
           });
           const lp = ctx.createBiquadFilter();
           lp.type = 'lowpass';
-          lp.frequency.value = useHarmonicMbi ? 2200 : Math.min(3600, carrierHz * 4.5);
+          lp.frequency.value = useHarmonicMbi ? 2200 : useChirp ? 3400 : Math.min(3600, carrierHz * 4.5);
           lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
           synth.port.postMessage({
             type: 'config',
-            mode: useHarmonicMbi ? 'gamma_mbi' : 'gamma_clicks',
+            mode: useHarmonicMbi ? 'gamma_mbi' : useChirp ? 'gamma_chirp' : 'gamma_clicks',
             rateHz,
             startRateHz: rateHz,
             rampSec: 0,
@@ -362,7 +363,7 @@ export class MedicalStimulusRack {
           const buf = createPeriodicPulseBuffer(ctx, {
             pulseRateHz: rateHz,
             carrierHz,
-            dutyCycle: useHarmonicMbi ? 0.45 : duty,
+            dutyCycle: useHarmonicMbi ? 0.45 : useChirp ? 0.32 : duty,
             mode: 'gamma_click',
           });
           const src = ctx.createBufferSource();
@@ -381,7 +382,9 @@ export class MedicalStimulusRack {
         }
         this.carrierLabel = useHarmonicMbi
           ? `${rateHz} Hz Gamma-MBI Harmonic @ ${carrierHz} Hz`
-          : `${rateHz} Hz GENUS · ${(duty * (1000 / rateHz)).toFixed(1)} ms @ ${carrierHz} Hz (Lab)`;
+          : useChirp
+            ? `${rateHz} Hz Gamma Chirp (8 ms Sweep @ ${carrierHz} Hz)`
+            : `${rateHz} Hz GENUS · ${(duty * (1000 / rateHz)).toFixed(1)} ms @ ${carrierHz} Hz (Lab)`;
       } else if (eType === 'isochronic_pulse') {
         const rateHz = effectiveTargetHz || 14;
         const carrierHz =
@@ -632,6 +635,7 @@ export class MedicalStimulusRack {
     const rateHz = this.spec.entrainment.frequencyHz || 40;
     const duty = this.spec.entrainment.dutyCycle ?? 0.048;
     const useMbi = mode === 'harmonic_mbi';
+    const useChirp = mode === 'gamma_chirp';
     const carrierHz = useMbi
       ? Math.round(computeHarmonicCarrierHz(this.spec.music.rootMidi, this.spec.music.tuningA4Hz, 220))
       : this.spec.entrainment.carrierLeftHz ??
@@ -640,21 +644,23 @@ export class MedicalStimulusRack {
     if (this.clinicalSynthNode) {
       this.clinicalSynthNode.port.postMessage({
         type: 'setMode',
-        mode: useMbi ? 'gamma_mbi' : 'gamma_clicks',
+        mode: useMbi ? 'gamma_mbi' : useChirp ? 'gamma_chirp' : 'gamma_clicks',
         bluetoothSafe: this.bluetoothSafe,
       });
       this.clinicalSynthNode.port.postMessage({ type: 'retune', carrierHz });
     }
     if (this.clinicalSynthWarmLp && this.ctx) {
       this.clinicalSynthWarmLp.frequency.setTargetAtTime(
-        useMbi ? 2200 : Math.min(3600, carrierHz * 4.5),
+        useMbi ? 2200 : useChirp ? 3400 : Math.min(3600, carrierHz * 4.5),
         this.ctx.currentTime,
         0.15
       );
     }
     this.carrierLabel = useMbi
       ? `${rateHz} Hz Gamma-MBI Harmonic @ ${carrierHz} Hz`
-      : `${rateHz} Hz GENUS · ${(duty * (1000 / rateHz)).toFixed(1)} ms @ ${carrierHz} Hz (Lab)`;
+      : useChirp
+        ? `${rateHz} Hz Gamma Chirp (8 ms Sweep @ ${carrierHz} Hz)`
+        : `${rateHz} Hz GENUS · ${(duty * (1000 / rateHz)).toFixed(1)} ms @ ${carrierHz} Hz (Lab)`;
     this.refreshLevels(0.18);
   }
 

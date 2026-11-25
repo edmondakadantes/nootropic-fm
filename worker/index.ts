@@ -2971,6 +2971,49 @@ export default {
         return json({ ok: true, medianMs: Math.round(medianMs), lapses, meanInvRt }, 200, request);
       }
 
+      // POST /api/session/biomarkers — Stores optional 15s Continuation Tapping CV & BLE HRV RMSSD/LF
+      if (url.pathname === '/api/session/biomarkers' && request.method === 'POST') {
+        const body = (await request.json()) as {
+          sessionId: string;
+          tappingCvPct?: number;
+          tappingMeanItiMs?: number;
+          hrvRmssdMs?: number;
+          hrvLfRatio?: number;
+        };
+        if (!body.sessionId || body.sessionId.startsWith('eph_')) {
+          return json({ ok: true, ephemeral: true }, 200, request);
+        }
+        const tapCv =
+          typeof body.tappingCvPct === 'number' && Number.isFinite(body.tappingCvPct) && body.tappingCvPct >= 0 && body.tappingCvPct <= 100
+            ? Number(body.tappingCvPct.toFixed(2))
+            : null;
+        const tapIti =
+          typeof body.tappingMeanItiMs === 'number' && Number.isFinite(body.tappingMeanItiMs) && body.tappingMeanItiMs >= 140 && body.tappingMeanItiMs <= 2500
+            ? Number(body.tappingMeanItiMs.toFixed(1))
+            : null;
+        const hrvRmssd =
+          typeof body.hrvRmssdMs === 'number' && Number.isFinite(body.hrvRmssdMs) && body.hrvRmssdMs >= 2 && body.hrvRmssdMs <= 400
+            ? Number(body.hrvRmssdMs.toFixed(1))
+            : null;
+        const hrvLf =
+          typeof body.hrvLfRatio === 'number' && Number.isFinite(body.hrvLfRatio) && body.hrvLfRatio >= 0 && body.hrvLfRatio <= 1
+            ? Number(body.hrvLfRatio.toFixed(3))
+            : null;
+
+        await env.DB.prepare(
+          `UPDATE sessions SET
+            tapping_cv_pct = COALESCE(?, tapping_cv_pct),
+            tapping_mean_iti_ms = COALESCE(?, tapping_mean_iti_ms),
+            hrv_rmssd_ms = COALESCE(?, hrv_rmssd_ms),
+            hrv_lf_ratio = COALESCE(?, hrv_lf_ratio)
+           WHERE id = ?`
+        )
+          .bind(tapCv, tapIti, hrvRmssd, hrvLf, body.sessionId)
+          .run();
+
+        return json({ ok: true }, 200, request);
+      }
+
       // POST /api/session/debrief — Explicit 10s Debrief (supersedes any prior implicit update via delta-replacement!)
       if (url.pathname === '/api/session/debrief' && request.method === 'POST') {
         const allowed = await checkDailyRateLimit(env.DB, request, 'debrief', 45);

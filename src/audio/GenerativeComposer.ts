@@ -139,8 +139,11 @@ export class GenerativeComposer {
   private activePadGains: GainNode[] = [];
   private filterLfo: OscillatorNode | null = null;
   private stepTimer: number | null = null;
+  private clockWorkletNode: AudioWorkletNode | null = null;
+  private clockSinkGain: GainNode | null = null;
   private clockWorker: Worker | null = null;
   private clockWorkerUrl: string | null = null;
+  private workletsReady = false;
   private chordCleanupTimers = new Set<number>();
   private sampler = new StudioSampler();
   private usingRealSamples = false;
@@ -182,6 +185,7 @@ export class GenerativeComposer {
     speakerSafeEQ: boolean;
     sampleApiBase?: string;
     deferStart?: boolean;
+    workletsReady?: boolean;
   }): void {
     this.stop();
     const {
@@ -194,8 +198,10 @@ export class GenerativeComposer {
       speakerSafeEQ,
       sampleApiBase,
       deferStart = false,
+      workletsReady = false,
     } = opts;
     this.ctx = ctx;
+    this.workletsReady = workletsReady;
     this.musicSpec = structuredClone(musicSpec);
     this.palette = musicSpec.instrumentPalette;
     this.speakerSafeEQ = speakerSafeEQ;
@@ -310,7 +316,29 @@ export class GenerativeComposer {
 
   private startSchedulerClock(): void {
     this.stopSchedulerClock();
-    // Web Worker timer avoids browser 1000ms/60000ms background tab setInterval throttling
+    // 1. Primary v7.1 AudioWorklet clock (driven by the audio rendering thread — immune to tab/lock throttling)
+    if (this.workletsReady && this.ctx) {
+      try {
+        const clockNode = new AudioWorkletNode(this.ctx, 'nootropic-clock-processor', {
+          numberOfInputs: 0,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+          processorOptions: { intervalMs: 40 },
+        });
+        const silentSink = this.ctx.createGain();
+        silentSink.gain.value = 0;
+        clockNode.connect(silentSink);
+        silentSink.connect(this.ctx.destination);
+        clockNode.port.onmessage = () => this.scheduleLiveSteps();
+        clockNode.port.postMessage('start');
+        this.clockWorkletNode = clockNode;
+        this.clockSinkGain = silentSink;
+        return;
+      } catch {
+        // graceful fallback to Web Worker timer below
+      }
+    }
+    // 2. Fallback Web Worker timer avoids browser 1000ms background tab setInterval throttling
     if (typeof Worker !== 'undefined') {
       try {
         const workerCode =
@@ -331,6 +359,24 @@ export class GenerativeComposer {
   }
 
   private stopSchedulerClock(): void {
+    if (this.clockWorkletNode) {
+      try {
+        this.clockWorkletNode.port.postMessage('stop');
+        this.clockWorkletNode.port.onmessage = null;
+        this.clockWorkletNode.disconnect();
+      } catch {
+        // ignore
+      }
+      this.clockWorkletNode = null;
+    }
+    if (this.clockSinkGain) {
+      try {
+        this.clockSinkGain.disconnect();
+      } catch {
+        // ignore
+      }
+      this.clockSinkGain = null;
+    }
     if (this.clockWorker) {
       try {
         this.clockWorker.postMessage('stop');

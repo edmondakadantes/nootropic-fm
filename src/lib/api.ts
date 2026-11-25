@@ -344,6 +344,18 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  saveSessionBiomarkers: (payload: {
+    sessionId: string;
+    tappingCvPct?: number;
+    tappingMeanItiMs?: number;
+    hrvRmssdMs?: number;
+    hrvLfRatio?: number;
+  }) =>
+    apiFetch<{ ok: boolean }>('/api/session/biomarkers', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   searchMedicalStudies: (query: string) =>
     apiFetch<{
       results: Array<{

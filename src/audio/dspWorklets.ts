@@ -1232,6 +1232,27 @@ class NootropicClinicalSynth extends AudioWorkletProcessor {
         const val = tone * Math.max(0, env);
         l = val;
         r = val;
+      } else if (this.mode === 'gamma_chirp') {
+        // Emerging 40 Hz upward logarithmic chirp (8 ms core / 10 ms BT-safe, Blackman-Harris window)
+        this.modPhase = (this.modPhase + this.curRateHz * invFs) % 1.0;
+        const durSec = this.bluetoothSafe ? 0.010 : 0.008;
+        const duty = Math.max(0.08, Math.min(0.48, durSec * this.curRateHz));
+        let val = 0;
+        if (this.modPhase < duty) {
+          const u = this.modPhase / duty;
+          const env =
+            0.35875 -
+            0.48829 * Math.cos(TWO_PI * u) +
+            0.14128 * Math.cos(2 * TWO_PI * u) -
+            0.01168 * Math.cos(3 * TWO_PI * u);
+          const f0 = Math.max(180, this.curCarrierHz * 0.75);
+          const f1 = Math.min(3200, Math.max(f0 * 2.0, this.curCarrierHz * 3.8));
+          const k = f1 / f0;
+          const phaseCycles = (f0 * durSec * (Math.pow(k, u) - 1.0)) / Math.log(k);
+          val = Math.sin(TWO_PI * phaseCycles) * Math.max(0, env) * 0.92;
+        }
+        l = val;
+        r = val;
       } else if (this.mode === 'isochronic') {
         this.modPhase = (this.modPhase + this.curRateHz * invFs) % 1.0;
         this.phaseL = (this.phaseL + this.curCarrierHz * invFs) % 1.0;
@@ -1537,7 +1558,51 @@ registerProcessor('nootropic-env-flattener', NootropicEnvFlattener);
 registerProcessor('nootropic-zdf-tilt', NootropicZdfTilt);
 registerProcessor('nootropic-clinical-synth', NootropicClinicalSynth);
 registerProcessor('nootropic-huggins-processor', NootropicHugginsProcessor);
+/**
+ * Sample-Accurate Audio-Thread Scheduler Clock (v7.1):
+ * Drives GenerativeComposer on the audio rendering thread so hidden browser tabs
+ * and locked mobile screens never stall 40 ms rhythmic scheduling.
+ */
+class NootropicClockProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    const opts = (options && options.processorOptions) || {};
+    const intervalMs = Math.max(10, Math.min(250, Number(opts.intervalMs) || 40));
+    this.intervalSamples = Math.max(128, Math.round((intervalMs / 1000) * sampleRate));
+    this.accum = 0;
+    this.running = true;
+    this.stopped = false;
+    this.port.onmessage = (e) => {
+      const m = e.data;
+      if (!m) return;
+      if (m === 'start' || m.type === 'start') {
+        this.running = true;
+        this.accum = this.intervalSamples;
+      } else if (m === 'stop' || m.type === 'stop') {
+        this.running = false;
+        this.stopped = true;
+      }
+    };
+  }
+
+  process(_inputs, outputs) {
+    const out = outputs[0];
+    if (out && out[0]) out[0].fill(0);
+    if (out && out[1]) out[1].fill(0);
+    if (this.stopped) return false;
+    if (!this.running) return true;
+    const blockLen = out && out[0] ? out[0].length : 128;
+    this.accum += blockLen;
+    if (this.accum >= this.intervalSamples) {
+      this.accum %= this.intervalSamples;
+      this.port.postMessage({ type: 'tick', audioTime: currentTime });
+    }
+    return true;
+  }
+}
+
 registerProcessor('nootropic-stem-player', NootropicStemPlayerProcessor);
+registerProcessor('nootropic-clock-processor', NootropicClockProcessor);
 `;
 
 const loadedWorkletContexts = new WeakMap<BaseAudioContext, Promise<boolean>>();

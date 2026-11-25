@@ -11,6 +11,7 @@ import {
   Crown,
   ExternalLink,
   Headphones,
+  HeartPulse,
   Loader2,
   Lock,
   Music2,
@@ -43,6 +44,9 @@ import {
   type EngineTelemetry,
   type LayerMonitorMode,
 } from '../audio/PsychoacousticEngine';
+import type { TappingBiomarkerResult } from '../../shared/psychometrics';
+import { BleHrvMonitor, isWebBluetoothSupported, type BleHrvState } from '../lib/bleHrv';
+import { TappingTestModal } from './TappingTestModal';
 import type { GammaStimulusMode } from '../audio/MedicalStimulusRack';
 import { API_BASE, api, saveStoredProfileAuth } from '../lib/api';
 import { HugginsCheckModal } from './HugginsCheckModal';
@@ -198,6 +202,15 @@ export function PlayerView({
   const [customGenNotice, setCustomGenNotice] = useState<string | null>(null);
   const [showPrePvt, setShowPrePvt] = useState(false);
   const [showHugginsCheck, setShowHugginsCheck] = useState(false);
+  const [showTappingCheck, setShowTappingCheck] = useState(false);
+  const [tappingResult, setTappingResult] = useState<TappingBiomarkerResult | null>(null);
+  const bleHrvRef = useRef<BleHrvMonitor | null>(null);
+  const [bleHrvState, setBleHrvState] = useState<BleHrvState>({
+    connected: false,
+    deviceName: null,
+    latestHrBpm: null,
+    metrics: null,
+  });
   const pausedForHugginsRef = useRef(false);
   const [alphaIafHz, setAlphaIafHz] = useState<number>(() =>
     estimateAgePriorIafHz(profile?.ageBand)
@@ -757,7 +770,7 @@ export function PlayerView({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return;
-      if (previewLocked || showPrePvt || showHugginsCheck) return;
+      if (previewLocked || showPrePvt || showHugginsCheck || showTappingCheck) return;
       const activeTag = (document.activeElement?.tagName ?? '').toUpperCase();
       if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT' || activeTag === 'BUTTON') {
         return;
@@ -767,7 +780,35 @@ export function PlayerView({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [previewLocked, showPrePvt, showHugginsCheck]);
+  }, [previewLocked, showPrePvt, showHugginsCheck, showTappingCheck]);
+
+  const handleToggleBleHrv = async () => {
+    if (bleHrvState.connected) {
+      bleHrvRef.current?.disconnect();
+      return;
+    }
+    if (!bleHrvRef.current) {
+      bleHrvRef.current = new BleHrvMonitor();
+    }
+    await bleHrvRef.current.connect((snap) => {
+      setBleHrvState(snap);
+      if (snap.metrics && !isEphemeral && !liveSessionId.startsWith('eph_')) {
+        void api
+          .saveSessionBiomarkers({
+            sessionId: liveSessionId,
+            hrvRmssdMs: snap.metrics.rmssdMs,
+            hrvLfRatio: snap.metrics.lfPowerRatio,
+          })
+          .catch(() => {});
+      }
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      bleHrvRef.current?.disconnect();
+    };
+  }, []);
 
   const openHugginsModal = async () => {
     pausedForHugginsRef.current = isPlaying;
@@ -1886,6 +1927,7 @@ export function PlayerView({
                   {(
                     [
                       { id: 'harmonic_mbi' as const, label: 'Harmonic Gamma-MBI' },
+                      { id: 'gamma_chirp' as const, label: '40 Hz Chirp' },
                       { id: 'clinical_clicks' as const, label: 'Lab Clicks' },
                     ]
                   ).map((opt) => (
@@ -1956,6 +1998,69 @@ export function PlayerView({
                 <Zap className="h-3.5 w-3.5 text-[#34D399]" />
                 {pvtPreMs !== null ? 'Retake' : 'Run PVT (~75s)'}
               </button>
+            </div>
+          )}
+
+          {/* Optional Extra Biomarkers: 15s Continuation Tapping CV & Web Bluetooth HRV */}
+          {!recommendation.safetyMode && (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#121417] px-3.5 py-2.5">
+                <div className="min-w-0 space-y-0.5">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                    <Activity className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                    <span className="truncate">
+                      {tappingResult
+                        ? `Tapping CV ${tappingResult.cvPct.toFixed(1)}% (${tappingResult.stabilityScore}/100)`
+                        : '15s Motor Tapping CV'}
+                    </span>
+                  </div>
+                  <p className="truncate text-[10px] text-[#8E8E88]">
+                    Synchronization-continuation rhythm stability
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTappingCheck(true)}
+                  className="shrink-0 rounded-lg border border-white/15 bg-[#181A1F] px-2.5 py-1.5 text-[11px] font-semibold text-[#F3F1EC] hover:border-emerald-400/50"
+                >
+                  {tappingResult ? 'Retest' : 'Run (15s)'}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#121417] px-3.5 py-2.5">
+                <div className="min-w-0 space-y-0.5">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                    <HeartPulse className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                    <span className="truncate">
+                      {bleHrvState.connected
+                        ? bleHrvState.metrics
+                          ? `HRV ${Math.round(bleHrvState.metrics.rmssdMs)} ms · ${Math.round(bleHrvState.metrics.meanHrBpm)} BPM`
+                          : `${bleHrvState.latestHrBpm ?? '--'} BPM · Syncing RR`
+                        : 'Web Bluetooth HRV'}
+                    </span>
+                  </div>
+                  <p className="truncate text-[10px] text-[#8E8E88]">
+                    {bleHrvState.connected && bleHrvState.metrics
+                      ? `0.1 Hz LF ratio ${(bleHrvState.metrics.lfPowerRatio * 100).toFixed(0)}%`
+                      : 'Optional chest strap (0x180D) RMSSD & LF'}
+                  </p>
+                </div>
+                {isWebBluetoothSupported() ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleToggleBleHrv()}
+                    className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                      bleHrvState.connected
+                        ? 'border-emerald-400/50 bg-emerald-500/15 text-[#34D399]'
+                        : 'border-white/15 bg-[#181A1F] text-[#F3F1EC] hover:border-emerald-400/50'
+                    }`}
+                  >
+                    {bleHrvState.connected ? 'Disconnect' : 'Connect'}
+                  </button>
+                ) : (
+                  <span className="shrink-0 font-mono-tech text-[10px] text-[#6E6E68]">Chrome/Edge</span>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -2296,6 +2401,25 @@ export function PlayerView({
         <HugginsCheckModal
           onComplete={(res) => void closeHugginsModal(res)}
           onClose={() => void closeHugginsModal()}
+        />
+      )}
+
+      {showTappingCheck && (
+        <TappingTestModal
+          targetBpm={telemetry.currentBpm > 0 ? telemetry.currentBpm : 100}
+          onComplete={(res) => {
+            setTappingResult(res);
+            if (!isEphemeral && !liveSessionId.startsWith('eph_')) {
+              void api
+                .saveSessionBiomarkers({
+                  sessionId: liveSessionId,
+                  tappingCvPct: res.cvPct,
+                  tappingMeanItiMs: res.meanItiMs,
+                })
+                .catch(() => {});
+            }
+          }}
+          onClose={() => setShowTappingCheck(false)}
         />
       )}
     </div>

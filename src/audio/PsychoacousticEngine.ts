@@ -28,6 +28,7 @@ import { ensureDspWorkletsLoaded } from './dspWorklets';
 import { GenerativeComposer } from './GenerativeComposer';
 import { LyriaRealtimeClient, type LyriaRealtimeStatus } from './LyriaRealtimeClient';
 import { createCalibratedNoiseBuffer, MedicalStimulusRack, type GammaStimulusMode } from './MedicalStimulusRack';
+import { canUseWebCodecsOpus, streamOpusIntoWorklet } from './ProgressiveStemDecoder';
 import { StereoRainBed } from './StereoRainBed';
 
 export type SessionPhase = 'entry' | 'plateau' | 'landing';
@@ -351,6 +352,8 @@ export class PsychoacousticEngine {
   private band2FlattenerNode: AudioWorkletNode | null = null;
   private amTiltNodeL: AudioNode | null = null;
   private amTiltNodeR: AudioNode | null = null;
+  private band2SpectralRotNode: BiquadFilterNode | null = null;
+  private activeStemAbort: AbortController | null = null;
   private envSinkGain: GainNode | null = null;
   private scopeFftBuf: Float32Array<ArrayBuffer> | null = null;
   private gammaMode: GammaStimulusMode = 'harmonic_mbi';
@@ -994,10 +997,24 @@ export class PsychoacousticEngine {
     }
 
     const eType = this.studySpec.entrainment.type;
+    // v7.1 Gentle Anti-Habituation Spectral Emphasis Rotation (300–1200 Hz <-> 1200–3500 Hz @ 0.0028 Hz)
+    const spectralRot = ctx.createBiquadFilter();
+    spectralRot.type = 'peaking';
+    spectralRot.frequency.setValueAtTime(950, ctx.currentTime);
+    spectralRot.Q.setValueAtTime(0.75, ctx.currentTime);
+    const allowRot =
+      amActiveForSpec &&
+      !this.isControlTrial &&
+      this.layerMonitorMode !== 'science_only' &&
+      this.carrierMode !== 'pure_stimulus';
+    spectralRot.gain.setValueAtTime(allowRot ? 1.8 : 0, ctx.currentTime);
+    midOutput.connect(spectralRot);
+    this.band2SpectralRotNode = spectralRot;
+
     if (eType === 'amplitude_modulation' || eType === 'hrv_breathing_swell' || eType === 'none') {
-      midOutput.connect(scopeModAnalyser);
+      spectralRot.connect(scopeModAnalyser);
     }
-    midOutput.connect(masterSumBus);
+    spectralRot.connect(masterSumBus);
 
     this.amGainL = amGainL;
     this.amLfoL = amLfoL;
@@ -1064,6 +1081,7 @@ export class PsychoacousticEngine {
       speakerSafeEQ: params.speakerSafeEQ,
       sampleApiBase,
       deferStart: this.carrierMode !== 'generative_live',
+      workletsReady: this.workletsReady,
     });
 
     // ─── DEDICATED PHYSICAL STEREO RAINFALL LAYER (HRV-synchronized when 0.1 Hz HRV active) ───
@@ -1496,6 +1514,14 @@ export class PsychoacousticEngine {
     if (this.studioCrossfadeTimer !== null) {
       window.clearTimeout(this.studioCrossfadeTimer);
       this.studioCrossfadeTimer = null;
+    }
+    if (this.activeStemAbort) {
+      try {
+        this.activeStemAbort.abort();
+      } catch {
+        // ignore
+      }
+      this.activeStemAbort = null;
     }
     if (this.activeStreamCleanup) {
       try {
@@ -2007,6 +2033,147 @@ export class PsychoacousticEngine {
     if (!this.ctx || !this.studioBus || !this.workletsReady || token !== this.studioLoadToken) {
       return false;
     }
+
+    const stemBpm = track.subHarmonicBpm && track.subHarmonicBpm > 0 ? track.subHarmonicBpm : nativeBpm;
+    const neuralHz = this.getActiveTargetNeuralHz();
+    const tune432Ratio = this.studySpec?.music.tuningA4Hz === 432 ? 432 / 440 : 1.0;
+    const gridRate = pickPlaybackGridRate(stemBpm, neuralHz, tune432Ratio);
+    const amActive =
+      this.studySpec?.entrainment.type === 'amplitude_modulation' && neuralHz > 0;
+
+    // Path A: Progressive WebCodecs Ogg/Opus HTTP Range streaming (<200 ms start, low RAM)
+    if (track.opusUrl && (await canUseWebCodecsOpus())) {
+      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
+        return false;
+      }
+      const ctx = this.ctx;
+      const now = ctx.currentTime;
+      const delaySec =
+        amActive && typeof track.downbeatOffsetMs === 'number' && track.downbeatOffsetMs >= 0
+          ? computeDownbeatPhaseDelaySec({
+              amOriginSec: this.amLfoOriginSec,
+              scheduleStartSec: now,
+              downbeatOffsetMs: track.downbeatOffsetMs / Math.max(0.75, gridRate.totalRate),
+              neuralHz,
+              crestCycleFraction: this.amCrestFrac,
+            })
+          : 0;
+      const delaySamples = Math.max(0, Math.round(delaySec * ctx.sampleRate));
+
+      const abortCtrl = new AbortController();
+      const stemNode = new AudioWorkletNode(ctx, 'nootropic-stem-player', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        processorOptions: {
+          sourceSampleRate: track.sampleRate || 48000,
+          delaySamples,
+        },
+      });
+      stemNode.parameters.get('playbackRate')?.setValueAtTime(gridRate.totalRate, now);
+
+      let knownTotalFrames = Infinity;
+      let streamHandle: Awaited<ReturnType<typeof streamOpusIntoWorklet>> = null;
+      let crossfadeTriggered = false;
+      const crossfadeLeadSec = 4.0;
+
+      const triggerCrossfadeOnce = () => {
+        if (crossfadeTriggered) return;
+        crossfadeTriggered = true;
+        if (this.studioCrossfadeTimer !== null) {
+          window.clearTimeout(this.studioCrossfadeTimer);
+          this.studioCrossfadeTimer = null;
+        }
+        onCrossfade();
+      };
+
+      stemNode.port.onmessage = (evt) => {
+        if (token !== this.studioLoadToken || !evt.data) return;
+        if (evt.data.type === 'need_chunk') {
+          streamHandle?.requestChunk(1);
+        } else if (evt.data.type === 'progress') {
+          const sourceFrame = Number(evt.data.sourceFrame) || 0;
+          if (Number.isFinite(knownTotalFrames)) {
+            const remainingFrames = Math.max(0, knownTotalFrames - sourceFrame);
+            const remainingSec = remainingFrames / (48000 * Math.max(0.75, gridRate.totalRate));
+            if (remainingSec <= crossfadeLeadSec) {
+              triggerCrossfadeOnce();
+            }
+          }
+        } else if (evt.data.type === 'eof') {
+          triggerCrossfadeOnce();
+        }
+      };
+
+      streamHandle = await streamOpusIntoWorklet({
+        url: track.opusUrl,
+        signal: abortCtrl.signal,
+        onChunk: (left, right) => {
+          stemNode.port.postMessage({ type: 'chunk', left, right }, [left.buffer, right.buffer]);
+        },
+        onEnd: (totFrames) => {
+          knownTotalFrames = totFrames;
+          stemNode.port.postMessage({ type: 'end' });
+        },
+      });
+
+      if (
+        streamHandle &&
+        token === this.studioLoadToken &&
+        this.ctx &&
+        this.studioBus &&
+        this.isPlaying
+      ) {
+        const startNow = this.ctx.currentTime;
+        this.clearStudioDeck(fadeSec);
+        this.composer.setStandby(true);
+        if (this.proceduralMaster && this.cleanSubBus) {
+          this.proceduralMaster.gain.setTargetAtTime(0, startNow, 0.55);
+          this.cleanSubBus.gain.setTargetAtTime(0, startNow, 0.55);
+        }
+
+        const deckGain = this.ctx.createGain();
+        deckGain.gain.setValueAtTime(0.0001, startNow);
+        deckGain.gain.exponentialRampToValueAtTime(Math.max(0.1, targetGain), startNow + fadeSec);
+        stemNode.connect(deckGain);
+        deckGain.connect(this.studioBus);
+
+        this.activeStudioSource = null;
+        this.activeWsolaNode = null;
+        this.activeWsolaMode = 'none';
+        this.activeStemPlayerNode = stemNode;
+        this.activeStemAbort = abortCtrl;
+        this.activeStudioGain = deckGain;
+        this.usingStudioAudio = true;
+        this.usingCustomTrack = false;
+        this.activeTrackName = track.name;
+        this.activeTrackKey = track.keyLabel ?? null;
+        this.activeTrackNativeBpm = stemBpm;
+        this.activeStudioAppliedBpm =
+          gridRate.targetGridBpm > 0 ? Math.round(gridRate.targetGridBpm * tune432Ratio) : 0;
+        this.activeStemCodecLabel = gridRate.isSubHarmonicLocked
+          ? '48 kHz Opus · WebCodecs Phase-Locked'
+          : '48 kHz Opus · WebCodecs';
+        this.activeStemSubHarmonicLocked = gridRate.isSubHarmonicLocked;
+        this.scheduleDeckCrossfade(165, triggerCrossfadeOnce);
+        return true;
+      }
+
+      // Clean up pre-created worklet if streaming aborted or unavailable
+      try {
+        abortCtrl.abort();
+        stemNode.port.postMessage({ type: 'stop' });
+        stemNode.port.onmessage = null;
+        stemNode.disconnect();
+      } catch {
+        // ignore
+      }
+      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
+        return false;
+      }
+    }
+
+    // Path B: Full-buffer decodeAudioData (.opus or .m4a AAC-LC fallback for Safari/iOS) -> AudioWorklet
     const decoded = await this.decodePreferredV7Stem(track);
     if (!decoded || token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
       return false;
@@ -2015,12 +2182,6 @@ export class PsychoacousticEngine {
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const buffer = decoded.buffer;
-    const stemBpm = track.subHarmonicBpm && track.subHarmonicBpm > 0 ? track.subHarmonicBpm : nativeBpm;
-    const neuralHz = this.getActiveTargetNeuralHz();
-    const tune432Ratio = this.studySpec?.music.tuningA4Hz === 432 ? 432 / 440 : 1.0;
-    const gridRate = pickPlaybackGridRate(stemBpm, neuralHz, tune432Ratio);
-    const amActive =
-      this.studySpec?.entrainment.type === 'amplitude_modulation' && neuralHz > 0;
     const delaySec =
       amActive && typeof track.downbeatOffsetMs === 'number' && track.downbeatOffsetMs >= 0
         ? computeDownbeatPhaseDelaySec({
@@ -2581,6 +2742,19 @@ export class PsychoacousticEngine {
         if (amActive) {
           this.amLfoR.frequency.setTargetAtTime(Math.max(0.5, liveAmHz), now, 0.5);
         }
+      }
+
+      if (this.band2SpectralRotNode) {
+        const allowRot =
+          amActive &&
+          !this.isControlTrial &&
+          !scienceMuted &&
+          this.layerMonitorMode !== 'science_only' &&
+          this.carrierMode !== 'pure_stimulus';
+        // Smooth 0.0028 Hz (~6-min cycle) spectral focus sweep between 600 Hz (warm low-mid) & 2050 Hz (presence)
+        const rotHz = 1325 + 725 * Math.sin(2 * Math.PI * 0.0028 * elapsedSec);
+        this.band2SpectralRotNode.frequency.setTargetAtTime(rotHz, now, 0.45);
+        this.band2SpectralRotNode.gain.setTargetAtTime(allowRot ? 1.8 : 0, now, 0.45);
       }
     }
 
