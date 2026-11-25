@@ -313,6 +313,7 @@ const STOP_WORDS = new Set([
   'a', 'an', 'and', 'or', 'of', 'with', 'on', 'at', 'right', 'now', 'today', 'tonight', 'please',
   'help', 'me', 'make', 'reach', 'enter', 'into', 'state', 'mode', 'session', 'minutes', 'minute',
   'min', 'mins', 'hour', 'hours', 'hr', 'hrs', 'stop', 'not', 'no', 'longer', 'without',
+  'boost', 'improve', 'increase', 'enhance', 'build', 'gain', 'find', 'have', 'some', 'good', 'deep',
 ]);
 
 function titleCaseWords(words: string[]): string {
@@ -382,63 +383,54 @@ export function resolveOpenGoalIntent(
     CURATED_GOAL_PRESETS[1], // alert_focus
   ];
 
-  // Exact keyword / prefix match pass first
-  for (const preset of orderedPresets) {
-    for (const token of rawTokens) {
-      if (STOP_WORDS.has(token)) continue;
-      for (const kw of preset.keywords) {
-        if (
-          token === kw ||
-          (token.length >= 5 && kw.startsWith(token)) ||
-          (kw.length >= 5 && token.startsWith(kw))
-        ) {
-          const safePreset =
-            isDriving && (preset.coreTarget === 'sleep_winddown' || preset.coreTarget === 'calm_reset')
-              ? CURATED_GOAL_PRESETS[1]
-              : preset;
-          return {
-            slug: safePreset.slug,
-            label: safePreset.label,
-            subtitle: safePreset.subtitle,
-            coreTarget: safePreset.coreTarget,
-            coords: safePreset.coords,
-            defaultMin: safePreset.defaultMin,
-            dspOverride: isDriving ? undefined : safePreset.dspOverride,
-            pubmedQuery: safePreset.pubmedQuery,
-            openAlexTerm: safePreset.openAlexTerm,
-            isOpenCustomTopic: false,
-          };
-        }
-      }
-    }
-  }
+  const topicTokens = rawTokens.filter((t) => !STOP_WORDS.has(t));
 
-  // Typo-tolerant Levenshtein pass (catches "creaitve", "creaitv", "meditaiton", "memroy", "motivaiton", etc.)
-  for (const preset of orderedPresets) {
-    for (const token of rawTokens) {
-      if (STOP_WORDS.has(token) || token.length < 5) continue;
-      for (const kw of preset.keywords) {
-        if (kw.length < 5) continue;
-        const maxDist = token.length >= 7 && kw.length >= 7 ? 2 : 1;
-        if (editDistanceWithin(token, kw, maxDist)) {
-          const safePreset =
-            isDriving && (preset.coreTarget === 'sleep_winddown' || preset.coreTarget === 'calm_reset')
-              ? CURATED_GOAL_PRESETS[1]
-              : preset;
-          return {
-            slug: safePreset.slug,
-            label: safePreset.label,
-            subtitle: safePreset.subtitle,
-            coreTarget: safePreset.coreTarget,
-            coords: safePreset.coords,
-            defaultMin: safePreset.defaultMin,
-            dspOverride: isDriving ? undefined : safePreset.dspOverride,
-            pubmedQuery: safePreset.pubmedQuery,
-            openAlexTerm: safePreset.openAlexTerm,
-            isOpenCustomTopic: false,
-          };
-        }
+  const tokenMatchesKeyword = (token: string, kw: string, allowFuzzy: boolean): boolean => {
+    if (
+      token === kw ||
+      (token.length >= 5 && kw.startsWith(token)) ||
+      (kw.length >= 5 && token.startsWith(kw))
+    ) {
+      return true;
+    }
+    if (allowFuzzy && token.length >= 5 && kw.length >= 5) {
+      const maxDist = token.length >= 7 && kw.length >= 7 ? 2 : 1;
+      return editDistanceWithin(token, kw, maxDist);
+    }
+    return false;
+  };
+
+  // Match against curated presets ONLY when there are no distinct domain words outside that preset
+  // (so "I want to feel creaitve" -> creative_ideation, whereas "public speaking confidence" or
+  // "tinnitus calm" preserves its specific scientific domain as an Open Custom Science Search!)
+  for (const allowFuzzy of [false, true]) {
+    for (const preset of orderedPresets) {
+      const matchedTokens = topicTokens.filter((tok) =>
+        preset.keywords.some((kw) => tokenMatchesKeyword(tok, kw, allowFuzzy))
+      );
+      if (matchedTokens.length === 0) continue;
+      const unmatchedSpecific = topicTokens.filter(
+        (tok) => tok.length >= 4 && !matchedTokens.includes(tok)
+      );
+      if (unmatchedSpecific.length > 0) {
+        continue;
       }
+      const safePreset =
+        isDriving && (preset.coreTarget === 'sleep_winddown' || preset.coreTarget === 'calm_reset')
+          ? CURATED_GOAL_PRESETS[1]
+          : preset;
+      return {
+        slug: safePreset.slug,
+        label: safePreset.label,
+        subtitle: safePreset.subtitle,
+        coreTarget: safePreset.coreTarget,
+        coords: safePreset.coords,
+        defaultMin: safePreset.defaultMin,
+        dspOverride: isDriving ? undefined : safePreset.dspOverride,
+        pubmedQuery: safePreset.pubmedQuery,
+        openAlexTerm: safePreset.openAlexTerm,
+        isOpenCustomTopic: false,
+      };
     }
   }
 
