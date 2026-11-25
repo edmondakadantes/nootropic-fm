@@ -1238,6 +1238,7 @@ export class PsychoacousticEngine {
     this.composer.start({
       ctx,
       musicSpec,
+      genre: this.genre,
       proceduralMaster,
       cleanSubBus,
       reverbSend,
@@ -1252,9 +1253,9 @@ export class PsychoacousticEngine {
     const rainHrvBranch = this.stimulusRack.createHrvGainBranch();
     if (rainHrvBranch) {
       rainHrvBranch.connect(masterSumBus);
-      this.rainBed.attach(ctx, rainHrvBranch, params.speakerSafeEQ);
+      this.rainBed.attach(ctx, rainHrvBranch, params.speakerSafeEQ, sampleApiBase);
     } else {
-      this.rainBed.attach(ctx, masterSumBus, params.speakerSafeEQ);
+      this.rainBed.attach(ctx, masterSumBus, params.speakerSafeEQ, sampleApiBase);
     }
     this.syncRainBed();
 
@@ -1439,17 +1440,21 @@ export class PsychoacousticEngine {
   }
 
   private computeStudioCutoffHz(): number {
-    const specCutoff = this.studySpec?.music.spectralLowPassHz ?? this.params?.filterCutoffHz ?? 2200;
+    // Mastered 48 kHz studio stems already carry warm instrument voicings; keep natural acoustic
+    // articulation (rain droplets, nylon guitar plucks, felt piano hammers, strings rosin) open
+    // instead of brickwall-muffling studio recordings down to oscillator pad cutoffs!
     const target = this.studySpec?.protocol.targetState ?? 'alert_focus';
     const isIsoAdapted = this.params?.genreSelectionMode === 'iso_adapted';
-    let base = 15000;
-    if (target === 'sleep_winddown' || isIsoAdapted) {
-      base = Math.max(1150, Math.min(2200, specCutoff * 1.65));
-    } else if (target === 'calm_reset' || (this.params?.filterCutoffHz ?? 2200) <= 1750) {
-      base = Math.max(2600, Math.min(5200, (this.params?.filterCutoffHz ?? 1600) * 2.4));
+    let base = 17200;
+    if (target === 'sleep_winddown') {
+      base = 7800;
+    } else if (isIsoAdapted) {
+      base = 9200;
+    } else if (target === 'calm_reset') {
+      base = 12400;
     }
-    const scaled = base * (0.74 + 0.32 * this.intensityMultiplier);
-    return Math.round(Math.max(950, Math.min(18000, scaled)));
+    const scaled = base * (0.86 + 0.18 * this.intensityMultiplier);
+    return Math.round(Math.max(5400, Math.min(18500, scaled)));
   }
 
   private computeAmGainPair(depth: number): { bias: number; swing: number } {
@@ -1548,7 +1553,7 @@ export class PsychoacousticEngine {
   }
 
   private computeTrackLufsGain(track: StudioTrackRef | null, genre: ResolvedGenre): number {
-    const base = genre === 'nature_rain' ? 0.54 : 0.94;
+    const base = genre === 'nature_rain' ? 0.84 : 0.94;
     if (track && typeof track.lufs === 'number' && Number.isFinite(track.lufs)) {
       const trimDb = Math.max(-6.0, Math.min(4.0, -14.0 - track.lufs));
       return Number(Math.max(0.28, Math.min(1.35, base * Math.pow(10, trimDb / 20))).toFixed(3));
@@ -1561,6 +1566,9 @@ export class PsychoacousticEngine {
       this.genre === 'nature_rain' &&
       this.carrierMode !== 'pure_stimulus' &&
       this.layerMonitorMode !== 'science_only';
+    this.rainBed.setStudioTrackHasEmbeddedRain(
+      this.carrierMode === 'studio_library' && this.usingStudioAudio && !this.usingCustomTrack
+    );
     this.rainBed.setActive(shouldPlayRain);
   }
 
@@ -1797,7 +1805,7 @@ export class PsychoacousticEngine {
           smoothSetParam(this.cleanSubBus.gain, 0, now, 0.65);
           this.syncRainBed();
         } else if ((st === 'error' || st === 'unavailable') && this.carrierMode === 'lyria_realtime') {
-          this.setCarrierMode('studio_library');
+          this.setCarrierMode('generative_live');
         }
       },
     });
@@ -2696,6 +2704,7 @@ export class PsychoacousticEngine {
         this.proceduralMaster.gain.setTargetAtTime(0.94, now, 0.7);
         this.cleanSubBus.gain.setTargetAtTime(0.9, now, 0.7);
       }
+      this.syncRainBed();
       return;
     }
 
@@ -2741,6 +2750,7 @@ export class PsychoacousticEngine {
       );
       if (workletOk) {
         alignHarmonicRootToTrack();
+        this.syncRainBed();
         return;
       }
       if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return;
@@ -2762,6 +2772,7 @@ export class PsychoacousticEngine {
     );
     if (streamed) {
       alignHarmonicRootToTrack();
+      this.syncRainBed();
       return;
     }
     if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return;
@@ -2782,6 +2793,7 @@ export class PsychoacousticEngine {
       nativeBpm,
       trackKeyLabel
     );
+    this.syncRainBed();
   }
 
   private scheduleDeckCrossfade(delaySec: number, onCrossfade: () => void): void {
@@ -2966,7 +2978,7 @@ export class PsychoacousticEngine {
     if (this.studySpec) {
       this.studySpec.music.instrumentPalette = nextPalette;
     }
-    this.composer.setPalette(nextPalette);
+    this.composer.setGenre(style, nextPalette);
 
     if (this.carrierMode === 'lyria_realtime' && this.studySpec) {
       this.lyriaClient.setGenre(style, this.studySpec, this.intensityMultiplier, this.getTargetStudyBpm());
@@ -3074,11 +3086,11 @@ export class PsychoacousticEngine {
         const baseCutoff = this.computeStudioCutoffHz();
         const softScale =
           elapsedSec < stabSec
-            ? 0.68
+            ? 0.76
             : elapsedSec < stabSec + glideSec
-              ? 0.68 + 0.32 * (0.5 * (1 - Math.cos((Math.PI * (elapsedSec - stabSec)) / glideSec)))
+              ? 0.76 + 0.24 * (0.5 * (1 - Math.cos((Math.PI * (elapsedSec - stabSec)) / glideSec)))
               : 1.0;
-        smoothSetParam(this.studioFilter.frequency, Math.max(950, baseCutoff * softScale), this.ctx.currentTime, 0.4);
+        smoothSetParam(this.studioFilter.frequency, Math.max(5200, baseCutoff * softScale), this.ctx.currentTime, 0.4);
       }
     } else if (amActive && spec?.entrainment.startFrequencyHz !== undefined) {
       const freqRampSec = Math.min(60, Math.max(25, this.plannedSec * 0.1));
@@ -3338,6 +3350,7 @@ export class PsychoacousticEngine {
     if (!this.ctx || !this.isPlaying) return;
     this.isPlaying = false;
     this.composer.pause();
+    this.lyriaClient.pause();
     if (this.carrierMode === 'studio_library' && !this.usingStudioAudio) {
       this.studioLoadToken++;
     }
@@ -3374,6 +3387,9 @@ export class PsychoacousticEngine {
     await this.keepAliveEl?.play().catch(() => {});
     this.isPlaying = true;
     this.composer.resume();
+    if (this.carrierMode === 'lyria_realtime') {
+      this.lyriaClient.resume();
+    }
     if (this.carrierMode === 'studio_library' && !this.usingStudioAudio && !this.activeCustomTrack) {
       void this.activateStudioForGenre(this.genre);
     }

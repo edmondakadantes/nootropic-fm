@@ -260,6 +260,7 @@ export class LyriaRealtimeClient {
     const cfg = buildLyriaRealtimeConfig(spec, genre, liveBpm);
     const density = Math.max(0.15, Math.min(0.92, cfg.config.density * intensityMult));
     const brightness = Math.max(0.18, Math.min(0.92, cfg.config.brightness * (0.85 + 0.15 * intensityMult)));
+    const prevBpm = this.lastSentBpm;
     try {
       this.ws.send(
         JSON.stringify({
@@ -282,9 +283,30 @@ export class LyriaRealtimeClient {
           },
         })
       );
+      if (prevBpm > 0 && Math.abs(cfg.config.bpm - prevBpm) >= 6) {
+        this.ws.send(JSON.stringify({ playbackControl: 'RESET_CONTEXT' }));
+      }
       this.lastSentBpm = cfg.config.bpm;
     } catch {
       // ignore transient ws error
+    }
+  }
+
+  public pause(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    try {
+      this.ws.send(JSON.stringify({ playbackControl: 'PAUSE' }));
+    } catch {
+      // ignore
+    }
+  }
+
+  public resume(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    try {
+      this.ws.send(JSON.stringify({ playbackControl: 'PLAY' }));
+    } catch {
+      // ignore
     }
   }
 

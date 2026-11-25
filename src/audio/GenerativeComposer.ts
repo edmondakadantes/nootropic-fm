@@ -5,6 +5,7 @@ import {
   type StudyMusicSpec,
   type TonalMode,
 } from '../../shared/studySpec';
+import type { ResolvedGenre } from '../../shared/types';
 import { BUTTERWORTH_LP_HP_Q_DB } from './dspMath';
 import { StudioSampler } from './StudioSampler';
 
@@ -126,7 +127,9 @@ export class GenerativeComposer {
   private ctx: AudioContext | null = null;
   private musicSpec: StudyMusicSpec | null = null;
   private palette: InstrumentPalette = 'felt_piano';
+  private genre: ResolvedGenre = 'lofi_keys';
   private speakerSafeEQ = false;
+  private shakerNoiseBuf: AudioBuffer | null = null;
 
   private padBus: GainNode | null = null;
   private padFilter: BiquadFilterNode | null = null;
@@ -178,6 +181,7 @@ export class GenerativeComposer {
   public start(opts: {
     ctx: AudioContext;
     musicSpec: StudyMusicSpec;
+    genre?: ResolvedGenre;
     proceduralMaster: AudioNode;
     cleanSubBus: GainNode;
     reverbSend: GainNode;
@@ -191,6 +195,7 @@ export class GenerativeComposer {
     const {
       ctx,
       musicSpec,
+      genre,
       proceduralMaster,
       cleanSubBus,
       reverbSend,
@@ -204,6 +209,7 @@ export class GenerativeComposer {
     this.workletsReady = workletsReady;
     this.musicSpec = structuredClone(musicSpec);
     this.palette = musicSpec.instrumentPalette;
+    this.genre = genre ?? 'lofi_keys';
     this.speakerSafeEQ = speakerSafeEQ;
     this.cleanSubBus = cleanSubBus;
     this.reverbSend = reverbSend;
@@ -438,6 +444,11 @@ export class GenerativeComposer {
 
   public isUsingRealSamples(): boolean {
     return this.usingRealSamples;
+  }
+
+  public setGenre(genre: ResolvedGenre, palette?: InstrumentPalette): void {
+    this.genre = genre;
+    this.setPalette(palette ?? this.palette);
   }
 
   public setPalette(palette: InstrumentPalette): void {
@@ -711,44 +722,100 @@ export class GenerativeComposer {
       const humanMicro = (Math.random() - 0.5) * 0.008;
       const t = Math.max(ctx.currentTime + 0.01, this.nextStepTime + swing + pocketDelay + rubato + humanMicro);
       const lift = this.antiMonotonyActive ? 1.2 : 1.0;
-      const perc = liveBpm === 0 ? 'none' : this.musicSpec.percussion;
+      const genreSuppressesDrums =
+        this.genre === 'nature_rain' ||
+        this.genre === 'ambient_space' ||
+        this.genre === 'solo_piano' ||
+        this.genre === 'cinematic_strings';
+      const perc: PercussionMode =
+        liveBpm === 0 || genreSuppressesDrums ? 'none' : this.musicSpec.percussion;
       const metricAccent = step === 0 || step === 8 ? 1.0 : step === 4 || step === 12 ? 0.84 : 0.64;
       const phraseBreath = 0.88 + 0.18 * Math.sin((this.stepCount / 16) * Math.PI);
       const phraseAccent = metricAccent * phraseBreath;
 
-      // 1. Percussion Layer (strictly obeys study's percussion lock!)
+      // 1. Genre-Authentic Percussion Layer (strictly obeys study's percussion lock & beatless genres!)
       if (perc !== 'none') {
-        if (this.kickPattern[step]) {
-          this.triggerWarmSubKick(t, (step === 0 ? 0.46 : 0.34) * (perc === 'minimal_soft' ? 0.65 : 1.0));
-        }
-        if (this.hatPattern[step] && !this.speakerSafeEQ) {
-          this.triggerBrushedAirHat(t, 0.024 * phraseBreath * (perc === 'minimal_soft' ? 0.6 : 1.0));
-        } else if (perc === 'steady_pulse' && !this.speakerSafeEQ && step % 2 === 1 && Math.random() < 0.35) {
-          this.triggerBrushedAirHat(t + 0.008, 0.011);
+        if (this.genre === 'bossa_nova') {
+          // Classic Brazilian surdo pulse on beats 1 & 3 + soft syncopated shaker
+          if (step === 0 || step === 8) {
+            this.triggerWarmSubKick(t, (step === 0 ? 0.34 : 0.28) * (perc === 'minimal_soft' ? 0.7 : 1.0));
+          }
+          if (!this.speakerSafeEQ && step % 2 === 0) {
+            this.triggerBrushedAirHat(t, (step % 4 === 2 ? 0.032 : 0.018) * phraseBreath);
+          }
+        } else if (this.genre === 'dub_reggae') {
+          // One-drop / steppers warm dub kick + crisp rim click on beat 3 (step 8)
+          if (step === 0 || step === 8) {
+            this.triggerWarmSubKick(t, step === 8 ? 0.44 : 0.3);
+          }
+          if (!this.speakerSafeEQ && step === 8) {
+            this.triggerWarmWoodRim(t, 0.055 * phraseBreath);
+          }
+          if (!this.speakerSafeEQ && step % 2 === 1) {
+            this.triggerBrushedAirHat(t, 0.022 * phraseBreath);
+          }
+        } else {
+          if (this.kickPattern[step]) {
+            this.triggerWarmSubKick(t, (step === 0 ? 0.46 : 0.34) * (perc === 'minimal_soft' ? 0.65 : 1.0));
+          }
+          if (this.genre === 'lofi_keys' && !this.speakerSafeEQ && (step === 4 || step === 12)) {
+            this.triggerWarmWoodRim(t + 0.006, 0.046 * phraseBreath);
+          }
+          if (this.hatPattern[step] && !this.speakerSafeEQ) {
+            this.triggerBrushedAirHat(t, 0.028 * phraseBreath * (perc === 'minimal_soft' ? 0.65 : 1.0));
+          } else if (perc === 'steady_pulse' && !this.speakerSafeEQ && step % 2 === 1 && Math.random() < 0.35) {
+            this.triggerBrushedAirHat(t + 0.008, 0.014);
+          }
         }
       }
 
-      // 2. Clean Sub-Bass Anchor (only for rhythmic/electronic/rhodes focus modes)
-      if (
-        perc !== 'none' &&
-        (this.palette === 'deep_electronic' || this.palette === 'warm_rhodes') &&
-        (step === 0 || step === 6 || step === 8 || step === 14)
+      // 2. Genre-Authentic Clean Sub-Bass Anchor (<175 Hz clean sub bus)
+      if (perc !== 'none') {
+        if (this.genre === 'bossa_nova' && (step === 0 || step === 6 || step === 8 || step === 14)) {
+          this.triggerCleanBass(t, step >= 8 ? 7 : 0, 0.2 * phraseBreath, eighthDur * 1.6);
+        } else if (this.genre === 'dub_reggae' && (step === 0 || step === 3 || step === 8 || step === 10)) {
+          const dubSemi = step === 3 ? 5 : step === 10 ? 7 : 0;
+          this.triggerCleanBass(t, dubSemi, 0.25 * phraseBreath, eighthDur * 1.7);
+        } else if (this.genre === 'jazz_rhodes' && step % 4 === 0) {
+          const walkIntervals = [0, 3, 7, 10];
+          this.triggerCleanBass(t, walkIntervals[(step >> 2) % 4], 0.19 * phraseBreath, eighthDur * 1.8);
+        } else if (
+          (this.palette === 'deep_electronic' || this.palette === 'warm_rhodes') &&
+          (step === 0 || step === 6 || step === 8 || step === 14)
+        ) {
+          this.triggerCleanBass(t, step === 14 ? 7 : 0, 0.21 * phraseBreath, eighthDur * 1.5);
+        }
+      }
+
+      // 3. Genre-Specific Rhythmic Comping & 1/f Pink-Fractal Melodic Voice
+      if (this.genre === 'dub_reggae' && perc !== 'none' && step % 4 === 2) {
+        // Signature off-beat reggae skank chord chop routed into dub delay
+        this.triggerHarmonicVoicing(t, 0.11 * lift * phraseBreath);
+      } else if (
+        this.genre === 'bossa_nova' &&
+        (step === 0 || step === 3 || step === 6 || step === 10 || step === 13)
       ) {
-        this.triggerCleanBass(t, step === 14 ? 7 : 0, 0.21 * phraseBreath, eighthDur * 1.5);
+        // João Gilberto syncopated nylon-guitar bossa clave comping
+        this.triggerHarmonicVoicing(t, 0.095 * lift * phraseBreath);
       }
 
-      // 3. 1/f Pink-Fractal Melodic & Harmonic Voice (Never loops identically!)
       const noteProb =
-        liveBpm === 0
-          ? 0.24
-          : Math.max(0.18, Math.min(0.68, 0.22 + this.musicSpec.density * 0.45));
+        this.genre === 'nature_rain'
+          ? 0.14
+          : liveBpm === 0
+            ? 0.24
+            : Math.max(0.18, Math.min(0.68, 0.22 + this.musicSpec.density * 0.45));
       const isStrongBeat = step === 0 || step === 4 || step === 8 || step === 12;
-      if ((isStrongBeat && Math.random() < noteProb + 0.25) || Math.random() < noteProb * 0.55) {
+      if ((isStrongBeat && Math.random() < noteProb + 0.22) || Math.random() < noteProb * 0.52) {
         this.triggerMelodicVoice(t, step, lift, phraseAccent);
       }
 
-      // Occasional warm chord comp on beat 1 or syncopated offbeat
-      if (step === 0 && (this.stepCount % 32 === 0 || Math.random() < 0.45)) {
+      // Occasional warm chord comp on beat 1
+      if (
+        step === 0 &&
+        this.genre !== 'nature_rain' &&
+        (this.stepCount % 32 === 0 || Math.random() < 0.42)
+      ) {
         this.triggerHarmonicVoicing(t, 0.1 * lift * phraseBreath);
       }
 
@@ -1074,26 +1141,68 @@ export class GenerativeComposer {
     osc.stop(time + dur + 0.06);
   }
 
-  private triggerBrushedAirHat(time: number, amp: number): void {
+  private ensureShakerNoiseBuf(): AudioBuffer | null {
+    if (!this.ctx) return null;
+    if (this.shakerNoiseBuf && this.shakerNoiseBuf.sampleRate === this.ctx.sampleRate) {
+      return this.shakerNoiseBuf;
+    }
+    const len = Math.max(512, Math.round(this.ctx.sampleRate * 0.08));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    let prev = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      data[i] = (w - prev * 0.65) * 0.6;
+      prev = w;
+    }
+    this.shakerNoiseBuf = buf;
+    return buf;
+  }
+
+  private triggerWarmWoodRim(time: number, amp: number): void {
     if (!this.ctx || !this.pulseBus) return;
     const osc = this.ctx.createOscillator();
     const bp = this.ctx.createBiquadFilter();
     const gain = this.ctx.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(1450, time);
+    osc.frequency.setValueAtTime(420, time);
+    osc.frequency.exponentialRampToValueAtTime(195, time + 0.028);
     bp.type = 'bandpass';
-    bp.frequency.value = 2600;
-    bp.Q.value = 1.4;
+    bp.frequency.value = 680;
+    bp.Q.value = 2.1;
 
     gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp * this.intensityMult, time + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.045);
+    gain.gain.linearRampToValueAtTime(amp * this.intensityMult, time + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.042);
 
     osc.connect(bp);
     bp.connect(gain);
     gain.connect(this.pulseBus);
     osc.start(time);
-    osc.stop(time + 0.055);
+    osc.stop(time + 0.05);
+  }
+
+  private triggerBrushedAirHat(time: number, amp: number): void {
+    if (!this.ctx || !this.pulseBus) return;
+    const noiseBuf = this.ensureShakerNoiseBuf();
+    if (!noiseBuf) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    const bp = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+    bp.type = 'bandpass';
+    bp.frequency.value = this.genre === 'bossa_nova' ? 5400 : 4600;
+    bp.Q.value = 1.35;
+
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.linearRampToValueAtTime(amp * this.intensityMult, time + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.048);
+
+    src.connect(bp);
+    bp.connect(gain);
+    gain.connect(this.pulseBus);
+    src.start(time);
+    src.stop(time + 0.06);
   }
 
   public stop(): void {

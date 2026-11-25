@@ -150,7 +150,7 @@ export function PlayerView({
   recommendation,
   profile = null,
   syncCode = null,
-  lyriaRealtimeAvailable = false,
+  lyriaRealtimeAvailable: _lyriaRealtimeAvailable = false,
   isPro = false,
   stripeAvailable = false,
   onUpgradePro,
@@ -985,13 +985,10 @@ export function PlayerView({
 
         const res = await api.getLyriaRealtimeToken();
         if (!res.available || !res.token) {
-          setLyriaNotice(
-            res.reason ??
-              'Endless Stream is temporarily unavailable. Playing Studio Mix seamlessly.'
-          );
-          setCarrierMode('studio_library');
-          setAudioSource('studio_library');
-          engineRef.current?.setCarrierMode('studio_library');
+          setLyriaNotice(null);
+          setCarrierMode('generative_live');
+          setAudioSource('procedural_fallback');
+          engineRef.current?.setCarrierMode('generative_live');
           setConnectingLyria(false);
           return;
         }
@@ -1004,9 +1001,10 @@ export function PlayerView({
               setCarrierMode('lyria_realtime');
               setAudioSource('lyria_realtime');
             } else if (status === 'error' || status === 'unavailable') {
-              if (note) setLyriaNotice(note);
-              setCarrierMode('studio_library');
-              setAudioSource('studio_library');
+              if (note && !note.includes('Studio Mix')) setLyriaNotice(null);
+              setCarrierMode('generative_live');
+              setAudioSource('procedural_fallback');
+              engineRef.current?.setCarrierMode('generative_live');
             }
           },
           async () => {
@@ -1024,15 +1022,16 @@ export function PlayerView({
           setCarrierMode('lyria_realtime');
           setAudioSource('lyria_realtime');
         } else {
-          setCarrierMode('studio_library');
-          setAudioSource('studio_library');
-          engineRef.current?.setCarrierMode('studio_library');
+          setLyriaNotice(null);
+          setCarrierMode('generative_live');
+          setAudioSource('procedural_fallback');
+          engineRef.current?.setCarrierMode('generative_live');
         }
       } catch {
-        setLyriaNotice('Endless Stream temporarily unreachable. Continuing smoothly on Studio Mix.');
-        setCarrierMode('studio_library');
-        setAudioSource('studio_library');
-        engineRef.current?.setCarrierMode('studio_library');
+        setLyriaNotice(null);
+        setCarrierMode('generative_live');
+        setAudioSource('procedural_fallback');
+        engineRef.current?.setCarrierMode('generative_live');
       } finally {
         setConnectingLyria(false);
       }
@@ -1100,8 +1099,8 @@ export function PlayerView({
     setActiveCustomLabel(null);
     setCustomGenState('idle');
     setCustomGenNotice(null);
-    const keepLyria = carrierMode === 'lyria_realtime';
-    if (!keepLyria && carrierMode !== 'studio_library') {
+    const keepEndless = carrierMode === 'lyria_realtime' || carrierMode === 'generative_live';
+    if (!keepEndless && carrierMode !== 'studio_library') {
       setCarrierMode('studio_library');
       setAudioSource('studio_library');
       engineRef.current?.setCarrierMode('studio_library');
@@ -1117,7 +1116,12 @@ export function PlayerView({
           sessionId: liveSessionId,
           genre: style,
           customGenreSlug: null,
-          audioSource: keepLyria ? 'lyria_realtime' : 'studio_library',
+          audioSource:
+            carrierMode === 'lyria_realtime'
+              ? 'lyria_realtime'
+              : carrierMode === 'generative_live'
+                ? 'procedural_fallback'
+                : 'studio_library',
           atSec: elapsedRef.current,
         })
         .catch(() => {});
@@ -1529,9 +1533,8 @@ export function PlayerView({
         </div>
 
         {/* Prominent 2-Button Music Engine Selector: Studio Mix vs Endless Stream */}
-        {lyriaRealtimeAvailable && (
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
               {/* Button 1: Studio Mix */}
               <button
                 type="button"
@@ -1577,7 +1580,7 @@ export function PlayerView({
                 disabled={connectingLyria}
                 onClick={() => void handleCarrierSwitch('lyria_realtime')}
                 className={`group relative flex flex-col justify-between rounded-xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
-                  carrierMode === 'lyria_realtime'
+                  carrierMode === 'lyria_realtime' || carrierMode === 'generative_live'
                     ? 'border-emerald-400/55 bg-emerald-500/[0.09] text-[#F3F1EC]'
                     : connectingLyria
                       ? 'border-emerald-400/40 bg-emerald-500/[0.06] text-[#F3F1EC]'
@@ -1591,7 +1594,7 @@ export function PlayerView({
                     ) : (
                       <Radio
                         className={`h-4 w-4 shrink-0 ${
-                          carrierMode === 'lyria_realtime'
+                          carrierMode === 'lyria_realtime' || carrierMode === 'generative_live'
                             ? 'text-[#34D399]'
                             : 'text-[#8E8E88] group-hover:text-[#34D399]'
                         }`}
@@ -1603,10 +1606,10 @@ export function PlayerView({
                     <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#34D399]">
                       Syncing…
                     </span>
-                  ) : carrierMode === 'lyria_realtime' ? (
+                  ) : carrierMode === 'lyria_realtime' || carrierMode === 'generative_live' ? (
                     <span className="inline-flex items-center gap-1 rounded border border-emerald-400/45 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-emerald-200">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#34D399] animate-pulse" />
-                      {!isPro
+                      {!isPro && carrierMode === 'lyria_realtime'
                         ? `Live · ${Math.max(0, FREE_LYRIA_PREVIEW_SEC - dailyLyriaUsedSec)}s`
                         : 'Live'}
                     </span>
@@ -1622,25 +1625,26 @@ export function PlayerView({
                 </div>
                 <p
                   className={`mt-1.5 text-[11px] leading-snug ${
-                    carrierMode === 'lyria_realtime' ? 'text-[#D4D4CE]' : 'text-[#7E7E78]'
+                    carrierMode === 'lyria_realtime' || carrierMode === 'generative_live'
+                      ? 'text-[#D4D4CE]'
+                      : 'text-[#7E7E78]'
                   }`}
                 >
                   {connectingLyria
                     ? 'Connecting live stream…'
-                    : carrierMode === 'lyria_realtime'
+                    : carrierMode === 'lyria_realtime' || carrierMode === 'generative_live'
                       ? 'Streaming live · Never repeats'
                       : 'Generated live · Never repeats'}
                 </p>
               </button>
             </div>
 
-            {lyriaNotice && (
-              <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-                {lyriaNotice}
-              </div>
-            )}
-          </div>
-        )}
+          {lyriaNotice && (
+            <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+              {lyriaNotice}
+            </div>
+          )}
+        </div>
 
         {/* 3-Way Audio Layer Monitor: Compare Nootropic Mix vs Science Only (Layer 1) vs Plain Music (Layer 2) */}
         <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3 space-y-2">

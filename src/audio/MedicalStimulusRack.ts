@@ -75,10 +75,44 @@ export function createCalibratedNoiseBuffer(
         b6 = white * 0.115926;
         sampleVal =
           color === 'soft_rain'
-            ? pink * (0.72 + 0.28 * Math.sin((2 * Math.PI * ((i + length) % length)) / length + ch * 1.4))
+            ? pink * (0.48 + 0.14 * Math.sin((2 * Math.PI * ((i + length) % length)) / length + ch * 1.4))
             : pink;
       }
       if (i >= 0) raw[i] = sampleVal;
+    }
+
+    // For `soft_rain`, layer evenly-spaced stochastic multi-surface water droplets & leaf patters
+    // so Layer-1 `soft_rain` sounds like gentle organic rainfall rather than flat pink-noise hiss,
+    // while keeping uniform frame-by-frame RMS parity across head & body for zero-seam looping.
+    if (color === 'soft_rain') {
+      const bucketFrames = Math.max(240, Math.round(sampleRate * 0.012)); // ~83 micro-impacts/sec uniform grid
+      for (let pos = 0; pos + bucketFrames < totalGen; pos += bucketFrames) {
+        const jitter = Math.floor(Math.random() * (bucketFrames * 0.65));
+        const start = pos + jitter;
+        const isPlink = Math.random() < 0.18;
+        const dropLen = Math.min(
+          totalGen - start,
+          Math.max(18, Math.round(sampleRate * (isPlink ? 0.011 : 0.005)))
+        );
+        const baseHz = isPlink ? 720 + Math.random() * 1450 : 1200 + Math.random() * 2800;
+        const amp = isPlink ? 0.042 + Math.random() * 0.032 : 0.026 + Math.random() * 0.024;
+        let phase = Math.random() * Math.PI * 2;
+        let lp = 0;
+        for (let j = 0; j < dropLen; j++) {
+          const u = j / dropLen;
+          const atk = Math.min(1, j / Math.max(3, sampleRate * 0.0005));
+          const env = atk * Math.exp(-u * (isPlink ? 5.6 : 7.4)) * (u > 0.88 ? (1 - u) / 0.12 : 1);
+          phase += (2 * Math.PI * baseHz * (isPlink ? 1 + 0.32 * u : 1)) / sampleRate;
+          if (isPlink) {
+            const slap = u < 0.15 ? (Math.random() * 2 - 1) * (1 - u / 0.15) * 0.35 : 0;
+            raw[start + j] += (Math.sin(phase) * 0.78 + slap) * amp * env;
+          } else {
+            const n = Math.random() * 2 - 1;
+            lp += 0.34 * (n - lp);
+            raw[start + j] += (lp * 0.72 + Math.sin(phase) * 0.28) * amp * env;
+          }
+        }
+      }
     }
 
     // Copy main body and fold extra tail onto head with true equal-power sin/cos crossfade

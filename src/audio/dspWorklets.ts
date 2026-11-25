@@ -746,15 +746,17 @@ class NootropicWsolaProcessor extends AudioWorkletProcessor {
 class NootropicLyriaStreamProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.RING_SIZE = 262144; // ~5.46s @ 48 kHz (power of 2)
+    // Google Lyria RealTime sends 96,000 stereo frames (2.0s @ 48 kHz) per chunk and bursts 4–6 chunks (8–12s) upfront.
+    // A 1,048,576-frame ring (~21.85s @ 48 kHz) holds the entire server pre-buffer without ever wrapping or starving!
+    this.RING_SIZE = 1048576;
     this.RING_MASK = this.RING_SIZE - 1;
     this.ringL = new Float32Array(this.RING_SIZE);
     this.ringR = new Float32Array(this.RING_SIZE);
     this.writePos = 0;
     this.readPos = 0;
     this.primed = false;
-    this.minPrimeFrames = 4800; // 100 ms @ 48 kHz
-    this.maxBufferFrames = 144000; // 3.0 s overflow protection ceiling
+    this.minPrimeFrames = 19200; // 400 ms jitter cushion @ 48 kHz before starting playback
+    this.maxBufferFrames = 864000; // 18.0 s overflow ceiling (well above Lyria's 8–12s burst)
     this.step = 48000 / sampleRate;
     this.fadeGain = 0;
     this.fadeStep = 1 / Math.max(64, Math.round(0.008 * sampleRate)); // 8 ms click-free cosine ramp
@@ -779,10 +781,10 @@ class NootropicLyriaStreamProcessor extends AudioWorkletProcessor {
         }
         const buffered = this.writePos - this.readPos;
         if (buffered > this.maxBufferFrames) {
-          // Crossfade cleanly when catching up from network bursts instead of hard-jumping
+          // Crossfade cleanly when catching up from extreme stalls while keeping a healthy 8.0s (384,000-frame) cushion
           this.xfadeOldReadPos = this.readPos;
           this.xfadeRem = this.xfadeTotal;
-          this.readPos = this.writePos - 57600;
+          this.readPos = this.writePos - 384000;
         }
         if (!this.primed && this.writePos - this.readPos >= this.minPrimeFrames) {
           this.primed = true;

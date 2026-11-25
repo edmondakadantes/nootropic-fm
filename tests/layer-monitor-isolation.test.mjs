@@ -443,3 +443,172 @@ test('6. Hybrid Open-Goal Science Resolver: handles US English typos ("creaitve"
   const drivingSafe = resolveOpenGoalIntent('help me fall asleep', true);
   assert.ok(drivingSafe && drivingSafe.coreTarget === 'alert_focus');
 });
+
+test('7. Authentic Stereo Rain & Genre Studio Bandwidth: high-crest droplet transients (non-hiss), decorrelated stereo, and unmuffled studio filter', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const vm = await import('node:vm');
+  const { transform } = await import('esbuild');
+  const ROOT = process.cwd();
+
+  const rainSrc = fs.readFileSync(path.join(ROOT, 'src/audio/StereoRainBed.ts'), 'utf8');
+  const mathSrc = fs.readFileSync(path.join(ROOT, 'src/audio/dspMath.ts'), 'utf8');
+  const engineSrc = fs.readFileSync(path.join(ROOT, 'src/audio/PsychoacousticEngine.ts'), 'utf8');
+  const composerSrc = fs.readFileSync(path.join(ROOT, 'src/audio/GenerativeComposer.ts'), 'utf8');
+
+  // Verify real 48 kHz R2 field-recording loader & multi-genre patterns exist
+  assert.ok(
+    rainSrc.includes('samples/rain/real-rain-canopy-48k.'),
+    'StereoRainBed must load the real 48 kHz stereo rain recording from R2'
+  );
+  assert.ok(
+    engineSrc.includes('return Math.round(Math.max(5400,'),
+    'computeStudioCutoffHz must preserve >=5400 Hz natural acoustic articulation across all studio genres'
+  );
+  assert.ok(
+    composerSrc.includes("this.genre === 'bossa_nova'") &&
+      composerSrc.includes("this.genre === 'dub_reggae'") &&
+      composerSrc.includes('ensureShakerNoiseBuf'),
+    'GenerativeComposer must render authentic genre-specific rhythms and brushed shaker transients'
+  );
+
+  // Execute createStereoRainBuffer and verify physical droplet crest factor (>13 dB vs ~10 dB stationary hiss) & wide stereo decorrelation
+  const compiledMath = await transform(mathSrc, { loader: 'ts', format: 'cjs' });
+  const compiledRain = await transform(rainSrc, { loader: 'ts', format: 'cjs' });
+  const mathMod = { exports: {} };
+  vm.runInNewContext(compiledMath.code, {
+    exports: mathMod.exports,
+    module: mathMod,
+    Float32Array,
+    Uint8Array,
+    ArrayBuffer,
+    DataView,
+    Math,
+    Number,
+  });
+  const rainMod = { exports: {} };
+  vm.runInNewContext(compiledRain.code, {
+    exports: rainMod.exports,
+    module: rainMod,
+    require: (id) => (id === './dspMath' ? mathMod.exports : {}),
+    Float32Array,
+    Math,
+    Number,
+  });
+
+  const fakeCtx = {
+    sampleRate: 48000,
+    createBuffer(channels, length, sampleRate) {
+      const chData = Array.from({ length: channels }, () => new Float32Array(length));
+      return {
+        numberOfChannels: channels,
+        length,
+        sampleRate,
+        duration: length / sampleRate,
+        getChannelData: (c) => chData[c],
+      };
+    },
+  };
+
+  const buf = rainMod.exports.createStereoRainBuffer(fakeCtx, 6);
+  const L = buf.getChannelData(0);
+  const R = buf.getChannelData(1);
+  let sumSq = 0;
+  let peak = 0;
+  let corrNum = 0;
+  let sqL = 0;
+  let sqR = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const l = L[i];
+    const r = R[i];
+    assert.ok(Number.isFinite(l) && Number.isFinite(r), 'Rain sample must be finite');
+    sumSq += l * l + r * r;
+    const p = Math.max(Math.abs(l), Math.abs(r));
+    if (p > peak) peak = p;
+    corrNum += l * r;
+    sqL += l * l;
+    sqR += r * r;
+  }
+  const rms = Math.sqrt(sumSq / (2 * buf.length));
+  const crestDb = 20 * Math.log10(peak / Math.max(1e-9, rms));
+  const lrCorr = corrNum / Math.max(1e-9, Math.sqrt(sqL * sqR));
+
+  assert.ok(
+    crestDb >= 13.5,
+    `Expected physical droplet transient crest >= 13.5 dB (not flat hiss), got ${crestDb.toFixed(2)} dB`
+  );
+  assert.ok(
+    Math.abs(lrCorr) < 0.35,
+    `Expected wide decorrelated stereo rain (|corr| < 0.35), got ${lrCorr.toFixed(3)}`
+  );
+});
+
+test('8. Endless Stream (Lyria RealTime) Worklet Ring Buffer: absorbs 4x 96,000-frame (8.0s) burst without overflow truncation or underrun', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const vm = await import('node:vm');
+  const ROOT = process.cwd();
+
+  const tsSrc = fs.readFileSync(path.join(ROOT, 'src/audio/dspWorklets.ts'), 'utf8');
+  const startMarker = 'export const DSP_WORKLET_CODE = `';
+  const startIdx = tsSrc.indexOf(startMarker);
+  const endMarker = '`;\n\nconst loadedWorkletContexts';
+  const endIdx = tsSrc.indexOf(endMarker, startIdx);
+  const rawCode = tsSrc
+    .slice(startIdx + startMarker.length, endIdx)
+    .replace(/\\`/g, '`')
+    .replace(/\\\$/g, '$');
+
+  const registry = {};
+  class AudioWorkletProcessor {
+    constructor() {
+      this.port = { onmessage: null, postMessage: () => {} };
+    }
+  }
+  vm.runInNewContext(rawCode, {
+    AudioWorkletProcessor,
+    sampleRate: 48000,
+    currentTime: 0,
+    Math,
+    Float32Array,
+    Float64Array,
+    Int32Array,
+    Uint8Array,
+    Number,
+    Array,
+    Boolean,
+    String,
+    Object,
+    registerProcessor: (name, cls) => {
+      registry[name] = cls;
+    },
+  });
+
+  const LyriaProc = registry['nootropic-lyria-stream-processor'];
+  assert.ok(LyriaProc, 'Expected nootropic-lyria-stream-processor to be registered');
+  const proc = new LyriaProc();
+
+  // Feed 4 realistic Google Lyria RealTime chunks (96,000 stereo frames = 2.0s each -> 384,000 frames = 8.0s burst)
+  for (let c = 0; c < 4; c++) {
+    const left = new Float32Array(96000);
+    const right = new Float32Array(96000);
+    for (let i = 0; i < 96000; i++) {
+      const idx = c * 96000 + i;
+      left[i] = 0.4 * Math.sin((2 * Math.PI * 220 * idx) / 48000);
+      right[i] = 0.4 * Math.cos((2 * Math.PI * 220 * idx) / 48000);
+    }
+    proc.port.onmessage({ data: { type: 'pcm', left, right } });
+  }
+
+  assert.equal(proc.writePos, 384000, 'Expected all 384,000 burst frames written');
+  assert.equal(proc.readPos, 0, 'Burst of 8.0s must NOT trigger overflow jump/truncation');
+  assert.equal(proc.primed, true, 'Processor must be primed and ready');
+
+  // Render 6.0 full seconds (288,000 frames = 2,250 blocks of 128) before next chunk arrives — zero underrun!
+  for (let b = 0; b < 2250; b++) {
+    const outL = new Float32Array(128);
+    const outR = new Float32Array(128);
+    proc.process([], [[outL, outR]], {});
+    assert.equal(proc.primed, true, `Underrun occurred prematurely at block ${b}`);
+  }
+});
