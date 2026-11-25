@@ -43,6 +43,7 @@ import {
   ROLE_SHORT_LABELS,
   TARGET_LABELS,
   formatProfileSummary,
+  isProfileOnboardingComplete,
   type AppRuntimeConfig,
   type CurrentState,
   type MusicGenreChoice,
@@ -81,6 +82,7 @@ interface CheckInViewProps {
   onDismissPending: () => void;
   onOpenIdentityModal: () => void;
   onEditProfile?: () => void;
+  onSaveProfileStep?: (data: Partial<UserProfile>) => Promise<void>;
   onMoodChange?: (mood: FieldMood) => void;
   onLaunchUnifiedSession: (payload: {
     profileUpdate?: Partial<UserProfile>;
@@ -172,26 +174,37 @@ export function CheckInView({
   onOpenPendingDebrief,
   onDismissPending,
   onOpenIdentityModal,
-  onEditProfile,
+  onSaveProfileStep,
   onMoodChange,
   onLaunchUnifiedSession,
 }: CheckInViewProps) {
-  const isFirstVisit = !profile;
+  const onboardingComplete = isProfileOnboardingComplete(profile);
+  const isFirstVisit = !onboardingComplete;
   const presetMicro = initialPreset
     ? NEURAL_MICRO_STATES.find((s) => s.id === initialPreset.microStateId) ?? null
     : null;
   const [beat, setBeat] = useState<1 | 2 | 3 | 4>(
-    profile ? (initialPreset ? 4 : 2) : 1
+    onboardingComplete ? (initialPreset ? 4 : 2) : 1
   );
 
-  // Beat 1: Neural Identity & Demographics (ZERO pre-filled or pre-selected fields on first visit!)
+  // Beat 1: Neural Identity & Demographics (ZERO pre-filled fields until real Onboarding is completed!)
   const [introText, setIntroText] = useState('');
-  const [displayName, setDisplayName] = useState(profile?.displayName ?? '');
-  const [ageInput, setAgeInput] = useState<string>(profile ? String(Math.max(18, profile.age)) : '');
+  const [displayName, setDisplayName] = useState(
+    onboardingComplete ? (profile?.displayName ?? '') : ''
+  );
+  const [ageInput, setAgeInput] = useState<string>(
+    onboardingComplete && profile ? String(Math.max(18, profile.age)) : ''
+  );
   const [ageError, setAgeError] = useState<string | null>(null);
-  const [gender, setGender] = useState<UserGender | null>(profile?.gender ?? null);
-  const [role, setRole] = useState<UserRole | null>(profile?.role ?? null);
-  const [occupationLabel, setOccupationLabel] = useState(profile?.occupationLabel ?? '');
+  const [gender, setGender] = useState<UserGender | null>(
+    onboardingComplete ? (profile?.gender ?? null) : null
+  );
+  const [role, setRole] = useState<UserRole | null>(
+    onboardingComplete && profile ? profile.role : null
+  );
+  const [occupationLabel, setOccupationLabel] = useState(
+    onboardingComplete ? (profile?.occupationLabel ?? '') : ''
+  );
   const [noiseSensitivity] = useState<NoiseSensitivity>(profile?.noiseSensitivity ?? 'medium');
 
   // Privacy opt-in default (unchecked in EEA/UK/CH or GPC browsers)
@@ -246,7 +259,7 @@ export function CheckInView({
   }, [beat]);
 
   useEffect(() => {
-    if (profile) {
+    if (profile && isProfileOnboardingComplete(profile)) {
       setDisplayName(profile.displayName ?? '');
       setAgeInput(String(Math.max(18, profile.age)));
       setGender(profile.gender ?? null);
@@ -260,13 +273,14 @@ export function CheckInView({
         setDevice(profile.defaultDevice);
       }
       setBeat((prev) => (prev === 1 ? 2 : prev));
-    } else {
+    } else if (!profile) {
       setAgeInput('');
       setGender(null);
       setRole(null);
+      setOccupationLabel('');
       setBeat(1);
     }
-  }, [profile?.id]);
+  }, [profile?.id, onboardingComplete]);
 
   // Sync regional opt-in once /api/config returns
   useEffect(() => {
@@ -465,6 +479,22 @@ export function CheckInView({
       return;
     }
     setAgeError(null);
+    if (researchConsent && onSaveProfileStep) {
+      const parsedBase = parseOnboardingAnswers(introText, '');
+      void onSaveProfileStep({
+        id: profile?.id,
+        displayName: displayName.trim() || undefined,
+        age: Math.max(18, Math.min(95, effectiveAge || parsedBase.age)),
+        gender: effectiveGender,
+        role: isDriving && effectiveRole === 'knowledge_worker' ? 'driver' : effectiveRole,
+        occupationLabel: occupationLabel.trim() || undefined,
+        texturePref: parsedBase.texturePref,
+        noiseSensitivity,
+        defaultDevice: isDriving ? 'car_audio' : device,
+        primaryChallenge: 'distraction',
+        researchConsent: true,
+      }).catch(() => {});
+    }
     setBeat(initialPreset && selectedMicroState && neuralCoords ? 4 : 2);
   };
 
@@ -532,29 +562,27 @@ export function CheckInView({
         .filter(Boolean)
         .join(' | ');
 
-      let profileUpdate: Partial<UserProfile> | undefined = undefined;
-      if (isFirstVisit) {
-        const parsedBase = parseOnboardingAnswers(introText, '');
-        profileUpdate = {
-          displayName: displayName.trim() || undefined,
-          age: Math.max(18, Math.min(95, effectiveAge || parsedBase.age)),
-          gender: effectiveGender,
-          role: isDriving && effectiveRole === 'knowledge_worker' ? 'driver' : effectiveRole,
-          occupationLabel: occupationLabel.trim() || undefined,
-          texturePref: parsedBase.texturePref,
-          noiseSensitivity,
-          defaultDevice: effectiveDevice,
-          primaryChallenge:
-            currentState === 'fatigued'
-              ? 'fatigue'
-              : currentState === 'stressed' || currentState === 'anxious'
-                ? 'stress'
-                : effectiveTarget === 'sleep_winddown'
-                  ? 'sleep'
-                  : 'distraction',
-          researchConsent,
-        };
-      }
+      const parsedBase = parseOnboardingAnswers(introText, '');
+      const profileUpdate: Partial<UserProfile> = {
+        id: profile?.id,
+        displayName: displayName.trim() || undefined,
+        age: Math.max(18, Math.min(95, effectiveAge || parsedBase.age)),
+        gender: effectiveGender,
+        role: isDriving && effectiveRole === 'knowledge_worker' ? 'driver' : effectiveRole,
+        occupationLabel: occupationLabel.trim() || undefined,
+        texturePref: profile?.texturePref ?? parsedBase.texturePref,
+        noiseSensitivity,
+        defaultDevice: effectiveDevice,
+        primaryChallenge:
+          currentState === 'fatigued'
+            ? 'fatigue'
+            : currentState === 'stressed' || currentState === 'anxious'
+              ? 'stress'
+              : effectiveTarget === 'sleep_winddown'
+                ? 'sleep'
+                : 'distraction',
+        researchConsent,
+      };
 
       await onLaunchUnifiedSession({
         profileUpdate,
@@ -612,8 +640,8 @@ export function CheckInView({
         </div>
       )}
 
-      {/* Returning Listener Identity Bar */}
-      {profile && (
+      {/* Returning Listener Identity Bar (shown only after Onboarding Step 1 is completed and user is on Step 2+) */}
+      {profile && onboardingComplete && beat > 1 && (
         <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/10 bg-[#101114] px-4 py-2.5">
           <div className="flex items-center gap-2.5 min-w-0">
             <NeuralFingerprintSigil
@@ -634,17 +662,15 @@ export function CheckInView({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {onEditProfile && (
-              <button
-                type="button"
-                onClick={onEditProfile}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-[#141518] px-2.5 py-1.5 text-[11px] font-medium text-[#A3A39E] transition hover:border-white/25 hover:text-[#F3F1EC]"
-                title="Edit your Onboarding profile (age, gender, profession)"
-              >
-                <UserCog className="h-3.5 w-3.5 text-[#34D399]" />
-                <span>Edit Profile</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setBeat(1)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-[#141518] px-2.5 py-1.5 text-[11px] font-medium text-[#A3A39E] transition hover:border-white/25 hover:text-[#F3F1EC]"
+              title="Edit your Onboarding profile (age, gender, occupation)"
+            >
+              <UserCog className="h-3.5 w-3.5 text-[#34D399]" />
+              <span>Edit Profile</span>
+            </button>
             <button
               type="button"
               onClick={onOpenIdentityModal}
@@ -753,7 +779,7 @@ export function CheckInView({
       {/* Progress Bars + Clickable Breadcrumbs */}
       <div className="flex flex-col items-center gap-2.5 w-full">
         <div className="flex items-center gap-2">
-          {(isFirstVisit ? ([1, 2, 3, 4] as const) : ([2, 3, 4] as const)).map((b) => (
+          {([1, 2, 3, 4] as const).map((b) => (
             <button
               key={b}
               type="button"
@@ -777,8 +803,9 @@ export function CheckInView({
           <div className="flex flex-wrap items-center justify-center gap-1.5 text-[11px]">
             <button
               type="button"
-              onClick={() => (isFirstVisit ? setBeat(1) : onOpenIdentityModal())}
+              onClick={() => setBeat(1)}
               className="rounded-md border border-white/12 bg-[#141518] px-2.5 py-0.5 text-[#D4D4CE] transition hover:border-white/30 hover:text-[#F3F1EC]"
+              title="Click to edit your age or occupation"
             >
               {displayName.trim() ? `${displayName.trim()} · ` : ''}
               {liveProfileSummary}

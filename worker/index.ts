@@ -462,6 +462,7 @@ Message: """${rawText}"""`;
 type BanditScopeType =
   | 'cohort'
   | 'profile'
+  | 'profile_state'
   | 'cohort_genre'
   | 'profile_genre'
   | 'cohort_arm_genre';
@@ -1782,8 +1783,8 @@ export default {
         await env.DB.batch([
           env.DB.prepare('DELETE FROM sessions WHERE profile_id = ?').bind(id),
           env.DB.prepare(
-            `DELETE FROM bandit_stats WHERE scope_type IN ('profile', 'profile_genre') AND scope_id = ?`
-          ).bind(id),
+            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre') AND scope_id = ?) OR (scope_type = 'profile_state' AND scope_id LIKE ?)`
+          ).bind(id, `${id}|%`),
           env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id),
         ]);
 
@@ -1882,7 +1883,19 @@ export default {
             ? 'alert_focus'
             : body.targetState;
         const energyTier = resolveEnergyTier(effectiveTarget, body.environment, body.currentState);
-        const cohortKey = buildCohortKey(profile.ageBand, body.environment, effectiveTarget);
+        const cohortKey = buildCohortKey(
+          profile.ageBand,
+          body.environment,
+          effectiveTarget,
+          profile.role,
+          body.currentState
+        );
+        const legacyBroadCohortKey = buildCohortKey(
+          profile.ageBand,
+          body.environment,
+          effectiveTarget
+        );
+        const profileStateKey = `${profile.id}|${body.currentState}|${effectiveTarget}`;
 
         // Map core genre aliases typed as custom text (e.g. "rain", "ploaie", "lo-fi") straight to instant Studio R2!
         const coreAliasFromCustom = matchCoreGenreAlias(body.customGenreInput);
@@ -1903,8 +1916,10 @@ export default {
         const dailyCapMax = Math.max(0, Number(env.MUSIC_GEN_DAILY_CAP ?? '3'));
 
         const [
-          cohortStats,
+          exactCohortStats,
+          broadCohortStats,
           profileStats,
+          profileStateStats,
           cohortGenreStats,
           profileGenreStats,
           cohortArmGenreStats,
@@ -1914,7 +1929,9 @@ export default {
           recentShamRows,
         ] = await Promise.all([
           fetchBanditRows(env.DB, 'cohort', cohortKey),
+          fetchBanditRows(env.DB, 'cohort', legacyBroadCohortKey),
           isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile', profile.id),
+          isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile_state', profileStateKey),
           fetchBanditRows(env.DB, 'cohort_genre', cohortKey),
           isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile_genre', profile.id),
           validCustom
@@ -1935,6 +1952,19 @@ export default {
                 .bind(profile.id)
                 .all<{ is_control_trial?: number }>(),
         ]);
+
+        // Hierarchical fallback: prefer exact (ageBand + role + currentState + targetState) cohort,
+        // falling back per-arm to broad (ageBand + environment + targetState) if exact has 0 trials yet
+        const exactMap = new Map(exactCohortStats.map((r) => [r.armId, r]));
+        const cohortStats = [
+          ...exactCohortStats,
+          ...broadCohortStats.filter((b) => !exactMap.has(b.armId)),
+        ];
+        const stateProfMap = new Map(profileStateStats.map((r) => [r.armId, r]));
+        const mergedProfileStats = [
+          ...profileStateStats,
+          ...profileStats.filter((p) => !stateProfMap.has(p.armId)),
+        ];
 
         const recentControlFlags = (recentShamRows.results ?? []).map(
           (r) => Number(r.is_control_trial ?? 0) === 1
@@ -2057,7 +2087,7 @@ export default {
             liveGenAvailable,
             ephemeralMode: isEphemeral,
             cohortStats,
-            profileStats,
+            profileStats: mergedProfileStats,
             cohortGenreStats,
             profileGenreStats,
             cohortArmGenreStats,
@@ -2818,7 +2848,13 @@ export default {
         const compRatio = Number(Math.min(1, actualSec / (plannedMin * 60)).toFixed(3));
         const initMilestone =
           compRatio >= 0.9 ? 90 : compRatio >= 0.75 ? 75 : compRatio >= 0.5 ? 50 : compRatio >= 0.25 ? 25 : 0;
-        const cohortKey = buildCohortKey(ageBand, envMode, targetState);
+        const cohortKey = buildCohortKey(
+          ageBand,
+          envMode,
+          targetState,
+          inferredRole,
+          currentState
+        );
         const musicGenre = (body.musicGenre || 'lofi_keys').slice(0, 48);
 
         await env.DB.prepare(
@@ -3292,7 +3328,7 @@ export default {
         }
 
         if (!session.isControlTrial) {
-          const [cUp, pUp, , pGenreUp] = await Promise.all([
+          const [cUp, pUp, , , pGenreUp] = await Promise.all([
             updateBanditScope(env.DB, {
               scopeType: 'cohort',
               scopeId: session.cohortKey,
@@ -3308,6 +3344,18 @@ export default {
             updateBanditScope(env.DB, {
               scopeType: 'profile',
               scopeId: profileId,
+              armId: session.armId,
+              mode: 'explicit',
+              reward: protocolReward,
+              weight: learningWeight,
+              delta,
+              completionRatio,
+              supersedePrevReward: prevImplicitReward,
+              supersedePrevWeight: prevImplicitWeight,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'profile_state',
+              scopeId: `${profileId}|${session.currentState}|${session.targetState}`,
               armId: session.armId,
               mode: 'explicit',
               reward: protocolReward,

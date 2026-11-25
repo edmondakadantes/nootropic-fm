@@ -42,9 +42,10 @@ import type {
   SessionEnvironment,
   TargetState,
   UserProfile,
+  UserRole,
   WorkedRating,
 } from './types';
-import { ENERGY_LABELS, ENV_LABELS, TARGET_LABELS } from './types';
+import { ENERGY_LABELS, ENV_LABELS, ROLE_SHORT_LABELS, STATE_LABELS, TARGET_LABELS } from './types';
 
 /**
  * Candidate acoustic arms (protocols) explored & optimized by the Contextual Bandit.
@@ -267,13 +268,33 @@ export interface BanditStatRow {
 export function buildCohortKey(
   ageBand: AgeBand,
   environment: SessionEnvironment,
-  targetState: TargetState
+  targetState: TargetState,
+  role?: UserRole,
+  currentState?: CurrentState
 ): string {
+  if (role && currentState) {
+    return `${ageBand}|${role}|${currentState}|${targetState}|${environment}`;
+  }
   return `${ageBand}|${environment}|${targetState}`;
 }
 
 export function formatCohortLabel(cohortKey: string): string {
-  const [ageBand, env, target] = cohortKey.split('|') as [AgeBand, SessionEnvironment, TargetState];
+  const parts = cohortKey.split('|');
+  if (parts.length >= 5) {
+    const [ageBand, role, currentState, target, env] = parts as [
+      AgeBand,
+      UserRole,
+      CurrentState,
+      TargetState,
+      SessionEnvironment,
+    ];
+    const roleLabel = ROLE_SHORT_LABELS[role] ?? role;
+    const stateShort = (STATE_LABELS[currentState] ?? currentState).split(' / ')[0];
+    const targetLabel = TARGET_LABELS[target] ?? target;
+    const envShort = env === 'driving' ? ' · Driving' : '';
+    return `Age ${ageBand} · ${roleLabel}${envShort} · ${stateShort} → ${targetLabel}`;
+  }
+  const [ageBand, env, target] = parts as [AgeBand, SessionEnvironment, TargetState];
   const envLabel = ENV_LABELS[env] ?? env;
   const targetLabel = TARGET_LABELS[target] ?? target;
   return `Age ${ageBand} · ${envLabel} · ${targetLabel}`;
@@ -914,7 +935,13 @@ export function selectProtocolRecommendation(input: {
     blockSize: 4,
   });
 
-  const cohortKey = buildCohortKey(input.profile.ageBand, input.environment, effectiveTarget);
+  const cohortKey = buildCohortKey(
+    input.profile.ageBand,
+    input.environment,
+    effectiveTarget,
+    input.profile.role,
+    input.currentState
+  );
   const confidencePct = Math.round(chosen.expectedMean * 100);
 
   const audioSource: AudioSourceType = validCustom

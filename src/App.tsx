@@ -405,6 +405,23 @@ export default function App() {
     [profile, startSession]
   );
 
+  const handleSaveProfileStep = useCallback(
+    async (data: Partial<UserProfile>) => {
+      const { profile: saved, profileToken, syncCode: issuedCode } = await api.saveProfile({
+        ...data,
+        id: data.id ?? profile?.id,
+      });
+      saveStoredProfileAuth(
+        saved.id,
+        profileToken ?? undefined,
+        issuedCode ?? syncCode ?? undefined
+      );
+      if (issuedCode) setSyncCode(issuedCode);
+      setProfile(saved);
+    },
+    [profile?.id, syncCode]
+  );
+
   const handleSaveProfile = async (data: Partial<UserProfile>) => {
     setErrorBanner(null);
     const { profile: saved, profileToken, syncCode: issuedCode } = await api.saveProfile(data);
@@ -445,15 +462,20 @@ export default function App() {
     }
 
     let activeProfile = profile;
-    if (!activeProfile) {
-      const { profile: saved, profileToken, syncCode: issuedCode } = await api.saveProfile(
-        payload.profileUpdate ?? {
+    if (!activeProfile || payload.profileUpdate) {
+      const { profile: saved, profileToken, syncCode: issuedCode } = await api.saveProfile({
+        ...(payload.profileUpdate ?? {
           age: Math.max(18, payload.ageOverride ?? 34),
           defaultDevice: payload.device,
           researchConsent: true,
-        }
+        }),
+        id: activeProfile?.id ?? payload.profileUpdate?.id,
+      });
+      saveStoredProfileAuth(
+        saved.id,
+        profileToken ?? undefined,
+        issuedCode ?? syncCode ?? undefined
       );
-      saveStoredProfileAuth(saved.id, profileToken, issuedCode);
       if (issuedCode) setSyncCode(issuedCode);
       setProfile(saved);
       activeProfile = saved;
@@ -899,6 +921,7 @@ export default function App() {
               setShowIdentityModal(true);
             }}
             onEditProfile={() => setScreen('onboarding')}
+            onSaveProfileStep={handleSaveProfileStep}
             onMoodChange={setFieldMood}
             onLaunchUnifiedSession={handleLaunchUnifiedSession}
           />

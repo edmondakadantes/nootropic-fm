@@ -605,6 +605,15 @@ export const ROLE_SHORT_LABELS: Record<UserRole, string> = {
   other: 'Other',
 };
 
+export function isProfileOnboardingComplete(p?: UserProfile | null): boolean {
+  if (!p) return false;
+  if (!Number.isFinite(p.age) || p.age < 18 || p.age > 95) return false;
+  if (p.role === 'other' && (!p.occupationLabel || p.occupationLabel.trim().length < 2)) {
+    return false;
+  }
+  return true;
+}
+
 export function formatProfileSummary(p: {
   age: number;
   gender?: UserGender;
