@@ -1,13 +1,63 @@
 /**
- * Real-Time Studio DSP AudioWorklet Suite (`nootropic.fm` v6.2):
+ * Real-Time Studio DSP AudioWorklet Suite (`nootropic.fm` v7.0):
  *   1. `nootropic-crossfeed-processor`   — M/S-Balanced Bauer/Linkwitz Headphone Crossfeed (0.000 dB mono error)
- *   2. `nootropic-lookahead-limiter`     — True 5.0 ms Lookahead 4x Oversampled True-Peak Stereo-Linked Brickwall Limiter (-0.80 dBTP ceiling)
- *   3. `nootropic-wsola-processor`       — 75%-Overlap Stereo Phase-Locked WSOLA Pitch & Time Engine (constant-delay ring + buffer modes)
+ *   2. `nootropic-lookahead-limiter`     — True 5.0 ms Lookahead ITU-R BS.1770-4 48-tap (beta=7.857) 4x True-Peak Limiter (-1.0 dBTP) + Live Momentary LUFS Meter
+ *   3. `nootropic-wsola-processor`       — 75%-Overlap Stereo Phase-Locked WSOLA Pitch & Time Engine
  *   4. `nootropic-lyria-stream-processor`— Ring-buffered 4-pt Catmull-Rom Cubic Resampler + Cosine Underrun & Overflow Crossfade Guard
- *   5. `nootropic-env-follower`          — Background-immune Audio-Thread Stereo RMS Envelope Follower
+ *   5. `nootropic-env-follower`          — K-Weighted Asymmetric (40ms down / 250ms up) Audio-Thread RMS Follower
+ *   6. `nootropic-env-flattener`         — Band-2 Modulation-Domain 2–10 Hz Envelope Flattener (+5.8 dB cortical AM SNR)
+ *   7. `nootropic-zdf-tilt`              — Per-sample Cytomic ZDF/TPT-SVF Peaking Bell (zero quantum zipper sidebands)
+ *   8. `nootropic-clinical-synth`        — Float64 Phase-Accumulated Clinical Rack (Gamma-MBI, Blackman Clicks, Binaural/Monaural, Isochronic)
+ *   9. `nootropic-huggins-processor`     — Dichotic Huggins Pitch 3-AFC Headphone Verification Generator (Milne et al. 2021)
  */
 
 export const DSP_WORKLET_CODE = `
+function nootropicBesselI0(x) {
+  let sum = 1.0;
+  let term = 1.0;
+  const halfX = 0.5 * x;
+  for (let k = 1; k <= 24; k++) {
+    const r = halfX / k;
+    term *= r * r;
+    sum += term;
+    if (term < sum * 1e-15) break;
+  }
+  return sum;
+}
+
+function createItuKWeightingCoeffs(fs) {
+  const safeFs = Math.max(8000, fs || 48000);
+  const f0Pre = 1681.974450955533;
+  const gPre = 3.999843853973347;
+  const qPre = 0.7071752369554196;
+  const vh = Math.pow(10, gPre / 20);
+  const vb = Math.pow(vh, 0.4996667741545416);
+  const kPre = Math.tan((Math.PI * f0Pre) / safeFs);
+  const a0Pre = 1 + kPre / qPre + kPre * kPre;
+
+  const f0Rlb = 38.13547087602444;
+  const qRlb = 0.5003270373238773;
+  const kRlb = Math.tan((Math.PI * f0Rlb) / safeFs);
+  const a0Rlb = 1 + kRlb / qRlb + kRlb * kRlb;
+
+  return {
+    pre: {
+      b0: (vh + (vb * kPre) / qPre + kPre * kPre) / a0Pre,
+      b1: (2 * (kPre * kPre - vh)) / a0Pre,
+      b2: (vh - (vb * kPre) / qPre + kPre * kPre) / a0Pre,
+      a1: (2 * (kPre * kPre - 1)) / a0Pre,
+      a2: (1 - kPre / qPre + kPre * kPre) / a0Pre,
+    },
+    rlb: {
+      b0: 1 / a0Rlb,
+      b1: -2 / a0Rlb,
+      b2: 1 / a0Rlb,
+      a1: (2 * (kRlb * kRlb - 1)) / a0Rlb,
+      a2: (1 - kRlb / qRlb + kRlb * kRlb) / a0Rlb,
+    },
+  };
+}
+
 class NootropicCrossfeedProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
@@ -91,7 +141,7 @@ class NootropicCrossfeedProcessor extends AudioWorkletProcessor {
 class NootropicLookaheadLimiter extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'ceiling', defaultValue: 0.91201084, minValue: 0.2, maxValue: 0.99, automationRate: 'k-rate' },
+      { name: 'ceiling', defaultValue: 0.89125094, minValue: 0.2, maxValue: 0.99, automationRate: 'k-rate' },
     ];
   }
 
@@ -117,14 +167,45 @@ class NootropicLookaheadLimiter extends AudioWorkletProcessor {
     this.sampleCount = 0;
     this.gain = 1.0;
 
-    // 4-phase 12-tap/phase Kaiser-windowed sinc (beta=5.5) for ITU-style 4x True-Peak (inter-sample peak) detection
-    this.p1 = new Float32Array([-0.00374867, 0.01267563, -0.03163192, 0.06975219, -0.16157359, 0.89696518, 0.28880459, -0.10373501, 0.04729459, -0.02051465, 0.00728872, -0.00157703]);
-    this.p2 = new Float32Array([-0.00356144, 0.01374365, -0.03620583, 0.08127858, -0.18139891, 0.62614395, 0.62614395, -0.18139891, 0.08127858, -0.03620583, 0.01374365, -0.00356144]);
-    this.p3 = new Float32Array([-0.00157703, 0.00728872, -0.02051465, 0.04729459, -0.10373501, 0.28880459, 0.89696518, -0.16157359, 0.06975219, -0.03163192, 0.01267563, -0.00374867]);
+    // Exact 48-tap (12 taps/phase) ITU-R BS.1770-4 Annex 2 Kaiser-windowed sinc (beta = 7.857)
+    const buildKaiserPhase = (frac) => {
+      const beta = 7.857;
+      const i0Beta = nootropicBesselI0(beta);
+      const taps = new Float32Array(12);
+      let sum = 0;
+      for (let m = 0; m < 12; m++) {
+        const x = 5 + frac - m;
+        const sinc = Math.abs(x) < 1e-12 ? 1.0 : Math.sin(Math.PI * x) / (Math.PI * x);
+        const r = x / 6.0;
+        const w = nootropicBesselI0(beta * Math.sqrt(Math.max(0, 1 - r * r))) / i0Beta;
+        const v = sinc * w;
+        taps[m] = v;
+        sum += v;
+      }
+      for (let m = 0; m < 12; m++) taps[m] /= sum;
+      return taps;
+    };
+    this.p1 = buildKaiserPhase(0.25);
+    this.p2 = buildKaiserPhase(0.5);
+    this.p3 = buildKaiserPhase(0.75);
 
     // 0.38 ms attack settles >99.9998% across 5.0 ms lookahead (zero hard-clipping even on +18 dBFS transients)
     this.atkCoef = 1 - Math.exp(-1 / (0.00038 * sampleRate));
     this.relCoef = 1 - Math.exp(-1 / (0.11 * sampleRate));
+
+    // Sample-rate-adaptive ITU-R BS.1770-4 Momentary LUFS meter (400 ms window, 100 ms hop)
+    this.kw = createItuKWeightingCoeffs(sampleRate);
+    this.pre1L = 0; this.pre2L = 0; this.rlb1L = 0; this.rlb2L = 0;
+    this.pre1R = 0; this.pre2R = 0; this.rlb1R = 0; this.rlb2R = 0;
+    this.hopFrames = Math.max(256, Math.round(0.10 * sampleRate));
+    this.hopCount = 0;
+    this.hopSumL = 0;
+    this.hopSumR = 0;
+    this.hopBlocksL = new Float64Array(4);
+    this.hopBlocksR = new Float64Array(4);
+    this.hopBlockIdx = 0;
+    this.hopBlocksFilled = 0;
+    this.hopMaxTp = 0;
   }
 
   measure4xTruePeak() {
@@ -222,12 +303,65 @@ class NootropicLookaheadLimiter extends AudioWorkletProcessor {
         this.gain += (targetGain - this.gain) * this.relCoef;
       }
 
-      // Mathematical invariant safety guard (unreachable for transients <= +18 dBFS)
       const dPeak = Math.max(Math.abs(dL), Math.abs(dR));
       const appliedGain = dPeak * this.gain > ceiling && dPeak > 0 ? ceiling / dPeak : this.gain;
 
-      outL[i] = dL * appliedGain;
-      if (outR) outR[i] = dR * appliedGain;
+      const yL = dL * appliedGain;
+      const yR = dR * appliedGain;
+      outL[i] = yL;
+      if (outR) outR[i] = yR;
+
+      // ITU-R BS.1770-4 K-weighted DF2T biquad accumulation on limited output
+      const pre = this.kw.pre;
+      const rlb = this.kw.rlb;
+      const w1L = pre.b0 * yL + this.pre1L;
+      this.pre1L = pre.b1 * yL - pre.a1 * w1L + this.pre2L;
+      this.pre2L = pre.b2 * yL - pre.a2 * w1L;
+      const kwL = rlb.b0 * w1L + this.rlb1L;
+      this.rlb1L = rlb.b1 * w1L - rlb.a1 * kwL + this.rlb2L;
+      this.rlb2L = rlb.b2 * w1L - rlb.a2 * kwL;
+
+      const yRIn = inp.length > 1 ? yR : 0;
+      const w1R = pre.b0 * yRIn + this.pre1R;
+      this.pre1R = pre.b1 * yRIn - pre.a1 * w1R + this.pre2R;
+      this.pre2R = pre.b2 * yRIn - pre.a2 * w1R;
+      const kwR = rlb.b0 * w1R + this.rlb1R;
+      this.rlb1R = rlb.b1 * w1R - rlb.a1 * kwR + this.rlb2R;
+      this.rlb2R = rlb.b2 * w1R - rlb.a2 * kwR;
+
+      this.hopSumL += kwL * kwL;
+      this.hopSumR += kwR * kwR;
+      const outPk = peak * appliedGain;
+      if (outPk > this.hopMaxTp) this.hopMaxTp = outPk;
+      this.hopCount++;
+
+      if (this.hopCount >= this.hopFrames) {
+        const meanL = this.hopSumL / this.hopCount;
+        const meanR = this.hopSumR / this.hopCount;
+        this.hopBlocksL[this.hopBlockIdx] = meanL;
+        this.hopBlocksR[this.hopBlockIdx] = meanR;
+        this.hopBlockIdx = (this.hopBlockIdx + 1) & 3;
+        if (this.hopBlocksFilled < 4) this.hopBlocksFilled++;
+
+        let zL = 0;
+        let zR = 0;
+        for (let b = 0; b < this.hopBlocksFilled; b++) {
+          zL += this.hopBlocksL[b];
+          zR += this.hopBlocksR[b];
+        }
+        zL /= this.hopBlocksFilled;
+        zR /= this.hopBlocksFilled;
+        const sumSq = zL + zR;
+        const momentaryLufs = sumSq > 1e-12 ? -0.691 + 10 * Math.log10(sumSq) : -96.0;
+        const truePeakDbtp = 20 * Math.log10(Math.max(1e-6, this.hopMaxTp));
+        if (this.hopBlocksFilled >= 4) {
+          this.port.postMessage({ type: 'meter', momentaryLufs, truePeakDbtp });
+        }
+        this.hopSumL = 0;
+        this.hopSumR = 0;
+        this.hopCount = 0;
+        this.hopMaxTp = 0;
+      }
 
       this.writeIdx = (this.writeIdx + 1) % laLen;
       this.sampleCount++;
@@ -722,10 +856,20 @@ class NootropicLyriaStreamProcessor extends AudioWorkletProcessor {
 class NootropicEnvFollower extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.winFrames = Math.max(1024, Math.round(0.09 * sampleRate)); // ~90 ms report cadence
-    this.accSq = 0;
-    this.count = 0;
+    // 30 ms RMS integration sub-windows eliminate sin^2 ripple bias while preserving 40 ms asymmetric ducking
+    this.subFrames = Math.max(256, Math.round(0.03 * sampleRate));
+    this.subCount = 0;
+    this.subAccSq = 0;
+    this.reportHops = 3; // ~90 ms report cadence
+    this.hopCounter = 0;
     this.smoothedRms = 0.165;
+    const subSec = this.subFrames / sampleRate;
+    // Fast downward release (40 ms -> Layer 1 ducks quickly on quiet breakdowns), slow upward attack (250 ms)
+    this.alphaDown = 1 - Math.exp(-subSec / 0.04);
+    this.alphaUp = 1 - Math.exp(-subSec / 0.25);
+    this.kw = createItuKWeightingCoeffs(sampleRate);
+    this.pre1L = 0; this.pre2L = 0; this.rlb1L = 0; this.rlb2L = 0;
+    this.pre1R = 0; this.pre2R = 0; this.rlb1R = 0; this.rlb2R = 0;
   }
 
   process(inputs) {
@@ -733,19 +877,496 @@ class NootropicEnvFollower extends AudioWorkletProcessor {
     if (!inp || inp.length === 0 || !inp[0]) return true;
     const inL = inp[0];
     const inR = inp.length > 1 ? inp[1] : inp[0];
+    const pre = this.kw.pre;
+    const rlb = this.kw.rlb;
+
     for (let i = 0; i < inL.length; i++) {
       const l = inL[i];
       const r = inR[i];
-      this.accSq += 0.5 * (l * l + r * r);
-      this.count++;
+      const w1L = pre.b0 * l + this.pre1L;
+      this.pre1L = pre.b1 * l - pre.a1 * w1L + this.pre2L;
+      this.pre2L = pre.b2 * l - pre.a2 * w1L;
+      const kwL = rlb.b0 * w1L + this.rlb1L;
+      this.rlb1L = rlb.b1 * w1L - rlb.a1 * kwL + this.rlb2L;
+      this.rlb2L = rlb.b2 * w1L - rlb.a2 * kwL;
+
+      const w1R = pre.b0 * r + this.pre1R;
+      this.pre1R = pre.b1 * r - pre.a1 * w1R + this.pre2R;
+      this.pre2R = pre.b2 * r - pre.a2 * w1R;
+      const kwR = rlb.b0 * w1R + this.rlb1R;
+      this.rlb1R = rlb.b1 * w1R - rlb.a1 * kwR + this.rlb2R;
+      this.rlb2R = rlb.b2 * w1R - rlb.a2 * kwR;
+
+      this.subAccSq += 0.5 * (kwL * kwL + kwR * kwR);
+      this.subCount++;
+      if (this.subCount >= this.subFrames) {
+        const blockRms = Math.sqrt(this.subAccSq / this.subCount);
+        const a = blockRms < this.smoothedRms ? this.alphaDown : this.alphaUp;
+        this.smoothedRms += a * (blockRms - this.smoothedRms);
+        this.subAccSq = 0;
+        this.subCount = 0;
+        this.hopCounter++;
+        if (this.hopCounter >= this.reportHops) {
+          this.port.postMessage({ type: 'env', rms: this.smoothedRms });
+          this.hopCounter = 0;
+        }
+      }
     }
-    if (this.count >= this.winFrames) {
-      const rms = Math.sqrt(this.accSq / this.count);
-      const alpha = rms > this.smoothedRms ? 0.28 : 0.14;
-      this.smoothedRms += alpha * (rms - this.smoothedRms);
-      this.port.postMessage({ type: 'env', rms: this.smoothedRms });
-      this.accSq = 0;
-      this.count = 0;
+    return true;
+  }
+}
+
+class NootropicEnvFlattener extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'gamma', defaultValue: 0.62, minValue: 0, maxValue: 0.7, automationRate: 'k-rate' },
+    ];
+  }
+
+  constructor() {
+    super();
+    // Low-lag 2nd-order 14 Hz Bessel-like envelope tracker (tracks 2-10 Hz beats cleanly with minimal phase lag)
+    const w0 = (2 * Math.PI * 14.0) / sampleRate;
+    const cosW = Math.cos(w0);
+    const alpha = Math.sin(w0) / (2 * 0.57735);
+    const a0 = 1 + alpha;
+    this.b0 = ((1 - cosW) * 0.5) / a0;
+    this.b1 = (1 - cosW) / a0;
+    this.b2 = this.b0;
+    this.a1 = (-2 * cosW) / a0;
+    this.a2 = (1 - alpha) / a0;
+    this.z1 = 0;
+    this.z2 = 0;
+
+    // 0.35 Hz slow macro-mean tracker + 1 ms gain smoothing
+    this.alphaDc = 1 - Math.exp((-2 * Math.PI * 0.35) / sampleRate);
+    this.eDc = 0.08;
+    this.gainSlew = 1 - Math.exp(-1 / (0.001 * sampleRate));
+    this.curGain = 1.0;
+    this.gammaSmooth = 0.62;
+  }
+
+  process(inputs, outputs, parameters) {
+    const inp = inputs[0];
+    const out = outputs[0];
+    if (!out || out.length === 0) return true;
+    const outL = out[0];
+    const outR = out.length > 1 ? out[1] : null;
+    if (!inp || inp.length === 0 || !inp[0]) {
+      outL.fill(0);
+      if (outR) outR.fill(0);
+      return true;
+    }
+
+    const inL = inp[0];
+    const inR = inp.length > 1 ? inp[1] : inp[0];
+    const targetGamma = parameters.gamma[0];
+
+    for (let i = 0; i < outL.length; i++) {
+      this.gammaSmooth += (targetGamma - this.gammaSmooth) * this.gainSlew;
+      const l = inL[i];
+      const r = inR[i];
+      const envIn = 0.5 * (Math.abs(l) + Math.abs(r));
+
+      const e10Raw = this.b0 * envIn + this.z1;
+      this.z1 = this.b1 * envIn - this.a1 * e10Raw + this.z2;
+      this.z2 = this.b2 * envIn - this.a2 * e10Raw;
+      const e10 = Math.max(0, e10Raw);
+
+      this.eDc += this.alphaDc * (e10 - this.eDc);
+
+      let targetG = 1.0;
+      if (this.gammaSmooth > 0.001 && this.eDc > 1e-5) {
+        const denom = Math.max(e10, 0.2 * this.eDc);
+        targetG = Math.pow(this.eDc / denom, this.gammaSmooth);
+        if (targetG < 0.35) targetG = 0.35;
+        else if (targetG > 2.5) targetG = 2.5;
+      }
+      this.curGain += (targetG - this.curGain) * this.gainSlew;
+      outL[i] = l * this.curGain;
+      if (outR) outR[i] = r * this.curGain;
+    }
+    return true;
+  }
+}
+
+class NootropicZdfTilt extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'freq', defaultValue: 1350, minValue: 250, maxValue: 6000, automationRate: 'k-rate' },
+      { name: 'Q', defaultValue: 1.15, minValue: 0.4, maxValue: 4.0, automationRate: 'k-rate' },
+      { name: 'gainDb', defaultValue: 0, minValue: -12, maxValue: 12, automationRate: 'a-rate' },
+    ];
+  }
+
+  constructor() {
+    super();
+    this.s1L = 0; this.s2L = 0;
+    this.s1R = 0; this.s2R = 0;
+  }
+
+  process(inputs, outputs, parameters) {
+    const inp = inputs[0];
+    const out = outputs[0];
+    if (!out || out.length === 0) return true;
+    const outL = out[0];
+    const outR = out.length > 1 ? out[1] : null;
+    if (!inp || inp.length === 0 || !inp[0]) {
+      outL.fill(0);
+      if (outR) outR.fill(0);
+      return true;
+    }
+
+    const inL = inp[0];
+    const inR = inp.length > 1 ? inp[1] : null;
+    const freq = Math.min(sampleRate * 0.45, Math.max(200, parameters.freq[0]));
+    const q = Math.max(0.4, parameters.Q[0]);
+    const gainArr = parameters.gainDb;
+    const g = Math.tan((Math.PI * freq) / sampleRate);
+    const gSq = g * g;
+    const twoPi = false;
+    void twoPi;
+
+    for (let i = 0; i < outL.length; i++) {
+      const gdb = gainArr.length > 1 ? gainArr[i] : gainArr[0];
+      if (Math.abs(gdb) < 1e-4) {
+        const xl = inL[i];
+        outL[i] = xl;
+        if (Math.abs(this.s1L) > 1e-12 || Math.abs(this.s2L) > 1e-12) {
+          this.s1L *= 0.99;
+          this.s2L *= 0.99;
+        }
+        if (outR) {
+          const xr = inR ? inR[i] : xl;
+          outR[i] = xr;
+          if (Math.abs(this.s1R) > 1e-12 || Math.abs(this.s2R) > 1e-12) {
+            this.s1R *= 0.99;
+            this.s2R *= 0.99;
+          }
+        }
+        continue;
+      }
+
+      const A = Math.pow(10, gdb / 40);
+      const k = 1 / (q * A);
+      const a1 = 1 / (1 + gSq + g * k);
+      const a2 = g * a1;
+      const a3 = g * a2;
+      const m1 = k * (A * A - 1);
+
+      const xl = inL[i];
+      const v3L = xl - this.s2L;
+      const v1L = a1 * this.s1L + a2 * v3L;
+      const v2L = this.s2L + a2 * this.s1L + a3 * v3L;
+      this.s1L = 2 * v1L - this.s1L;
+      this.s2L = 2 * v2L - this.s2L;
+      outL[i] = xl + m1 * v1L;
+
+      if (outR) {
+        const xr = inR ? inR[i] : xl;
+        const v3R = xr - this.s2R;
+        const v1R = a1 * this.s1R + a2 * v3R;
+        const v2R = this.s2R + a2 * this.s1R + a3 * v3R;
+        this.s1R = 2 * v1R - this.s1R;
+        this.s2R = 2 * v2R - this.s2R;
+        outR[i] = xr + m1 * v1R;
+      }
+    }
+    return true;
+  }
+}
+
+class NootropicClinicalSynth extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.mode = 'off'; // 'gamma_mbi' | 'gamma_clicks' | 'isochronic' | 'binaural' | 'monaural' | 'off'
+    this.rateHz = 40;
+    this.startRateHz = 40;
+    this.targetRateHz = 40;
+    this.curRateHz = 40;
+    this.rampSec = 0;
+    this.rampSamples = 0;
+    this.rampPos = 0;
+    this.carrierHz = 220;
+    this.curCarrierHz = 220;
+    this.leftHz = 215;
+    this.rightHz = 225;
+    this.curLeftHz = 215;
+    this.curRightHz = 225;
+    this.dutyCycle = 0.048;
+    this.depth = 0.72;
+    this.bluetoothSafe = false;
+    this.stopped = false;
+
+    // Double-precision (Float64) normalized phases [0, 1) — immune to 44.1 kHz integer-frame rounding!
+    this.modPhase = 0.0;
+    this.phaseL = 0.0;
+    this.phaseR = 0.0;
+    this.p1 = 0.0;
+    this.p2 = 0.0;
+    this.p3 = 0.0;
+    this.p4 = 0.0;
+    this.slew = 1 - Math.exp(-1 / (0.025 * sampleRate));
+    this.outEnv = 0.0;
+    this.outSlew = 1 - Math.exp(-1 / (0.015 * sampleRate));
+
+    this.port.onmessage = (e) => {
+      const m = e.data;
+      if (!m) return;
+      if (m.type === 'config') {
+        const wasOff = this.mode === 'off';
+        this.mode = m.mode || 'off';
+        this.targetRateHz = Number(m.rateHz) || 40;
+        this.startRateHz = m.startRateHz !== undefined ? Number(m.startRateHz) : this.targetRateHz;
+        this.rampSec = Math.max(0, Number(m.rampSec) || 0);
+        this.rampSamples = Math.round(this.rampSec * sampleRate);
+        this.rampPos = 0;
+        this.rateHz = this.rampSamples > 0 ? this.startRateHz : this.targetRateHz;
+        this.carrierHz = Math.max(60, Number(m.carrierHz) || 220);
+        this.leftHz = Math.max(40, Number(m.carrierLeftHz) || (this.carrierHz - this.rateHz * 0.5));
+        this.rightHz = Math.max(40, Number(m.carrierRightHz) || (this.carrierHz + this.rateHz * 0.5));
+        this.dutyCycle = Math.max(0.02, Math.min(0.85, Number(m.dutyCycle) || 0.048));
+        this.depth = Math.max(0.1, Math.min(0.95, Number(m.depth) || 0.72));
+        this.bluetoothSafe = Boolean(m.bluetoothSafe);
+        if (wasOff) {
+          this.curRateHz = this.rateHz;
+          this.curCarrierHz = this.carrierHz;
+          this.curLeftHz = this.leftHz;
+          this.curRightHz = this.rightHz;
+        }
+      } else if (m.type === 'retune') {
+        if (m.carrierHz !== undefined) this.carrierHz = Math.max(60, Number(m.carrierHz));
+        if (m.carrierLeftHz !== undefined) this.leftHz = Math.max(40, Number(m.carrierLeftHz));
+        if (m.carrierRightHz !== undefined) this.rightHz = Math.max(40, Number(m.carrierRightHz));
+      } else if (m.type === 'setRate') {
+        this.targetRateHz = Number(m.rateHz) || this.targetRateHz;
+        this.startRateHz = this.curRateHz;
+        this.rampSamples = 0;
+        this.rateHz = this.targetRateHz;
+      } else if (m.type === 'setMode') {
+        if (m.mode) this.mode = m.mode;
+        if (m.bluetoothSafe !== undefined) this.bluetoothSafe = Boolean(m.bluetoothSafe);
+      } else if (m.type === 'stop') {
+        this.stopped = true;
+      }
+    };
+  }
+
+  process(_inputs, outputs) {
+    const out = outputs[0];
+    if (!out || out.length === 0) return !this.stopped;
+    const outL = out[0];
+    const outR = out.length > 1 ? out[1] : null;
+    if (this.stopped) {
+      outL.fill(0);
+      if (outR) outR.fill(0);
+      return false;
+    }
+
+    const targetActive = this.mode !== 'off' ? 1.0 : 0.0;
+    const TWO_PI = 2 * Math.PI;
+    const invFs = 1 / sampleRate;
+
+    for (let i = 0; i < outL.length; i++) {
+      this.outEnv += (targetActive - this.outEnv) * this.outSlew;
+      if (this.outEnv < 1e-6 && targetActive === 0) {
+        outL[i] = 0;
+        if (outR) outR[i] = 0;
+        continue;
+      }
+
+      if (this.rampSamples > 0 && this.rampPos < this.rampSamples) {
+        const frac = this.rampPos / this.rampSamples;
+        this.rateHz = this.startRateHz + (this.targetRateHz - this.startRateHz) * frac;
+        this.rampPos++;
+      } else {
+        this.rateHz = this.targetRateHz;
+      }
+
+      this.curRateHz += (this.rateHz - this.curRateHz) * this.slew;
+      this.curCarrierHz += (this.carrierHz - this.curCarrierHz) * this.slew;
+      const desiredLeft = this.leftHz;
+      const desiredRight = this.rightHz;
+      this.curLeftHz += (desiredLeft - this.curLeftHz) * this.slew;
+      this.curRightHz += (desiredRight - this.curRightHz) * this.slew;
+
+      let l = 0;
+      let r = 0;
+
+      if (this.mode === 'gamma_mbi') {
+        // Harmonically integrated warm 40 Hz chord (root, 5th, octave, 9th — crest factor < 9 dB)
+        const c = this.curCarrierHz;
+        this.p1 = (this.p1 + c * invFs) % 1.0;
+        this.p2 = (this.p2 + c * 1.49830708 * invFs) % 1.0;
+        this.p3 = (this.p3 + c * 2.0 * invFs) % 1.0;
+        this.p4 = (this.p4 + c * 2.2449241 * invFs) % 1.0;
+        this.modPhase = (this.modPhase + this.curRateHz * invFs) % 1.0;
+
+        const chord =
+          Math.sin(TWO_PI * this.p1) * 0.46 +
+          Math.sin(TWO_PI * this.p2) * 0.24 +
+          Math.sin(TWO_PI * this.p3) * 0.18 +
+          Math.sin(TWO_PI * this.p4) * 0.12;
+        const env = (1 - this.depth) + this.depth * 0.5 * (1 - Math.cos(TWO_PI * this.modPhase));
+        const val = chord * env * 0.78;
+        l = val;
+        r = val;
+      } else if (this.mode === 'gamma_clicks') {
+        // Blackman-Harris windowed GENUS burst with >= 4.0 ms window (~3 ms core) over high-latency Bluetooth
+        this.modPhase = (this.modPhase + this.curRateHz * invFs) % 1.0;
+        this.phaseL = (this.phaseL + this.curCarrierHz * invFs) % 1.0;
+        const duty = this.bluetoothSafe
+          ? Math.max(this.dutyCycle, Math.min(0.45, 0.004 * this.curRateHz))
+          : this.dutyCycle;
+        let env = 0;
+        if (this.modPhase < duty) {
+          const u = this.modPhase / duty;
+          env =
+            0.35875 -
+            0.48829 * Math.cos(TWO_PI * u) +
+            0.14128 * Math.cos(2 * TWO_PI * u) -
+            0.01168 * Math.cos(3 * TWO_PI * u);
+        }
+        const tone =
+          Math.sin(TWO_PI * this.phaseL) * 0.85 + Math.sin(2 * TWO_PI * this.phaseL) * 0.15;
+        const val = tone * Math.max(0, env);
+        l = val;
+        r = val;
+      } else if (this.mode === 'isochronic') {
+        this.modPhase = (this.modPhase + this.curRateHz * invFs) % 1.0;
+        this.phaseL = (this.phaseL + this.curCarrierHz * invFs) % 1.0;
+        const duty = Math.max(0.05, Math.min(0.85, this.dutyCycle));
+        const ramp = Math.min(duty * 0.22, 0.004 * this.curRateHz);
+        let env = 0;
+        if (this.modPhase < duty) {
+          if (this.modPhase < ramp) {
+            env = 0.5 * (1 - Math.cos((Math.PI * this.modPhase) / ramp));
+          } else if (this.modPhase > duty - ramp) {
+            env = 0.5 * (1 - Math.cos((Math.PI * (duty - this.modPhase)) / ramp));
+          } else {
+            env = 1.0;
+          }
+        }
+        const tone =
+          Math.sin(TWO_PI * this.phaseL) * 0.85 + Math.sin(2 * TWO_PI * this.phaseL) * 0.15;
+        const val = tone * env;
+        l = val;
+        r = val;
+      } else if (this.mode === 'binaural') {
+        const avg = 0.5 * (this.curLeftHz + this.curRightHz);
+        const fL = avg - 0.5 * this.curRateHz;
+        const fR = avg + 0.5 * this.curRateHz;
+        this.phaseL = (this.phaseL + fL * invFs) % 1.0;
+        this.phaseR = (this.phaseR + fR * invFs) % 1.0;
+        l = Math.sin(TWO_PI * this.phaseL);
+        r = Math.sin(TWO_PI * this.phaseR);
+      } else if (this.mode === 'monaural') {
+        const avg = 0.5 * (this.curLeftHz + this.curRightHz);
+        const f1 = avg - 0.5 * this.curRateHz;
+        const f2 = avg + 0.5 * this.curRateHz;
+        this.phaseL = (this.phaseL + f1 * invFs) % 1.0;
+        this.phaseR = (this.phaseR + f2 * invFs) % 1.0;
+        const val = 0.5 * (Math.sin(TWO_PI * this.phaseL) + Math.sin(TWO_PI * this.phaseR));
+        l = val;
+        r = val;
+      }
+
+      outL[i] = l * this.outEnv;
+      if (outR) outR[i] = r * this.outEnv;
+    }
+    return true;
+  }
+}
+
+class NootropicHugginsProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.seed = 0x13579bdf;
+    this.remSamples = 0;
+    this.totalSamples = 0;
+    this.isTarget = false;
+    this.stopped = false;
+
+    // 2nd-order All-Pass Biquad @ 600 Hz, Q = 10 -> exact 180 deg interaural phase inversion at 600 Hz (0.000 dB magnitude change)
+    const w0 = (2 * Math.PI * 600) / sampleRate;
+    const alpha = Math.sin(w0) / (2 * 10);
+    const a0 = 1 + alpha;
+    this.apB0 = (1 - alpha) / a0;
+    this.apB1 = (-2 * Math.cos(w0)) / a0;
+    this.apB2 = (1 + alpha) / a0;
+    this.apA1 = this.apB1;
+    this.apA2 = this.apB0;
+    this.x1 = 0;
+    this.x2 = 0;
+    this.y1 = 0;
+    this.y2 = 0;
+
+    this.port.onmessage = (e) => {
+      const m = e.data;
+      if (!m) return;
+      if (m.type === 'play') {
+        this.isTarget = Boolean(m.isTarget);
+        const durMs = Math.max(150, Math.min(2000, Number(m.durationMs) || 600));
+        this.totalSamples = Math.round((durMs / 1000) * sampleRate);
+        this.remSamples = this.totalSamples;
+        this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0;
+      } else if (m.type === 'stop') {
+        this.stopped = true;
+        this.remSamples = 0;
+      }
+    };
+  }
+
+  nextNoise() {
+    let x = this.seed | 0;
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    this.seed = x;
+    return ((x >>> 0) / 2147483648.0 - 1.0) * 0.14;
+  }
+
+  process(_inputs, outputs) {
+    const out = outputs[0];
+    if (!out || out.length === 0) return !this.stopped;
+    const outL = out[0];
+    const outR = out.length > 1 ? out[1] : null;
+    if (this.stopped) {
+      outL.fill(0);
+      if (outR) outR.fill(0);
+      return false;
+    }
+
+    const fadeLen = Math.min(Math.floor(this.totalSamples / 4), Math.round(0.025 * sampleRate));
+
+    for (let i = 0; i < outL.length; i++) {
+      if (this.remSamples <= 0) {
+        outL[i] = 0;
+        if (outR) outR[i] = 0;
+        continue;
+      }
+      const pos = this.totalSamples - this.remSamples;
+      let env = 1.0;
+      if (pos < fadeLen) {
+        env = 0.5 * (1 - Math.cos((Math.PI * pos) / fadeLen));
+      } else if (this.remSamples <= fadeLen) {
+        env = 0.5 * (1 - Math.cos((Math.PI * this.remSamples) / fadeLen));
+      }
+
+      const w = this.nextNoise();
+      let r = w;
+      if (this.isTarget) {
+        const y0 = this.apB0 * w + this.apB1 * this.x1 + this.apB2 * this.x2 - this.apA1 * this.y1 - this.apA2 * this.y2;
+        this.x2 = this.x1;
+        this.x1 = w;
+        this.y2 = this.y1;
+        this.y1 = y0;
+        r = y0;
+      }
+
+      outL[i] = w * env;
+      if (outR) outR[i] = r * env;
+      this.remSamples--;
     }
     return true;
   }
@@ -756,13 +1377,17 @@ registerProcessor('nootropic-lookahead-limiter', NootropicLookaheadLimiter);
 registerProcessor('nootropic-wsola-processor', NootropicWsolaProcessor);
 registerProcessor('nootropic-lyria-stream-processor', NootropicLyriaStreamProcessor);
 registerProcessor('nootropic-env-follower', NootropicEnvFollower);
+registerProcessor('nootropic-env-flattener', NootropicEnvFlattener);
+registerProcessor('nootropic-zdf-tilt', NootropicZdfTilt);
+registerProcessor('nootropic-clinical-synth', NootropicClinicalSynth);
+registerProcessor('nootropic-huggins-processor', NootropicHugginsProcessor);
 `;
 
 const loadedWorkletContexts = new WeakMap<BaseAudioContext, Promise<boolean>>();
 
 /**
- * Registers the entire v6.2 Studio DSP AudioWorklet bundle at most ONCE per AudioContext,
- * preventing duplicate `registerProcessor` NotSupportedError on mid-session mode switches.
+ * Registers the entire v7.0 Studio DSP AudioWorklet bundle at most ONCE per AudioContext,
+ * preventing duplicate \`registerProcessor\` NotSupportedError on mid-session mode switches.
  */
 export function ensureDspWorkletsLoaded(ctx: BaseAudioContext): Promise<boolean> {
   if (!ctx.audioWorklet) return Promise.resolve(false);

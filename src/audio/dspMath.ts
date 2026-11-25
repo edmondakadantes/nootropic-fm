@@ -14,9 +14,9 @@
 export const BUTTERWORTH_LP_HP_Q_DB = 20 * Math.log10(Math.SQRT1_2); // -3.010299956639812
 
 /**
- * True-peak mastering brickwall ceiling (-0.80 dBFS = 0.91201084).
+ * True-peak mastering brickwall ceiling (-1.00 dBTP = 0.89125094).
  */
-export const LIMITER_CEILING_DBFS = -0.8;
+export const LIMITER_CEILING_DBFS = -1.0;
 export const LIMITER_CEILING_LINEAR = Math.pow(10, LIMITER_CEILING_DBFS / 20);
 
 /**
@@ -291,4 +291,69 @@ export function createSilentKeepAliveWavBytes(sampleRate = 48000): Uint8Array<Ar
     view.setInt16(base + 2, sample, true);
   }
   return new Uint8Array(buffer);
+}
+
+export interface ItuBiquadCoeffs {
+  b0: number;
+  b1: number;
+  b2: number;
+  a1: number;
+  a2: number;
+}
+
+/**
+ * Computes exact sample-rate-adaptive ITU-R BS.1770-4 / EBU R128 K-weighting DF2T biquad stages
+ * (Stage 1: +4 dB head-acoustics high-shelf; Stage 2: 38.14 Hz RLB high-pass).
+ */
+export function computeItuKWeightingCoeffs(sampleRate: number): {
+  pre: ItuBiquadCoeffs;
+  rlb: ItuBiquadCoeffs;
+} {
+  const fs = Math.max(8000, Number(sampleRate) || 48000);
+
+  // Stage 1: ITU-R BS.1770-4 analytical pre-filter high-shelf
+  const f0Pre = 1681.974450955533;
+  const gPre = 3.999843853973347;
+  const qPre = 0.7071752369554196;
+  const vh = Math.pow(10, gPre / 20);
+  const vb = Math.pow(vh, 0.4996667741545416);
+  const kPre = Math.tan((Math.PI * f0Pre) / fs);
+  const a0Pre = 1 + kPre / qPre + kPre * kPre;
+
+  const pre: ItuBiquadCoeffs = {
+    b0: (vh + (vb * kPre) / qPre + kPre * kPre) / a0Pre,
+    b1: (2 * (kPre * kPre - vh)) / a0Pre,
+    b2: (vh - (vb * kPre) / qPre + kPre * kPre) / a0Pre,
+    a1: (2 * (kPre * kPre - 1)) / a0Pre,
+    a2: (1 - kPre / qPre + kPre * kPre) / a0Pre,
+  };
+
+  // Stage 2: ITU-R BS.1770-4 RLB high-pass weighting curve
+  const f0Rlb = 38.13547087602444;
+  const qRlb = 0.5003270373238773;
+  const kRlb = Math.tan((Math.PI * f0Rlb) / fs);
+  const a0Rlb = 1 + kRlb / qRlb + kRlb * kRlb;
+
+  const rlb: ItuBiquadCoeffs = {
+    b0: 1 / a0Rlb,
+    b1: -2 / a0Rlb,
+    b2: 1 / a0Rlb,
+    a1: (2 * (kRlb * kRlb - 1)) / a0Rlb,
+    a2: (1 - kRlb / qRlb + kRlb * kRlb) / a0Rlb,
+  };
+
+  return { pre, rlb };
+}
+
+/**
+ * Estimates age-indexed Individual Alpha Frequency (IAF, Corcoran et al. 2018) prior in 0.5 Hz steps.
+ */
+export function estimateAgePriorIafHz(ageBand?: string | null): number {
+  let raw = 10.0;
+  if (ageBand === '18_29') raw = 10.5;
+  else if (ageBand === '30_44') raw = 10.0;
+  else if (ageBand === '45_59') raw = 9.5;
+  else if (ageBand === '60_plus') raw = 9.0;
+  const snapped = Math.round(raw * 2) / 2;
+  return Math.max(8.5, Math.min(11.5, snapped));
 }

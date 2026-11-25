@@ -23,7 +23,7 @@ import {
 import { ensureDspWorkletsLoaded } from './dspWorklets';
 import { GenerativeComposer } from './GenerativeComposer';
 import { LyriaRealtimeClient, type LyriaRealtimeStatus } from './LyriaRealtimeClient';
-import { createCalibratedNoiseBuffer, MedicalStimulusRack } from './MedicalStimulusRack';
+import { createCalibratedNoiseBuffer, MedicalStimulusRack, type GammaStimulusMode } from './MedicalStimulusRack';
 import { StereoRainBed } from './StereoRainBed';
 
 export type SessionPhase = 'entry' | 'plateau' | 'landing';
@@ -73,6 +73,13 @@ export interface EngineTelemetry {
   usingRealSamples?: boolean;
   studioRetuned432?: boolean;
   layerMonitorMode: LayerMonitorMode;
+  momentaryLufs: number | null;
+  truePeakDbtp: number | null;
+  gammaMode: GammaStimulusMode;
+  alphaIafHz: number | null;
+  hugginsStatus: 'untested' | 'verified_stereo' | 'monaural_safe';
+  bluetoothSafeActive: boolean;
+  band2FlattenerActive: boolean;
 }
 
 /**
@@ -318,13 +325,22 @@ export class PsychoacousticEngine {
   private amSalienceWaveR: PeriodicWave | null = null;
   private amUsesSalience = false;
 
-  // AudioWorklet DSP nodes (True Lookahead Limiter, Bauer/MS Crossfeed, Env Follower)
+  // AudioWorklet DSP nodes (True Lookahead Limiter, Bauer/MS Crossfeed, Env Follower, Flattener, ZDF Tilt)
   private workletsReady = false;
   private lookaheadLimiterNode: AudioWorkletNode | null = null;
   private crossfeedNode: AudioWorkletNode | null = null;
   private envFollowerNode: AudioWorkletNode | null = null;
+  private band2FlattenerNode: AudioWorkletNode | null = null;
+  private amTiltNodeL: AudioNode | null = null;
+  private amTiltNodeR: AudioNode | null = null;
   private envSinkGain: GainNode | null = null;
   private scopeFftBuf: Float32Array<ArrayBuffer> | null = null;
+  private gammaMode: GammaStimulusMode = 'harmonic_mbi';
+  private alphaIafHz: number | null = null;
+  private hugginsStatus: 'untested' | 'verified_stereo' | 'monaural_safe' = 'untested';
+  private bluetoothSafeActive = false;
+  private momentaryLufs: number | null = null;
+  private truePeakDbtp: number | null = null;
 
   // Dynamic SNR Music Envelope Follower (keeps Layer 1 stimulus locked at true study SNR)
   private musicEnvAnalyser: AnalyserNode | null = null;
@@ -417,6 +433,19 @@ export class PsychoacousticEngine {
     this.modDepthMultiplier = 1.0;
     this.carrierMode = initialCarrierMode ?? this.studySpec.music.defaultCarrierMode ?? 'generative_live';
     this.layerMonitorMode = this.carrierMode === 'pure_stimulus' ? 'science_only' : 'full_mix';
+    this.gammaMode = this.carrierMode === 'pure_stimulus' ? 'clinical_clicks' : 'harmonic_mbi';
+    this.momentaryLufs = null;
+    this.truePeakDbtp = null;
+    try {
+      const savedHuggins = localStorage.getItem('nootropic_fm_huggins_v1');
+      if (savedHuggins) {
+        const parsed = JSON.parse(savedHuggins) as { passed?: boolean };
+        if (parsed.passed === true) this.hugginsStatus = 'verified_stereo';
+        else if (parsed.passed === false) this.hugginsStatus = 'monaural_safe';
+      }
+    } catch {
+      // ignore storage errors
+    }
 
     if ('audioSession' in navigator) {
       try {
@@ -497,6 +526,13 @@ export class PsychoacousticEngine {
         outputChannelCount: [2],
       });
       limiterNode.parameters.get('ceiling')?.setValueAtTime(LIMITER_CEILING_LINEAR, ctx.currentTime);
+      limiterNode.port.onmessage = (evt) => {
+        if (!this.isPlaying || !evt.data || evt.data.type !== 'meter') return;
+        const lufs = Number(evt.data.momentaryLufs);
+        const tp = Number(evt.data.truePeakDbtp);
+        if (Number.isFinite(lufs)) this.momentaryLufs = lufs;
+        if (Number.isFinite(tp)) this.truePeakDbtp = tp;
+      };
       masterSumBus.connect(limiterNode);
       limiterNode.connect(masterGain);
       this.lookaheadLimiterNode = limiterNode;
@@ -542,7 +578,11 @@ export class PsychoacousticEngine {
     scopeModAnalyser.smoothingTimeConstant = 0.0;
     this.scopeModAnalyser = scopeModAnalyser;
 
-    // ─── LAYER 1A: PRECISION MEDICAL STIMULUS RACK (40 Hz GENUS, Isochronic, Binaural, Monaural, HRV, SNR Noise) ───
+    const ctxAny = ctx as AudioContext & { outputLatency?: number; baseLatency?: number };
+    const measuredLatency = Number(ctxAny.outputLatency ?? ctxAny.baseLatency ?? 0);
+    this.bluetoothSafeActive = Number.isFinite(measuredLatency) && measuredLatency > 0.1;
+
+    // ─── LAYER 1A: PRECISION MEDICAL STIMULUS RACK (40 Hz Gamma-MBI, Isochronic, Binaural/Monaural, HRV, SNR Noise) ───
     const { hrvBusInput } = this.stimulusRack.start({
       ctx,
       spec: this.studySpec,
@@ -551,6 +591,12 @@ export class PsychoacousticEngine {
       isControlTrial: this.isControlTrial,
       pureStimulusMode: this.carrierMode === 'pure_stimulus',
       stimulusTap: scopeModAnalyser,
+      workletsReady: this.workletsReady,
+      gammaMode: this.gammaMode,
+      forceMonaural: this.hugginsStatus === 'monaural_safe',
+      bluetoothSafe: this.bluetoothSafeActive,
+      alphaIafHz: this.alphaIafHz ?? undefined,
+      plannedSec: this.plannedSec,
     });
 
     // ─── LAYER 1B: 3-BAND LINKWITZ-RILEY (LR4) PHASE-COHERENT CORTICAL AM MATRIX ───
@@ -734,20 +780,45 @@ export class PsychoacousticEngine {
     const amActiveForSpec =
       this.studySpec.entrainment.type === 'amplitude_modulation' &&
       this.studySpec.entrainment.frequencyHz > 0;
-    const amStartHz = this.studySpec.entrainment.startFrequencyHz ?? this.studySpec.entrainment.frequencyHz;
+    const isAlphaSpec =
+      this.studySpec.entrainment.frequencyHz >= 8 && this.studySpec.entrainment.frequencyHz <= 12;
+    const amTargetEndHz =
+      isAlphaSpec && this.alphaIafHz !== null ? this.alphaIafHz : this.studySpec.entrainment.frequencyHz;
+    const amStartHz = this.studySpec.entrainment.startFrequencyHz ?? amTargetEndHz;
     const targetAmDepth = amActiveForSpec ? this.studySpec.entrainment.modulationDepth : 0;
     const initialDepth = this.isControlTrial
       ? 0
       : Math.min(0.74, Math.max(0, targetAmDepth * 0.76 * this.modDepthMultiplier));
+
+    let midInputForAm: AudioNode = midBand.output;
+    if (this.workletsReady) {
+      const flattenerNode = new AudioWorkletNode(ctx, 'nootropic-env-flattener', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+      const wantFlatten =
+        amActiveForSpec &&
+        !this.isControlTrial &&
+        this.layerMonitorMode !== 'science_only' &&
+        this.carrierMode !== 'pure_stimulus';
+      flattenerNode.parameters.get('gamma')?.setValueAtTime(wantFlatten ? 0.62 : 0, ctx.currentTime);
+      midBand.output.connect(flattenerNode);
+      midInputForAm = flattenerNode;
+      this.band2FlattenerNode = flattenerNode;
+    } else {
+      this.band2FlattenerNode = null;
+    }
 
     const useStereoSpread = Boolean(
       amActiveForSpec &&
         (this.studySpec.entrainment.phaseOffsetDeg ?? 0) > 0 &&
         !params.speakerSafeEQ
     );
+    const monauralCollapse = this.hugginsStatus === 'monaural_safe';
     const isRaisedCosine = this.studySpec.entrainment.waveform === 'raised_cosine';
     const useNeuralSalience =
-      amActiveForSpec && !isRaisedCosine && this.studySpec.entrainment.frequencyHz >= 12;
+      amActiveForSpec && !isRaisedCosine && (amTargetEndHz || 0) >= 12;
     this.amUsesSalience = useNeuralSalience;
     const salienceBundleL = createNeuralSalienceWave(ctx, 0);
     this.amSalienceWaveL = salienceBundleL.wave;
@@ -780,26 +851,42 @@ export class PsychoacousticEngine {
     const amGainL = ctx.createGain();
     amGainL.gain.setValueAtTime(initialAmGains.bias, ctx.currentTime);
 
-    // Hybrid Velvet AM Spectral Presence Tilt (1350 Hz peaking modulated in phase with AM crest)
-    const amTiltL = ctx.createBiquadFilter();
-    amTiltL.type = 'peaking';
-    amTiltL.frequency.setValueAtTime(1350, ctx.currentTime);
-    amTiltL.Q.value = 1.15;
-    amTiltL.gain.setValueAtTime(0, ctx.currentTime);
+    // Hybrid Velvet AM Spectral Presence Tilt (restricted <= 12 Hz to eliminate 16–40 Hz off-center FM/PM warble; ZDF/TPT-SVF inside AudioWorklet)
     const amTiltDepthL = ctx.createGain();
-    const initTilt =
-      amActiveForSpec && this.layerMonitorMode !== 'science_only' ? initialDepth * 4.8 : 0;
+    const allowTiltInit =
+      amActiveForSpec && (amStartHz || 16) <= 12 && this.layerMonitorMode !== 'science_only';
+    const initTilt = allowTiltInit ? initialDepth * 4.2 : 0;
     amTiltDepthL.gain.setValueAtTime(initTilt, ctx.currentTime);
+
+    let amTiltLNode: AudioNode;
+    if (this.workletsReady) {
+      const zdfL = new AudioWorkletNode(ctx, 'nootropic-zdf-tilt');
+      zdfL.parameters.get('freq')?.setValueAtTime(1350, ctx.currentTime);
+      zdfL.parameters.get('Q')?.setValueAtTime(1.15, ctx.currentTime);
+      zdfL.parameters.get('gainDb')?.setValueAtTime(0, ctx.currentTime);
+      const gainDbParam = zdfL.parameters.get('gainDb');
+      if (gainDbParam) amTiltDepthL.connect(gainDbParam);
+      amGainL.connect(zdfL);
+      amTiltLNode = zdfL;
+    } else {
+      const amTiltL = ctx.createBiquadFilter();
+      amTiltL.type = 'peaking';
+      amTiltL.frequency.setValueAtTime(1350, ctx.currentTime);
+      amTiltL.Q.value = 1.15;
+      amTiltL.gain.setValueAtTime(0, ctx.currentTime);
+      amTiltDepthL.connect(amTiltL.gain);
+      amGainL.connect(amTiltL);
+      amTiltLNode = amTiltL;
+    }
 
     amLfoL.connect(amDepthGainL);
     amDepthGainL.connect(amGainL.gain);
     amLfoL.connect(amTiltDepthL);
-    amTiltDepthL.connect(amTiltL.gain);
-    amGainL.connect(amTiltL);
     amLfoL.start();
 
-    let midOutput: AudioNode = amTiltL;
+    let midOutput: AudioNode = amTiltLNode;
     this.amTiltDepthL = amTiltDepthL;
+    this.amTiltNodeL = amTiltLNode;
 
     if (useStereoSpread) {
       const splitter = ctx.createChannelSplitter(2);
@@ -810,7 +897,12 @@ export class PsychoacousticEngine {
       const salienceBundleR = createNeuralSalienceWave(ctx, spreadDeg);
       this.amSalienceWaveR = salienceBundleR.wave;
       this.amPureWaveR = createPhaseShiftedSineWave(ctx, spreadDeg + (isRaisedCosine ? 90 : 0));
-      amLfoR.setPeriodicWave(startWithSalience ? this.amSalienceWaveR : this.amPureWaveR);
+      const useZeroDegRight = monauralCollapse;
+      amLfoR.setPeriodicWave(
+        startWithSalience
+          ? (useZeroDegRight ? this.amSalienceWaveL : this.amSalienceWaveR)
+          : (useZeroDegRight ? this.amPureWaveL : this.amPureWaveR)
+      );
       amLfoR.frequency.setValueAtTime(Math.max(0.5, amStartHz || 16), ctx.currentTime);
 
       const amDepthGainR = ctx.createGain();
@@ -819,38 +911,54 @@ export class PsychoacousticEngine {
       const amGainR = ctx.createGain();
       amGainR.gain.setValueAtTime(initialAmGains.bias, ctx.currentTime);
 
-      const amTiltR = ctx.createBiquadFilter();
-      amTiltR.type = 'peaking';
-      amTiltR.frequency.setValueAtTime(1350, ctx.currentTime);
-      amTiltR.Q.value = 1.15;
-      amTiltR.gain.setValueAtTime(0, ctx.currentTime);
       const amTiltDepthR = ctx.createGain();
       amTiltDepthR.gain.setValueAtTime(initTilt, ctx.currentTime);
+
+      let amTiltRNode: AudioNode;
+      if (this.workletsReady) {
+        const zdfR = new AudioWorkletNode(ctx, 'nootropic-zdf-tilt');
+        zdfR.parameters.get('freq')?.setValueAtTime(1350, ctx.currentTime);
+        zdfR.parameters.get('Q')?.setValueAtTime(1.15, ctx.currentTime);
+        zdfR.parameters.get('gainDb')?.setValueAtTime(0, ctx.currentTime);
+        const gainDbParamR = zdfR.parameters.get('gainDb');
+        if (gainDbParamR) amTiltDepthR.connect(gainDbParamR);
+        amGainR.connect(zdfR);
+        amTiltRNode = zdfR;
+      } else {
+        const amTiltR = ctx.createBiquadFilter();
+        amTiltR.type = 'peaking';
+        amTiltR.frequency.setValueAtTime(1350, ctx.currentTime);
+        amTiltR.Q.value = 1.15;
+        amTiltR.gain.setValueAtTime(0, ctx.currentTime);
+        amTiltDepthR.connect(amTiltR.gain);
+        amGainR.connect(amTiltR);
+        amTiltRNode = amTiltR;
+      }
 
       amLfoR.connect(amDepthGainR);
       amDepthGainR.connect(amGainR.gain);
       amLfoR.connect(amTiltDepthR);
-      amTiltDepthR.connect(amTiltR.gain);
-      amGainR.connect(amTiltR);
       amLfoR.start();
 
-      midBand.output.connect(splitter);
+      midInputForAm.connect(splitter);
       splitter.connect(amGainL, 0);
       splitter.connect(amGainR, 1);
-      amTiltL.connect(merger, 0, 0);
-      amTiltR.connect(merger, 0, 1);
+      amTiltLNode.connect(merger, 0, 0);
+      amTiltRNode.connect(merger, 0, 1);
 
       this.amGainR = amGainR;
       this.amLfoR = amLfoR;
       this.amDepthGainR = amDepthGainR;
       this.amTiltDepthR = amTiltDepthR;
+      this.amTiltNodeR = amTiltRNode;
       midOutput = merger;
     } else {
-      midBand.output.connect(amGainL);
+      midInputForAm.connect(amGainL);
       this.amGainR = null;
       this.amLfoR = null;
       this.amDepthGainR = null;
       this.amTiltDepthR = null;
+      this.amTiltNodeR = null;
       this.amPureWaveR = null;
       this.amSalienceWaveR = null;
     }
@@ -1052,8 +1160,65 @@ export class PsychoacousticEngine {
     return { bias: pair.bias, swing: pair.swing };
   }
 
+  private isBand2FlattenerActive(): boolean {
+    return Boolean(
+      this.band2FlattenerNode &&
+        this.studySpec?.entrainment.type === 'amplitude_modulation' &&
+        this.studySpec.entrainment.frequencyHz > 0 &&
+        !this.isControlTrial &&
+        this.layerMonitorMode !== 'science_only' &&
+        this.layerMonitorMode !== 'music_only' &&
+        this.carrierMode !== 'pure_stimulus'
+    );
+  }
+
+  private syncBand2Flattener(): void {
+    if (!this.ctx || !this.band2FlattenerNode) return;
+    const gamma = this.isBand2FlattenerActive() ? 0.62 : 0;
+    this.band2FlattenerNode.parameters.get('gamma')?.setValueAtTime(gamma, this.ctx.currentTime);
+  }
+
+  public setGammaMode(mode: GammaStimulusMode): void {
+    this.gammaMode = mode;
+    this.stimulusRack.setGammaMode(mode);
+  }
+
+  public setAlphaIafHz(hz: number): void {
+    const snapped = Math.max(8.5, Math.min(11.5, Math.round(hz * 2) / 2));
+    this.alphaIafHz = snapped;
+    const spec = this.studySpec;
+    if (spec && spec.entrainment.frequencyHz >= 8 && spec.entrainment.frequencyHz <= 12) {
+      this.stimulusRack.setOverrideFrequencyHz(snapped);
+      if (this.isPlaying) {
+        this.updateElapsed(this.elapsedSec);
+      }
+    }
+  }
+
+  public applyAcousticProfile(opts: {
+    hugginsPassed?: boolean;
+    bluetoothHighLatency?: boolean;
+  }): void {
+    if (opts.hugginsPassed !== undefined) {
+      this.hugginsStatus = opts.hugginsPassed ? 'verified_stereo' : 'monaural_safe';
+      this.stimulusRack.setForceMonaural(!opts.hugginsPassed);
+      this.syncAmWaveformForMonitorMode(
+        this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus'
+      );
+    }
+    if (opts.bluetoothHighLatency !== undefined) {
+      this.bluetoothSafeActive = opts.bluetoothHighLatency;
+      this.stimulusRack.setBluetoothSafe(opts.bluetoothHighLatency);
+    }
+  }
+
+  public getMomentaryLufs(): number | null {
+    return this.momentaryLufs;
+  }
+
   private syncAmWaveformForMonitorMode(pureOnly: boolean): void {
     if (!this.amLfoL) return;
+    const collapseStereo = this.hugginsStatus === 'monaural_safe';
     if (pureOnly || !this.amUsesSalience) {
       this.amWaveStats = { min: -1, max: 1, rms: Math.SQRT1_2 };
       if (this.amPureWaveL) {
@@ -1061,16 +1226,18 @@ export class PsychoacousticEngine {
       } else {
         this.amLfoL.type = 'sine';
       }
-      if (this.amLfoR && this.amPureWaveR) {
-        this.amLfoR.setPeriodicWave(this.amPureWaveR);
+      if (this.amLfoR) {
+        const waveR = collapseStereo ? this.amPureWaveL : this.amPureWaveR;
+        if (waveR) this.amLfoR.setPeriodicWave(waveR);
       }
     } else {
       this.amWaveStats = { ...this.amSalienceStats };
       if (this.amSalienceWaveL) {
         this.amLfoL.setPeriodicWave(this.amSalienceWaveL);
       }
-      if (this.amLfoR && this.amSalienceWaveR) {
-        this.amLfoR.setPeriodicWave(this.amSalienceWaveR);
+      if (this.amLfoR) {
+        const waveR = collapseStereo ? this.amSalienceWaveL : this.amSalienceWaveR;
+        if (waveR) this.amLfoR.setPeriodicWave(waveR);
       }
     }
   }
@@ -1122,6 +1289,7 @@ export class PsychoacousticEngine {
     this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureCarrier ? 0.22 : 0, now, 0.18);
     this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(muteMusic ? 0 : 1, now);
     this.syncAmWaveformForMonitorMode(muteMusic && !muteScience);
+    this.syncBand2Flattener();
     this.syncRainBed();
 
     if (this.isPlaying) {
@@ -1201,6 +1369,7 @@ export class PsychoacousticEngine {
       this.syncAmWaveformForMonitorMode(false);
       void this.activateStudioForGenre(this.genre);
     }
+    this.syncBand2Flattener();
     this.syncRainBed();
   }
 
@@ -2070,20 +2239,36 @@ export class PsychoacousticEngine {
     const spec = this.studySpec;
     const scienceMuted = this.layerMonitorMode === 'music_only';
     const activePhaseFactor = this.layerMonitorMode === 'science_only' ? 1.0 : phaseModFactor;
+    // Slow 0.004 Hz (~4 min) macro-dynamic breathing prevents N1 cortical habituation across 30–90m sessions
+    const antiHabFactor =
+      this.layerMonitorMode === 'science_only' ||
+      this.carrierMode === 'pure_stimulus' ||
+      this.isControlTrial
+        ? 1.0
+        : 0.85 + 0.15 * Math.cos(2 * Math.PI * 0.004 * elapsedSec);
     const amActive = spec?.entrainment.type === 'amplitude_modulation' && spec.entrainment.frequencyHz > 0;
     const baseDepth = amActive ? spec.entrainment.modulationDepth : 0;
-    const nominalDepth = Math.min(0.75, Math.max(0, baseDepth * this.modDepthMultiplier * activePhaseFactor));
+    const nominalDepth = Math.min(
+      0.75,
+      Math.max(0, baseDepth * this.modDepthMultiplier * activePhaseFactor * antiHabFactor)
+    );
     const effectiveDepth = this.isControlTrial || scienceMuted ? 0 : nominalDepth;
 
     // Iso-Principle live frequency ramp (startFrequencyHz -> target frequencyHz within 90s)
-    let liveAmHz = spec?.entrainment.frequencyHz ?? this.params?.modulationHz ?? 16;
+    const isAlphaSpec =
+      Boolean(spec && spec.entrainment.frequencyHz >= 8 && spec.entrainment.frequencyHz <= 12);
+    const targetSpecHz =
+      isAlphaSpec && this.alphaIafHz !== null
+        ? this.alphaIafHz
+        : spec?.entrainment.frequencyHz ?? this.params?.modulationHz ?? 16;
+    let liveAmHz = targetSpecHz;
     if (amActive && spec?.entrainment.startFrequencyHz !== undefined) {
       const freqRampSec = Math.min(90, Math.max(30, this.plannedSec * 0.15));
       const rampRatio = Math.min(1, Math.max(0, elapsedSec / freqRampSec));
       liveAmHz = Number(
         (
           spec.entrainment.startFrequencyHz +
-          (spec.entrainment.frequencyHz - spec.entrainment.startFrequencyHz) * rampRatio
+          (targetSpecHz - spec.entrainment.startFrequencyHz) * rampRatio
         ).toFixed(2)
       );
     }
@@ -2091,12 +2276,14 @@ export class PsychoacousticEngine {
     if (this.ctx && this.amGainL && this.amDepthGainL && this.amLfoL) {
       const now = this.ctx.currentTime;
       const amGains = this.computeAmGainPair(effectiveDepth);
+      // Restrict ZDF peaking-EQ tilt strictly to <= 12 Hz so 16–40 Hz protocols have zero off-center FM/PM warble
       const tiltDbGain =
         amActive &&
+        liveAmHz <= 12 &&
         !scienceMuted &&
         this.layerMonitorMode !== 'science_only' &&
         this.carrierMode !== 'pure_stimulus'
-          ? effectiveDepth * 4.8
+          ? effectiveDepth * 4.2
           : 0;
       this.amGainL.gain.setTargetAtTime(amGains.bias, now, 0.35);
       this.amDepthGainL.gain.setTargetAtTime(amGains.swing, now, 0.35);
@@ -2215,6 +2402,13 @@ export class PsychoacousticEngine {
       usingRealSamples: this.composer.isUsingRealSamples(),
       studioRetuned432: this.usingStudioAudio && spec?.music.tuningA4Hz === 432,
       layerMonitorMode: this.layerMonitorMode,
+      momentaryLufs: this.momentaryLufs !== null ? Number(this.momentaryLufs.toFixed(1)) : null,
+      truePeakDbtp: this.truePeakDbtp !== null ? Number(this.truePeakDbtp.toFixed(1)) : null,
+      gammaMode: stim.gammaMode,
+      alphaIafHz: this.alphaIafHz,
+      hugginsStatus: this.hugginsStatus,
+      bluetoothSafeActive: this.bluetoothSafeActive,
+      band2FlattenerActive: this.isBand2FlattenerActive(),
     };
   }
 
@@ -2437,6 +2631,9 @@ export class PsychoacousticEngine {
       if (this.envFollowerNode) {
         this.envFollowerNode.port.onmessage = null;
       }
+      if (this.lookaheadLimiterNode) {
+        this.lookaheadLimiterNode.port.onmessage = null;
+      }
       this.ctx = null;
       this.audioEl = null;
       this.keepAliveEl = null;
@@ -2450,7 +2647,12 @@ export class PsychoacousticEngine {
       this.lookaheadLimiterNode = null;
       this.crossfeedNode = null;
       this.envFollowerNode = null;
+      this.band2FlattenerNode = null;
+      this.amTiltNodeL = null;
+      this.amTiltNodeR = null;
       this.envSinkGain = null;
+      this.momentaryLufs = null;
+      this.truePeakDbtp = null;
       this.amPureWaveL = null;
       this.amPureWaveR = null;
       this.amSalienceWaveL = null;
@@ -2535,9 +2737,15 @@ export class PsychoacousticEngine {
         this.envFollowerNode.port.onmessage = null;
         this.envFollowerNode.disconnect();
       }
+      if (this.lookaheadLimiterNode) {
+        this.lookaheadLimiterNode.port.onmessage = null;
+        this.lookaheadLimiterNode.disconnect();
+      }
       this.envSinkGain?.disconnect();
-      this.lookaheadLimiterNode?.disconnect();
       this.crossfeedNode?.disconnect();
+      this.band2FlattenerNode?.disconnect();
+      this.amTiltNodeL?.disconnect();
+      this.amTiltNodeR?.disconnect();
     } catch {
       // ignore
     }
@@ -2570,7 +2778,12 @@ export class PsychoacousticEngine {
     this.lookaheadLimiterNode = null;
     this.crossfeedNode = null;
     this.envFollowerNode = null;
+    this.band2FlattenerNode = null;
+    this.amTiltNodeL = null;
+    this.amTiltNodeR = null;
     this.envSinkGain = null;
+    this.momentaryLufs = null;
+    this.truePeakDbtp = null;
     this.scopeFftBuf = null;
     this.activeStreamCrossfadeCheck = null;
     this.activeWsolaNode = null;

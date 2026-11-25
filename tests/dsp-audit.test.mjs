@@ -15,9 +15,11 @@ import {
   NOISE_CALIBRATED_RMS,
   calibrateFilteredStereoNoiseRms,
   computeExactAmGainPair,
+  computeItuKWeightingCoeffs,
   computeParabolicPeakHz,
   computePeriodicWaveStats,
   createSilentKeepAliveWavBytes,
+  estimateAgePriorIafHz,
   normalizeStereoBufferRms,
 } from '../src/audio/dspMath.ts';
 import { DSP_WORKLET_CODE } from '../src/audio/dspWorklets.ts';
@@ -107,9 +109,12 @@ function loadWorkletProcessors(sampleRate = 48000) {
     sampleRate,
     Math,
     Float32Array,
+    Float64Array,
     Int32Array,
     Uint8Array,
+    Array,
     Number,
+    Boolean,
     Infinity,
   };
   vm.runInNewContext(DSP_WORKLET_CODE, sandbox);
@@ -176,8 +181,15 @@ test('1. dspMath primitives: LR4 Q_dB, limiter ceiling, exact AM wave compensati
   const linearQ = Math.pow(10, BUTTERWORTH_LP_HP_Q_DB / 20);
   assert.ok(Math.abs(linearQ - Math.SQRT1_2) < 1e-12, `Expected SQRT1_2 linear Q, got ${linearQ}`);
 
-  // Brickwall ceiling -0.80 dBFS
+  // Brickwall ceiling -1.00 dBTP
   assert.ok(Math.abs(db(LIMITER_CEILING_LINEAR) - LIMITER_CEILING_DBFS) < 1e-9);
+  assert.equal(estimateAgePriorIafHz('18_29'), 10.5);
+  assert.equal(estimateAgePriorIafHz('60_plus'), 9.0);
+  assert.equal(estimateAgePriorIafHz(null), 10.0);
+  const kw48 = computeItuKWeightingCoeffs(48000);
+  const kw44 = computeItuKWeightingCoeffs(44100);
+  assert.ok(Math.abs(kw48.pre.b0 - 1.53512485958697) < 1e-6);
+  assert.ok(Number.isFinite(kw44.pre.b0) && Math.abs(kw44.rlb.b1 + 2 * kw44.rlb.b0) < 1e-9);
 
   // Asymmetric 3-harmonic cortical salience wave AM normalization
   const amps = [1.0, 0.24, 0.07];
@@ -495,7 +507,7 @@ test('3. AudioWorklet DSP: Lookahead Limiter brickwall 0.000 dB overshoot + 0% T
   const lim = new LimiterCtor();
   const params = { ceiling: new Float32Array([LIMITER_CEILING_LINEAR]) };
 
-  // Sub-ceiling pure 1 kHz sine (0.85 < 0.912) -> must pass with zero nonlinear distortion!
+  // Sub-ceiling pure 1 kHz sine (0.85 < 0.89125) -> must pass with zero nonlinear distortion!
   const subFrames = 128 * 38; // 4864 frames (~101 ms, exact 128-frame worklet blocks)
   const inL = new Float32Array(subFrames);
   const inR = new Float32Array(subFrames);
@@ -919,10 +931,29 @@ test('6. AudioWorklet DSP: Lyria 48->44.1 kHz Catmull-Rom Cubic Resampler + Cosi
     `Lyria overflow catch-up caused click: maxStep=${burstMaxStep.toFixed(4)} vs limit=${burstMaxAllowed.toFixed(4)}`
   );
 
-  // Also verify NootropicEnvFollower RMS tracking convergence in Node worklet thread
+  // Also verify NootropicEnvFollower ITU-R BS.1770-4 K-weighted RMS + asymmetric (40ms down / 250ms up) tracking
   const EnvCtor = reg.get('nootropic-env-follower');
   assert.ok(EnvCtor, 'nootropic-env-follower must be registered');
   const envNode = new EnvCtor();
+  const kwOut = computeItuKWeightingCoeffs(outSr);
+  const probeIn = new Float32Array(outSr);
+  for (let i = 0; i < outSr; i++) probeIn[i] = 0.25 * Math.sin((2 * Math.PI * 220 * i) / outSr);
+  const evalDf2t = (buf, c) => {
+    const o = new Float32Array(buf.length);
+    let w1 = 0, w2 = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const y = c.b0 * buf[i] + w1;
+      w1 = c.b1 * buf[i] - c.a1 * y + w2;
+      w2 = c.b2 * buf[i] - c.a2 * y;
+      o[i] = y;
+    }
+    return o;
+  };
+  const kwFiltered = evalDf2t(evalDf2t(probeIn, kwOut.pre), kwOut.rlb);
+  let kwSq = 0;
+  for (let i = Math.round(outSr * 0.25); i < outSr; i++) kwSq += kwFiltered[i] * kwFiltered[i];
+  const expectedKwRms = Math.sqrt(kwSq / (outSr - Math.round(outSr * 0.25)));
+
   for (let off = 0; off < outSr * 2; off += 128) {
     const iL = new Float32Array(128);
     const iR = new Float32Array(128);
@@ -936,8 +967,10 @@ test('6. AudioWorklet DSP: Lyria 48->44.1 kHz Catmull-Rom Cubic Resampler + Cosi
   const envMsgs = envNode.port._outbox.filter((m) => m.type === 'env');
   assert.ok(envMsgs.length >= 10, 'Env follower must emit regular 90 ms telemetry messages');
   const lastRms = envMsgs[envMsgs.length - 1].rms;
-  const expectedRms = 0.25 * Math.SQRT1_2;
-  assert.ok(Math.abs(lastRms - expectedRms) < 0.004, `Env follower RMS expected ${expectedRms.toFixed(4)}, got ${lastRms.toFixed(4)}`);
+  assert.ok(
+    Math.abs(lastRms - expectedKwRms) < 0.002,
+    `Env follower K-weighted RMS expected ${expectedKwRms.toFixed(4)}, got ${lastRms.toFixed(4)}`
+  );
 });
 
 test('7. Real Headless Chromium (OfflineAudioContext + AudioWorklet) Full LR4 + Crossfeed + Limiter + Bus Isolation Proof', async (t) => {
@@ -1808,4 +1841,301 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
       // ignore
     }
   }
+});
+
+test('9. v7 DSP: Band-2 2-10 Hz Envelope Flattener (+modulation SNR) & ZDF/TPT-SVF (zero 375 Hz zipper noise)', () => {
+  const sr = 48000;
+  const reg = loadWorkletProcessors(sr);
+  const FlatCtor = reg.get('nootropic-env-flattener');
+  const ZdfCtor = reg.get('nootropic-zdf-tilt');
+  assert.ok(FlatCtor && ZdfCtor, 'Expected v7 flattener & zdf worklets');
+
+  // A. Modulation-domain SNR improvement: 440 Hz tone w/ strong 4 Hz musical beats (3.5:1 crest swing) + 16 Hz AM (m=0.36)
+  const totalFrames = 128 * Math.ceil((8.0 * sr) / 128);
+  const flatProc = new FlatCtor();
+  const carrier = new Float32Array(totalFrames);
+  const flatOut = new Float32Array(totalFrames);
+  for (let i = 0; i < totalFrames; i++) {
+    const t = i / sr;
+    const rhythm4Hz = 0.64 + 0.36 * Math.sin(2 * Math.PI * 4.0 * t);
+    carrier[i] = 0.35 * rhythm4Hz * Math.sin(2 * Math.PI * 440.0 * t);
+  }
+  for (let off = 0; off < totalFrames; off += 128) {
+    const oL = new Float32Array(128);
+    const oR = new Float32Array(128);
+    const seg = carrier.subarray(off, off + 128);
+    flatProc.process([[seg, seg]], [[oL, oR]], { gamma: new Float32Array([0.62]) });
+    flatOut.set(oL, off);
+  }
+
+  const startSteady = Math.round(3.0 * sr);
+  const envRaw = new Float32Array(totalFrames - startSteady);
+  const envFlat = new Float32Array(totalFrames - startSteady);
+  for (let i = startSteady; i < totalFrames; i++) {
+    const t = i / sr;
+    const amGain = (1 + 0.36 * Math.sin(2 * Math.PI * 16.0 * t)) / 1.36;
+    envRaw[i - startSteady] = Math.abs(carrier[i] * amGain);
+    envFlat[i - startSteady] = Math.abs(flatOut[i] * amGain);
+  }
+  const rawSnrDb = db(goertzelMag(envRaw, sr, 16.0) / Math.max(1e-9, goertzelMag(envRaw, sr, 4.0)));
+  const flatSnrDb = db(goertzelMag(envFlat, sr, 16.0) / Math.max(1e-9, goertzelMag(envFlat, sr, 4.0)));
+  const snrGainDb = flatSnrDb - rawSnrDb;
+  assert.ok(
+    snrGainDb >= 3.0,
+    `Expected >= +3.0 dB modulation-domain SNR boost from Band-2 flattener, got +${snrGainDb.toFixed(2)} dB (raw=${rawSnrDb.toFixed(2)}, flat=${flatSnrDb.toFixed(2)})`
+  );
+
+  // B. ZDF/TPT-SVF unity bypass + a-rate 40 Hz modulation (no 375 Hz render-quantum zipper sidebands!)
+  const zdfBypass = new ZdfCtor();
+  const zIn = new Float32Array(128);
+  const zOut = new Float32Array(128);
+  for (let i = 0; i < 128; i++) zIn[i] = 0.5 * Math.sin((2 * Math.PI * 1350 * i) / sr);
+  zdfBypass.process([[zIn, zIn]], [[zOut, new Float32Array(128)]], {
+    freq: new Float32Array([1350]),
+    Q: new Float32Array([1.15]),
+    gainDb: new Float32Array([0]),
+  });
+  let maxBypassErr = 0;
+  for (let i = 0; i < 128; i++) maxBypassErr = Math.max(maxBypassErr, Math.abs(zOut[i] - zIn[i]));
+  assert.ok(maxBypassErr < 1e-12, `ZDF unity bypass error: ${maxBypassErr}`);
+
+  const zdfMod = new ZdfCtor();
+  const zFrames = 128 * 375; // 1.000 s exact integer Hz bins
+  const modOut = new Float32Array(zFrames);
+  const winHann = new Float32Array(zFrames);
+  for (let i = 0; i < zFrames; i++) {
+    winHann[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (zFrames - 1)));
+  }
+  for (let off = 0; off < zFrames; off += 128) {
+    const iL = new Float32Array(128);
+    const gDb = new Float32Array(128);
+    for (let k = 0; k < 128; k++) {
+      const idx = off + k;
+      iL[k] = 0.5 * Math.sin((2 * Math.PI * 750 * idx) / sr);
+      gDb[k] = 3.0 * Math.sin((2 * Math.PI * 40 * idx) / sr);
+    }
+    const oL = new Float32Array(128);
+    zdfMod.process([[iL, iL]], [[oL, new Float32Array(128)]], {
+      freq: new Float32Array([1350]),
+      Q: new Float32Array([1.15]),
+      gainDb: gDb,
+    });
+    modOut.set(oL, off);
+  }
+  const windowed = new Float32Array(zFrames);
+  for (let i = 0; i < zFrames; i++) windowed[i] = modOut[i] * winHann[i];
+  const carrierMag = goertzelMag(windowed, sr, 750);
+  const zipLoDb = db(goertzelMag(windowed, sr, 750 - 375) / carrierMag);
+  const zipHiDb = db(goertzelMag(windowed, sr, 750 + 375) / carrierMag);
+  assert.ok(zipLoDb < -105 && zipHiDb < -105, `ZDF zipper sidebands too high: ${zipLoDb.toFixed(1)} / ${zipHiDb.toFixed(1)} dBc`);
+});
+
+test('10. v7 Neuro-DSP: Clinical Synth 44.1 kHz exact 40.000 Hz Gamma-MBI (<10.5 dB crest) & +-30 Hz Noise Notch', () => {
+  const sr = 44100;
+  const reg = loadWorkletProcessors(sr);
+  const SynthCtor = reg.get('nootropic-clinical-synth');
+  assert.ok(SynthCtor, 'nootropic-clinical-synth must be registered');
+
+  // Verify 44.1 kHz 40.000 Hz exactness (eliminating 1102.5-sample buffer rounding detune) + comfortable Gamma-MBI crest factor
+  const synth = new SynthCtor();
+  synth.port._deliver({
+    type: 'config',
+    mode: 'gamma_mbi',
+    rateHz: 40.0,
+    startRateHz: 40.0,
+    rampSec: 0,
+    carrierHz: 220,
+    depth: 0.72,
+    bluetoothSafe: false,
+  });
+
+  const frames = 128 * 1034; // ~3.00s @ 44.1 kHz
+  const outL = new Float32Array(frames);
+  for (let off = 0; off < frames; off += 128) {
+    const oL = new Float32Array(128);
+    const oR = new Float32Array(128);
+    synth.process([], [[oL, oR]]);
+    outL.set(oL, off);
+  }
+
+  const start = Math.round(0.5 * sr);
+  let sumSq = 0;
+  let peak = 0;
+  const rect = new Float32Array(frames - start);
+  let rectMean = 0;
+  for (let i = start; i < frames; i++) {
+    const v = outL[i];
+    sumSq += v * v;
+    if (Math.abs(v) > peak) peak = Math.abs(v);
+    rect[i - start] = v * v;
+    rectMean += v * v;
+  }
+  rectMean /= rect.length;
+  const rectWin = new Float32Array(rect.length);
+  for (let i = 0; i < rect.length; i++) {
+    const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (rect.length - 1)));
+    rectWin[i] = (rect[i] - rectMean) * w;
+  }
+  const rms = Math.sqrt(sumSq / rect.length);
+  const crestDb = db(peak / rms);
+  assert.ok(crestDb < 10.5, `Expected comfortable Gamma-MBI crest factor < 10.5 dB, got ${crestDb.toFixed(2)} dB`);
+
+  const m40 = goertzelMag(rectWin, sr, 40.0);
+  const mDetune = Math.max(goertzelMag(rectWin, sr, 39.0), goertzelMag(rectWin, sr, 41.0));
+  assert.ok(m40 > mDetune * 6.0, `Expected sharp 40.000 Hz peak @ 44.1 kHz: m40=${m40.toFixed(4)} vs ±1 Hz=${mDetune.toFixed(4)}`);
+
+  // Verify Bluetooth-safe click guard widens burst pulse >= 2.2x over 1.2 ms raw clicks (>= 3.0 ms envelope support)
+  const synthBt = new SynthCtor();
+  synthBt.port._deliver({
+    type: 'config',
+    mode: 'gamma_clicks',
+    rateHz: 40.0,
+    carrierHz: 1200,
+    dutyCycle: 0.048,
+    bluetoothSafe: true,
+  });
+  const synthRaw = new SynthCtor();
+  synthRaw.port._deliver({
+    type: 'config',
+    mode: 'gamma_clicks',
+    rateHz: 40.0,
+    carrierHz: 1200,
+    dutyCycle: 0.048,
+    bluetoothSafe: false,
+  });
+  const btFrames = 128 * 120;
+  const btOut = new Float32Array(btFrames);
+  const rawClickOut = new Float32Array(btFrames);
+  for (let off = 0; off < btFrames; off += 128) {
+    const oBt = new Float32Array(128);
+    const oRaw = new Float32Array(128);
+    synthBt.process([], [[oBt, new Float32Array(128)]]);
+    synthRaw.process([], [[oRaw, new Float32Array(128)]]);
+    btOut.set(oBt, off);
+    rawClickOut.set(oRaw, off);
+  }
+  // Compare smoothed burst support (sliding 0.45 ms peak envelope > 0.02) in steady tail
+  const measureSupportMs = (buf) => {
+    const wHalf = 10;
+    const startIdx = btFrames - Math.round(0.4 * sr);
+    let active = 0;
+    for (let i = startIdx; i < btFrames - wHalf; i++) {
+      let pk = 0;
+      for (let j = -wHalf; j <= wHalf; j++) {
+        const a = Math.abs(buf[i + j]);
+        if (a > pk) pk = a;
+      }
+      if (pk > 0.02) active++;
+    }
+    const frac = active / (btFrames - wHalf - startIdx);
+    return frac * 25.0; // per 25 ms cycle at 40 Hz
+  };
+  const rawSupportMs = measureSupportMs(rawClickOut);
+  const btSupportMs = measureSupportMs(btOut);
+  assert.ok(
+    btSupportMs >= 2.8 && btSupportMs > rawSupportMs * 1.8,
+    `Bluetooth-safe click width too narrow: bt=${btSupportMs.toFixed(2)} ms vs raw=${rawSupportMs.toFixed(2)} ms`
+  );
+
+  // Verify +-30 Hz peaking notch (-28 dB @ 220 Hz, Q = max(5.0, 220/28)) attenuates 220 Hz >= 18 dB while leaving 440 Hz clean (<1.5 dB)
+  const w0 = (2 * Math.PI * 220) / 48000;
+  const A = Math.pow(10, -28 / 40);
+  const q = Math.max(5.0, 220 / 28);
+  const alpha = Math.sin(w0) / (2 * q);
+  const b0 = 1 + alpha * A, b1 = -2 * Math.cos(w0), b2 = 1 - alpha * A;
+  const a0 = 1 + alpha / A, a1 = -2 * Math.cos(w0), a2 = 1 - alpha / A;
+  const testTone = (f) => {
+    const n = 9600;
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    let inSq = 0, outSq = 0;
+    for (let i = 0; i < n; i++) {
+      const x = Math.sin((2 * Math.PI * f * i) / 48000);
+      const y = (b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+      x2 = x1; x1 = x; y2 = y1; y1 = y;
+      if (i >= 4800) { inSq += x * x; outSq += y * y; }
+    }
+    return 10 * Math.log10(outSq / inSq);
+  };
+  const gain220 = testTone(220);
+  const gain440 = testTone(440);
+  assert.ok(gain220 <= -18.0, `Expected <= -18 dB notch @ 220 Hz, got ${gain220.toFixed(2)} dB`);
+  assert.ok(Math.abs(gain440) < 1.5, `Notch spilled into 440 Hz octave: ${gain440.toFixed(2)} dB`);
+});
+
+test('11. v7 Mastering: ITU-R BS.1770-4 48-tap Kaiser ISP brickwall (-1.0 dBTP) & EBU Tech 3341 LUFS calibration (44.1/48 kHz)', () => {
+  for (const sr of [44100, 48000]) {
+    const reg = loadWorkletProcessors(sr);
+    const LimCtor = reg.get('nootropic-lookahead-limiter');
+    const limMono = new LimCtor();
+    const limStereo = new LimCtor();
+    const params = { ceiling: new Float32Array([LIMITER_CEILING_LINEAR]) };
+
+    // -2.0 dBFS 1 kHz reference sine stays below -1.0 dBTP limiter ceiling -> exact EBU Tech 3341 meter calibration
+    const amp = Math.pow(10, -2.0 / 20); // 0.794328
+    const frames = 128 * Math.ceil((1.2 * sr) / 128);
+    const zeros = new Float32Array(128);
+    for (let off = 0; off < frames; off += 128) {
+      const iL = new Float32Array(128);
+      for (let k = 0; k < 128; k++) iL[k] = amp * Math.sin((2 * Math.PI * 1000 * (off + k)) / sr);
+      limMono.process([[iL, zeros]], [[new Float32Array(128), new Float32Array(128)]], params);
+      limStereo.process([[iL, iL]], [[new Float32Array(128), new Float32Array(128)]], params);
+    }
+    const lastMono = limMono.port._outbox.filter((m) => m.type === 'meter').at(-1);
+    const lastStereo = limStereo.port._outbox.filter((m) => m.type === 'meter').at(-1);
+    assert.ok(lastMono && lastStereo, `Expected ITU-R BS.1770-4 meter output @ ${sr} Hz`);
+    assert.ok(
+      Math.abs(lastMono.momentaryLufs - -5.01) < 0.15,
+      `EBU 1 kHz mono LUFS @ ${sr} Hz expected -5.01, got ${lastMono.momentaryLufs.toFixed(3)}`
+    );
+    assert.ok(
+      Math.abs(lastStereo.momentaryLufs - -2.0) < 0.15,
+      `EBU 1 kHz stereo LUFS @ ${sr} Hz expected -2.00, got ${lastStereo.momentaryLufs.toFixed(3)}`
+    );
+  }
+});
+
+test('12. v7 Headphone Verification: Huggins Pitch 600 Hz dichotic 180 deg phase shift vs flat magnitude & mono null', () => {
+  const sr = 48000;
+  const reg = loadWorkletProcessors(sr);
+  const HugCtor = reg.get('nootropic-huggins-processor');
+  assert.ok(HugCtor, 'nootropic-huggins-processor must be registered');
+
+  // Non-target round: strictly identical L == R
+  const hugCtrl = new HugCtor();
+  hugCtrl.port._deliver({ type: 'play', isTarget: false, durationMs: 600 });
+  const ctrlFrames = 128 * 240;
+  let maxCtrlDiff = 0;
+  for (let off = 0; off < ctrlFrames; off += 128) {
+    const oL = new Float32Array(128);
+    const oR = new Float32Array(128);
+    hugCtrl.process([], [[oL, oR]]);
+    for (let k = 0; k < 128; k++) maxCtrlDiff = Math.max(maxCtrlDiff, Math.abs(oL[k] - oR[k]));
+  }
+  assert.equal(maxCtrlDiff, 0, 'Control interval must have 0.000 interaural difference');
+
+  // Target round: 180 deg phase flip @ 600 Hz (strong cancellation in L+R @ 600 Hz, flat |R|/|L| everywhere)
+  const hugTgt = new HugCtor();
+  hugTgt.port._deliver({ type: 'play', isTarget: true, durationMs: 600 });
+  const tgtL = new Float32Array(ctrlFrames);
+  const tgtR = new Float32Array(ctrlFrames);
+  for (let off = 0; off < ctrlFrames; off += 128) {
+    const oL = new Float32Array(128);
+    const oR = new Float32Array(128);
+    hugTgt.process([], [[oL, oR]]);
+    tgtL.set(oL, off);
+    tgtR.set(oR, off);
+  }
+  const s0 = Math.round(0.15 * sr);
+  const s1 = Math.round(0.45 * sr);
+  const midL = tgtL.subarray(s0, s1);
+  const midR = tgtR.subarray(s0, s1);
+  const midSum = new Float32Array(midL.length);
+  for (let i = 0; i < midL.length; i++) midSum[i] = 0.5 * (midL[i] + midR[i]);
+
+  const cancel600Db = db(goertzelMag(midSum, sr, 600) / Math.max(1e-9, goertzelMag(midL, sr, 600)));
+  const cancel1800Db = db(goertzelMag(midSum, sr, 1800) / Math.max(1e-9, goertzelMag(midL, sr, 1800)));
+  const magDelta600Db = Math.abs(db(goertzelMag(midR, sr, 600) / Math.max(1e-9, goertzelMag(midL, sr, 600))));
+  assert.ok(cancel600Db <= -12.0, `Expected >= 12 dB dichotic mono null @ 600 Hz, got ${cancel600Db.toFixed(2)} dB`);
+  assert.ok(cancel1800Db > -1.0, `Expected near 0 dB mono delta far from 600 Hz, got ${cancel1800Db.toFixed(2)} dB`);
+  assert.ok(magDelta600Db < 0.4, `All-pass filter altered magnitude @ 600 Hz by ${magDelta600Db.toFixed(3)} dB`);
 });

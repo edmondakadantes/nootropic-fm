@@ -10,6 +10,7 @@ import {
   CreditCard,
   Crown,
   ExternalLink,
+  Headphones,
   Loader2,
   Lock,
   Music2,
@@ -36,12 +37,15 @@ import type {
   UserProfile,
 } from '../../shared/types';
 import { DEVICE_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
+import { estimateAgePriorIafHz } from '../audio/dspMath';
 import {
   PsychoacousticEngine,
   type EngineTelemetry,
   type LayerMonitorMode,
 } from '../audio/PsychoacousticEngine';
+import type { GammaStimulusMode } from '../audio/MedicalStimulusRack';
 import { API_BASE, api, saveStoredProfileAuth } from '../lib/api';
+import { HugginsCheckModal } from './HugginsCheckModal';
 import { LiveEnvelopeProof } from './LiveEnvelopeProof';
 import {
   NeuralFingerprintSigil,
@@ -191,6 +195,11 @@ export function PlayerView({
   );
   const [customGenNotice, setCustomGenNotice] = useState<string | null>(null);
   const [showPrePvt, setShowPrePvt] = useState(false);
+  const [showHugginsCheck, setShowHugginsCheck] = useState(false);
+  const pausedForHugginsRef = useRef(false);
+  const [alphaIafHz, setAlphaIafHz] = useState<number>(() =>
+    estimateAgePriorIafHz(profile?.ageBand)
+  );
   const [pvtPreMs, setPvtPreMs] = useState<number | null>(null);
   const [pvtLapsesPre, setPvtLapsesPre] = useState<number | null>(null);
   const [previewLocked, setPreviewLocked] = useState<boolean>(() => {
@@ -264,6 +273,13 @@ export function PlayerView({
     usingRealSamples: false,
     studioRetuned432: false,
     layerMonitorMode: initialCarrier === 'pure_stimulus' ? 'science_only' : 'full_mix',
+    momentaryLufs: null,
+    truePeakDbtp: null,
+    gammaMode: initialCarrier === 'pure_stimulus' ? 'clinical_clicks' : 'harmonic_mbi',
+    alphaIafHz: estimateAgePriorIafHz(profile?.ageBand),
+    hugginsStatus: 'untested',
+    bluetoothSafeActive: false,
+    band2FlattenerActive: false,
   });
 
   const plannedSec = recommendation.plannedDurationMin * 60;
@@ -402,6 +418,7 @@ export function PlayerView({
         );
 
         if (!mounted) return;
+        engineRef.current?.setAlphaIafHz(alphaIafHz);
         setIsPlaying(true);
         setAudioStarted(true);
         if (engineRef.current) {
@@ -718,7 +735,7 @@ export function PlayerView({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space') return;
-      if (previewLocked || showPrePvt) return;
+      if (previewLocked || showPrePvt || showHugginsCheck) return;
       const activeTag = (document.activeElement?.tagName ?? '').toUpperCase();
       if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT' || activeTag === 'BUTTON') {
         return;
@@ -728,7 +745,50 @@ export function PlayerView({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [previewLocked, showPrePvt]);
+  }, [previewLocked, showPrePvt, showHugginsCheck]);
+
+  const openHugginsModal = async () => {
+    pausedForHugginsRef.current = isPlaying;
+    if (isPlaying) {
+      await engineRef.current?.pause();
+      setIsPlaying(false);
+    }
+    setShowHugginsCheck(true);
+  };
+
+  const closeHugginsModal = async (result?: { passed: boolean; score: number; total: number }) => {
+    setShowHugginsCheck(false);
+    if (result) {
+      engineRef.current?.applyAcousticProfile({ hugginsPassed: result.passed });
+      setTelemetry((prev) => ({
+        ...prev,
+        hugginsStatus: result.passed ? 'verified_stereo' : 'monaural_safe',
+      }));
+    }
+    if (pausedForHugginsRef.current) {
+      pausedForHugginsRef.current = false;
+      await engineRef.current?.resume();
+      setIsPlaying(true);
+    }
+  };
+
+  const handleGammaModeSwitch = (mode: GammaStimulusMode) => {
+    engineRef.current?.setGammaMode(mode);
+    setTelemetry((prev) => ({ ...prev, gammaMode: mode }));
+    if (engineRef.current && audioStarted) {
+      setTelemetry(engineRef.current.updateElapsed(elapsedRef.current));
+    }
+  };
+
+  const handleAlphaIafSelect = (hz: number) => {
+    setAlphaIafHz(hz);
+    engineRef.current?.setAlphaIafHz(hz);
+    if (engineRef.current && audioStarted) {
+      setTelemetry(engineRef.current.updateElapsed(elapsedRef.current));
+    } else {
+      setTelemetry((prev) => ({ ...prev, alphaIafHz: hz }));
+    }
+  };
 
   const handleLayerMonitorChange = async (nextMode: LayerMonitorMode) => {
     if (!isPro && previewLocked) {
@@ -1756,6 +1816,98 @@ export function PlayerView({
             </div>
           </div>
 
+          {/* Neuro-Acoustic Calibration Controls: Huggins Pitch Check, Gamma-MBI vs Clicks, Alpha IAF */}
+          <div className="rounded-xl border border-white/10 bg-[#121417] p-3.5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="space-y-0.5">
+                <div className="inline-flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                  <Headphones className="h-3.5 w-3.5 text-[#34D399]" />
+                  <span>Dichotic Headphone Check (Huggins Pitch)</span>
+                  {telemetry.hugginsStatus === 'verified_stereo' && (
+                    <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9.5px] font-semibold text-[#34D399]">
+                      Stereo Verified
+                    </span>
+                  )}
+                  {telemetry.hugginsStatus === 'monaural_safe' && (
+                    <span className="rounded border border-amber-400/40 bg-amber-500/15 px-1.5 py-0.5 font-mono-tech text-[9.5px] font-semibold text-amber-200">
+                      Monaural-Safe Active
+                    </span>
+                  )}
+                  {telemetry.bluetoothSafeActive && (
+                    <span className="rounded border border-sky-400/35 bg-sky-500/10 px-1.5 py-0.5 font-mono-tech text-[9.5px] font-semibold text-sky-200">
+                      BT Guard
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[#8E8E88]">
+                  Detects Apple Spatial Audio or mono crosstalk in 35s and auto-locks safe phase routing.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void openHugginsModal()}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#181A1F] px-3 py-1.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1E2128]"
+              >
+                <Headphones className="h-3.5 w-3.5 text-[#34D399]" />
+                {telemetry.hugginsStatus === 'untested' ? 'Verify Headphones (35s)' : 'Recheck'}
+              </button>
+            </div>
+
+            {telemetry.entrainmentType === 'gamma_40hz_clicks' && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2.5">
+                <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
+                  40 Hz Gamma Delivery
+                </span>
+                <div className="inline-flex rounded-lg border border-white/12 bg-[#0B0C0E] p-0.5 text-[11px] font-semibold">
+                  {(
+                    [
+                      { id: 'harmonic_mbi' as const, label: 'Harmonic Gamma-MBI' },
+                      { id: 'clinical_clicks' as const, label: 'Lab Clicks' },
+                    ]
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => handleGammaModeSwitch(opt.id)}
+                      className={`rounded-md px-2.5 py-1 transition ${
+                        telemetry.gammaMode === opt.id
+                          ? 'bg-[#22252A] text-[#34D399] ring-1 ring-emerald-400/30'
+                          : 'text-[#8E8E88] hover:text-[#D4D4CE]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {((spec && spec.entrainment.frequencyHz >= 8 && spec.entrainment.frequencyHz <= 12) ||
+              (telemetry.currentModHz >= 8 && telemetry.currentModHz <= 12)) && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2.5">
+                <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
+                  Alpha IAF Peak ({alphaIafHz.toFixed(1)} Hz)
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {[8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5].map((hz) => (
+                    <button
+                      key={hz}
+                      type="button"
+                      onClick={() => handleAlphaIafSelect(hz)}
+                      className={`rounded-md border px-2 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
+                        Math.abs(alphaIafHz - hz) < 0.1
+                          ? 'border-emerald-400/50 bg-emerald-500/15 text-[#34D399]'
+                          : 'border-white/10 bg-[#0B0C0E] text-[#8E8E88] hover:text-[#F3F1EC]'
+                      }`}
+                    >
+                      {hz.toFixed(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Optional 15-Second Reaction Speed Check */}
           {!recommendation.safetyMode && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#121417] px-4 py-3">
@@ -1823,6 +1975,11 @@ export function PlayerView({
               <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Noise Bed</div>
               <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#D4D4CE] capitalize">
                 {telemetry.noiseColor === 'none' ? 'Clean' : telemetry.noiseColor.replace('_', ' ')}
+              </div>
+              <div className="mt-0.5 font-mono-tech text-[10px] text-[#8E8E88]">
+                {telemetry.momentaryLufs !== null
+                  ? `${telemetry.momentaryLufs.toFixed(1)} LUFS · ≤ -1.0 dBTP`
+                  : 'True-Peak ≤ -1.0 dBTP'}
               </div>
             </div>
           </div>
@@ -2097,6 +2254,13 @@ export function PlayerView({
             }
           }}
           onClose={() => setShowPrePvt(false)}
+        />
+      )}
+
+      {showHugginsCheck && (
+        <HugginsCheckModal
+          onComplete={(res) => void closeHugginsModal(res)}
+          onClose={() => void closeHugginsModal()}
         />
       )}
     </div>

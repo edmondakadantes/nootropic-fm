@@ -159,7 +159,7 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
       filterCutoffHz: 1250,
       speakerSafeEQ: false,
       antiMonotonyCycleMin: 0,
-      binauralOffsetHz: 4,
+      binauralOffsetHz: 0,
     },
     studyIds: [
       'woods-2024-am-attention',
