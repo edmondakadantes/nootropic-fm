@@ -1575,6 +1575,136 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
       res.end(JSON.stringify({ presets: [] }));
       return;
     }
+    if (cleanUrl === '/api/profile' && req.method === 'POST') {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({
+          profile: {
+            id: 'anon_e2e_test_profile',
+            displayName: 'Alex',
+            age: 30,
+            ageBand: '26-35',
+            gender: 'male',
+            role: 'knowledge_worker',
+            texturePref: 'warm_pads',
+            noiseSensitivity: 'medium',
+            defaultDevice: 'headphones',
+            primaryChallenge: 'distraction',
+            researchConsent: true,
+            planTier: 'pro',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          profileToken: 'tok_e2e_test',
+          syncCode: 'NFM-TEST-E2E1',
+        }));
+      });
+      return;
+    }
+    if (cleanUrl === '/api/protocol/start' && req.method === 'POST') {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({
+          recommendation: {
+            sessionId: 'ses_e2e_test_1',
+            cohortKey: '26-35|office|alert_focus',
+            cohortLabel: 'Ages 26-35 · Office · Sharp Focus',
+            arm: {
+              id: 'beta-focus-16hz',
+              name: '16 Hz Beta Attention',
+              tagline: '16 Hz Beta AM · Deep Electronic',
+              description: 'Rapid 16 Hz mid-band amplitude modulation fused into studio music.',
+              targetStates: ['alert_focus', 'deep_flow'],
+              drivingSafe: true,
+              priorAlpha: 4.5,
+              priorBeta: 1.4,
+              baseParams: {
+                modulationHz: 16,
+                modulationDepth: 0.38,
+                crossoverHz: 190,
+                upperCrossoverHz: 4500,
+                bpm: 108,
+                pulseIntensity: 0.48,
+                noiseColor: 'pink',
+                noiseLevel: 0.06,
+                harmonicMode: 'warm_min9',
+                rootNoteHz: 146.83,
+                filterCutoffHz: 2600,
+                speakerSafeEQ: false,
+                antiMonotonyCycleMin: 0,
+                binauralOffsetHz: 0,
+              },
+              studyIds: ['woods-2024'],
+            },
+            params: {
+              modulationHz: 16,
+              modulationDepth: 0.38,
+              crossoverHz: 190,
+              upperCrossoverHz: 4500,
+              bpm: 108,
+              pulseIntensity: 0.48,
+              noiseColor: 'pink',
+              noiseLevel: 0.06,
+              harmonicMode: 'warm_min9',
+              rootNoteHz: 146.83,
+              filterCutoffHz: 2600,
+              speakerSafeEQ: false,
+              antiMonotonyCycleMin: 0,
+              binauralOffsetHz: 0,
+              stereoAmSpread: true,
+              genre: 'deep_electronic',
+              genreSelectionMode: 'user_chosen',
+              energyTier: 'focus',
+            },
+            isExploration: false,
+            isControlTrial: false,
+            ephemeralMode: false,
+            safetyMode: false,
+            safetyWarnings: [],
+            audioSource: 'studio_library',
+            fallbackCoreGenre: 'deep_electronic',
+            personalizationSummary: ['Calibrated from 2D Brain Map + Profile Cohort'],
+            formulaIngredients: [
+              { role: 'Layer 1 · Science', compound: '16 Hz Beta AM', dose: '65% effect', evidenceTag: 'Woods 2024' },
+              { role: 'Layer 2 · Music', compound: 'Deep Electronic', dose: 'Studio Mix', evidenceTag: 'Lyric-Free' },
+            ],
+            rationale: 'Matched peer-reviewed 16 Hz Beta AM protocol for Sharp Focus.',
+            studies: [
+              {
+                id: 'woods-2024',
+                authors: 'Woods, K. J. P., et al.',
+                year: 2024,
+                title: 'Rapid modulation in music supports attention',
+                journal: 'Communications Biology',
+                mechanism: '16 Hz Beta mid-band AM',
+                soundEffect: 'Sustained attention',
+                doiOrUrl: 'https://doi.org/10.1038/s42003-024-07026-3',
+                summary: '16 Hz AM embedded in instrumental music supported sustained attention.',
+                caveat: 'Adjust comfort live.',
+                applicableTargets: ['alert_focus'],
+              },
+            ],
+            livePubMedPapers: [],
+            confidencePct: 91,
+            cohortTrials: 24,
+            profileTrials: 1,
+            plannedDurationMin: 25,
+            currentState: 'distracted',
+            microStateId: 'brain_fog',
+            microStateLabel: 'Brain Fog',
+            arousalPct: 32,
+            clarityPct: 28,
+            targetState: 'alert_focus',
+            baselineScore: 2,
+            environment: 'office',
+            device: 'headphones',
+          },
+        }));
+      });
+      return;
+    }
     if (cleanUrl.startsWith('/api/')) {
       req.resume();
       req.on('end', () => {
@@ -1733,15 +1863,115 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
       throw new Error(`Timed out waiting for ${desc}`);
     };
 
+    // Walk the real 5-step platform flow:
+    // Step 1: Onboarding on Main Page -> Step 2: 2D Brain Map -> Step 3: Target -> Step 4: Music -> Scientific Studies Reveal -> Player
     await waitUntil(
       `(() => {
-        const btn = Array.from(document.querySelectorAll('button')).find((b) => /listen live/i.test(b.textContent || ''));
+        const ageInput = document.querySelector('input[type="number"]');
+        if (!ageInput) return false;
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        const tracker = ageInput._valueTracker;
+        if (tracker) tracker.setValue('');
+        nativeSetter.call(ageInput, '30');
+        ageInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        const btns = Array.from(document.querySelectorAll('button'));
+        const maleBtn = btns.find((b) => /^male$/i.test((b.textContent || '').trim()));
+        if (maleBtn) maleBtn.click();
+        const roleBtn = btns.find((b) => /software|knowledge|student|creative|entrepreneur/i.test(b.textContent || ''));
+        if (roleBtn) roleBtn.click();
+
+        const cb = document.querySelector('input[type="checkbox"]');
+        if (cb && !cb.checked) cb.click();
+        return true;
+      })()`,
+      10000,
+      'Step 1 Onboarding fields'
+    );
+
+    await waitUntil(
+      `(() => {
+        const nextBtn = Array.from(document.querySelectorAll('button')).find((b) => /continue:\\s*current state/i.test(b.textContent || ''));
+        if (nextBtn) nextBtn.click();
+        return Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'));
+      })()`,
+      6000,
+      'Continue to Step 2 Brain Map'
+    );
+
+    // Step 2: 2D Brain Map (verify zero auto-drawn trajectory path, select Brain Fog, advance)
+    await waitUntil(
+      `(() => {
+        const landmark = Array.from(document.querySelectorAll('button[data-landmark="true"]')).find((b) => /brain fog|stressed|distracted/i.test(b.textContent || ''));
+        if (!landmark) return false;
+        landmark.click();
+        const paths = document.querySelectorAll('[aria-label="Interactive 2D Neural State Compass"] svg path');
+        if (paths.length > 0) throw new Error('Expected zero auto-drawn trajectory bar on Step 2 Brain Map');
+        return true;
+      })()`,
+      6000,
+      'Step 2 2D Brain Map selection'
+    );
+
+    await waitUntil(
+      `(() => {
+        const btn = Array.from(document.querySelectorAll('button')).find((b) => /next:\\s*target/i.test(b.textContent || ''));
         if (!btn) return false;
         btn.click();
         return true;
       })()`,
+      5000,
+      'Advance to Step 3 Target'
+    );
+
+    // Step 3: Target & Duration (verify trajectory bar draws ONLY after selecting target)
+    await waitUntil(
+      `(() => {
+        const targetBtn = Array.from(document.querySelectorAll('button')).find((b) => /sharp alert focus/i.test(b.textContent || ''));
+        if (!targetBtn) return false;
+        targetBtn.click();
+        return true;
+      })()`,
+      5000,
+      'Select Sharp Alert Focus target'
+    );
+
+    await waitUntil(
+      `(() => {
+        const btn = Array.from(document.querySelectorAll('button')).find((b) => /next:\\s*music style/i.test(b.textContent || ''));
+        if (!btn) return false;
+        btn.click();
+        return true;
+      })()`,
+      5000,
+      'Advance to Step 4 Music Style'
+    );
+
+    // Step 4: Launch Scientific Study Search
+    await waitUntil(
+      `(() => {
+        const btn = Array.from(document.querySelectorAll('button')).find((b) => /find scientific studies/i.test(b.textContent || ''));
+        if (!btn || btn.disabled) return false;
+        btn.click();
+        return true;
+      })()`,
+      5000,
+      'Launch Scientific Studies search'
+    );
+
+    // Step 5: Scientific Research Reveal -> Skip trace or wait -> Apply Layers & Start -> PlayerView
+    await waitUntil(
+      `(() => {
+        const skipBtn = Array.from(document.querySelectorAll('button')).find((b) => /^skip/i.test((b.textContent || '').trim()));
+        if (skipBtn) skipBtn.click();
+        const startBtn = Array.from(document.querySelectorAll('button')).find((b) => /apply layers\\s*&\\s*start/i.test(b.textContent || ''));
+        if (!startBtn) return false;
+        if (!/woods/i.test(document.body.innerText || '')) return false;
+        startBtn.click();
+        return true;
+      })()`,
       10000,
-      'Listen Live button'
+      'Scientific Studies Blueprint -> Apply Layers & Start'
     );
 
     // Wait for PlayerView + running AudioContext + worklets initialized

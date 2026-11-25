@@ -11,10 +11,11 @@ import {
   Mic,
   MicOff,
   Music2,
-  Play,
   QrCode,
+  Search,
   ShieldCheck,
   SlidersHorizontal,
+  UserCog,
   Volume2,
   X,
 } from 'lucide-react';
@@ -26,6 +27,10 @@ import {
   type NeuralCoords,
   type NeuralMicroState,
 } from '../../shared/neuralStates';
+import {
+  computeIsoBridgeForState,
+  pickSmartInitialEffectTier,
+} from '../../shared/psychometrics';
 import {
   parseNaturalCheckIn,
   parseOnboardingAnswers,
@@ -75,6 +80,7 @@ interface CheckInViewProps {
   onOpenPendingDebrief: () => void;
   onDismissPending: () => void;
   onOpenIdentityModal: () => void;
+  onEditProfile?: () => void;
   onMoodChange?: (mood: FieldMood) => void;
   onLaunchUnifiedSession: (payload: {
     profileUpdate?: Partial<UserProfile>;
@@ -166,6 +172,7 @@ export function CheckInView({
   onOpenPendingDebrief,
   onDismissPending,
   onOpenIdentityModal,
+  onEditProfile,
   onMoodChange,
   onLaunchUnifiedSession,
 }: CheckInViewProps) {
@@ -206,11 +213,13 @@ export function CheckInView({
   const [baselineScore, setBaselineScore] = useState<number>(presetMicro?.defaultBaseline ?? 3);
   const [stateError, setStateError] = useState<string | null>(null);
 
-  // Beat 3: Target state, duration & output
+  // Beat 3: Target state, duration & output (targetPicked starts false until user chooses where to go!)
   const [goalText, setGoalText] = useState('');
   const [targetState, setTargetState] = useState<TargetState>(
     initialPreset?.targetState ?? 'energy_lift'
   );
+  const [targetPicked, setTargetPicked] = useState<boolean>(Boolean(initialPreset));
+  const [targetError, setTargetError] = useState<string | null>(null);
   const [durationMin, setDurationMin] = useState<number>(initialPreset?.durationMin ?? 20);
   const [environment, setEnvironment] = useState<SessionEnvironment>(
     profile?.role === 'driver' ? 'driving' : 'office'
@@ -387,6 +396,8 @@ export function CheckInView({
     if (!text.trim()) return;
     const parsed = parseNaturalCheckIn(text, { age: effectiveAge, role: effectiveRole, defaultDevice: device });
     setTargetState(parsed.targetState);
+    setTargetPicked(true);
+    setTargetError(null);
     setDurationMin(parsed.durationMin);
     if (parsed.environment === 'driving') {
       setEnvironment('driving');
@@ -622,14 +633,27 @@ export function CheckInView({
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onOpenIdentityModal}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3 py-1.5 text-[11px] font-semibold text-[#D4D4CE] transition hover:border-white/30 hover:text-[#F3F1EC]"
-          >
-            <QrCode className="h-3.5 w-3.5 text-[#34D399]" />
-            Neural Pass &amp; QR
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {onEditProfile && (
+              <button
+                type="button"
+                onClick={onEditProfile}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-[#141518] px-2.5 py-1.5 text-[11px] font-medium text-[#A3A39E] transition hover:border-white/25 hover:text-[#F3F1EC]"
+                title="Edit your Onboarding profile (age, gender, profession)"
+              >
+                <UserCog className="h-3.5 w-3.5 text-[#34D399]" />
+                <span>Edit Profile</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onOpenIdentityModal}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3 py-1.5 text-[11px] font-semibold text-[#D4D4CE] transition hover:border-white/30 hover:text-[#F3F1EC]"
+            >
+              <QrCode className="h-3.5 w-3.5 text-[#34D399]" />
+              Neural Pass &amp; QR
+            </button>
+          </div>
         </div>
       )}
 
@@ -1102,13 +1126,67 @@ export function CheckInView({
       {/* ===================================================================== */}
       {beat === 3 && (
         <div key="beat-3" className="animate-step glass-stage w-full rounded-2xl p-5 sm:p-7 space-y-5">
-          {/* Live Iso-Principle Vector Map: Current (X,Y) -> Target (X,Y) */}
-          <NeuralTrajectoryPreview
-            fromCoords={neuralCoords ?? { energy: DEFAULT_MICRO_STATE.energy, clarity: DEFAULT_MICRO_STATE.clarity }}
-            fromLabel={(selectedMicroState ?? DEFAULT_MICRO_STATE).shortLabel}
-            targetState={targetState}
-            durationMin={durationMin}
-          />
+          {/* Live Iso-Principle Vector Map: Current (X,Y) -> Target (X,Y) — drawn ONLY once targetPicked */}
+          {(() => {
+            const activeMicro = selectedMicroState ?? DEFAULT_MICRO_STATE;
+            const activeFrom = neuralCoords ?? {
+              energy: activeMicro.energy,
+              clarity: activeMicro.clarity,
+            };
+            const previewTargetHz =
+              targetState === 'energy_lift'
+                ? 18
+                : targetState === 'alert_focus'
+                  ? 16
+                  : targetState === 'deep_flow'
+                    ? 15
+                    : targetState === 'calm_reset'
+                      ? 10
+                      : 6;
+            const iso =
+              targetPicked && previewTargetHz > 12
+                ? computeIsoBridgeForState({
+                    currentState: activeMicro.coreState,
+                    microStateId: activeMicro.id,
+                    targetState,
+                    targetHz: previewTargetHz,
+                    safetyMode: isDriving,
+                  })
+                : undefined;
+            const tierInfo = targetPicked
+              ? pickSmartInitialEffectTier({
+                  currentState: activeMicro.coreState,
+                  microStateId: activeMicro.id,
+                  targetState,
+                  safetyMode: isDriving,
+                  noiseSensitivity,
+                  preferredModMult: profile?.preferredModMult,
+                })
+              : null;
+            const effectTierLabel = tierInfo
+              ? tierInfo.tier === 'max'
+                ? 'Auto Max Effect · 94%'
+                : tierInfo.tier === 'min'
+                  ? 'Auto Min Effect · 36%'
+                  : iso
+                    ? 'Iso-Bridge · 38% → 65%'
+                    : 'Auto Standard · 65%'
+              : null;
+            const isoBridgeLabel = iso
+              ? `2-Stage Iso-Bridge: 3m ${iso.stabilizeHz} Hz Calm → ${previewTargetHz} Hz`
+              : null;
+
+            return (
+              <NeuralTrajectoryPreview
+                fromCoords={activeFrom}
+                fromLabel={activeMicro.shortLabel}
+                targetState={targetPicked ? targetState : null}
+                durationMin={durationMin}
+                effectTierLabel={effectTierLabel}
+                isoBridgeLabel={isoBridgeLabel}
+              />
+            );
+          })()}
           <div className="glow-input-wrap">
             <div className="relative flex items-start rounded-[0.8rem] bg-[#0B0C0E]">
               <textarea
@@ -1118,6 +1196,10 @@ export function CheckInView({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
+                    if (!targetPicked) {
+                      setTargetError('Please choose the state you want to reach.');
+                      return;
+                    }
                     setBeat(4);
                   }
                 }}
@@ -1144,7 +1226,7 @@ export function CheckInView({
             {TARGET_CARDS.map((card) => {
               const disabledForDriving =
                 isDriving && (card.target === 'sleep_winddown' || card.target === 'calm_reset');
-              const active = targetState === card.target;
+              const active = targetPicked && targetState === card.target;
               return (
                 <button
                   key={card.target}
@@ -1152,6 +1234,8 @@ export function CheckInView({
                   disabled={disabledForDriving}
                   onClick={() => {
                     setTargetState(card.target);
+                    setTargetPicked(true);
+                    setTargetError(null);
                     if (!goalText.trim()) setDurationMin(card.defaultMin);
                   }}
                   className={`rounded-xl border px-3.5 py-2.5 text-left transition-all disabled:opacity-35 ${
@@ -1166,6 +1250,8 @@ export function CheckInView({
               );
             })}
           </div>
+
+          {targetError && <p className="text-xs font-medium text-amber-300">{targetError}</p>}
 
           {/* Duration & Listening Output */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1257,7 +1343,14 @@ export function CheckInView({
             </button>
             <button
               type="button"
-              onClick={() => setBeat(4)}
+              onClick={() => {
+                if (!targetPicked) {
+                  setTargetError('Please choose the state you want to reach.');
+                  return;
+                }
+                setTargetError(null);
+                setBeat(4);
+              }}
               className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold sm:text-base"
             >
               Next: Music Style
@@ -1362,16 +1455,15 @@ export function CheckInView({
               onClick={() => void handleLaunch()}
               className="btn-aurora flex flex-1 items-center justify-center gap-2.5 rounded-xl px-6 py-4 text-sm font-semibold disabled:opacity-60 sm:text-base"
             >
-              <Play className="h-4 w-4 fill-[#0A0B0C]" />
+              <Search className="h-4 w-4 shrink-0" />
               {starting
-                ? 'Preparing your session...'
+                ? 'Searching Scientific Studies...'
                 : (() => {
                     const activeMusicName =
                       genreChoice !== 'auto' ? GENRE_META[genreChoice].label : 'Auto Music';
-                    return profile?.planTier === 'pro'
-                      ? `Play ${activeMusicName} · Pro`
-                      : `Play ${activeMusicName} · 5 Min Free (+30m Share)`;
+                    return `Find Scientific Studies & Prepare (${activeMusicName})`;
                   })()}
+              <ArrowRight className="h-4 w-4 shrink-0" />
             </button>
           </div>
 

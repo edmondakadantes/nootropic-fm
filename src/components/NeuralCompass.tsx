@@ -325,37 +325,44 @@ export function NeuralCompassSelector({
 interface NeuralTrajectoryPreviewProps {
   fromCoords: NeuralCoords;
   fromLabel: string;
-  targetState: TargetState;
+  targetState: TargetState | null;
   durationMin: number;
+  effectTierLabel?: string | null;
+  isoBridgeLabel?: string | null;
 }
 
 /**
  * Compact Beat 3 Iso-Principle Vector Map visualizing the live trajectory
  * from the listener's current 2D state coordinate -> chosen target state coordinate.
+ * Draws the trajectory bar ONLY after the listener explicitly picks their target state.
  */
 export function NeuralTrajectoryPreview({
   fromCoords,
   fromLabel,
   targetState,
   durationMin,
+  effectTierLabel = null,
+  isoBridgeLabel = null,
 }: NeuralTrajectoryPreviewProps) {
-  const dest = TARGET_COORDS[targetState];
+  const dest = targetState ? TARGET_COORDS[targetState] : null;
   const x1 = fromCoords.clarity;
   const y1 = 100 - fromCoords.energy;
-  const x2 = dest.clarity;
-  const y2 = 100 - dest.energy;
-  // Gentle quadratic arc midpoint
-  const mx = (x1 + x2) / 2;
-  const my = Math.max(8, Math.min(92, (y1 + y2) / 2 - 10));
+  const x2 = dest ? dest.clarity : x1;
+  const y2 = dest ? 100 - dest.energy : y1;
+  const hasIsoWaypoint = Boolean(dest && isoBridgeLabel);
+  const mx = hasIsoWaypoint ? 74 : (x1 + x2) / 2;
+  const my = hasIsoWaypoint ? 60 : Math.max(8, Math.min(92, (y1 + y2) / 2 - 10));
 
   return (
     <div className="rounded-xl border border-white/12 bg-[#0B0C0E] p-3.5 space-y-2">
-      <div className="flex items-center justify-between font-mono-tech text-[10px] text-[#8E8E88]">
+      <div className="flex flex-wrap items-center justify-between gap-2 font-mono-tech text-[10px] text-[#8E8E88]">
         <span className="uppercase tracking-[0.14em] text-[#34D399]">
           State Vector (Iso-Principle)
         </span>
         <span>
-          ({fromCoords.energy}%, {fromCoords.clarity}%) → ({dest.energy}%, {dest.clarity}%)
+          {dest
+            ? `(${fromCoords.energy}%, ${fromCoords.clarity}%) → (${dest.energy}%, ${dest.clarity}%)`
+            : `Start: (${fromCoords.energy}% Energy, ${fromCoords.clarity}% Clarity)`}
         </span>
       </div>
 
@@ -369,13 +376,27 @@ export function NeuralTrajectoryPreview({
           </defs>
           <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.07)" strokeWidth="0.4" />
           <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.07)" strokeWidth="0.4" />
-          <path
-            d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
-            fill="none"
-            stroke="url(#nfmVectorGrad)"
-            strokeWidth="1.2"
-            strokeDasharray="2.5 1.8"
-          />
+          {dest && (
+            <>
+              <path
+                d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
+                fill="none"
+                stroke="url(#nfmVectorGrad)"
+                strokeWidth="1.2"
+                strokeDasharray="2.5 1.8"
+              />
+              {hasIsoWaypoint && (
+                <circle
+                  cx={mx}
+                  cy={my}
+                  r="1.6"
+                  fill="#FBBF24"
+                  stroke="#0A0B0C"
+                  strokeWidth="0.45"
+                />
+              )}
+            </>
+          )}
         </svg>
 
         {/* Start Point */}
@@ -389,21 +410,50 @@ export function NeuralTrajectoryPreview({
           </span>
         </div>
 
-        {/* Target Destination */}
-        <div
-          style={{ left: `${x2}%`, top: `${y2}%` }}
-          className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1"
-        >
-          <span className="h-3 w-3 rounded-full border-2 border-[#F3F1EC] bg-[#34D399]" />
-          <span className="whitespace-nowrap rounded bg-[#121316]/95 px-1.5 py-0.5 text-[9px] font-semibold text-[#34D399]">
-            Goal: {dest.label}
-          </span>
-        </div>
+        {/* Target Destination ONLY after user chooses where to go */}
+        {dest ? (
+          <div
+            style={{ left: `${x2}%`, top: `${y2}%` }}
+            className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1"
+          >
+            <span className="h-3 w-3 rounded-full border-2 border-[#F3F1EC] bg-[#34D399]" />
+            <span className="whitespace-nowrap rounded bg-[#121316]/95 px-1.5 py-0.5 text-[9px] font-semibold text-[#34D399]">
+              Goal: {dest.label}
+            </span>
+          </div>
+        ) : (
+          <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-white/12 bg-[#121417]/95 px-2.5 py-0.5 text-[10px] text-[#A3A39E]">
+            Choose your target state below to draw trajectory
+          </div>
+        )}
       </div>
 
-      <p className="text-[11px] text-[#A3A39E]">
-        {describeIsoVector(fromCoords, targetState, durationMin)}
-      </p>
+      {dest && targetState ? (
+        <div className="space-y-1.5">
+          <p className="text-[11px] text-[#A3A39E]">
+            {describeIsoVector(fromCoords, targetState, durationMin)}
+          </p>
+          {(effectTierLabel || isoBridgeLabel) && (
+            <div className="flex flex-wrap items-center gap-1.5 font-mono-tech text-[10px]">
+              {effectTierLabel && (
+                <span className="rounded border border-emerald-400/35 bg-emerald-500/10 px-2 py-0.5 text-[#34D399]">
+                  {effectTierLabel}
+                </span>
+              )}
+              {isoBridgeLabel && (
+                <span className="rounded border border-amber-400/35 bg-amber-500/10 px-2 py-0.5 text-amber-200">
+                  {isoBridgeLabel}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-[11px] text-[#8E8E88]">
+          Select where you want your mind to go next so we can plot your Iso-Principle curve and
+          search matching peer-reviewed studies.
+        </p>
+      )}
     </div>
   );
 }

@@ -30,13 +30,10 @@ import {
   type UserProfile,
 } from '../shared/types';
 import { AmbientField, type FieldMood } from './components/AmbientField';
-import type { MoodPresetSelection } from './components/CheckInView';
+import { CheckInView, type MoodPresetSelection } from './components/CheckInView';
 import { HeroLandingView } from './components/HeroLandingView';
 import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFingerprintPass';
 
-const CheckInView = lazy(() =>
-  import('./components/CheckInView').then((m) => ({ default: m.CheckInView }))
-);
 const DebriefView = lazy(() =>
   import('./components/DebriefView').then((m) => ({ default: m.DebriefView }))
 );
@@ -92,14 +89,15 @@ export default function App() {
     typeof window !== 'undefined' && /^#sync=([A-Za-z0-9-]+)$/i.test(window.location.hash);
   const hasInitialStoredProfile = Boolean(getStoredProfileAuth()?.profileId);
 
-  const [screen, setScreen] = useState<Screen>('landing');
+  const [screen, setScreen] = useState<Screen>('checkin');
+  const [checkinResetNonce, setCheckinResetNonce] = useState(0);
   const [booting, setBooting] = useState(hasInitialHashSync);
   const [runtimeConfig, setRuntimeConfig] = useState<AppRuntimeConfig | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [syncCode, setSyncCode] = useState<string | null>(null);
   const [pendingDebrief, setPendingDebrief] = useState<SessionRecord | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<MoodPresetSelection | null>(null);
-  const [revealOrigin, setRevealOrigin] = useState<'landing' | 'checkin'>('landing');
+  const [revealOrigin, setRevealOrigin] = useState<'landing' | 'checkin'>('checkin');
   const [activeRec, setActiveRec] = useState<ProtocolRecommendation | null>(null);
   const [researching, setResearching] = useState(false);
   const [fieldMood, setFieldMood] = useState<FieldMood>('default');
@@ -146,7 +144,6 @@ export default function App() {
   useEffect(() => {
     const preloadCoreModules = () => {
       void import('./components/PlayerView');
-      void import('./components/CheckInView');
     };
     if (hasInitialStoredProfile) {
       preloadCoreModules();
@@ -204,7 +201,7 @@ export default function App() {
               setQrToast(
                 'Welcome to nootropic.fm Pro! Unlimited music styles & all science studies are now unlocked.'
               );
-              setScreen('landing');
+              setScreen('checkin');
             }
           } catch {
             // Webhook will still activate Pro asynchronously if verification timed out
@@ -231,7 +228,7 @@ export default function App() {
           );
           await configPromise;
           setBooting(false);
-          setScreen('landing');
+          setScreen('checkin');
           return;
         } catch {
           setErrorBanner('Scanned QR Sync Key was invalid or already erased.');
@@ -683,7 +680,8 @@ export default function App() {
               setSelectedPreset(null);
               setAudioActive(false);
               setFieldMood('default');
-              setScreen('landing');
+              setCheckinResetNonce((n) => n + 1);
+              setScreen('checkin');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             className="group flex shrink-0 items-center gap-2 text-left sm:gap-2.5"
@@ -881,36 +879,29 @@ export default function App() {
             <OnboardingView
               initialProfile={profile}
               onComplete={handleSaveProfile}
-              onCancel={() => setScreen(profile ? 'checkin' : 'landing')}
+              onCancel={() => setScreen('checkin')}
               onMoodChange={setFieldMood}
             />
           </Suspense>
         ) : screen === 'checkin' ? (
-          <Suspense
-            fallback={
-              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-[#8E8E88]">
-                Loading Calibration Studio...
-              </div>
-            }
-          >
-            <CheckInView
-              key={selectedPreset?.id ?? 'default'}
-              profile={profile}
-              syncCode={syncCode}
-              runtimeConfig={runtimeConfig}
-              pendingDebrief={pendingDebrief}
-              initialPreset={selectedPreset}
-              onClearPreset={() => setSelectedPreset(null)}
-              onOpenPendingDebrief={handleOpenPendingDebrief}
-              onDismissPending={() => void handleDismissPending()}
-              onOpenIdentityModal={() => {
-                setIdentityStatus(null);
-                setShowIdentityModal(true);
-              }}
-              onMoodChange={setFieldMood}
-              onLaunchUnifiedSession={handleLaunchUnifiedSession}
-            />
-          </Suspense>
+          <CheckInView
+            key={`${selectedPreset?.id ?? 'default'}-${checkinResetNonce}`}
+            profile={profile}
+            syncCode={syncCode}
+            runtimeConfig={runtimeConfig}
+            pendingDebrief={pendingDebrief}
+            initialPreset={selectedPreset}
+            onClearPreset={() => setSelectedPreset(null)}
+            onOpenPendingDebrief={handleOpenPendingDebrief}
+            onDismissPending={() => void handleDismissPending()}
+            onOpenIdentityModal={() => {
+              setIdentityStatus(null);
+              setShowIdentityModal(true);
+            }}
+            onEditProfile={() => setScreen('onboarding')}
+            onMoodChange={setFieldMood}
+            onLaunchUnifiedSession={handleLaunchUnifiedSession}
+          />
         ) : screen === 'studylab' ? (
           <Suspense
             fallback={
@@ -983,7 +974,8 @@ export default function App() {
                 setSelectedPreset(null);
                 setAudioActive(false);
                 setFieldMood('default');
-                setScreen('landing');
+                setCheckinResetNonce((n) => n + 1);
+                setScreen('checkin');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               onPlayingChange={setAudioActive}
