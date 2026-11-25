@@ -31,6 +31,11 @@ import { LyriaRealtimeClient, type LyriaRealtimeStatus } from './LyriaRealtimeCl
 import { createCalibratedNoiseBuffer, MedicalStimulusRack, type GammaStimulusMode } from './MedicalStimulusRack';
 import { canUseWebCodecsOpus, streamOpusIntoWorklet } from './ProgressiveStemDecoder';
 import { StereoRainBed } from './StereoRainBed';
+import {
+  bindNativeMediaActionHandler,
+  isNativeMobileApp,
+  notifyNativeAudioState,
+} from '../lib/platform';
 
 export type SessionPhase = 'entry' | 'plateau' | 'landing';
 export type LayerMonitorMode = 'full_mix' | 'science_only' | 'music_only';
@@ -671,7 +676,7 @@ export class PsychoacousticEngine {
 
     // Bit-transparent hardware DAC / Bluetooth A2DP output (zero MediaStream resampling/mono downmix)
     analyser.connect(ctx.destination);
-    this.backgroundAudioActive = 'mediaSession' in navigator;
+    this.backgroundAudioActive = 'mediaSession' in navigator || isNativeMobileApp();
 
     this.masterGain = masterGain;
     this.analyser = analyser;
@@ -3997,6 +4002,7 @@ export class PsychoacousticEngine {
     this.keepAliveEl?.pause();
     await this.ctx.suspend();
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+    notifyNativeAudioState('paused', this.activeSessionTitle, 'Paused · Tap to resume');
     void this.releaseWakeLock();
   }
 
@@ -4031,6 +4037,11 @@ export class PsychoacousticEngine {
       this.scheduleDeckCrossfade(remaining, cb);
     }
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    notifyNativeAudioState(
+      'playing',
+      this.activeSessionTitle,
+      `${this.studySpec?.entrainment.frequencyHz ?? this.params?.modulationHz ?? 0} Hz · Study-Backed Audio`
+    );
     void this.requestWakeLock();
   }
 
@@ -4114,6 +4125,8 @@ export class PsychoacousticEngine {
       this.visibilityHandler = null;
     }
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+    notifyNativeAudioState('stopped');
+    bindNativeMediaActionHandler(null);
     if (this.ctx && this.masterGain) {
       try {
         const now = this.ctx.currentTime;
@@ -4377,7 +4390,20 @@ export class PsychoacousticEngine {
     this.wakeLock = null;
   }
 
+  private activeSessionTitle = 'nootropic.fm';
+
   private setupMediaSession(title: string): void {
+    this.activeSessionTitle = title || 'nootropic.fm';
+    bindNativeMediaActionHandler((action) => {
+      if (action === 'play') void this.resume();
+      else if (action === 'pause') void this.pause();
+      else if (action === 'stop') this.stop();
+    });
+    notifyNativeAudioState(
+      'playing',
+      this.activeSessionTitle,
+      `${this.studySpec?.entrainment.frequencyHz ?? this.params?.modulationHz ?? 0} Hz · Study-Backed Audio`
+    );
     if ('mediaSession' in navigator) {
       try {
         navigator.mediaSession.metadata = new MediaMetadata({

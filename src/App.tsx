@@ -1218,6 +1218,35 @@ export default function App() {
               </p>
             </div>
 
+            <div className="flex flex-wrap items-center gap-3 pt-1 text-xs">
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
+              >
+                Full Privacy Policy
+              </a>
+              <span className="text-[#555550]">·</span>
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
+              >
+                Terms &amp; Wellness Disclaimer
+              </a>
+              <span className="text-[#555550]">·</span>
+              <a
+                href="/delete-data"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
+              >
+                Delete Data via Sync Key
+              </a>
+            </div>
+
             {privacyStatus && (
               <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-200">
                 {privacyStatus}
@@ -1270,6 +1299,24 @@ export default function App() {
               <ShieldCheck className="h-3 w-3" />
               Privacy, Credits &amp; Delete My Data
             </button>
+            <a
+              href="/privacy"
+              className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
+            >
+              Privacy Policy
+            </a>
+            <a
+              href="/terms"
+              className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
+            >
+              Terms
+            </a>
+            <a
+              href="/delete-data"
+              className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
+            >
+              Delete Data
+            </a>
           </div>
         </footer>
       )}

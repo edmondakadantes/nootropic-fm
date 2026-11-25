@@ -1,0 +1,116 @@
+name: Build Signed Android AAB & Publish to Google Play
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_to_play:
+        description: 'Publish automatically to Google Play Console (requires GOOGLE_PLAY_SERVICE_ACCOUNT_JSON secret)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      play_track:
+        description: 'Target Google Play track when publish_to_play is true'
+        required: false
+        default: 'internal'
+        type: choice
+        options:
+          - 'internal'
+          - 'alpha'
+          - 'beta'
+          - 'production'
+  push:
+    branches:
+      - main
+    paths:
+      - 'android/**'
+      - 'playstore/**'
+      - 'capacitor.config.json'
+      - 'vite.capacitor.config.ts'
+      - '.github/workflows/android-playstore.yml'
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Capacitor Web Bundle & Sync Android
+        run: |
+          npm run build:android:web
+          npx cap sync android
+          node scripts/generate-playstore-assets.mjs
+          node scripts/publish-google-play.mjs --dry-run
+
+      - name: Decode Upload Keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p .secrets
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > .secrets/android-upload.jks
+          else
+            echo "ERROR: ANDROID_KEYSTORE_BASE64 secret is missing."
+            exit 1
+          fi
+
+      - name: Build Signed Release AAB & APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/.secrets/android-upload.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew bundleRelease assembleRelease --no-daemon
+
+      - name: Stage Release Artifacts
+        run: |
+          mkdir -p playstore/releases
+          cp android/app/build/outputs/bundle/release/app-release.aab playstore/releases/nootropic-fm-release.aab
+          cp android/app/build/outputs/apk/release/app-release.apk playstore/releases/nootropic-fm-release.apk
+          ls -lh playstore/releases/
+
+      - name: Upload Signed Google Play Bundle (.aab) & APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nootropic-fm-google-play-release
+          path: |
+            playstore/releases/nootropic-fm-release.aab
+            playstore/releases/nootropic-fm-release.apk
+            playstore/graphics/icon-512.png
+            playstore/graphics/feature-graphic-1024x500.png
+            playstore/graphics/phone-screenshots/*.png
+          retention-days: 90
+
+      - name: Publish to Google Play Console (when enabled)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_play == 'true' }}
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          node scripts/publish-google-play.mjs \
+            --aab playstore/releases/nootropic-fm-release.aab \
+            --track "${{ inputs.play_track }}"

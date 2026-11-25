@@ -1,0 +1,5 @@
+Initial Google Play release of nootropic.fm (v1.0.0):
+• Interactive 2D Neural State Map + personalized target-state audio protocols
+• 2-Layer 48 kHz psychoacoustic engine with 10 instrumental genres & true-stereo rainfall
+• Lock-screen background playback with media notification controls
+• Real-time oscilloscope signal proof & passwordless Neural Pass sync

@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Delete My Data &amp; Neural Pass · nootropic.fm</title>
+    <meta
+      name="description"
+      content="Self-service account and session data deletion portal for nootropic.fm Web and Android users."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0a0b0c;
+        color: #f3f1ec;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 40px 20px 72px;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        margin-bottom: 32px;
+      }
+      .brand {
+        color: #f3f1ec;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 1.05rem;
+      }
+      .brand span {
+        color: #34d399;
+      }
+      .navlinks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        font-size: 0.85rem;
+      }
+      .navlinks a {
+        color: #a3a39e;
+        text-decoration: none;
+      }
+      .navlinks a:hover {
+        color: #34d399;
+      }
+      .card {
+        background: #121418;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 18px;
+        padding: 24px;
+        margin-top: 24px;
+      }
+      h1 {
+        font-size: 1.85rem;
+        line-height: 1.25;
+        margin: 0 0 10px;
+      }
+      h2 {
+        font-size: 1.08rem;
+        margin: 28px 0 10px;
+      }
+      p, li {
+        color: #d4d4ce;
+        font-size: 0.93rem;
+      }
+      label {
+        display: block;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #d4d4ce;
+        margin-bottom: 8px;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 13px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: #0a0b0c;
+        color: #f3f1ec;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.95rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      input[type="text"]:focus {
+        outline: none;
+        border-color: #34d399;
+      }
+      .checkrow {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin: 16px 0 20px;
+        font-size: 0.86rem;
+        color: #d4d4ce;
+      }
+      .checkrow input {
+        margin-top: 4px;
+      }
+      button {
+        width: 100%;
+        padding: 14px 18px;
+        border-radius: 12px;
+        border: 1px solid rgba(244, 63, 94, 0.55);
+        background: rgba(244, 63, 94, 0.18);
+        color: #fecdd3;
+        font-weight: 700;
+        font-size: 0.92rem;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      button:hover:not(:disabled) {
+        background: rgba(244, 63, 94, 0.28);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .status {
+        display: none;
+        margin-top: 16px;
+        padding: 13px 15px;
+        border-radius: 12px;
+        font-size: 0.88rem;
+      }
+      .status.ok {
+        display: block;
+        border: 1px solid rgba(52, 211, 153, 0.45);
+        background: rgba(16, 185, 129, 0.12);
+        color: #a7f3d0;
+      }
+      .status.err {
+        display: block;
+        border: 1px solid rgba(244, 63, 94, 0.45);
+        background: rgba(244, 63, 94, 0.12);
+        color: #fecdd3;
+      }
+      a {
+        color: #34d399;
+      }
+      code {
+        background: rgba(255, 255, 255, 0.08);
+        padding: 2px 6px;
+        border-radius: 5px;
+        font-size: 0.86em;
+      }
+      footer {
+        margin-top: 48px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 0.82rem;
+        color: #8e8e88;
+      }
+    </style>
+    <script src="/delete-data/delete-data.js" defer></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="topbar">
+        <a class="brand" href="/">nootropic<span>.fm</span></a>
+        <nav class="navlinks">
+          <a href="/">Open App</a>
+          <a href="/privacy">Privacy Policy</a>
+          <a href="/terms">Terms of Use</a>
+        </nav>
+      </header>
+
+      <h1>Delete Your Neural Pass &amp; Session Data</h1>
+      <p>
+        You can permanently delete your <strong>nootropic.fm</strong> Neural Identity and all associated session records directly from this page—without reinstalling or opening the Android app.
+      </p>
+
+      <div class="card">
+        <form id="delete-form">
+          <label for="sync-code">Enter your Neural Sync Key (<code>NFM-XXXX-XXXX</code>)</label>
+          <input
+            id="sync-code"
+            name="syncCode"
+            type="text"
+            placeholder="NFM-XXXX-XXXX"
+            autocomplete="off"
+            required
+          />
+          <label class="checkrow">
+            <input id="confirm-erase" type="checkbox" required />
+            <span>
+              I understand that this permanently and irreversibly deletes my Neural Pass profile, calibration settings, and session history from nootropic.fm.
+            </span>
+          </label>
+          <button id="delete-btn" type="submit">
+            Permanently Delete My Profile &amp; Session Data
+          </button>
+          <div id="delete-status" class="status" role="status" aria-live="polite"></div>
+        </form>
+      </div>
+
+      <h2>What Data Is Deleted Immediately vs. Retained</h2>
+      <ul>
+        <li><strong>Deleted immediately &amp; permanently:</strong> Your <code>profiles</code> record (age/band, role, preferences, Sync Key hash, auth token hash), all linked <code>sessions</code> history (check-ins, ratings, reaction/tapping scores), and all personal <code>bandit_stats</code> learning weights.</li>
+        <li><strong>Active Subscriptions:</strong> Deleting your app data does not automatically cancel an external Google Play subscription. If you have an active subscription on Google Play, cancel it in <em>Google Play Store → Subscriptions</em> so Google does not bill future renewals.</li>
+        <li><strong>Statutory Accounting Records:</strong> If you previously completed a paid transaction, minimal non-behavioral payment invoice identifiers required by tax and accounting law are retained by the payment processor (Google Play or Stripe) for the statutory period.</li>
+      </ul>
+
+      <h2>Don't Have Your Sync Key?</h2>
+      <ul>
+        <li><strong>If you still have the app or browser open:</strong> Tap <em>Privacy, Credits &amp; Delete My Data</em> in the bottom bar and tap <strong>Delete My Identity &amp; All Session Data</strong> (no Sync Key entry required on the active device).</li>
+        <li><strong>Email Support:</strong> Contact <a href="mailto:support@nootropic.fm">support@nootropic.fm</a> with any billing email or approximate creation date, and we will verify and process deletion within 7 business days.</li>
+      </ul>
+
+      <footer>
+        &copy; 2026 nootropic.fm · <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms of Use</a>
+      </footer>
+    </div>
+  </body>
+</html>

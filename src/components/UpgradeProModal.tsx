@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { UserProfile } from '../../shared/types';
 import { api, saveStoredProfileAuth } from '../lib/api';
+import { isNativePlayStoreApp } from '../lib/platform';
 
 interface UpgradeProModalProps {
   profile: UserProfile | null;
@@ -40,6 +41,7 @@ export function UpgradeProModal({
   const [error, setError] = useState<string | null>(null);
 
   const isPro = profile?.planTier === 'pro';
+  const isPlayStore = isNativePlayStoreApp();
 
   const handleRedeemAccessKey = async () => {
     if (!accessKey.trim()) return;
@@ -145,15 +147,87 @@ export function UpgradeProModal({
               </div>
             )}
 
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void handleManagePortal()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#16181C] px-5 py-3.5 text-sm font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 disabled:opacity-60"
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-              Manage Billing or Cancel in Stripe
-            </button>
+            {isPlayStore ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.NootropicNativeBridge?.openPlayStoreSubscriptions) {
+                    window.NootropicNativeBridge.openPlayStoreSubscriptions();
+                  } else {
+                    window.open(
+                      'https://play.google.com/store/account/subscriptions?package=fm.nootropic.app',
+                      '_blank',
+                      'noopener,noreferrer'
+                    );
+                  }
+                }}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#16181C] px-5 py-3.5 text-sm font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Manage Google Play Subscriptions
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleManagePortal()}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#16181C] px-5 py-3.5 text-sm font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 disabled:opacity-60"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+                Manage Billing or Cancel in Stripe
+              </button>
+            )}
+          </div>
+        ) : isPlayStore ? (
+          <div className="space-y-4">
+            <ul className="space-y-2 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-4 text-xs text-[#D4D4CE]">
+              {PRO_BENEFITS.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+
+            {error && (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-500/12 px-3 py-2 text-xs text-rose-200">
+                {error}
+              </div>
+            )}
+
+            <div className="rounded-xl border border-emerald-400/30 bg-[#0B0C0E] p-4 space-y-2.5">
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                <KeyRound className="h-3.5 w-3.5 text-[#34D399]" />
+                Sync Your Existing Neural Pass
+              </div>
+              <p className="text-[11px] leading-relaxed text-[#A3A39E]">
+                Already have a Neural Sync Key? Enter your <code className="font-mono-tech text-[#34D399]">NFM-XXXX-XXXX</code> pass below to restore your profile and unlocked features on this Android device.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={accessKey}
+                  onChange={(e) => setAccessKey(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleRedeemAccessKey();
+                  }}
+                  placeholder="NFM-XXXX-XXXX"
+                  className="font-mono-tech flex-1 rounded-xl border border-white/15 bg-[#0A0B0C] px-3 py-2.5 text-xs uppercase tracking-wider text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={unlockingKey || !accessKey.trim()}
+                  onClick={() => void handleRedeemAccessKey()}
+                  className="btn-aurora rounded-xl px-4 py-2.5 text-xs font-semibold disabled:opacity-50"
+                >
+                  {unlockingKey ? 'Syncing...' : 'Sync Pass'}
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-[#121316] px-3.5 py-2.5 text-[11px] text-[#A3A39E]">
+              Google Play In-App Subscriptions are rolling out on Android. Meanwhile, enjoy daily calibration sessions plus +30 bonus minutes each day when sharing your Neural Fingerprint card.
+            </div>
           </div>
         ) : (
           <>

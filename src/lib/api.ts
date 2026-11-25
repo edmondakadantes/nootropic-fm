@@ -24,8 +24,13 @@ import type {
   UserProfile,
 } from '../../shared/types';
 
-export const API_BASE =
-  (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? '';
+import {
+  getOrCreateWsClientId,
+  isNativeMobileApp,
+  resolveDefaultApiBase,
+} from './platform';
+
+export const API_BASE = resolveDefaultApiBase();
 
 export const PROFILE_STORAGE_KEY = 'nootropic_fm_profile_id_v1';
 export const PROFILE_TOKEN_KEY = 'nootropic_fm_profile_token_v2';
@@ -91,7 +96,7 @@ function getProfileTokenHeader(): Record<string, string> {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    credentials: 'same-origin',
+    credentials: isNativeMobileApp() ? 'include' : 'same-origin',
     ...init,
     headers: {
       'content-type': 'application/json',
@@ -415,6 +420,7 @@ export const api = {
       reason?: string;
     }>('/api/music/realtime-token', {
       method: 'POST',
+      headers: { 'x-ws-client-id': getOrCreateWsClientId() },
       body: JSON.stringify({}),
     }),
 

@@ -1,0 +1,22 @@
+Tune your mind from how you feel right now to how you want to feel.
+
+nootropic.fm is an adaptive psychoacoustic music app engineered for deep focus, mental clarity, calm resets, creative flow, and evening wind-down. Unlike static looping playlists or plain tone generators, nootropic.fm blends rich 48 kHz studio instrumentals with phase-coherent acoustic modulation tailored to your exact state, headphones or speakers, and environment.
+
+HOW IT WORKS IN 30 SECONDS
+1. Map Your Current State — Select how your mind feels right now on the interactive 2D Neural State Map (from scattered or wired to sluggish or overloaded).
+2. Choose Your Target State — Pick curated outcomes like Deep Flow, Alert Focus, Calm Reset, Creative Spark, or Sleep Wind-Down—or type your own focus or relaxation goal in plain English.
+3. Listen & Adapt — Launch a personalized two-layer audio session backed by transparent acoustic research parameters, then rate how you feel so nootropic.fm learns which frequencies and musical styles work best for you.
+
+ENGINEERED FOR MEASURABLE SOUND QUALITY
+• Two-Layer Psychoacoustic Architecture: Keeps musical warmth and sub-bass clean while applying precision Linkwitz-Riley (LR4) mid-band amplitude modulation, binaural or monaural beats, rhythmic breath pacing, and calibrated pink or brown noise.
+• 10 Curated Instrumental Styles + Endless Stream: Switch effortlessly between Deep Electronic, Lo-Fi Study, Solo Piano, Ambient Pads, Warm Strings, Acoustic Pluck, Bossa Nova, Late-Night Jazz, Dub Reggae, and True-Stereo 48 kHz Canopy Rain—with zero-ducking Layer-1 invariance.
+• Live Signal Proof: Inspect real-time Y(t) waveform envelopes and stereo X/Y Lissajous phase visuals, or tap Pure Wave / Music Only anytime to hear each layer independently.
+• Built for Lock-Screen Listening: Native Android foreground audio keeps your session smooth and uninterrupted while you work, study, commute, or unwind with your screen off.
+• Speaker & Driving-Safe Modes: Automatically adapts stereo/monaural rendering and blocks sleep/drowsy frequencies when Driving Mode is selected.
+
+PRIVACY-FIRST BY DESIGN (18+)
+• Passwordless Neural Pass (NFM-XXXX-XXXX) for instant cross-device sync—no password, phone number, or ad tracking SDKs.
+• Full user control: Delete your Neural Pass and session history anytime in one tap inside the app or on the web at nootropic.fm/delete-data.
+
+WELLNESS DISCLAIMER
+nootropic.fm is a general cognitive wellness, focus, and relaxation audio application for adults aged 18+. It is not a medical device and does not provide medical advice, diagnosis, or treatment.

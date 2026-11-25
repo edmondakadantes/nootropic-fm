@@ -1,0 +1,17 @@
+{
+  "appId": "fm.nootropic.app",
+  "appName": "nootropic.fm",
+  "webDir": "dist/capacitor",
+  "bundledWebRuntime": false,
+  "backgroundColor": "#0A0B0C",
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost"
+  },
+  "android": {
+    "backgroundColor": "#0A0B0C",
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}

@@ -81,6 +81,8 @@ const ALLOWED_ORIGINS = new Set([
   'https://nootropic.fm',
   'https://www.nootropic.fm',
   'https://app.nootropic.fm',
+  'https://localhost',
+  'capacitor://localhost',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ]);
@@ -100,7 +102,8 @@ function corsHeaders(request?: Request): Record<string, string> {
   return {
     'access-control-allow-origin': trusted ? origin : 'https://nootropic.fm',
     'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
-    'access-control-allow-headers': 'content-type, x-admin-key, x-profile-token, authorization',
+    'access-control-allow-headers':
+      'content-type, x-admin-key, x-profile-token, x-ws-client-id, authorization',
     vary: 'Origin',
     ...(trusted ? { 'access-control-allow-credentials': 'true' } : {}),
   };
@@ -225,6 +228,17 @@ async function computeCookieActorKey(request: Request, explicitBindId?: string):
   const authCookieTok = extractCookieValue(request, AUTH_COOKIE_NAME);
   if (authCookieTok && authCookieTok.length >= 16) {
     return (await sha256Hex(`nootropic-fm:ws-auth:${authCookieTok}`)).slice(0, 24);
+  }
+  let clientCid = (request.headers.get('x-ws-client-id') ?? '').trim();
+  if (!clientCid) {
+    try {
+      clientCid = (new URL(request.url).searchParams.get('cid') ?? '').trim();
+    } catch {
+      clientCid = '';
+    }
+  }
+  if (/^[a-f0-9]{24,64}$/i.test(clientCid)) {
+    return (await sha256Hex(`nootropic-fm:ws-cid:${clientCid.toLowerCase()}`)).slice(0, 24);
   }
   return '';
 }
@@ -1410,8 +1424,10 @@ export default {
         let wsBindCookieToSet: string | null = null;
         const existingWsBind = extractCookieValue(request, WS_BIND_COOKIE_NAME);
         const existingAuthCookie = extractCookieValue(request, AUTH_COOKIE_NAME);
+        const headerClientCid = (request.headers.get('x-ws-client-id') ?? '').trim();
+        const hasValidClientCid = /^[a-f0-9]{24,64}$/i.test(headerClientCid);
         let explicitBindId: string | undefined;
-        if (!existingWsBind && !existingAuthCookie) {
+        if (!existingWsBind && !existingAuthCookie && !hasValidClientCid) {
           const rnd = new Uint8Array(16);
           crypto.getRandomValues(rnd);
           explicitBindId = Array.from(rnd)
@@ -2103,6 +2119,64 @@ export default {
 
         return json(
           { ok: true, deletedProfileId: id },
+          200,
+          request,
+          { 'set-cookie': buildAuthSetCookieHeader(request, null) }
+        );
+      }
+
+      // POST /api/identity/delete-by-sync-code — Google Play / GDPR Web Self-Service Data Deletion via Sync Key
+      if (url.pathname === '/api/identity/delete-by-sync-code' && request.method === 'POST') {
+        const allowed = await checkDailyRateLimit(env.DB, request, 'profile_delete_sync', 15);
+        if (!allowed) {
+          return json(
+            { error: 'Too many deletion attempts today. Please try again tomorrow or contact support@nootropic.fm.' },
+            429,
+            request
+          );
+        }
+        const body = (await request.json().catch(() => ({}))) as {
+          syncCode?: string;
+          confirmErase?: boolean;
+        };
+        if (body.confirmErase !== true) {
+          return json({ error: 'Confirmation is required before deleting profile data.' }, 400, request);
+        }
+        const normalized = normalizeSyncCode(String(body.syncCode ?? ''));
+        if (!normalized) {
+          return json(
+            { error: 'Please enter a valid Sync Key (format: NFM-XXXX-XXXX).' },
+            400,
+            request
+          );
+        }
+        const codeHash = await sha256Hex(normalized);
+        const row = await env.DB.prepare('SELECT id FROM profiles WHERE sync_code_hash = ?')
+          .bind(codeHash)
+          .first<{ id?: string }>();
+        if (!row?.id) {
+          return json(
+            { error: 'No active Neural Pass found for this Sync Key. It may have already been deleted.' },
+            404,
+            request
+          );
+        }
+        const id = String(row.id);
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM sessions WHERE profile_id = ?').bind(id),
+          env.DB.prepare(
+            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre') AND scope_id = ?) OR (scope_type = 'profile_state' AND scope_id LIKE ?)`
+          ).bind(id, `${id}|%`),
+          env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id),
+        ]);
+
+        return json(
+          {
+            ok: true,
+            deletedProfileId: id,
+            syncCode: normalized,
+            deletedAt: new Date().toISOString(),
+          },
           200,
           request,
           { 'set-cookie': buildAuthSetCookieHeader(request, null) }

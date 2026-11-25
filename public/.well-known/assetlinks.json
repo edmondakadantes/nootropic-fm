@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "fm.nootropic.app",
+      "sha256_cert_fingerprints": [
+        "15:CB:32:C7:7A:81:4E:0C:34:CF:16:7E:29:14:88:87:04:BF:99:F9:D6:66:E7:C6:32:32:6D:C1:CF:7E:0A:98"
+      ]
+    }
+  }
+]

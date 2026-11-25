@@ -1,5 +1,6 @@
 import { buildLyriaRealtimeConfig, type ExecutableStudySpec } from '../../shared/studySpec';
 import type { ResolvedGenre } from '../../shared/types';
+import { getOrCreateWsClientId } from '../lib/platform';
 import { ensureDspWorkletsLoaded } from './dspWorklets';
 
 export type LyriaRealtimeStatus = 'idle' | 'connecting' | 'streaming' | 'unavailable' | 'error';
@@ -105,7 +106,8 @@ export class LyriaRealtimeClient {
 
     const httpBase = (this.activeApiBase || window.location.origin).replace(/\/+$/, '');
     const wsBase = httpBase.replace(/^http/i, 'ws');
-    const wsUrl = `${wsBase}/api/music/realtime-ws?ticket=${encodeURIComponent(token)}`;
+    const cid = getOrCreateWsClientId();
+    const wsUrl = `${wsBase}/api/music/realtime-ws?ticket=${encodeURIComponent(token)}&cid=${encodeURIComponent(cid)}`;
     const ws = new WebSocket(wsUrl);
     this.ws = ws;
 

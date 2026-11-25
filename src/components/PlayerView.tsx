@@ -52,6 +52,7 @@ import { BleHrvMonitor, isWebBluetoothSupported, type BleHrvState } from '../lib
 import { TappingTestModal } from './TappingTestModal';
 import type { GammaStimulusMode } from '../audio/MedicalStimulusRack';
 import { API_BASE, api, saveStoredProfileAuth } from '../lib/api';
+import { isNativePlayStoreApp } from '../lib/platform';
 import { HugginsCheckModal } from './HugginsCheckModal';
 import { LiveEnvelopeProof } from './LiveEnvelopeProof';
 import {
@@ -2343,54 +2344,58 @@ export function PlayerView({
               </p>
             </div>
 
-            {/* Annual vs Monthly Plan Picker */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setSelectedPaywallPlan('annual')}
-                className={`relative rounded-xl border p-4 text-left transition ${
-                  selectedPaywallPlan === 'annual'
-                    ? 'border-amber-400/70 bg-amber-400/10'
-                    : 'border-white/10 bg-[#121316] hover:border-white/25'
-                }`}
-              >
-                <span className="absolute -top-2.5 right-3 rounded bg-amber-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#0A0B0C]">
-                  7-Day Free Trial · Save 50%
-                </span>
-                <div className="text-xs font-semibold text-amber-200">Annual Studio Pass</div>
-                <div className="mt-1 flex items-baseline gap-1">
-                  <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$59</span>
-                  <span className="text-xs text-[#8E8E88]">/ year</span>
-                </div>
-                <div className="mt-1 text-[11px] text-[#8E8E88]">$0.00 today · $4.92/mo after trial</div>
-              </button>
+            {/* Annual vs Monthly Plan Picker (Web Stripe; hidden on Play Store to comply with Google Play Payments Policy) */}
+            {!isNativePlayStoreApp() && (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPaywallPlan('annual')}
+                    className={`relative rounded-xl border p-4 text-left transition ${
+                      selectedPaywallPlan === 'annual'
+                        ? 'border-amber-400/70 bg-amber-400/10'
+                        : 'border-white/10 bg-[#121316] hover:border-white/25'
+                    }`}
+                  >
+                    <span className="absolute -top-2.5 right-3 rounded bg-amber-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#0A0B0C]">
+                      7-Day Free Trial · Save 50%
+                    </span>
+                    <div className="text-xs font-semibold text-amber-200">Annual Studio Pass</div>
+                    <div className="mt-1 flex items-baseline gap-1">
+                      <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$59</span>
+                      <span className="text-xs text-[#8E8E88]">/ year</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-[#8E8E88]">$0.00 today · $4.92/mo after trial</div>
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => setSelectedPaywallPlan('monthly')}
-                className={`rounded-xl border p-4 text-left transition ${
-                  selectedPaywallPlan === 'monthly'
-                    ? 'border-emerald-400/70 bg-emerald-400/10'
-                    : 'border-white/10 bg-[#121316] hover:border-white/25'
-                }`}
-              >
-                <div className="text-xs font-semibold text-[#34D399]">Monthly Pass</div>
-                <div className="mt-1 flex items-baseline gap-1">
-                  <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$9.99</span>
-                  <span className="text-xs text-[#8E8E88]">/ month</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPaywallPlan('monthly')}
+                    className={`rounded-xl border p-4 text-left transition ${
+                      selectedPaywallPlan === 'monthly'
+                        ? 'border-emerald-400/70 bg-emerald-400/10'
+                        : 'border-white/10 bg-[#121316] hover:border-white/25'
+                    }`}
+                  >
+                    <div className="text-xs font-semibold text-[#34D399]">Monthly Pass</div>
+                    <div className="mt-1 flex items-baseline gap-1">
+                      <span className="font-mono-tech text-2xl font-bold text-[#F3F1EC]">$9.99</span>
+                      <span className="text-xs text-[#8E8E88]">/ month</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-[#8E8E88]">Cancel anytime in 1 click</div>
+                  </button>
                 </div>
-                <div className="mt-1 text-[11px] text-[#8E8E88]">Cancel anytime in 1 click</div>
-              </button>
-            </div>
 
-            {selectedPaywallPlan === 'annual' && (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 font-mono-tech text-[10px] text-amber-100">
-                <span>Today: $0.00</span>
-                <span className="text-[#8E8E88]">→</span>
-                <span>Day 5: Reminder email</span>
-                <span className="text-[#8E8E88]">→</span>
-                <span>Day 7: $59/yr (cancel anytime)</span>
-              </div>
+                {selectedPaywallPlan === 'annual' && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 font-mono-tech text-[10px] text-amber-100">
+                    <span>Today: $0.00</span>
+                    <span className="text-[#8E8E88]">→</span>
+                    <span>Day 5: Reminder email</span>
+                    <span className="text-[#8E8E88]">→</span>
+                    <span>Day 7: $59/yr (cancel anytime)</span>
+                  </div>
+                )}
+              </>
             )}
 
             <ul className="space-y-1.5 rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3.5 text-xs text-[#D4D4CE]">
@@ -2414,38 +2419,40 @@ export function PlayerView({
               </div>
             )}
 
-            <button
-              type="button"
-              disabled={unlockingCheckout}
-              onClick={async () => {
-                setUnlockError(null);
-                if (!stripeAvailable || !onStartDirectCheckout) {
-                  onUpgradePro?.();
-                  return;
-                }
-                setUnlockingCheckout(true);
-                try {
-                  await onStartDirectCheckout(selectedPaywallPlan);
-                } catch (err) {
-                  setUnlockError(
-                    err instanceof Error ? err.message : 'Unable to open Stripe Checkout right now.'
-                  );
-                  setUnlockingCheckout(false);
-                }
-              }}
-              className="btn-aurora flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold disabled:opacity-60 sm:text-base"
-            >
-              {unlockingCheckout ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <CreditCard className="h-4 w-4" />
-              )}
-              {unlockingCheckout
-                ? 'Opening Secure Stripe Checkout...'
-                : selectedPaywallPlan === 'annual'
-                  ? 'Start 7-Day Free Trial · Then $59/yr'
-                  : 'Start Monthly Pass · $9.99/mo'}
-            </button>
+            {!isNativePlayStoreApp() && (
+              <button
+                type="button"
+                disabled={unlockingCheckout}
+                onClick={async () => {
+                  setUnlockError(null);
+                  if (!stripeAvailable || !onStartDirectCheckout) {
+                    onUpgradePro?.();
+                    return;
+                  }
+                  setUnlockingCheckout(true);
+                  try {
+                    await onStartDirectCheckout(selectedPaywallPlan);
+                  } catch (err) {
+                    setUnlockError(
+                      err instanceof Error ? err.message : 'Unable to open Stripe Checkout right now.'
+                    );
+                    setUnlockingCheckout(false);
+                  }
+                }}
+                className="btn-aurora flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold disabled:opacity-60 sm:text-base"
+              >
+                {unlockingCheckout ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CreditCard className="h-4 w-4" />
+                )}
+                {unlockingCheckout
+                  ? 'Opening Secure Stripe Checkout...'
+                  : selectedPaywallPlan === 'annual'
+                    ? 'Start 7-Day Free Trial · Then $59/yr'
+                    : 'Start Monthly Pass · $9.99/mo'}
+              </button>
+            )}
 
             {/* Viral Share Bonus: Share your 1-of-1 Neural Fingerprint Card -> +30 Min Free Instantly! */}
             {!shareBonusUsedToday && shareBonusSec === 0 && (
@@ -2515,10 +2522,12 @@ export function PlayerView({
             </div>
 
             <div className="flex flex-col items-center gap-2 pt-0.5 text-center">
-              <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#8E8E88]">
-                <ShieldCheck className="h-3.5 w-3.5 text-[#34D399]" />
-                <span>Secured by Stripe · Instant unlock · Cancel anytime</span>
-              </div>
+              {!isNativePlayStoreApp() && (
+                <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#8E8E88]">
+                  <ShieldCheck className="h-3.5 w-3.5 text-[#34D399]" />
+                  <span>Secured by Stripe · Instant unlock · Cancel anytime</span>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={handleEndSession}

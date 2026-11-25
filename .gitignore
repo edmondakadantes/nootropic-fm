@@ -6,3 +6,12 @@ audio-stems
 .dev.vars
 .dev.vars.*
 *.local
+.secrets
+*.jks
+*.keystore
+playstore/releases
+android/.gradle
+android/build
+android/app/build
+android/capacitor-cordova-android-plugins
+android/local.properties
