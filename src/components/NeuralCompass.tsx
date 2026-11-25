@@ -29,7 +29,7 @@ export function NeuralCompassSelector({
 }: NeuralCompassSelectorProps) {
   const padRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [showAllStates, setShowAllStates] = useState(false);
+  const [showAllStates, setShowAllStates] = useState(true);
 
   const updateFromClientPoint = (clientX: number, clientY: number) => {
     const el = padRef.current;
