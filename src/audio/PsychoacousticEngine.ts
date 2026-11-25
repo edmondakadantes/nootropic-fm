@@ -257,6 +257,17 @@ function buildFallbackStudySpec(params: AcousticParams, durationMin: number): Ex
   };
 }
 
+function holdAndRampGain(gainParam: AudioParam, target: number, endTime: number, now: number): void {
+  const p = gainParam as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+  if (typeof p.cancelAndHoldAtTime === 'function') {
+    p.cancelAndHoldAtTime(now);
+  } else {
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(Math.max(0.0001, p.value), now);
+  }
+  p.exponentialRampToValueAtTime(Math.max(0.0001, target), endTime);
+}
+
 function createSilentKeepAliveWavUrl(sampleRate = 48000): string {
   const wavBytes = createSilentKeepAliveWavBytes(sampleRate);
   return URL.createObjectURL(new Blob([wavBytes], { type: 'audio/wav' }));
@@ -370,6 +381,9 @@ export class PsychoacousticEngine {
   private genre: ResolvedGenre = 'deep_electronic';
   private isControlTrial = false;
   private isPlaying = false;
+  private startToken = 0;
+  private pendingCloseTimer: number | null = null;
+  private pendingCloseCtx: AudioContext | null = null;
   private volume = 0.74;
   private intensityMultiplier = 1.0;
   private modDepthMultiplier = 1.0;
@@ -389,6 +403,7 @@ export class PsychoacousticEngine {
     skipInitialStudioDeck = false
   ): Promise<void> {
     this.stopImmediate();
+    const myStartToken = ++this.startToken;
     this.sampleApiBase = sampleApiBase;
     this.params = { ...params };
     this.studySpec = executableSpec
@@ -415,19 +430,48 @@ export class PsychoacousticEngine {
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const ctx = new AudioCtx({ latencyHint: 'playback' });
-    if (ctx.state === 'suspended') {
-      await ctx.resume();
-    }
     this.ctx = ctx;
+    if (ctx.state === 'suspended') {
+      await ctx.resume().catch(() => {});
+    }
+    if (myStartToken !== this.startToken || this.ctx !== ctx) {
+      try {
+        await ctx.close();
+      } catch {
+        // ignore
+      }
+      return;
+    }
     this.workletsReady = await ensureDspWorkletsLoaded(ctx);
+    if (myStartToken !== this.startToken || this.ctx !== ctx) {
+      try {
+        await ctx.close();
+      } catch {
+        // ignore
+      }
+      return;
+    }
 
-    // Master Glue Compressor + True 5.0 ms Lookahead Stereo-Linked Brickwall Limiter (-0.80 dBFS ceiling)
-    const compressor = ctx.createDynamicsCompressor();
-    compressor.threshold.value = -16;
-    compressor.knee.value = 18;
-    compressor.ratio.value = 2.2;
-    compressor.attack.value = 0.012;
-    compressor.release.value = 0.22;
+    if (ctx.destination.maxChannelCount >= 2) {
+      try {
+        ctx.destination.channelCount = 2;
+      } catch {
+        // ignore read-only hardware destination
+      }
+    }
+
+    // Linear Master Summing Bus -> True 5.0 ms 4x True-Peak Lookahead Brickwall Limiter (-0.80 dBTP ceiling)
+    // Layer 1 Clinical Stimuli & AM Depth bypass compression 100% so music transients NEVER duck science signals!
+    const masterSumBus = ctx.createGain();
+    masterSumBus.gain.value = 1.0;
+
+    // Musical Layer 2 Glue Compressor (leveled BEFORE AM & SNR follower so AM & Layer 1 stay 100% linear)
+    const musicCompressor = ctx.createDynamicsCompressor();
+    musicCompressor.threshold.value = -14;
+    musicCompressor.knee.value = 16;
+    musicCompressor.ratio.value = 2.0;
+    musicCompressor.attack.value = 0.012;
+    musicCompressor.release.value = 0.2;
 
     const masterGain = ctx.createGain();
     masterGain.gain.setValueAtTime(0.0001, ctx.currentTime);
@@ -453,7 +497,7 @@ export class PsychoacousticEngine {
         outputChannelCount: [2],
       });
       limiterNode.parameters.get('ceiling')?.setValueAtTime(LIMITER_CEILING_LINEAR, ctx.currentTime);
-      compressor.connect(limiterNode);
+      masterSumBus.connect(limiterNode);
       limiterNode.connect(masterGain);
       this.lookaheadLimiterNode = limiterNode;
     } else {
@@ -462,7 +506,7 @@ export class PsychoacousticEngine {
       const masterLimiter = ctx.createWaveShaper();
       masterLimiter.curve = createMasteringLimiterCurve();
       masterLimiter.oversample = '2x';
-      compressor.connect(lookaheadDelay);
+      masterSumBus.connect(lookaheadDelay);
       lookaheadDelay.connect(masterLimiter);
       masterLimiter.connect(masterGain);
       this.lookaheadLimiterNode = null;
@@ -502,7 +546,7 @@ export class PsychoacousticEngine {
     const { hrvBusInput } = this.stimulusRack.start({
       ctx,
       spec: this.studySpec,
-      masterDestination: compressor,
+      masterDestination: masterSumBus,
       speakerSafeEQ: params.speakerSafeEQ,
       isControlTrial: this.isControlTrial,
       pureStimulusMode: this.carrierMode === 'pure_stimulus',
@@ -591,16 +635,28 @@ export class PsychoacousticEngine {
 
     const musicAuditionGain = ctx.createGain();
     musicAuditionGain.gain.setValueAtTime(
-      this.layerMonitorMode === 'science_only' ? 0.0001 : 1.0,
+      this.layerMonitorMode === 'science_only' ? 0 : 1.0,
       ctx.currentTime
     );
     musicAuditionGain.connect(spectralPocketNotch);
-    spectralPocketNotch.connect(preHrvBus);
+    if (params.speakerSafeEQ) {
+      // Driving/speaker safety notch sits BEFORE LR4 split so crossover summing remains 0.000 dB phase-coherent
+      const safetyNotch = ctx.createBiquadFilter();
+      safetyNotch.type = 'peaking';
+      safetyNotch.frequency.value = 1850;
+      safetyNotch.Q.value = 0.72;
+      safetyNotch.gain.value = -5.5;
+      spectralPocketNotch.connect(safetyNotch);
+      safetyNotch.connect(musicCompressor);
+    } else {
+      spectralPocketNotch.connect(musicCompressor);
+    }
+    musicCompressor.connect(preHrvBus);
     this.musicAuditionGain = musicAuditionGain;
 
     const startWithMusic = this.carrierMode === 'generative_live';
     const proceduralMaster = ctx.createGain();
-    proceduralMaster.gain.setValueAtTime(startWithMusic ? 0.94 : 0.0001, ctx.currentTime);
+    proceduralMaster.gain.setValueAtTime(startWithMusic ? 0.94 : 0, ctx.currentTime);
     proceduralMaster.connect(musicAuditionGain);
     this.proceduralMaster = proceduralMaster;
 
@@ -617,7 +673,7 @@ export class PsychoacousticEngine {
 
     // Phase-aligned & HRV-synchronized clean sub-bass bus (<185 Hz bass & sub-kick stay 100% AM-free)
     const cleanSubBus = ctx.createGain();
-    cleanSubBus.gain.setValueAtTime(startWithMusic ? 0.9 : 0.0001, ctx.currentTime);
+    cleanSubBus.gain.setValueAtTime(startWithMusic ? 0.9 : 0, ctx.currentTime);
     const subPhaseAlignLow = ctx.createBiquadFilter();
     subPhaseAlignLow.type = 'allpass';
     subPhaseAlignLow.frequency.value = lowerHz;
@@ -634,7 +690,7 @@ export class PsychoacousticEngine {
       cleanSubBus.connect(subPhaseAlignLow);
     }
     subPhaseAlignLow.connect(subPhaseAlignHigh);
-    subPhaseAlignHigh.connect(compressor);
+    subPhaseAlignHigh.connect(masterSumBus);
     this.cleanSubBus = cleanSubBus;
 
     // Gentle calibrated pink carrier specifically for Pure Clinical Signal auditing of AM & 0.1 Hz HRV studies
@@ -645,7 +701,7 @@ export class PsychoacousticEngine {
     const pureAmGain = ctx.createGain();
     const needsPureAmCarrier =
       this.carrierMode === 'pure_stimulus' && this.specNeedsPureReferenceCarrier();
-    pureAmGain.gain.setValueAtTime(needsPureAmCarrier ? 0.21 : 0.0001, ctx.currentTime);
+    pureAmGain.gain.setValueAtTime(needsPureAmCarrier ? 0.21 : 0, ctx.currentTime);
     pureAmSrc.connect(pureAmGain);
     pureAmGain.connect(preHrvBus);
     pureAmSrc.start();
@@ -660,7 +716,7 @@ export class PsychoacousticEngine {
     lowPhaseAlign.Q.value = Math.SQRT1_2;
     musicMixBus.connect(lowBand.input);
     lowBand.output.connect(lowPhaseAlign);
-    lowPhaseAlign.connect(compressor);
+    lowPhaseAlign.connect(masterSumBus);
 
     // UPPER SPLIT (> lowerHz)
     const aboveLow = createLR4Filter(ctx, 'highpass', lowerHz);
@@ -669,7 +725,7 @@ export class PsychoacousticEngine {
     // BAND 3: Clean Air (> upperHz)
     const airBand = createLR4Filter(ctx, 'highpass', upperHz);
     aboveLow.output.connect(airBand.input);
-    airBand.output.connect(compressor);
+    airBand.output.connect(masterSumBus);
 
     // BAND 2: Cortical AM Entrainment Band (lowerHz – upperHz)
     const midBand = createLR4Filter(ctx, 'lowpass', upperHz);
@@ -728,7 +784,7 @@ export class PsychoacousticEngine {
     const amTiltL = ctx.createBiquadFilter();
     amTiltL.type = 'peaking';
     amTiltL.frequency.setValueAtTime(1350, ctx.currentTime);
-    amTiltL.Q.value = 0.85;
+    amTiltL.Q.value = 1.15;
     amTiltL.gain.setValueAtTime(0, ctx.currentTime);
     const amTiltDepthL = ctx.createGain();
     const initTilt =
@@ -766,7 +822,7 @@ export class PsychoacousticEngine {
       const amTiltR = ctx.createBiquadFilter();
       amTiltR.type = 'peaking';
       amTiltR.frequency.setValueAtTime(1350, ctx.currentTime);
-      amTiltR.Q.value = 0.85;
+      amTiltR.Q.value = 1.15;
       amTiltR.gain.setValueAtTime(0, ctx.currentTime);
       const amTiltDepthR = ctx.createGain();
       amTiltDepthR.gain.setValueAtTime(initTilt, ctx.currentTime);
@@ -803,18 +859,7 @@ export class PsychoacousticEngine {
     if (eType === 'amplitude_modulation' || eType === 'hrv_breathing_swell' || eType === 'none') {
       midOutput.connect(scopeModAnalyser);
     }
-
-    if (params.speakerSafeEQ) {
-      const safetyNotch = ctx.createBiquadFilter();
-      safetyNotch.type = 'peaking';
-      safetyNotch.frequency.value = 1850;
-      safetyNotch.Q.value = 0.72;
-      safetyNotch.gain.value = -5.5;
-      midOutput.connect(safetyNotch);
-      safetyNotch.connect(compressor);
-    } else {
-      midOutput.connect(compressor);
-    }
+    midOutput.connect(masterSumBus);
 
     this.amGainL = amGainL;
     this.amLfoL = amLfoL;
@@ -828,9 +873,11 @@ export class PsychoacousticEngine {
     const reverbHP = ctx.createBiquadFilter();
     reverbHP.type = 'highpass';
     reverbHP.frequency.value = 210;
+    reverbHP.Q.value = BUTTERWORTH_LP_HP_Q_DB;
     const reverbLP = ctx.createBiquadFilter();
     reverbLP.type = 'lowpass';
     reverbLP.frequency.value = params.speakerSafeEQ ? 1450 : 2800;
+    reverbLP.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
     reverbSend.connect(convolver);
     convolver.connect(reverbHP);
@@ -846,6 +893,7 @@ export class PsychoacousticEngine {
     const delayFilter = ctx.createBiquadFilter();
     delayFilter.type = 'lowpass';
     delayFilter.frequency.value = 1350;
+    delayFilter.Q.value = BUTTERWORTH_LP_HP_Q_DB;
     const feedback = ctx.createGain();
     feedback.gain.value = 0.22;
     const panL = ctx.createStereoPanner();
@@ -877,15 +925,16 @@ export class PsychoacousticEngine {
       delaySend,
       speakerSafeEQ: params.speakerSafeEQ,
       sampleApiBase,
+      deferStart: this.carrierMode !== 'generative_live',
     });
 
     // ─── DEDICATED PHYSICAL STEREO RAINFALL LAYER (HRV-synchronized when 0.1 Hz HRV active) ───
     const rainHrvBranch = this.stimulusRack.createHrvGainBranch();
     if (rainHrvBranch) {
-      rainHrvBranch.connect(compressor);
+      rainHrvBranch.connect(masterSumBus);
       this.rainBed.attach(ctx, rainHrvBranch, params.speakerSafeEQ);
     } else {
-      this.rainBed.attach(ctx, compressor, params.speakerSafeEQ);
+      this.rainBed.attach(ctx, masterSumBus, params.speakerSafeEQ);
     }
     this.syncRainBed();
 
@@ -1056,10 +1105,10 @@ export class PsychoacousticEngine {
     const muteMusic = mode === 'science_only' || this.carrierMode === 'pure_stimulus';
     const muteScience = mode === 'music_only';
 
-    this.musicAuditionGain?.gain.setTargetAtTime(muteMusic ? 0.0001 : 1.0, now, 0.18);
+    this.musicAuditionGain?.gain.setTargetAtTime(muteMusic ? 0 : 1.0, now, 0.18);
     if (this.cleanSubBus) {
       const wantSub = this.carrierMode === 'generative_live' && !muteMusic;
-      this.cleanSubBus.gain.setTargetAtTime(wantSub ? 0.9 : 0.0001, now, 0.18);
+      this.cleanSubBus.gain.setTargetAtTime(wantSub ? 0.9 : 0, now, 0.18);
     }
     this.stimulusRack.setScienceMuted(muteScience);
     this.stimulusRack.setPureStimulusMode(muteMusic && !muteScience);
@@ -1070,7 +1119,7 @@ export class PsychoacousticEngine {
     this.spectralPocketNotch?.gain.setTargetAtTime(wantPocket ? -4.5 : 0, now, 0.18);
 
     const needsPureCarrier = muteMusic && !muteScience && this.specNeedsPureReferenceCarrier();
-    this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureCarrier ? 0.22 : 0.0001, now, 0.18);
+    this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureCarrier ? 0.22 : 0, now, 0.18);
     this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(muteMusic ? 0 : 1, now);
     this.syncAmWaveformForMonitorMode(muteMusic && !muteScience);
     this.syncRainBed();
@@ -1114,9 +1163,10 @@ export class PsychoacousticEngine {
       this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
       this.stimulusRack.setScienceMuted(muteScience);
       this.stimulusRack.setPureStimulusMode(false);
-      this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, now, 0.4);
+      this.pureAmCarrierGain?.gain.setTargetAtTime(0, now, 0.4);
       this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(1, now);
       this.syncAmWaveformForMonitorMode(false);
+      this.composer.setStandby(false);
       this.proceduralMaster.gain.setTargetAtTime(0.94, now, 0.65);
       this.cleanSubBus.gain.setTargetAtTime(0.9, now, 0.65);
     } else if (mode === 'pure_stimulus') {
@@ -1128,13 +1178,14 @@ export class PsychoacousticEngine {
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
       this.layerMonitorMode = 'science_only';
-      this.musicAuditionGain?.gain.setTargetAtTime(0.0001, now, 0.25);
+      this.musicAuditionGain?.gain.setTargetAtTime(0, now, 0.25);
       this.stimulusRack.setScienceMuted(false);
       this.stimulusRack.setPureStimulusMode(true);
-      this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.45);
-      this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.45);
+      this.composer.setStandby(true);
+      this.proceduralMaster.gain.setTargetAtTime(0, now, 0.45);
+      this.cleanSubBus.gain.setTargetAtTime(0, now, 0.45);
       const needsPureAm = this.specNeedsPureReferenceCarrier();
-      this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureAm ? 0.22 : 0.0001, now, 0.45);
+      this.pureAmCarrierGain?.gain.setTargetAtTime(needsPureAm ? 0.22 : 0, now, 0.45);
       this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(0, now);
       this.syncAmWaveformForMonitorMode(true);
     } else if (mode === 'studio_library') {
@@ -1145,7 +1196,7 @@ export class PsychoacousticEngine {
       this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
       this.stimulusRack.setScienceMuted(muteScience);
       this.stimulusRack.setPureStimulusMode(false);
-      this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, now, 0.4);
+      this.pureAmCarrierGain?.gain.setTargetAtTime(0, now, 0.4);
       this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(1, now);
       this.syncAmWaveformForMonitorMode(false);
       void this.activateStudioForGenre(this.genre);
@@ -1156,6 +1207,7 @@ export class PsychoacousticEngine {
   /**
    * Plug-and-Play Google Lyria RealTime AI Activation (when ephemeral token is minted by server).
    * Streams infinite, never-repeating 48 kHz stereo music in the active curated genre through 3-Band LR4 DSP.
+   * Keeps the prior deck playing seamlessly until the first live audio frame arrives.
    */
   public async activateLyriaRealtime(
     token: string,
@@ -1164,7 +1216,6 @@ export class PsychoacousticEngine {
     fetchFreshToken?: () => Promise<{ token: string; model?: string } | null>
   ): Promise<boolean> {
     if (!this.ctx || !this.studioBus || !this.studySpec || !this.isPlaying) return false;
-    this.clearStudioDeck(1.2);
     if (this.layerMonitorMode === 'science_only') {
       this.layerMonitorMode = 'full_mix';
     }
@@ -1172,7 +1223,7 @@ export class PsychoacousticEngine {
     this.musicAuditionGain?.gain.setTargetAtTime(1.0, this.ctx.currentTime, 0.25);
     this.stimulusRack.setScienceMuted(muteScience);
     this.stimulusRack.setPureStimulusMode(false);
-    this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.4);
+    this.pureAmCarrierGain?.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4);
     this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(1, this.ctx.currentTime);
     this.syncAmWaveformForMonitorMode(false);
 
@@ -1190,6 +1241,7 @@ export class PsychoacousticEngine {
         onStatus?.(st, note);
         if (st === 'streaming' && this.ctx && this.proceduralMaster && this.cleanSubBus) {
           const now = this.ctx.currentTime;
+          this.clearStudioDeck(1.2);
           this.carrierMode = 'lyria_realtime';
           if (this.layerMonitorMode === 'science_only') {
             this.layerMonitorMode = 'full_mix';
@@ -1202,8 +1254,9 @@ export class PsychoacousticEngine {
           this.activeTrackKey = null;
           this.activeTrackNativeBpm = 0;
           this.activeStudioAppliedBpm = 0;
-          this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.85);
-          this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.85);
+          this.composer.setStandby(true);
+          this.proceduralMaster.gain.setTargetAtTime(0, now, 0.85);
+          this.cleanSubBus.gain.setTargetAtTime(0, now, 0.85);
           this.syncRainBed();
         } else if ((st === 'error' || st === 'unavailable') && this.carrierMode === 'lyria_realtime') {
           this.setCarrierMode('studio_library');
@@ -1260,9 +1313,7 @@ export class PsychoacousticEngine {
     if (this.ctx && prevGain && (prevSrc || prevStreamEl || prevWsola)) {
       const now = this.ctx.currentTime;
       try {
-        prevGain.gain.cancelScheduledValues(now);
-        prevGain.gain.setValueAtTime(Math.max(0.0001, prevGain.gain.value), now);
-        prevGain.gain.exponentialRampToValueAtTime(0.0001, now + fadeSec);
+        holdAndRampGain(prevGain.gain, 0.0001, now + fadeSec, now);
       } catch {
         // ignore
       }
@@ -1514,7 +1565,7 @@ export class PsychoacousticEngine {
         el.load();
       });
 
-      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) {
+      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
         el.pause();
         el.src = '';
         return false;
@@ -1536,13 +1587,12 @@ export class PsychoacousticEngine {
         });
         const ringPitch = Math.max(
           0.72,
-          Math.min(1.38, alignment.pitchRatio / Math.max(0.5, alignment.tempoRate))
+          Math.min(1.38, alignment.pitchRatio / Math.max(0.5, el.playbackRate || alignment.tempoRate))
         );
         wsolaNode.parameters.get('pitchRatio')?.setValueAtTime(ringPitch, now);
         wsolaNode.parameters.get('tempoRatio')?.setValueAtTime(alignment.tempoRate, now);
-        wsolaNode.parameters
-          .get('bypass')
-          ?.setValueAtTime(Math.abs(ringPitch - 1.0) < 0.0005 ? 1 : 0, now);
+        // Keep bypass=0 so constant-delay unity crossfade inside NootropicWsolaProcessor prevents 80ms clicks
+        wsolaNode.parameters.get('bypass')?.setValueAtTime(0, now);
         srcNode.connect(wsolaNode);
         wsolaNode.connect(deckGain);
       } else {
@@ -1552,7 +1602,7 @@ export class PsychoacousticEngine {
 
       await el.play();
 
-      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) {
+      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
         el.pause();
         el.src = '';
         try {
@@ -1570,9 +1620,10 @@ export class PsychoacousticEngine {
       }
 
       this.clearStudioDeck(fadeInSec);
+      this.composer.setStandby(true);
       if (this.proceduralMaster && this.cleanSubBus) {
-        this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.55);
-        this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.55);
+        this.proceduralMaster.gain.setTargetAtTime(0, now, 0.55);
+        this.cleanSubBus.gain.setTargetAtTime(0, now, 0.55);
       }
 
       deckGain.gain.exponentialRampToValueAtTime(Math.max(0.1, targetGain), now + fadeInSec);
@@ -1718,6 +1769,7 @@ export class PsychoacousticEngine {
       this.activeStudioAppliedBpm = 0;
       if (this.ctx && this.proceduralMaster && this.cleanSubBus) {
         const now = this.ctx.currentTime;
+        this.composer.setStandby(false);
         this.proceduralMaster.gain.setTargetAtTime(0.94, now, 0.7);
         this.cleanSubBus.gain.setTargetAtTime(0.9, now, 0.7);
       }
@@ -1816,9 +1868,10 @@ export class PsychoacousticEngine {
     const fadeInSec = 2.4;
 
     this.clearStudioDeck(fadeInSec);
+    this.composer.setStandby(true);
     if (this.proceduralMaster && this.cleanSubBus) {
-      this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.8);
-      this.cleanSubBus.gain.setTargetAtTime(0.0001, now, 0.8);
+      this.proceduralMaster.gain.setTargetAtTime(0, now, 0.8);
+      this.cleanSubBus.gain.setTargetAtTime(0, now, 0.8);
     }
 
     const alignment = this.computeStudioTempoAlignment(
@@ -2087,18 +2140,18 @@ export class PsychoacousticEngine {
       this.activeStudioAppliedBpm = alignment.effectiveBpm;
       const now = this.ctx.currentTime;
       if (this.activeWsolaNode && this.activeWsolaMode === 'ring' && this.activeStreamEl) {
-        if (Math.abs(this.activeStreamEl.playbackRate - alignment.tempoRate) >= 0.004) {
+        if (Math.abs(this.activeStreamEl.playbackRate - alignment.tempoRate) >= 0.001) {
           this.activeStreamEl.playbackRate = alignment.tempoRate;
         }
+        const actualRate = Math.max(0.5, this.activeStreamEl.playbackRate || alignment.tempoRate);
         const targetRingPitch = Math.max(
           0.72,
-          Math.min(1.38, alignment.pitchRatio / Math.max(0.5, alignment.tempoRate))
+          Math.min(1.38, alignment.pitchRatio / actualRate)
         );
         this.activeWsolaNode.parameters.get('pitchRatio')?.setTargetAtTime(targetRingPitch, now, 0.25);
-        this.activeWsolaNode.parameters.get('tempoRatio')?.setTargetAtTime(alignment.tempoRate, now, 0.25);
-        this.activeWsolaNode.parameters
-          .get('bypass')
-          ?.setValueAtTime(Math.abs(targetRingPitch - 1.0) < 0.0005 ? 1 : 0, now);
+        this.activeWsolaNode.parameters.get('tempoRatio')?.setTargetAtTime(actualRate, now, 0.25);
+        // Keep bypass=0 so constant-delay unity crossfade inside NootropicWsolaProcessor prevents 80ms clicks
+        this.activeWsolaNode.parameters.get('bypass')?.setValueAtTime(0, now);
       } else if (this.activeWsolaNode && this.activeWsolaMode === 'buffer') {
         this.activeWsolaNode.parameters.get('tempoRatio')?.setTargetAtTime(alignment.tempoRate, now, 0.25);
         this.activeWsolaNode.parameters.get('pitchRatio')?.setTargetAtTime(alignment.pitchRatio, now, 0.25);
@@ -2214,9 +2267,7 @@ export class PsychoacousticEngine {
     if (this.masterGain) {
       try {
         const now = this.ctx.currentTime;
-        this.masterGain.gain.cancelScheduledValues(now);
-        this.masterGain.gain.setValueAtTime(Math.max(0.0001, this.masterGain.gain.value), now);
-        this.masterGain.gain.exponentialRampToValueAtTime(0.0001, now + durationSec);
+        holdAndRampGain(this.masterGain.gain, 0.0001, now + durationSec, now);
       } catch {
         // ignore
       }
@@ -2229,6 +2280,9 @@ export class PsychoacousticEngine {
     if (!this.ctx || !this.isPlaying) return;
     this.isPlaying = false;
     this.composer.pause();
+    if (this.carrierMode === 'studio_library' && !this.usingStudioAudio) {
+      this.studioLoadToken++;
+    }
     if (this.studioCrossfadeTimer !== null) {
       window.clearTimeout(this.studioCrossfadeTimer);
       this.studioCrossfadeTimer = null;
@@ -2249,8 +2303,10 @@ export class PsychoacousticEngine {
     if (this.masterGain) {
       try {
         const now = this.ctx.currentTime;
-        this.masterGain.gain.cancelScheduledValues(now);
-        this.masterGain.gain.setTargetAtTime(Math.max(0.0001, this.volume * 0.84), now, 0.25);
+        const p = this.masterGain.gain as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+        if (typeof p.cancelAndHoldAtTime === 'function') p.cancelAndHoldAtTime(now);
+        else p.cancelScheduledValues(now);
+        p.setTargetAtTime(Math.max(0.0001, this.volume * 0.84), now, 0.25);
       } catch {
         // ignore
       }
@@ -2260,6 +2316,9 @@ export class PsychoacousticEngine {
     await this.keepAliveEl?.play().catch(() => {});
     this.isPlaying = true;
     this.composer.resume();
+    if (this.carrierMode === 'studio_library' && !this.usingStudioAudio && !this.activeCustomTrack) {
+      void this.activateStudioForGenre(this.genre);
+    }
     if (this.studioDeckPausedRemainingSec !== null && this.studioDeckOnCrossfade) {
       const remaining = this.studioDeckPausedRemainingSec;
       const cb = this.studioDeckOnCrossfade;
@@ -2350,9 +2409,7 @@ export class PsychoacousticEngine {
     if (this.ctx && this.masterGain) {
       try {
         const now = this.ctx.currentTime;
-        this.masterGain.gain.cancelScheduledValues(now);
-        this.masterGain.gain.setValueAtTime(Math.max(0.0001, this.masterGain.gain.value), now);
-        this.masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+        holdAndRampGain(this.masterGain.gain, 0.0001, now + 0.5, now);
       } catch {
         // ignore
       }
@@ -2361,30 +2418,22 @@ export class PsychoacousticEngine {
       const keepAliveElRef = this.keepAliveEl;
       const keepAliveUrlRef = this.keepAliveUrl;
       this.isPlaying = false;
+      this.startToken++;
+      this.studioLoadToken++;
       if (this.snrTimer !== null) {
         window.clearInterval(this.snrTimer);
         this.snrTimer = null;
       }
+      if (this.studioCrossfadeTimer !== null) {
+        window.clearTimeout(this.studioCrossfadeTimer);
+        this.studioCrossfadeTimer = null;
+      }
+      this.activeStreamCrossfadeCheck = null;
       this.activeTrackKey = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
-      this.composer.stop();
-      this.stimulusRack.stop();
-      this.lyriaClient.stop();
-      this.rainBed.stop();
-      this.clearStudioDeck(0.35);
-      window.setTimeout(() => {
-        audioElRef?.pause();
-        if (audioElRef) audioElRef.srcObject = null;
-        if (keepAliveElRef) {
-          keepAliveElRef.pause();
-          keepAliveElRef.src = '';
-        }
-        if (keepAliveUrlRef) {
-          URL.revokeObjectURL(keepAliveUrlRef);
-        }
-        ctxRef.close().catch(() => {});
-      }, 600);
+      // Pause note scheduling immediately while letting audio fade smoothly over 500 ms
+      this.composer.pause();
       if (this.envFollowerNode) {
         this.envFollowerNode.port.onmessage = null;
       }
@@ -2406,12 +2455,33 @@ export class PsychoacousticEngine {
       this.amPureWaveR = null;
       this.amSalienceWaveL = null;
       this.amSalienceWaveR = null;
-      this.activeStreamCrossfadeCheck = null;
-      this.activeWsolaNode = null;
-      this.activeWsolaMode = 'none';
       this.musicEnvAnalyser = null;
       this.musicEnvBuf = null;
       this.musicEnvSmoothedRms = 0.165;
+
+      this.pendingCloseCtx = ctxRef;
+      this.pendingCloseTimer = window.setTimeout(() => {
+        this.pendingCloseTimer = null;
+        this.pendingCloseCtx = null;
+        this.composer.stop();
+        this.stimulusRack.stop();
+        this.lyriaClient.stop();
+        this.rainBed.stop();
+        this.clearStudioDeck(0.02);
+        audioElRef?.pause();
+        if (audioElRef) audioElRef.srcObject = null;
+        if (keepAliveElRef) {
+          keepAliveElRef.pause();
+          keepAliveElRef.src = '';
+        }
+        if (keepAliveUrlRef) {
+          URL.revokeObjectURL(keepAliveUrlRef);
+        }
+        ctxRef.close().catch(() => {});
+      }, 580);
+      return;
+    }
+    if (this.pendingCloseTimer !== null) {
       return;
     }
     this.stopImmediate();
@@ -2419,6 +2489,15 @@ export class PsychoacousticEngine {
 
   private stopImmediate(): void {
     this.isPlaying = false;
+    this.startToken++;
+    if (this.pendingCloseTimer !== null) {
+      window.clearTimeout(this.pendingCloseTimer);
+      this.pendingCloseTimer = null;
+    }
+    if (this.pendingCloseCtx) {
+      this.pendingCloseCtx.close().catch(() => {});
+      this.pendingCloseCtx = null;
+    }
     if (this.snrTimer !== null) {
       window.clearInterval(this.snrTimer);
       this.snrTimer = null;

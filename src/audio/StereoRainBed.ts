@@ -14,6 +14,8 @@ import { BUTTERWORTH_LP_HP_Q_DB } from './dspMath';
 function createStereoRainBuffer(ctx: AudioContext, durationSec = 12): AudioBuffer {
   const rate = ctx.sampleRate;
   const length = Math.floor(rate * durationSec);
+  const fade = Math.min(Math.floor(rate * 0.5), Math.floor(length / 8));
+  const totalGen = length + fade;
   const buffer = ctx.createBuffer(2, length, rate);
 
   // Deterministic PRNG so rain density is consistently rich across sessions
@@ -25,8 +27,9 @@ function createStereoRainBuffer(ctx: AudioContext, durationSec = 12): AudioBuffe
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 
-  // Layer 1 & 3: Decorrelated stereo rain sheet + cozy low-end warmth
+  // Layer 1 & 3: Decorrelated stereo rain sheet + cozy low-end warmth with true overlap-add loop fold
   for (let ch = 0; ch < 2; ch++) {
+    const raw = new Float32Array(totalGen);
     const out = buffer.getChannelData(ch);
     let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
     let brown = 0;
@@ -34,7 +37,7 @@ function createStereoRainBuffer(ctx: AudioContext, durationSec = 12): AudioBuffe
     const gustPhase1 = ch * 2.1;
     const gustPhase2 = ch * 1.3 + 0.7;
 
-    for (let i = 0; i < length; i++) {
+    for (let i = 0; i < totalGen; i++) {
       const w = rand() * 2 - 1;
       // Paul Kellet pink filter (natural -3 dB/oct rainfall spectrum)
       b0 = 0.99886 * b0 + w * 0.0555179;
@@ -54,18 +57,25 @@ function createStereoRainBuffer(ctx: AudioContext, durationSec = 12): AudioBuffe
       brown = (brown + 0.018 * w) / 1.018;
       const warmth = brown * 0.42;
 
-      // Slow organic rain-gust breathing (seamless integer cycles across 12s buffer!)
-      const tNorm = i / length;
+      // Slow organic rain-gust breathing (seamless integer cycles across `length`)
+      const tNorm = (i % length) / length;
       const gust =
         0.84 +
         0.11 * Math.sin(tNorm * Math.PI * 2 * 1 + gustPhase1) +
         0.05 * Math.sin(tNorm * Math.PI * 2 * 2 + gustPhase2);
 
-      out[i] = (pink * 0.78 + mist * 0.45) * gust + warmth * 0.28;
+      raw[i] = (pink * 0.78 + mist * 0.45) * gust + warmth * 0.28;
+    }
+
+    // Copy main body and fold extra tail onto head via equal-power sin/cos (0 repeated samples, 0 seam click!)
+    out.set(raw.subarray(0, length));
+    for (let i = 0; i < fade; i++) {
+      const theta = ((i + 0.5) / fade) * Math.PI * 0.5;
+      out[i] = raw[i] * Math.sin(theta) + raw[length + i] * Math.cos(theta);
     }
   }
 
-  // Layer 2: Organic Individual Stereo Raindrops (Minnaert bubble chirp + tiny impact transient)
+  // Layer 2: Organic Individual Stereo Raindrops wrapped seamlessly across loop boundary
   const left = buffer.getChannelData(0);
   const right = buffer.getChannelData(1);
 
@@ -85,9 +95,10 @@ function createStereoRainBuffer(ctx: AudioContext, durationSec = 12): AudioBuffe
     for (let j = 0; j < dropLen; j++) {
       const idx = (startSample + j) % length;
       const u = j / dropLen;
-      // Fast natural attack (0.8 ms) + smooth exponential decay
+      // Fast natural attack (0.8 ms) + smooth exponential decay + clean zero taper on final 10%
       const attack = Math.min(1, j / Math.max(4, rate * 0.0008));
-      const decay = Math.exp(-u * 6.5);
+      const endTaper = u > 0.9 ? (1 - u) / 0.1 : 1;
+      const decay = Math.exp(-u * 6.5) * endTaper;
       const env = attack * decay;
 
       let sample = 0;
@@ -127,21 +138,6 @@ function createStereoRainBuffer(ctx: AudioContext, durationSec = 12): AudioBuffe
     const amp = 0.08 + rand() * 0.14;
     const pan = (rand() * 2 - 1) * 0.88;
     addDroplet(pos, freq, dur, amp, pan, true);
-  }
-
-  // Seamless equal-power loop boundary crossfade (0.5s)
-  const fade = Math.min(Math.floor(rate * 0.5), Math.floor(length / 8));
-  for (let ch = 0; ch < 2; ch++) {
-    const data = buffer.getChannelData(ch);
-    for (let i = 0; i < fade; i++) {
-      const t = i / fade;
-      const tailIdx = length - fade + i;
-      const a = Math.sin(t * Math.PI * 0.5);
-      const b = Math.cos(t * Math.PI * 0.5);
-      const blended = data[i] * a + data[tailIdx] * b;
-      data[i] = blended;
-      data[tailIdx] = blended;
-    }
   }
 
   return buffer;

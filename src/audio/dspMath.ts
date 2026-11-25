@@ -131,6 +131,95 @@ export function computeExactAmGainPair(
 }
 
 /**
+ * Measures the true post-filter RMS attenuation ratio of cascaded Web Audio
+ * Butterworth highpass -> lowpass biquads on a stereo buffer using exact W3C
+ * Audio EQ Cookbook coefficients (`alpha = sin(w0) / (2 * 10^(Q_dB / 20))`),
+ * then scales the buffer in-place so post-filter noise RMS equals `targetRms`.
+ */
+export function calibrateFilteredStereoNoiseRms(
+  left: Float32Array,
+  right: Float32Array,
+  sampleRate: number,
+  hpHz: number,
+  lpHz: number,
+  targetRms = NOISE_CALIBRATED_RMS,
+  qDb = BUTTERWORTH_LP_HP_Q_DB
+): void {
+  const n = Math.min(left.length, right.length);
+  if (n === 0 || sampleRate <= 0) return;
+
+  const qLin = Math.pow(10, qDb / 20);
+  const makeHp = (fc: number) => {
+    const safeFc = Math.max(10, Math.min(sampleRate * 0.45, fc));
+    const w0 = (2 * Math.PI * safeFc) / sampleRate;
+    const cosW = Math.cos(w0);
+    const alpha = Math.sin(w0) / (2 * qLin);
+    const a0 = 1 + alpha;
+    return {
+      b0: (1 + cosW) / 2 / a0,
+      b1: -(1 + cosW) / a0,
+      b2: (1 + cosW) / 2 / a0,
+      a1: (-2 * cosW) / a0,
+      a2: (1 - alpha) / a0,
+    };
+  };
+  const makeLp = (fc: number) => {
+    const safeFc = Math.max(20, Math.min(sampleRate * 0.48, fc));
+    const w0 = (2 * Math.PI * safeFc) / sampleRate;
+    const cosW = Math.cos(w0);
+    const alpha = Math.sin(w0) / (2 * qLin);
+    const a0 = 1 + alpha;
+    return {
+      b0: (1 - cosW) / 2 / a0,
+      b1: (1 - cosW) / a0,
+      b2: (1 - cosW) / 2 / a0,
+      a1: (-2 * cosW) / a0,
+      a2: (1 - alpha) / a0,
+    };
+  };
+
+  const hp = makeHp(hpHz);
+  const lp = makeLp(lpHz);
+  const skip = Math.min(Math.floor(n / 4), Math.round(sampleRate * 0.25));
+  let sumSq = 0;
+  let count = 0;
+  let filteredPeak = 0;
+
+  for (const ch of [left, right]) {
+    let hx1 = 0, hx2 = 0, hy1 = 0, hy2 = 0;
+    let lx1 = 0, lx2 = 0, ly1 = 0, ly2 = 0;
+    for (let i = 0; i < n; i++) {
+      const x = ch[i];
+      const yh = hp.b0 * x + hp.b1 * hx1 + hp.b2 * hx2 - hp.a1 * hy1 - hp.a2 * hy2;
+      hx2 = hx1; hx1 = x; hy2 = hy1; hy1 = yh;
+
+      const yl = lp.b0 * yh + lp.b1 * lx1 + lp.b2 * lx2 - lp.a1 * ly1 - lp.a2 * ly2;
+      lx2 = lx1; lx1 = yh; ly2 = ly1; ly1 = yl;
+
+      if (i >= skip) {
+        sumSq += yl * yl;
+        count++;
+        const absYl = Math.abs(yl);
+        if (absYl > filteredPeak) filteredPeak = absYl;
+      }
+    }
+  }
+
+  const filteredRms = Math.sqrt(sumSq / Math.max(1, count));
+  if (filteredRms < 1e-6) return;
+
+  let scale = Math.min(100, targetRms / filteredRms);
+  // Guard POST-filter output peak against >0.98 DAC clipping while preserving Float32 pre-filter LF headroom
+  if (filteredPeak * scale > 0.98) {
+    scale = 0.98 / filteredPeak;
+  }
+  for (let i = 0; i < n; i++) {
+    left[i] *= scale;
+    right[i] *= scale;
+  }
+}
+
+/**
  * Normalizes a stereo pair of buffers in-place to a calibrated target RMS
  * with soft safety peak guard below 0.98.
  */
@@ -166,11 +255,12 @@ export function normalizeStereoBufferRms(
 
 /**
  * Generates a clean 16-bit signed stereo PCM WAV matching the AudioContext sampleRate
- * (zero DC offset, 1 Hz +-1 LSB = -90.3 dBFS sub-audible keep-alive anchor for iOS WebKit & MediaSession).
+ * (zero DC offset, smooth quantized 1 Hz +-1 LSB = -90.3 dBFS peak / -93.3 dBFS RMS,
+ * max 1 LSB step so zero high-frequency switching harmonics reach sensitive IEMs or iOS DACs).
  */
 export function createSilentKeepAliveWavBytes(sampleRate = 48000): Uint8Array<ArrayBuffer> {
   const safeRate = Math.max(8000, Math.min(96000, Math.round(sampleRate)));
-  const numFrames = safeRate; // 1.0s exact loop
+  const numFrames = 2 * Math.round(safeRate / 2); // exact even 1.0s loop for zero DC symmetry
   const channels = 2;
   const bytesPerSample = 2;
   const dataBytes = numFrames * channels * bytesPerSample;
@@ -192,10 +282,10 @@ export function createSilentKeepAliveWavBytes(sampleRate = 48000): Uint8Array<Ar
   view.setUint16(34, 16, true); // 16-bit signed PCM
   writeStr(36, 'data');
   view.setUint32(40, dataBytes, true);
-  const half = Math.floor(numFrames / 2);
   for (let i = 0; i < numFrames; i++) {
-    // 1 Hz square-sign +-1 LSB (-90.3 dBFS, zero DC, zero audible spectrum)
-    const sample = i < half ? 1 : -1;
+    // Half-sample-symmetric 1 Hz quantized +-1 LSB (0, +1, 0, -1 => exact 0 DC, max 1 LSB step)
+    const v = Math.sin((2 * Math.PI * (i + 0.5)) / numFrames);
+    const sample = v > 0.5 ? 1 : v < -0.5 ? -1 : 0;
     const base = 44 + i * 4;
     view.setInt16(base, sample, true);
     view.setInt16(base + 2, sample, true);

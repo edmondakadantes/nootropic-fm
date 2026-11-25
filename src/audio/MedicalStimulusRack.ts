@@ -8,6 +8,7 @@ import type { NoiseColor } from '../../shared/types';
 import {
   BUTTERWORTH_LP_HP_Q_DB,
   NOISE_CALIBRATED_RMS,
+  calibrateFilteredStereoNoiseRms,
   normalizeStereoBufferRms,
 } from './dspMath';
 
@@ -25,16 +26,19 @@ export interface StimulusTelemetry {
 /**
  * Generates seamless 6-second colored noise buffer supporting TRUE White, Pink, Brown, and Soft Rain
  * with equal-power overlap-add loop seam (0.00 dB dip, 0 repeated samples) and calibrated RMS (-17.08 dBFS).
+ * When `bandpass` is provided, calibrates the pre-filter amplitude so POST-biquad output RMS matches `NOISE_CALIBRATED_RMS`.
  */
 export function createCalibratedNoiseBuffer(
   ctx: AudioContext,
   color: Exclude<NoiseColor, 'none'>,
-  durationSec = 6
+  durationSec = 6,
+  bandpass?: { hpHz: number; lpHz: number }
 ): AudioBuffer {
   const sampleRate = ctx.sampleRate;
   const length = Math.max(1024, Math.round(sampleRate * durationSec));
   const fade = Math.min(2048, Math.floor(length / 8));
   const totalGen = length + fade;
+  const warmup = color === 'white' ? 0 : Math.min(4800, length);
   const buffer = ctx.createBuffer(2, length, sampleRate);
 
   for (let ch = 0; ch < 2; ch++) {
@@ -49,13 +53,14 @@ export function createCalibratedNoiseBuffer(
       b6 = 0;
     let lastBrown = 0;
 
-    for (let i = 0; i < totalGen; i++) {
+    for (let i = -warmup; i < totalGen; i++) {
       const white = Math.random() * 2 - 1;
+      let sampleVal = 0;
       if (color === 'white') {
-        raw[i] = white * 0.24;
+        sampleVal = white * 0.24;
       } else if (color === 'brown') {
         lastBrown = (lastBrown + 0.02 * white) / 1.02;
-        raw[i] = lastBrown * 3.1;
+        sampleVal = lastBrown * 3.1;
       } else {
         b0 = 0.99886 * b0 + white * 0.0555179;
         b1 = 0.99332 * b1 + white * 0.0750759;
@@ -65,27 +70,39 @@ export function createCalibratedNoiseBuffer(
         b5 = -0.7616 * b5 - white * 0.016898;
         const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.045;
         b6 = white * 0.115926;
-        raw[i] =
+        sampleVal =
           color === 'soft_rain'
-            ? pink * (0.72 + 0.28 * Math.sin((2 * Math.PI * i) / length + ch * 1.4))
+            ? pink * (0.72 + 0.28 * Math.sin((2 * Math.PI * ((i + length) % length)) / length + ch * 1.4))
             : pink;
       }
+      if (i >= 0) raw[i] = sampleVal;
     }
 
     // Copy main body and fold extra tail onto head with true equal-power sin/cos crossfade
     out.set(raw.subarray(0, length));
     for (let i = 0; i < fade; i++) {
-      const theta = (i / fade) * Math.PI * 0.5;
+      const theta = ((i + 0.5) / fade) * Math.PI * 0.5;
       out[i] = raw[i] * Math.sin(theta) + raw[length + i] * Math.cos(theta);
     }
   }
 
-  normalizeStereoBufferRms(buffer.getChannelData(0), buffer.getChannelData(1), NOISE_CALIBRATED_RMS);
+  if (bandpass) {
+    calibrateFilteredStereoNoiseRms(
+      buffer.getChannelData(0),
+      buffer.getChannelData(1),
+      sampleRate,
+      bandpass.hpHz,
+      bandpass.lpHz,
+      NOISE_CALIBRATED_RMS
+    );
+  } else {
+    normalizeStereoBufferRms(buffer.getChannelData(0), buffer.getChannelData(1), NOISE_CALIBRATED_RMS);
+  }
   return buffer;
 }
 
 /**
- * Sample-accurate 1-second looping AudioBuffer for 40 Hz GENUS raised-cosine tone bursts
+ * Sample-accurate looping AudioBuffer for 40 Hz GENUS raised-cosine tone bursts
  * OR trapezoidal Isochronic pulses (ZERO timer jitter, ZERO phase click!).
  */
 export function createPeriodicPulseBuffer(
@@ -99,8 +116,8 @@ export function createPeriodicPulseBuffer(
 ): AudioBuffer {
   const rate = ctx.sampleRate;
   // Choose an integer number of cycles for an exact zero-seam loop
-  const safeHz = Math.max(1, Math.min(80, opts.pulseRateHz));
-  const cycles = Math.max(1, Math.round(safeHz));
+  const safeHz = Math.max(0.25, Math.min(80, opts.pulseRateHz));
+  const cycles = safeHz < 2 ? Math.max(1, Math.round(safeHz * 4)) : Math.max(1, Math.round(safeHz));
   const loopSec = cycles / safeHz;
   const totalSamples = Math.max(256, Math.round(loopSec * rate));
   const actualLoopSec = totalSamples / rate;
@@ -416,18 +433,7 @@ export class MedicalStimulusRack {
 
     // 3. Exact SNR-Calibrated Colored Noise Layer (White, Pink, Brown, Soft Rain)
     if (spec.noise.color !== 'none' && spec.noise.snrDb > -34) {
-      const noiseBuf = createCalibratedNoiseBuffer(ctx, spec.noise.color, 6);
-      const noiseSrc = ctx.createBufferSource();
-      noiseSrc.buffer = noiseBuf;
-      noiseSrc.loop = true;
-
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = spec.noise.bandpassHz?.[0] ?? (spec.noise.color === 'brown' ? 40 : 100);
-      hp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
-
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
+      const hpHz = spec.noise.bandpassHz?.[0] ?? (spec.noise.color === 'brown' ? 40 : 100);
       const defaultLp =
         spec.noise.color === 'brown'
           ? 540
@@ -436,9 +442,23 @@ export class MedicalStimulusRack {
             : spec.noise.color === 'soft_rain'
               ? 2400
               : 2200;
-      lp.frequency.value = speakerSafeEQ
+      const lpHz = speakerSafeEQ
         ? Math.min(680, spec.noise.bandpassHz?.[1] ?? defaultLp)
         : spec.noise.bandpassHz?.[1] ?? defaultLp;
+
+      const noiseBuf = createCalibratedNoiseBuffer(ctx, spec.noise.color, 6, { hpHz, lpHz });
+      const noiseSrc = ctx.createBufferSource();
+      noiseSrc.buffer = noiseBuf;
+      noiseSrc.loop = true;
+
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = hpHz;
+      hp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
+
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = lpHz;
       lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
       const nGain = ctx.createGain();
@@ -598,10 +618,23 @@ export class MedicalStimulusRack {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     if (this.stimulusGain) {
-      this.stimulusGain.gain.setTargetAtTime(this.computeStimulusTargetGain(), now, timeConst);
+      this.stimulusGain.gain.setTargetAtTime(
+        this.scienceMuted || this.isControlTrial ? 0 : this.computeStimulusTargetGain(),
+        now,
+        timeConst
+      );
     }
     if (this.noiseGain) {
-      this.noiseGain.gain.setTargetAtTime(this.computeNoiseTargetGain(), now, timeConst);
+      const wantNoise =
+        !this.scienceMuted &&
+        this.spec &&
+        this.spec.noise.color !== 'none' &&
+        this.spec.noise.snrDb > -34;
+      this.noiseGain.gain.setTargetAtTime(
+        wantNoise ? this.computeNoiseTargetGain() : 0,
+        now,
+        timeConst
+      );
     }
     if (this.hrvCarrierGain && this.hrvDepthGain) {
       const effHrv = this.computeEffectiveHrvDepth();

@@ -146,6 +146,7 @@ export class GenerativeComposer {
   private usingRealSamples = false;
 
   private isPlaying = false;
+  private standby = false;
   private progressRatio = 0;
   private antiMonotonyActive = false;
   private intensityMult = 1.0;
@@ -159,6 +160,18 @@ export class GenerativeComposer {
   private kickPattern: boolean[] = buildEuclideanPattern(16, 4);
   private hatPattern: boolean[] = buildEuclideanPattern(16, 6);
 
+  private ensurePalettePreloaded(palette: InstrumentPalette): void {
+    this.usingRealSamples = this.sampler.isPaletteReady(palette);
+    void this.sampler.preloadPalette(palette).then((ready) => {
+      if (ready && this.isPlaying && !this.standby && this.palette === palette) {
+        this.usingRealSamples = true;
+        if (this.ctx && this.padBus) {
+          this.padBus.gain.setTargetAtTime(this.getPalettePadGain() * 0.32, this.ctx.currentTime, 0.8);
+        }
+      }
+    });
+  }
+
   public start(opts: {
     ctx: AudioContext;
     musicSpec: StudyMusicSpec;
@@ -168,9 +181,20 @@ export class GenerativeComposer {
     delaySend: GainNode;
     speakerSafeEQ: boolean;
     sampleApiBase?: string;
+    deferStart?: boolean;
   }): void {
     this.stop();
-    const { ctx, musicSpec, proceduralMaster, cleanSubBus, reverbSend, delaySend, speakerSafeEQ, sampleApiBase } = opts;
+    const {
+      ctx,
+      musicSpec,
+      proceduralMaster,
+      cleanSubBus,
+      reverbSend,
+      delaySend,
+      speakerSafeEQ,
+      sampleApiBase,
+      deferStart = false,
+    } = opts;
     this.ctx = ctx;
     this.musicSpec = structuredClone(musicSpec);
     this.palette = musicSpec.instrumentPalette;
@@ -184,18 +208,10 @@ export class GenerativeComposer {
     this.progressRatio = 0;
     this.usingRealSamples = false;
     this.isPlaying = true;
+    this.standby = deferStart;
 
-    // Attach & preload real studio R2 multi-samples (~180-550 KB per palette, cached forever!)
+    // Attach real studio R2 multi-sampler (~180-550 KB per palette)
     this.sampler.attach(ctx, sampleApiBase ?? '');
-    void this.sampler.preloadPalette(this.palette).then((ready) => {
-      if (ready && this.isPlaying) {
-        this.usingRealSamples = true;
-        // Softly duck synthetic oscillator pad once real recorded studio samples are ready
-        if (this.ctx && this.padBus) {
-          this.padBus.gain.setTargetAtTime(this.getPalettePadGain() * 0.32, this.ctx.currentTime, 0.8);
-        }
-      }
-    });
 
     this.rebuildRhythmPatterns(musicSpec.percussion, musicSpec.density);
 
@@ -234,11 +250,62 @@ export class GenerativeComposer {
     this.pulseBus = pulseBus;
 
     this.updateReverbSend();
-    this.spawnMarkovChord(0, now);
     this.nextChordStep = musicSpec.bpm === 0 || musicSpec.bpm <= 68 ? 32 : 64;
 
-    this.nextStepTime = ctx.currentTime + 0.12;
-    this.startSchedulerClock();
+    if (!deferStart) {
+      this.ensurePalettePreloaded(this.palette);
+      this.spawnMarkovChord(0, now);
+      this.nextStepTime = ctx.currentTime + 0.12;
+      this.startSchedulerClock();
+    }
+  }
+
+  public setStandby(standby: boolean): void {
+    if (this.standby === standby) return;
+    this.standby = standby;
+    if (!this.ctx) return;
+    if (standby) {
+      this.stopSchedulerClock();
+      const now = this.ctx.currentTime;
+      const prevOscs = this.activePadOscs;
+      const prevGains = this.activePadGains;
+      this.activePadOscs = [];
+      this.activePadGains = [];
+      for (const g of prevGains) {
+        try {
+          const p = g.gain as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+          if (typeof p.cancelAndHoldAtTime === 'function') p.cancelAndHoldAtTime(now);
+          else {
+            p.cancelScheduledValues(now);
+            p.setValueAtTime(Math.max(0.0001, p.value), now);
+          }
+          p.exponentialRampToValueAtTime(0.0001, now + 1.1);
+        } catch {
+          // ignore
+        }
+      }
+      if (prevOscs.length > 0) {
+        const cleanupId = window.setTimeout(() => {
+          this.chordCleanupTimers.delete(cleanupId);
+          for (const osc of prevOscs) {
+            try {
+              osc.stop();
+              osc.disconnect();
+            } catch {
+              // ignore
+            }
+          }
+        }, 1250);
+        this.chordCleanupTimers.add(cleanupId);
+      }
+    } else if (this.isPlaying) {
+      this.ensurePalettePreloaded(this.palette);
+      if (this.activePadOscs.length === 0) {
+        this.spawnMarkovChord(this.chordIdx, this.ctx.currentTime);
+      }
+      this.nextStepTime = this.ctx.currentTime + 0.08;
+      this.startSchedulerClock();
+    }
   }
 
   private startSchedulerClock(): void {
@@ -333,14 +400,9 @@ export class GenerativeComposer {
       this.musicSpec.instrumentPalette = palette;
     }
     this.usingRealSamples = this.sampler.isPaletteReady(palette);
-    void this.sampler.preloadPalette(palette).then((ready) => {
-      if (ready && this.isPlaying && this.palette === palette) {
-        this.usingRealSamples = true;
-        if (this.ctx && this.padBus) {
-          this.padBus.gain.setTargetAtTime(this.getPalettePadGain() * 0.32, this.ctx.currentTime, 0.8);
-        }
-      }
-    });
+    if (!this.standby) {
+      this.ensurePalettePreloaded(palette);
+    }
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     this.padBus?.gain.setTargetAtTime(
@@ -351,7 +413,9 @@ export class GenerativeComposer {
     this.pulseBus?.gain.setTargetAtTime(this.getPalettePulseGain(), now, 0.35);
     this.padFilter?.frequency.setTargetAtTime(this.computeCutoffHz(), now, 0.45);
     this.updateReverbSend();
-    this.spawnMarkovChord(this.chordIdx);
+    if (!this.standby) {
+      this.spawnMarkovChord(this.chordIdx);
+    }
   }
 
   public setIntensityMultiplier(mult: number): void {
@@ -363,12 +427,20 @@ export class GenerativeComposer {
 
   public pause(): void {
     this.isPlaying = false;
+    this.stopSchedulerClock();
   }
 
   public resume(): void {
     if (!this.ctx) return;
     this.isPlaying = true;
-    this.nextStepTime = this.ctx.currentTime + 0.1;
+    if (!this.standby) {
+      this.ensurePalettePreloaded(this.palette);
+      if (this.activePadOscs.length === 0) {
+        this.spawnMarkovChord(this.chordIdx, this.ctx.currentTime);
+      }
+      this.nextStepTime = this.ctx.currentTime + 0.1;
+      this.startSchedulerClock();
+    }
   }
 
   private computeCutoffHz(): number {
@@ -447,14 +519,19 @@ export class GenerativeComposer {
     const rootMidi = this.musicSpec.rootMidi + degree.rootOffset;
     const tuning = this.musicSpec.tuningA4Hz;
 
-    // Crossfade previous voices smoothly
+    // Crossfade previous voices smoothly (cancelAndHoldAtTime avoids future-scheduled gain snaps)
     const prevOscs = this.activePadOscs;
     const prevGains = this.activePadGains;
     for (const g of prevGains) {
       try {
-        g.gain.cancelScheduledValues(now);
-        g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), now);
-        g.gain.exponentialRampToValueAtTime(0.0001, now + 4.2);
+        const p = g.gain as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+        if (typeof p.cancelAndHoldAtTime === 'function') {
+          p.cancelAndHoldAtTime(now);
+        } else {
+          p.cancelScheduledValues(now);
+          p.setValueAtTime(Math.max(0.0001, p.value), now);
+        }
+        p.exponentialRampToValueAtTime(0.0001, now + 4.2);
       } catch {
         // ignore
       }
@@ -550,7 +627,7 @@ export class GenerativeComposer {
   }
 
   private scheduleLiveSteps(): void {
-    if (!this.ctx || !this.pulseBus || !this.musicSpec || !this.isPlaying) return;
+    if (!this.ctx || !this.pulseBus || !this.musicSpec || !this.isPlaying || this.standby) return;
     const ctx = this.ctx;
     const liveBpm = this.getCurrentBpm();
     // In beatless mode (bpm === 0), drift notes slowly at an organic 56 BPM pulse with zero percussion
