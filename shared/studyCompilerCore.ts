@@ -235,7 +235,7 @@ export function compileStudyTextDeterministically(input: {
     const localHz = extractHzValues(binauralHit.sentence);
     const allHz = extractHzValues(cleanText);
     const beatCandidates = [...localHz, ...allHz].filter((v) => v >= 1 && v <= 45);
-    const carrierCandidates = [...localHz, ...allHz].filter((v) => v >= 100 && v <= 900);
+    const carrierCandidates = [...localHz, ...allHz].filter((v) => v >= 150 && v <= 900);
 
     if (pairMatch) {
       const f1 = Number(pairMatch[1]);
@@ -802,7 +802,10 @@ export function applySafetyAndDeviceGuardrails(
   const spec: ExecutableStudySpec = structuredClone(rawSpec);
   const isDriving = environment === 'driving' || device === 'car_audio';
   const isSpeakers = device === 'speakers' || isDriving;
-  const safetyNotes = [...spec.protocol.safetyNotes];
+  const safetyNotes = [...(spec.protocol.safetyNotes ?? [])];
+  if (!Array.isArray(spec.evidenceMap)) {
+    spec.evidenceMap = [];
+  }
 
   // Physics clamps (never allow ear-damaging levels or invalid frequencies)
   spec.entrainment.frequencyHz = Number(
@@ -811,15 +814,54 @@ export function applySafetyAndDeviceGuardrails(
   spec.entrainment.modulationDepth = Number(
     Math.max(0, Math.min(0.78, spec.entrainment.modulationDepth || 0)).toFixed(2)
   );
-  if (spec.entrainment.carrierLeftHz) {
-    spec.entrainment.carrierLeftHz = Number(
-      Math.max(60, Math.min(1200, spec.entrainment.carrierLeftHz)).toFixed(2)
+
+  // Physiological MSO / interaural fusion guardrails (Oster 1973; Perrott & Nelson 1969; Ingendoh et al. 2023):
+  // 1) Dichotic binaural beat fusion breaks into separate perceived tones above 45 Hz -> auto-convert to Isochronic/AM
+  if (spec.entrainment.type === 'binaural_beat' && spec.entrainment.frequencyHz > 45) {
+    const overBeatHz = spec.entrainment.frequencyHz;
+    spec.entrainment.type = 'isochronic_pulse';
+    spec.entrainment.waveform = 'trapezoid_isochronic';
+    spec.entrainment.dutyCycle = spec.entrainment.dutyCycle ?? 0.5;
+    spec.protocol.requiresHeadphones = false;
+    const safeIsoCarrier = Number(
+      Math.max(150, Math.min(800, spec.entrainment.carrierLeftHz ?? 220)).toFixed(2)
+    );
+    spec.entrainment.carrierLeftHz = safeIsoCarrier;
+    spec.entrainment.carrierRightHz = safeIsoCarrier;
+    spec.evidenceMap.push({
+      parameter: 'Physiological Adaptation',
+      targetLabel: 'High-Gamma Envelope Conversion (>45 Hz)',
+      executedValue: `${overBeatHz} Hz Isochronic Pulse @ ${safeIsoCarrier} Hz`,
+      studyQuote:
+        'Dichotic binaural beat fusion breaks down above ~45 Hz; converted to diotic isochronic envelope modulation to preserve cortical ASSR phase-locking.',
+      origin: 'clinical_safety_default',
+    });
+    safetyNotes.push(
+      `Physiological Binaural Limit: ${overBeatHz} Hz exceeds the ~45 Hz human dichotic beat fusion ceiling and was automatically converted to an Isochronic Pulse.`
     );
   }
-  if (spec.entrainment.carrierRightHz) {
-    spec.entrainment.carrierRightHz = Number(
-      Math.max(60, Math.min(1240, spec.entrainment.carrierRightHz)).toFixed(2)
-    );
+
+  // 2) Dichotic binaural carriers must stay strictly within 150 Hz <= f_carrier <= 900 Hz (MSO phase-locking window)
+  if (spec.entrainment.type === 'binaural_beat') {
+    const beatHz = Math.max(0.5, Math.min(45, spec.entrainment.frequencyHz || 10));
+    const rawLeft = spec.entrainment.carrierLeftHz ?? 200;
+    const rawRight = spec.entrainment.carrierRightHz ?? rawLeft + beatHz;
+    const minPair = Math.min(rawLeft, rawRight);
+    const clampedLeft = Number(Math.max(150, Math.min(900 - beatHz, minPair)).toFixed(2));
+    const clampedRight = Number((clampedLeft + beatHz).toFixed(2));
+    spec.entrainment.carrierLeftHz = clampedLeft;
+    spec.entrainment.carrierRightHz = clampedRight;
+  } else {
+    if (spec.entrainment.carrierLeftHz) {
+      spec.entrainment.carrierLeftHz = Number(
+        Math.max(120, Math.min(1200, spec.entrainment.carrierLeftHz)).toFixed(2)
+      );
+    }
+    if (spec.entrainment.carrierRightHz) {
+      spec.entrainment.carrierRightHz = Number(
+        Math.max(120, Math.min(1240, spec.entrainment.carrierRightHz)).toFixed(2)
+      );
+    }
   }
   spec.music.bpm = spec.music.bpm === 0 ? 0 : Math.max(40, Math.min(150, Math.round(spec.music.bpm)));
   spec.music.spectralLowPassHz = Math.max(480, Math.min(16000, Math.round(spec.music.spectralLowPassHz)));

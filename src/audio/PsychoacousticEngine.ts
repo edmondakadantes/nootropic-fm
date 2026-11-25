@@ -96,6 +96,7 @@ export interface EngineTelemetry {
   band2FlattenerActive: boolean;
   stemCodecLabel: string | null;
   stemSubHarmonicLocked: boolean;
+  audioInterrupted?: boolean;
 }
 
 /**
@@ -351,11 +352,16 @@ export class PsychoacousticEngine {
   private amCarrierNoiseSrc: AudioBufferSourceNode | null = null;
   private amCarrierRootHz: number | null = null;
 
-  // 3-Band LR4 Cortical AM + Velvet Spectral Tilt nodes
+  // 3-Band LR4 Cortical AM + Velvet Spectral Tilt + Active Aperiodic Sham nodes
   private amGainL: GainNode | null = null;
   private amGainR: GainNode | null = null;
   private amLfoL: OscillatorNode | null = null;
   private amLfoR: OscillatorNode | null = null;
+  private amPeriodicGateL: GainNode | null = null;
+  private amPeriodicGateR: GainNode | null = null;
+  private amShamGateL: GainNode | null = null;
+  private amShamGateR: GainNode | null = null;
+  private amShamOscs: OscillatorNode[] = [];
   private amDepthGainL: GainNode | null = null;
   private amDepthGainR: GainNode | null = null;
   private amTiltDepthL: GainNode | null = null;
@@ -371,8 +377,9 @@ export class PsychoacousticEngine {
   private amCrestFrac = 0.25;
   private amSaliencePeakFrac = 0.23;
 
-  // AudioWorklet DSP nodes (True Lookahead Limiter, Bauer/MS Crossfeed, Env Follower, Flattener, ZDF Tilt)
+  // AudioWorklet DSP nodes (Layer-2 Pre-Limiter, Master Safety Limiter, Bauer/MS Crossfeed, Env Follower, Flattener, Pre-Split ZDF Tilt)
   private workletsReady = false;
+  private musicPreLimiterNode: AudioWorkletNode | null = null;
   private lookaheadLimiterNode: AudioWorkletNode | null = null;
   private crossfeedNode: AudioWorkletNode | null = null;
   private envFollowerNode: AudioWorkletNode | null = null;
@@ -402,18 +409,27 @@ export class PsychoacousticEngine {
   private lyriaClient = new LyriaRealtimeClient();
   private rainBed = new StereoRainBed();
 
-  // Mobile background bridge & wake lock
+  // Mobile background bridge, iOS 'interrupted' recovery & wake lock
   private audioEl: HTMLAudioElement | null = null;
   private keepAliveEl: HTMLAudioElement | null = null;
   private keepAliveUrl: string | null = null;
   private backgroundAudioActive = false;
+  private audioInterrupted = false;
+  private interruptionListeners = new Set<(interrupted: boolean) => void>();
+  private gestureResumeCleanup: (() => void) | null = null;
   private wakeLock: { release: () => Promise<void> } | null = null;
   private visibilityHandler: (() => void) | null = null;
 
-  // Dual-Deck Gapless Studio Stem Engine (Cloudflare R2 — Instant HTTP Range Streaming + WSOLA + Buffer Fallback)
+  // Dual-Deck Gapless Studio Stem Engine (Cloudflare R2 — Progressive WebCodecs + Pre-Unlocked iOS Safari HTTP 206 Pool)
   private studioCatalog: Partial<Record<ResolvedGenre, StudioTrackRef[]>> = {};
   private bufferCache = new Map<string, AudioBuffer>();
-  private readonly maxCachedBuffers = 3;
+  private readonly maxCachedBuffers = 1;
+  private mediaDeckPool: Array<{
+    el: HTMLAudioElement;
+    srcNode: MediaElementAudioSourceNode;
+  }> = [];
+  private mediaDeckCursor = 0;
+  private activeMediaDelayNode: DelayNode | null = null;
   private activeStudioSource: AudioBufferSourceNode | null = null;
   private activeStreamEl: HTMLAudioElement | null = null;
   private activeStreamSource: MediaElementAudioSourceNode | null = null;
@@ -541,10 +557,39 @@ export class PsychoacousticEngine {
       }
     }
 
-    // Linear Master Summing Bus -> True 5.0 ms 4x True-Peak Lookahead Brickwall Limiter (-0.80 dBTP ceiling)
-    // Layer 1 Clinical Stimuli & AM Depth bypass compression 100% so music transients NEVER duck science signals!
+    // Layer-2 Pre-Limiting Architecture:
+    //   Layer 2 Music + Sub-Bass + Rain -> musicMasterBus -> musicPreLimiter (-3.35 dBTP = 0.68) -> masterSumBus
+    //   Layer 1 Clinical Stimuli + AM Reference Pad (peak <= 0.19) -----------------------------> masterSumBus
+    //   masterSumBus -> masterSafetyLimiter (-1.0 dBTP = 0.8913) -> masterGain
+    // Because 0.68 + 0.19 = 0.87 < 0.8913, loud drum peaks on Layer 2 are absorbed BEFORE masterSumBus,
+    // guaranteeing 100.000% mathematical Layer-1 amplitude invariance (0.000 dB ducking)!
     const masterSumBus = ctx.createGain();
     masterSumBus.gain.value = 1.0;
+    const musicMasterBus = ctx.createGain();
+    musicMasterBus.gain.value = 1.0;
+
+    if (this.workletsReady) {
+      const musicPreLim = new AudioWorkletNode(ctx, 'nootropic-lookahead-limiter', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+      const initPreCeil =
+        (this.layerMonitorMode as LayerMonitorMode) === 'music_only'
+          ? LIMITER_CEILING_LINEAR
+          : 0.68;
+      musicPreLim.parameters.get('ceiling')?.setValueAtTime(initPreCeil, ctx.currentTime);
+      musicMasterBus.connect(musicPreLim);
+      musicPreLim.connect(masterSumBus);
+      this.musicPreLimiterNode = musicPreLim;
+    } else {
+      const preClipper = ctx.createWaveShaper();
+      preClipper.curve = createMasteringLimiterCurve();
+      preClipper.oversample = '2x';
+      musicMasterBus.connect(preClipper);
+      preClipper.connect(masterSumBus);
+      this.musicPreLimiterNode = null;
+    }
 
     // Musical Layer 2 Glue Compressor (leveled BEFORE AM & SNR follower so AM & Layer 1 stay 100% linear)
     const musicCompressor = ctx.createDynamicsCompressor();
@@ -652,11 +697,20 @@ export class PsychoacousticEngine {
     });
 
     // ─── LAYER 1B: 3-BAND LINKWITZ-RILEY (LR4) PHASE-COHERENT CORTICAL AM MATRIX ───
-    const lowerHz = this.studySpec.entrainment.modulationBandHz[0] || params.crossoverHz || 190;
-    const upperHz = this.studySpec.entrainment.modulationBandHz[1] || params.upperCrossoverHz || 4500;
+    const nyquistSafe = Math.max(800, ctx.sampleRate * 0.44);
+    const lowerHz = Math.min(
+      nyquistSafe * 0.35,
+      this.studySpec.entrainment.modulationBandHz[0] || params.crossoverHz || 190
+    );
+    const upperHz = Math.min(
+      nyquistSafe,
+      this.studySpec.entrainment.modulationBandHz[1] || params.upperCrossoverHz || 4500
+    );
 
     const preHrvBus = ctx.createGain();
     preHrvBus.gain.value = 1.0;
+    const preTiltBus = ctx.createGain();
+    preTiltBus.gain.value = 1.0;
     const musicMixBus = ctx.createGain();
     musicMixBus.gain.value = 1.0;
 
@@ -676,11 +730,11 @@ export class PsychoacousticEngine {
       xfNode.parameters.get('enabled')?.setValueAtTime(1, ctx.currentTime);
       xfNode.parameters.get('crossLevel')?.setValueAtTime(0.18, ctx.currentTime);
       postHrvMusicNode.connect(xfNode);
-      xfNode.connect(musicMixBus);
+      xfNode.connect(preTiltBus);
       this.crossfeedNode = xfNode;
     } else {
       this.crossfeedNode = null;
-      postHrvMusicNode.connect(musicMixBus);
+      postHrvMusicNode.connect(preTiltBus);
     }
 
     // Audio-Thread Dynamic SNR Envelope Follower on Layer 2 Music (immune to background tab throttling)
@@ -767,7 +821,7 @@ export class PsychoacousticEngine {
     // v7.1 Gentle Anti-Habituation Spectral Rotation sits BEFORE LR4 split so all 3 crossover bands stay 0.000 dB phase-coherent!
     const spectralRot = ctx.createBiquadFilter();
     spectralRot.type = 'peaking';
-    spectralRot.frequency.setValueAtTime(950, ctx.currentTime);
+    spectralRot.frequency.setValueAtTime(Math.min(nyquistSafe, 950), ctx.currentTime);
     spectralRot.Q.setValueAtTime(0.75, ctx.currentTime);
     const allowInitRot =
       amSpecActive &&
@@ -782,7 +836,7 @@ export class PsychoacousticEngine {
       // Driving/speaker safety notch sits BEFORE LR4 split so crossover summing remains 0.000 dB phase-coherent
       const safetyNotch = ctx.createBiquadFilter();
       safetyNotch.type = 'peaking';
-      safetyNotch.frequency.value = 1850;
+      safetyNotch.frequency.value = Math.min(nyquistSafe, 1850);
       safetyNotch.Q.value = 0.72;
       safetyNotch.gain.value = -5.5;
       spectralPocketNotch.connect(safetyNotch);
@@ -810,13 +864,16 @@ export class PsychoacousticEngine {
     const studioFilter = ctx.createBiquadFilter();
     studioFilter.type = 'lowpass';
     studioFilter.Q.value = BUTTERWORTH_LP_HP_Q_DB;
-    studioFilter.frequency.setValueAtTime(this.computeStudioCutoffHz(), ctx.currentTime);
+    studioFilter.frequency.setValueAtTime(
+      Math.min(nyquistSafe, this.computeStudioCutoffHz()),
+      ctx.currentTime
+    );
     studioBus.connect(studioFilter);
     studioFilter.connect(musicAuditionGain);
     this.studioBus = studioBus;
     this.studioFilter = studioFilter;
 
-    // Phase-aligned & HRV-synchronized clean sub-bass bus (<185 Hz bass & sub-kick stay 100% AM-free)
+    // Phase-aligned & HRV-synchronized clean sub-bass bus (<185 Hz bass & sub-kick stay 100% AM-free, routed into musicMasterBus)
     const cleanSubBus = ctx.createGain();
     cleanSubBus.gain.setValueAtTime(startWithMusic ? 0.9 : 0, ctx.currentTime);
     const subPhaseAlignLow = ctx.createBiquadFilter();
@@ -835,7 +892,7 @@ export class PsychoacousticEngine {
       cleanSubBus.connect(subPhaseAlignLow);
     }
     subPhaseAlignLow.connect(subPhaseAlignHigh);
-    subPhaseAlignHigh.connect(masterSumBus);
+    subPhaseAlignHigh.connect(musicMasterBus);
     this.cleanSubBus = cleanSubBus;
 
     // Gentle calibrated pink carrier specifically for Pure Clinical Signal auditing of 0.1 Hz HRV studies (non-AM)
@@ -854,7 +911,7 @@ export class PsychoacousticEngine {
     this.pureAmCarrierSrc = pureAmSrc;
     this.pureAmCarrierGain = pureAmGain;
 
-    // BAND 1: Clean Sub-Bass (< lowerHz)
+    // BAND 1: Clean Sub-Bass (< lowerHz) -> musicMasterBus (pre-limited before Layer 1 sum)
     const lowBand = createLR4Filter(ctx, 'lowpass', lowerHz);
     const lowPhaseAlign = ctx.createBiquadFilter();
     lowPhaseAlign.type = 'allpass';
@@ -862,18 +919,18 @@ export class PsychoacousticEngine {
     lowPhaseAlign.Q.value = Math.SQRT1_2;
     musicMixBus.connect(lowBand.input);
     lowBand.output.connect(lowPhaseAlign);
-    lowPhaseAlign.connect(masterSumBus);
+    lowPhaseAlign.connect(musicMasterBus);
 
     // UPPER SPLIT (> lowerHz)
     const aboveLow = createLR4Filter(ctx, 'highpass', lowerHz);
     musicMixBus.connect(aboveLow.input);
 
-    // BAND 3: Clean Air (> upperHz)
+    // BAND 3: Clean Air (> upperHz) -> musicMasterBus
     const airBand = createLR4Filter(ctx, 'highpass', upperHz);
     aboveLow.output.connect(airBand.input);
-    airBand.output.connect(masterSumBus);
+    airBand.output.connect(musicMasterBus);
 
-    // BAND 2: Cortical AM Entrainment Band (lowerHz – upperHz)
+    // BAND 2: Cortical AM Entrainment Band (lowerHz – upperHz) — ZERO phase-shifting IIR filters inside Band 2!
     const midBand = createLR4Filter(ctx, 'lowpass', upperHz);
     aboveLow.output.connect(midBand.input);
 
@@ -888,9 +945,7 @@ export class PsychoacousticEngine {
     const initBridge = this.studySpec.entrainment.isoBridge;
     const initPhaseScale =
       initBridge && this.modDepthMultiplier < 1.24 ? initBridge.stabilizeEffectScale : 1.0;
-    const initialDepth = this.isControlTrial
-      ? 0
-      : this.computeCalibratedEffectPct(initPhaseScale, 1.0);
+    const initialDepth = this.computeCalibratedEffectPct(initPhaseScale, 1.0);
 
     let flattenedMidOutput: AudioNode = midBand.output;
     if (this.workletsReady) {
@@ -936,7 +991,7 @@ export class PsychoacousticEngine {
     };
     this.amPureWaveL = createPhaseShiftedSineWave(ctx, isRaisedCosine ? 90 : 0);
 
-    const startWithSalience = useNeuralSalience && this.layerMonitorMode !== 'science_only';
+    const startWithSalience = useNeuralSalience && this.layerMonitorMode !== 'science_only' && !this.isControlTrial;
     this.amWaveStats = startWithSalience
       ? { ...this.amSalienceStats }
       : { min: -1, max: 1, rms: Math.SQRT1_2 };
@@ -946,6 +1001,29 @@ export class PsychoacousticEngine {
         ? this.amSaliencePeakFrac
         : 0.25;
     const initialAmGains = this.computeActiveAmGainPair(initialDepth);
+
+    // Active Aperiodic Acoustic Sham Bank (0.17 + 0.29 + 0.43 Hz incommensurate ultra-slow drift):
+    // Delivers matched-RMS audible organic modulation in both Nootropic Mix & Science Only without
+    // any 1–80 Hz periodic ASSR phase-locking, completely preventing sham unblinding!
+    const shamLfoSum = ctx.createGain();
+    shamLfoSum.gain.value = 1.0;
+    this.amShamOscs = [];
+    const shamSpecs: Array<[number, number]> = [
+      [0.17, 0.46],
+      [0.29, 0.33],
+      [0.43, 0.21],
+    ];
+    for (const [sHz, sWeight] of shamSpecs) {
+      const sOsc = ctx.createOscillator();
+      sOsc.type = 'sine';
+      sOsc.frequency.setValueAtTime(sHz, ctx.currentTime);
+      const sGain = ctx.createGain();
+      sGain.gain.value = sWeight;
+      sOsc.connect(sGain);
+      sGain.connect(shamLfoSum);
+      sOsc.start(ctx.currentTime);
+      this.amShamOscs.push(sOsc);
+    }
 
     const amLfoL = ctx.createOscillator();
     if (isRaisedCosine) {
@@ -957,52 +1035,74 @@ export class PsychoacousticEngine {
     }
     amLfoL.frequency.setValueAtTime(Math.max(0.5, amStartHz || 16), ctx.currentTime);
 
+    const periodicGateL = ctx.createGain();
+    periodicGateL.gain.setValueAtTime(this.isControlTrial ? 0 : 1, ctx.currentTime);
+    const shamGateL = ctx.createGain();
+    shamGateL.gain.setValueAtTime(this.isControlTrial ? 1 : 0, ctx.currentTime);
+    const modSignalL = ctx.createGain();
+    modSignalL.gain.value = 1.0;
+    amLfoL.connect(periodicGateL);
+    periodicGateL.connect(modSignalL);
+    shamLfoSum.connect(shamGateL);
+    shamGateL.connect(modSignalL);
+    this.amPeriodicGateL = periodicGateL;
+    this.amShamGateL = shamGateL;
+
     const amDepthGainL = ctx.createGain();
     amDepthGainL.gain.setValueAtTime(initialAmGains.swing, ctx.currentTime);
 
     const amGainL = ctx.createGain();
     amGainL.gain.setValueAtTime(initialAmGains.bias, ctx.currentTime);
 
-    // Hybrid Velvet AM Spectral Presence Tilt (restricted <= 12 Hz to eliminate 16–40 Hz off-center FM/PM warble; ZDF/TPT-SVF inside AudioWorklet)
+    // Hybrid Velvet AM Spectral Presence Tilt (restricted <= 12 Hz; placed UPSTREAM of musicMixBus BEFORE LR4 split
+    // so Band 1 <190 Hz, Band 2 190–4500 Hz, and Band 3 >4500 Hz maintain exact 0.000° relative phase coherence!)
+    const tiltCenterHz = Math.min(nyquistSafe, 1350);
     const amTiltDepthL = ctx.createGain();
     const allowTiltInit =
-      amActiveForSpec && (amStartHz || 16) <= 12 && this.layerMonitorMode !== 'science_only';
+      amActiveForSpec &&
+      !this.isControlTrial &&
+      (amStartHz || 16) <= 12 &&
+      this.layerMonitorMode === 'full_mix';
     const initTilt = allowTiltInit ? initialDepth * 4.2 : 0;
     amTiltDepthL.gain.setValueAtTime(initTilt, ctx.currentTime);
 
-    let amTiltLNode: AudioNode;
-    if (this.workletsReady) {
-      const zdfL = new AudioWorkletNode(ctx, 'nootropic-zdf-tilt');
-      zdfL.parameters.get('freq')?.setValueAtTime(1350, ctx.currentTime);
-      zdfL.parameters.get('Q')?.setValueAtTime(1.15, ctx.currentTime);
-      zdfL.parameters.get('gainDb')?.setValueAtTime(0, ctx.currentTime);
-      const gainDbParam = zdfL.parameters.get('gainDb');
-      if (gainDbParam) amTiltDepthL.connect(gainDbParam);
-      amGainL.connect(zdfL);
-      amTiltLNode = zdfL;
-    } else {
-      const amTiltL = ctx.createBiquadFilter();
-      amTiltL.type = 'peaking';
-      amTiltL.frequency.setValueAtTime(1350, ctx.currentTime);
-      amTiltL.Q.value = 1.15;
-      amTiltL.gain.setValueAtTime(0, ctx.currentTime);
-      amTiltDepthL.connect(amTiltL.gain);
-      amGainL.connect(amTiltL);
-      amTiltLNode = amTiltL;
-    }
+    const makeTiltNode = (depthDriver: GainNode): AudioNode => {
+      if (this.workletsReady) {
+        const zdf = new AudioWorkletNode(ctx, 'nootropic-zdf-tilt');
+        zdf.parameters.get('freq')?.setValueAtTime(tiltCenterHz, ctx.currentTime);
+        zdf.parameters.get('Q')?.setValueAtTime(1.15, ctx.currentTime);
+        zdf.parameters.get('gainDb')?.setValueAtTime(0, ctx.currentTime);
+        const gainDbParam = zdf.parameters.get('gainDb');
+        if (gainDbParam) depthDriver.connect(gainDbParam);
+        return zdf;
+      }
+      const bq = ctx.createBiquadFilter();
+      bq.type = 'peaking';
+      bq.frequency.setValueAtTime(tiltCenterHz, ctx.currentTime);
+      bq.Q.value = 1.15;
+      bq.gain.setValueAtTime(0, ctx.currentTime);
+      depthDriver.connect(bq.gain);
+      return bq;
+    };
 
-    amLfoL.connect(amDepthGainL);
+    const amTiltLNode = makeTiltNode(amTiltDepthL);
+
+    modSignalL.connect(amDepthGainL);
     amDepthGainL.connect(amGainL.gain);
-    amLfoL.connect(amTiltDepthL);
+    modSignalL.connect(amTiltDepthL);
     const amStartAt = ctx.currentTime;
     amLfoL.start(amStartAt);
     this.amLfoOriginSec = amStartAt;
 
-    let midOutput: AudioNode = amTiltLNode;
+    let midOutput: AudioNode = amGainL;
     this.amTiltDepthL = amTiltDepthL;
     this.amTiltNodeL = amTiltLNode;
 
     if (useStereoSpread) {
+      // Pre-split stereo ZDF tilt (before musicMixBus)
+      const tiltSplitter = ctx.createChannelSplitter(2);
+      const tiltMerger = ctx.createChannelMerger(2);
+      // Band-2 pure linear stereo AM VCA (zero phase shift)
       const splitter = ctx.createChannelSplitter(2);
       const merger = ctx.createChannelMerger(2);
 
@@ -1019,6 +1119,19 @@ export class PsychoacousticEngine {
       );
       amLfoR.frequency.setValueAtTime(Math.max(0.5, amStartHz || 16), ctx.currentTime);
 
+      const periodicGateR = ctx.createGain();
+      periodicGateR.gain.setValueAtTime(this.isControlTrial ? 0 : 1, ctx.currentTime);
+      const shamGateR = ctx.createGain();
+      shamGateR.gain.setValueAtTime(this.isControlTrial ? 1 : 0, ctx.currentTime);
+      const modSignalR = ctx.createGain();
+      modSignalR.gain.value = 1.0;
+      amLfoR.connect(periodicGateR);
+      periodicGateR.connect(modSignalR);
+      shamLfoSum.connect(shamGateR);
+      shamGateR.connect(modSignalR);
+      this.amPeriodicGateR = periodicGateR;
+      this.amShamGateR = shamGateR;
+
       const amDepthGainR = ctx.createGain();
       amDepthGainR.gain.setValueAtTime(initialAmGains.swing, ctx.currentTime);
 
@@ -1027,38 +1140,27 @@ export class PsychoacousticEngine {
 
       const amTiltDepthR = ctx.createGain();
       amTiltDepthR.gain.setValueAtTime(initTilt, ctx.currentTime);
+      const amTiltRNode = makeTiltNode(amTiltDepthR);
 
-      let amTiltRNode: AudioNode;
-      if (this.workletsReady) {
-        const zdfR = new AudioWorkletNode(ctx, 'nootropic-zdf-tilt');
-        zdfR.parameters.get('freq')?.setValueAtTime(1350, ctx.currentTime);
-        zdfR.parameters.get('Q')?.setValueAtTime(1.15, ctx.currentTime);
-        zdfR.parameters.get('gainDb')?.setValueAtTime(0, ctx.currentTime);
-        const gainDbParamR = zdfR.parameters.get('gainDb');
-        if (gainDbParamR) amTiltDepthR.connect(gainDbParamR);
-        amGainR.connect(zdfR);
-        amTiltRNode = zdfR;
-      } else {
-        const amTiltR = ctx.createBiquadFilter();
-        amTiltR.type = 'peaking';
-        amTiltR.frequency.setValueAtTime(1350, ctx.currentTime);
-        amTiltR.Q.value = 1.15;
-        amTiltR.gain.setValueAtTime(0, ctx.currentTime);
-        amTiltDepthR.connect(amTiltR.gain);
-        amGainR.connect(amTiltR);
-        amTiltRNode = amTiltR;
-      }
-
-      amLfoR.connect(amDepthGainR);
+      modSignalR.connect(amDepthGainR);
       amDepthGainR.connect(amGainR.gain);
-      amLfoR.connect(amTiltDepthR);
+      modSignalR.connect(amTiltDepthR);
       amLfoR.start();
 
+      // Wire pre-split ZDF tilt BEFORE musicMixBus
+      preTiltBus.connect(tiltSplitter);
+      tiltSplitter.connect(amTiltLNode, 0);
+      tiltSplitter.connect(amTiltRNode, 1);
+      amTiltLNode.connect(tiltMerger, 0, 0);
+      amTiltRNode.connect(tiltMerger, 0, 1);
+      tiltMerger.connect(musicMixBus);
+
+      // Wire pure phase-neutral Band-2 AM VCA
       midInputForAm.connect(splitter);
       splitter.connect(amGainL, 0);
       splitter.connect(amGainR, 1);
-      amTiltLNode.connect(merger, 0, 0);
-      amTiltRNode.connect(merger, 0, 1);
+      amGainL.connect(merger, 0, 0);
+      amGainR.connect(merger, 0, 1);
 
       this.amGainR = amGainR;
       this.amLfoR = amLfoR;
@@ -1067,9 +1169,13 @@ export class PsychoacousticEngine {
       this.amTiltNodeR = amTiltRNode;
       midOutput = merger;
     } else {
+      preTiltBus.connect(amTiltLNode);
+      amTiltLNode.connect(musicMixBus);
       midInputForAm.connect(amGainL);
       this.amGainR = null;
       this.amLfoR = null;
+      this.amPeriodicGateR = null;
+      this.amShamGateR = null;
       this.amDepthGainR = null;
       this.amTiltDepthR = null;
       this.amTiltNodeR = null;
@@ -1081,14 +1187,14 @@ export class PsychoacousticEngine {
     if (eType === 'amplitude_modulation' || eType === 'hrv_breathing_swell' || eType === 'none') {
       midOutput.connect(scopeModAnalyser);
     }
-    midOutput.connect(masterSumBus);
+    midOutput.connect(musicMasterBus);
 
     // Dedicated 94%-depth phase-locked Layer 1 Cortical AM Harmonic + Velvet Pulse Bus:
-    // Driven by the exact same `amLfoL` oscillator so crests lock 0.000 rad to Band-2 music AM,
-    // delivering unmistakable isolated clarity in Science Only AND audible rhythmic fusion in Nootropic Mix
-    // even across sparse sub-bass/pluck bars, while muting to 0.0000 in Plain Music!
+    // Driven by `modSignalL` (exact `amLfoL` on active trials, matched-RMS aperiodic sham drift on control trials)
+    // delivering unmistakable isolated clarity in Science Only AND audible rhythmic fusion in Nootropic Mix,
+    // while muting to 0.0000 in Plain Music!
     if (amActiveForSpec) {
-      const f0 = amCarrierRootHz ?? 220;
+      const f0 = Math.min(nyquistSafe * 0.45, amCarrierRootHz ?? 220);
       const fifthRatio = Math.pow(2, 7 / 12);
       const rootOsc = ctx.createOscillator();
       rootOsc.type = 'sine';
@@ -1098,33 +1204,41 @@ export class PsychoacousticEngine {
 
       const fifthOsc = ctx.createOscillator();
       fifthOsc.type = 'sine';
-      fifthOsc.frequency.setValueAtTime(Number((f0 * fifthRatio).toFixed(2)), ctx.currentTime);
+      fifthOsc.frequency.setValueAtTime(
+        Math.min(nyquistSafe, Number((f0 * fifthRatio).toFixed(2))),
+        ctx.currentTime
+      );
       const fifthGain = ctx.createGain();
-      fifthGain.gain.value = 0.21;
+      fifthGain.gain.value = f0 * fifthRatio < nyquistSafe ? 0.21 : 0;
 
       const octOsc = ctx.createOscillator();
       octOsc.type = 'sine';
-      octOsc.frequency.setValueAtTime(Number((f0 * 2).toFixed(2)), ctx.currentTime);
+      octOsc.frequency.setValueAtTime(
+        Math.min(nyquistSafe, Number((f0 * 2).toFixed(2))),
+        ctx.currentTime
+      );
       const octGain = ctx.createGain();
-      octGain.gain.value = 0.11;
+      octGain.gain.value = f0 * 2 < nyquistSafe ? 0.11 : 0;
 
+      const noiseHpHz = Math.min(nyquistSafe * 0.35, 240);
+      const noiseLpHz = Math.min(nyquistSafe, 2100);
       const amNoiseSrc = ctx.createBufferSource();
-      amNoiseSrc.buffer = createCalibratedNoiseBuffer(ctx, 'pink', 6, { hpHz: 240, lpHz: 2100 });
+      amNoiseSrc.buffer = createCalibratedNoiseBuffer(ctx, 'pink', 6, { hpHz: noiseHpHz, lpHz: noiseLpHz });
       amNoiseSrc.loop = true;
       const amNoiseHp = ctx.createBiquadFilter();
       amNoiseHp.type = 'highpass';
-      amNoiseHp.frequency.value = 240;
+      amNoiseHp.frequency.value = noiseHpHz;
       amNoiseHp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
       const amNoiseLp = ctx.createBiquadFilter();
       amNoiseLp.type = 'lowpass';
-      amNoiseLp.frequency.value = 2100;
+      amNoiseLp.frequency.value = noiseLpHz;
       amNoiseLp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
       const amNoiseGain = ctx.createGain();
       amNoiseGain.gain.value = 0.24;
 
       const amCarrierWarmLp = ctx.createBiquadFilter();
       amCarrierWarmLp.type = 'lowpass';
-      amCarrierWarmLp.frequency.value = params.speakerSafeEQ ? 920 : 1320;
+      amCarrierWarmLp.frequency.value = Math.min(nyquistSafe, params.speakerSafeEQ ? 920 : 1320);
       amCarrierWarmLp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
       const pulsePair = this.computeAmPulseModPair();
@@ -1132,7 +1246,7 @@ export class PsychoacousticEngine {
       pulseGain.gain.setValueAtTime(pulsePair.bias, ctx.currentTime);
       const pulseDepth = ctx.createGain();
       pulseDepth.gain.setValueAtTime(pulsePair.swing, ctx.currentTime);
-      amLfoL.connect(pulseDepth);
+      modSignalL.connect(pulseDepth);
       pulseDepth.connect(pulseGain.gain);
 
       const amScienceGain = ctx.createGain();
@@ -1191,11 +1305,11 @@ export class PsychoacousticEngine {
     convolver.buffer = createStudioReverbIR(ctx, 2.4);
     const reverbHP = ctx.createBiquadFilter();
     reverbHP.type = 'highpass';
-    reverbHP.frequency.value = 210;
+    reverbHP.frequency.value = Math.min(nyquistSafe * 0.4, 210);
     reverbHP.Q.value = BUTTERWORTH_LP_HP_Q_DB;
     const reverbLP = ctx.createBiquadFilter();
     reverbLP.type = 'lowpass';
-    reverbLP.frequency.value = params.speakerSafeEQ ? 1450 : 2800;
+    reverbLP.frequency.value = Math.min(nyquistSafe, params.speakerSafeEQ ? 1450 : 2800);
     reverbLP.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
     reverbSend.connect(convolver);
@@ -1211,7 +1325,7 @@ export class PsychoacousticEngine {
     delayR.delayTime.value = 0.42;
     const delayFilter = ctx.createBiquadFilter();
     delayFilter.type = 'lowpass';
-    delayFilter.frequency.value = 1350;
+    delayFilter.frequency.value = Math.min(nyquistSafe, 1350);
     delayFilter.Q.value = BUTTERWORTH_LP_HP_Q_DB;
     const feedback = ctx.createGain();
     feedback.gain.value = 0.22;
@@ -1249,21 +1363,22 @@ export class PsychoacousticEngine {
       workletsReady: this.workletsReady,
     });
 
-    // ─── DEDICATED PHYSICAL STEREO RAINFALL LAYER (HRV-synchronized when 0.1 Hz HRV active) ───
+    // ─── DEDICATED PHYSICAL STEREO RAINFALL LAYER (routed into musicMasterBus so rain peaks never duck Layer 1!) ───
     const rainHrvBranch = this.stimulusRack.createHrvGainBranch();
     if (rainHrvBranch) {
-      rainHrvBranch.connect(masterSumBus);
+      rainHrvBranch.connect(musicMasterBus);
       this.rainBed.attach(ctx, rainHrvBranch, params.speakerSafeEQ, sampleApiBase);
     } else {
-      this.rainBed.attach(ctx, masterSumBus, params.speakerSafeEQ, sampleApiBase);
+      this.rainBed.attach(ctx, musicMasterBus, params.speakerSafeEQ, sampleApiBase);
     }
     this.syncRainBed();
 
     this.isPlaying = true;
+    this.setAudioInterrupted(false);
     this.setupMediaSession(title);
     void this.requestWakeLock();
 
-    // iOS Safari / mobile WebKit background keep-alive anchor (16-bit PCM matching ctx.sampleRate, zero DC, -90 dBFS)
+    // iOS Safari / mobile WebKit background keep-alive anchor + pre-unlocked Dual-Deck HTTP 206 streaming pool
     try {
       this.keepAliveUrl = createSilentKeepAliveWavUrl(ctx.sampleRate);
       const keepAlive = document.createElement('audio');
@@ -1283,9 +1398,34 @@ export class PsychoacousticEngine {
       this.keepAliveUrl = null;
     }
 
+    this.initMediaDeckPool(ctx);
+
     ctx.onstatechange = () => {
-      if (this.isPlaying && this.ctx === ctx && this.ctx.state === 'suspended') {
-        void this.ctx.resume().catch(() => {});
+      if (!this.isPlaying || this.ctx !== ctx) return;
+      const rawState = String(ctx.state);
+      if (rawState === 'running') {
+        this.setAudioInterrupted(false);
+        return;
+      }
+      if (rawState === 'interrupted') {
+        this.setAudioInterrupted(true);
+        this.installOneShotGestureResume();
+        return;
+      }
+      if (rawState === 'suspended') {
+        void ctx.resume().then(
+          () => {
+            if (this.ctx === ctx && String(ctx.state) === 'running') {
+              this.setAudioInterrupted(false);
+            }
+          },
+          () => {
+            if (this.isPlaying && this.ctx === ctx) {
+              this.setAudioInterrupted(true);
+              this.installOneShotGestureResume();
+            }
+          }
+        );
       }
     };
 
@@ -1294,8 +1434,19 @@ export class PsychoacousticEngine {
     }
     this.visibilityHandler = () => {
       if (!this.isPlaying || !this.ctx) return;
-      if (this.ctx.state === 'suspended') {
-        void this.ctx.resume().catch(() => {});
+      const rawState = String(this.ctx.state);
+      if (rawState === 'suspended' || rawState === 'interrupted') {
+        void this.ctx.resume().then(
+          () => {
+            if (this.ctx && String(this.ctx.state) === 'running') {
+              this.setAudioInterrupted(false);
+            }
+          },
+          () => {
+            this.setAudioInterrupted(true);
+            this.installOneShotGestureResume();
+          }
+        );
       }
       if (this.keepAliveEl && this.keepAliveEl.paused) {
         void this.keepAliveEl.play().catch(() => {});
@@ -1340,6 +1491,124 @@ export class PsychoacousticEngine {
     }
   }
 
+  public onInterruptionChange(cb: (interrupted: boolean) => void): () => void {
+    this.interruptionListeners.add(cb);
+    return () => {
+      this.interruptionListeners.delete(cb);
+    };
+  }
+
+  public isAudioInterrupted(): boolean {
+    return this.audioInterrupted;
+  }
+
+  private setAudioInterrupted(interrupted: boolean): void {
+    if (this.audioInterrupted === interrupted) return;
+    this.audioInterrupted = interrupted;
+    if (!interrupted && this.gestureResumeCleanup) {
+      this.gestureResumeCleanup();
+      this.gestureResumeCleanup = null;
+    }
+    for (const cb of this.interruptionListeners) {
+      try {
+        cb(interrupted);
+      } catch {
+        // ignore listener errors
+      }
+    }
+  }
+
+  private installOneShotGestureResume(): void {
+    if (this.gestureResumeCleanup || typeof window === 'undefined') return;
+    const handler = () => {
+      void this.resumeFromInterruption();
+    };
+    window.addEventListener('pointerdown', handler, { passive: true });
+    window.addEventListener('touchend', handler, { passive: true });
+    window.addEventListener('keydown', handler);
+    this.gestureResumeCleanup = () => {
+      window.removeEventListener('pointerdown', handler);
+      window.removeEventListener('touchend', handler);
+      window.removeEventListener('keydown', handler);
+    };
+  }
+
+  public async resumeFromInterruption(): Promise<boolean> {
+    if (!this.ctx) {
+      this.setAudioInterrupted(false);
+      return false;
+    }
+    try {
+      await this.ctx.resume();
+      if (this.keepAliveEl && this.keepAliveEl.paused) {
+        await this.keepAliveEl.play().catch(() => {});
+      }
+      if (this.activeStreamEl && this.activeStreamEl.paused && this.isPlaying) {
+        await this.activeStreamEl.play().catch(() => {});
+      }
+      const running = String(this.ctx.state) === 'running';
+      if (running) {
+        this.setAudioInterrupted(false);
+        void this.requestWakeLock();
+      }
+      return running;
+    } catch {
+      return false;
+    }
+  }
+
+  private initMediaDeckPool(ctx: AudioContext): void {
+    this.teardownMediaDeckPool();
+    this.mediaDeckCursor = 0;
+    if (typeof Audio === 'undefined' || typeof ctx.createMediaElementSource !== 'function') {
+      return;
+    }
+    for (let i = 0; i < 2; i++) {
+      try {
+        const el = new Audio();
+        el.crossOrigin = 'anonymous';
+        el.preload = 'none';
+        (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+        el.setAttribute('playsinline', 'true');
+        if (this.keepAliveUrl) {
+          el.src = this.keepAliveUrl;
+          el.muted = true;
+          void el
+            .play()
+            .then(() => {
+              el.pause();
+              el.muted = false;
+              el.removeAttribute('src');
+              el.load();
+            })
+            .catch(() => {
+              el.muted = false;
+              el.removeAttribute('src');
+            });
+        }
+        const srcNode = ctx.createMediaElementSource(el);
+        this.mediaDeckPool.push({ el, srcNode });
+      } catch {
+        break;
+      }
+    }
+  }
+
+  private teardownMediaDeckPool(): void {
+    for (const slot of this.mediaDeckPool) {
+      try {
+        slot.el.pause();
+        slot.el.removeAttribute('src');
+        slot.el.load();
+        slot.srcNode.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+    this.mediaDeckPool = [];
+    this.mediaDeckCursor = 0;
+  }
+
   private specNeedsPureHrvReferenceCarrier(): boolean {
     if (!this.studySpec) return false;
     const isAm =
@@ -1354,8 +1623,7 @@ export class PsychoacousticEngine {
 
   private computeFullMixMusicPocketGain(): number {
     // Dynamically carves -0.4 dB (Min) / -1.1 dB (Standard) / -2.4 dB (Max) headroom in Nootropic Mix
-    // so Layer 1 scales cleanly from ~35% -> ~65% -> ~94% without brickwall limiter compression
-    if (this.isControlTrial) return 1.0;
+    // (matched identically on Active & Sham trials so loudness never unblinds participants!)
     const duck = Math.max(0.76, Math.min(0.96, 1.04 - 0.17 * this.modDepthMultiplier));
     return Number(duck.toFixed(3));
   }
@@ -1376,6 +1644,12 @@ export class PsychoacousticEngine {
   private computeAmPulseModPair(): { bias: number; swing: number } {
     if (this.layerMonitorMode === 'music_only') {
       return { bias: 0, swing: 0 };
+    }
+    if (this.isControlTrial) {
+      // Active Aperiodic Acoustic Sham: matched RMS with organic slow drift (zero periodic ASSR)
+      const shamSwing = Number((0.36 * (0.78 + 0.22 * this.modDepthMultiplier)).toFixed(4));
+      const shamBias = Number((1.0 - shamSwing).toFixed(4));
+      return { bias: shamBias, swing: shamSwing };
     }
     const pulseDepth = Math.min(
       0.97,
@@ -1399,13 +1673,11 @@ export class PsychoacousticEngine {
       return 0;
     }
     if (this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus') {
-      // Matched ~ -16.0 LUFS isolated neural reference chord + band-limited pink carrier
+      // Loudness-matched ~ -15.5 LUFS isolated neural reference chord + band-limited pink carrier
+      // (identical RMS in Active & Aperiodic Sham trials so Science Only never unblinds!)
       return Number(
-        Math.min(0.54, Math.max(0.32, 0.44 * (0.8 + 0.2 * this.modDepthMultiplier))).toFixed(4)
+        Math.min(0.52, Math.max(0.32, 0.42 * (0.82 + 0.18 * this.modDepthMultiplier))).toFixed(4)
       );
-    }
-    if (this.isControlTrial) {
-      return 0;
     }
     // Scales smoothly across Min (~0.14 = 35% effect) -> Standard (~0.27 = 65% effect) -> Max (~0.42 = 94% effect)
     const baseDepth = Math.max(0.2, Math.min(0.65, this.studySpec.entrainment.modulationDepth || 0.38));
@@ -1422,6 +1694,11 @@ export class PsychoacousticEngine {
     if (!amActive || this.layerMonitorMode === 'music_only') {
       return { bias: 1.0, swing: 0 };
     }
+    if (this.isControlTrial) {
+      // Gentle matched-RMS aperiodic drift (0.17 + 0.29 + 0.43 Hz) — zero periodic cortical phase-locking
+      const shamDepth = Math.min(0.34, Math.max(0.14, calibratedEffectDepth * 0.42));
+      return computeExactAmGainPair(shamDepth, -1, 1, Math.SQRT1_2);
+    }
     if (this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus') {
       const isoDepth = Math.min(
         0.96,
@@ -1430,9 +1707,6 @@ export class PsychoacousticEngine {
       const swing = Number((0.5 * isoDepth).toFixed(4));
       const bias = Number((1.0 - swing).toFixed(4));
       return { bias, swing };
-    }
-    if (this.isControlTrial) {
-      return { bias: 1.0, swing: 0 };
     }
     // Maps 35%..94% calibrated effect onto safe 0.34..0.75 Band-2 music VCA depth
     const mixDriveDepth = Math.min(0.75, Math.max(0, calibratedEffectDepth * 0.82));
@@ -1581,6 +1855,16 @@ export class PsychoacousticEngine {
   public setControlTrial(flag: boolean): void {
     this.isControlTrial = flag;
     this.stimulusRack.setControlTrial(flag);
+    if (this.ctx) {
+      const now = this.ctx.currentTime;
+      smoothSetParam(this.amPeriodicGateL?.gain, flag ? 0 : 1, now, 0.065);
+      smoothSetParam(this.amShamGateL?.gain, flag ? 1 : 0, now, 0.065);
+      smoothSetParam(this.amPeriodicGateR?.gain, flag ? 0 : 1, now, 0.065);
+      smoothSetParam(this.amShamGateR?.gain, flag ? 1 : 0, now, 0.065);
+    }
+    this.syncAmWaveformForMonitorMode(
+      flag || this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus'
+    );
     this.syncBand2Flattener();
     if (this.isPlaying) {
       this.updateElapsed(this.elapsedSec, 0.065);
@@ -1593,6 +1877,9 @@ export class PsychoacousticEngine {
     const now = this.ctx.currentTime;
     const muteMusic = mode === 'science_only' || this.carrierMode === 'pure_stimulus';
     const muteScience = mode === 'music_only';
+
+    const preLimCeiling = muteScience ? LIMITER_CEILING_LINEAR : 0.68;
+    smoothSetParam(this.musicPreLimiterNode?.parameters.get('ceiling'), preLimCeiling, now, 0.065);
 
     const targetMusicGain = muteMusic
       ? 0
@@ -1855,16 +2142,44 @@ export class PsychoacousticEngine {
     const prevSrc = this.activeStudioSource;
     const prevStreamEl = this.activeStreamEl;
     const prevStreamSrc = this.activeStreamSource;
+    const prevMediaDelay = this.activeMediaDelayNode;
     const prevWsola = this.activeWsolaNode;
     const prevStemPlayer = this.activeStemPlayerNode;
     const prevGain = this.activeStudioGain;
+    const isPooledEl = Boolean(
+      prevStreamEl && this.mediaDeckPool.some((slot) => slot.el === prevStreamEl)
+    );
     this.activeStudioSource = null;
     this.activeStreamEl = null;
     this.activeStreamSource = null;
+    this.activeMediaDelayNode = null;
     this.activeWsolaNode = null;
     this.activeWsolaMode = 'none';
     this.activeStemPlayerNode = null;
     this.activeStudioGain = null;
+
+    const cleanupMediaEl = () => {
+      if (!prevStreamEl) return;
+      try {
+        prevStreamEl.pause();
+        if (isPooledEl) {
+          prevStreamEl.removeAttribute('src');
+          prevStreamEl.load();
+          // Disconnect pooled MediaElementAudioSourceNode from old delay/gain so next use starts clean
+          prevStreamSrc?.disconnect();
+        } else {
+          prevStreamEl.src = '';
+          prevStreamSrc?.disconnect();
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        prevMediaDelay?.disconnect();
+      } catch {
+        // ignore
+      }
+    };
 
     if (this.ctx && prevGain && (prevSrc || prevStreamEl || prevWsola || prevStemPlayer)) {
       const now = this.ctx.currentTime;
@@ -1894,12 +2209,8 @@ export class PsychoacousticEngine {
         } catch {
           // ignore
         }
+        cleanupMediaEl();
         try {
-          if (prevStreamEl) {
-            prevStreamEl.pause();
-            prevStreamEl.src = '';
-          }
-          prevStreamSrc?.disconnect();
           prevGain.disconnect();
         } catch {
           // ignore
@@ -1926,15 +2237,7 @@ export class PsychoacousticEngine {
       } catch {
         // ignore
       }
-      try {
-        if (prevStreamEl) {
-          prevStreamEl.pause();
-          prevStreamEl.src = '';
-        }
-        prevStreamSrc?.disconnect();
-      } catch {
-        // ignore
-      }
+      cleanupMediaEl();
     }
   }
 
@@ -1966,11 +2269,23 @@ export class PsychoacousticEngine {
       this.bufferCache.set(url, cached);
       return cached;
     }
+    // Hard mobile/WebKit memory ceiling: NEVER decode multi-minute stems (> 2.2 MB compressed = ~138 MB PCM)
+    // via decodeAudioData — long stems stream progressively via WebCodecs or HTTP 206 MediaElement (< 3 MB RAM)!
+    const MAX_DECODE_AUDIO_BYTES = 2_200_000;
     try {
       const res = await fetch(url);
       if (!res.ok) return null;
+      const contentLen = Number(res.headers.get('content-length') ?? 0);
+      if (Number.isFinite(contentLen) && contentLen > MAX_DECODE_AUDIO_BYTES) {
+        try {
+          await res.body?.cancel();
+        } catch {
+          // ignore
+        }
+        return null;
+      }
       const arr = await res.arrayBuffer();
-      if (!this.ctx) return null;
+      if (!this.ctx || arr.byteLength > MAX_DECODE_AUDIO_BYTES) return null;
       const decoded = await this.ctx.decodeAudioData(arr);
 
       while (this.bufferCache.size >= this.maxCachedBuffers) {
@@ -2326,22 +2641,6 @@ export class PsychoacousticEngine {
     return true;
   }
 
-  private async decodePreferredV7Stem(
-    track: StudioTrackRef
-  ): Promise<{ buffer: AudioBuffer; codec: 'opus' | 'aac' } | null> {
-    const tryOpusFirst = this.supportsOpusAudio() && Boolean(track.opusUrl);
-    if (tryOpusFirst && track.opusUrl) {
-      const opusBuf = await this.loadAudioBuffer(track.opusUrl);
-      if (opusBuf) return { buffer: opusBuf, codec: 'opus' };
-      this.opusSupported = false;
-    }
-    if (track.aacUrl) {
-      const aacBuf = await this.loadAudioBuffer(track.aacUrl);
-      if (aacBuf) return { buffer: aacBuf, codec: 'aac' };
-    }
-    return null;
-  }
-
   private async playDirectWorkletStem(
     track: StudioTrackRef,
     targetGain: number,
@@ -2517,133 +2816,275 @@ export class PsychoacousticEngine {
       }
     }
 
-    // Path B: Full-buffer decodeAudioData (.opus or .m4a AAC-LC fallback for Safari/iOS) -> AudioWorklet
-    const decoded = await this.decodePreferredV7Stem(track);
-    if (!decoded || token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
+    // Path B (Safari / iOS WebKit / non-WebCodecs browsers):
+    // Progressive HTTP 206 Range streaming (.m4a 48 kHz AAC-LC on Safari/iOS, .opus on Firefox)
+    // via our pre-unlocked Dual-Deck <audio> pool + sample-accurate DelayNode phase lock (< 2.5 MB RAM,
+    // ZERO full-stem decodeAudioData -> eliminates 138–276 MB iOS Safari Jetsam tab crashes!).
+    const preferOpusStream = this.supportsOpusAudio() && Boolean(track.opusUrl);
+    const streamCandidateUrls: Array<{ url: string; codec: 'opus' | 'aac' }> = [];
+    if (preferOpusStream && track.opusUrl) {
+      streamCandidateUrls.push({ url: track.opusUrl, codec: 'opus' });
+    }
+    if (track.aacUrl) {
+      streamCandidateUrls.push({ url: track.aacUrl, codec: 'aac' });
+    }
+    if (!preferOpusStream && track.opusUrl) {
+      streamCandidateUrls.push({ url: track.opusUrl, codec: 'opus' });
+    }
+
+    for (const cand of streamCandidateUrls) {
+      const progressiveOk = await this.playProgressiveMediaStem({
+        url: cand.url,
+        codec: cand.codec,
+        track,
+        targetGain,
+        token,
+        fadeSec,
+        amActive,
+        neuralHz,
+        totalRate: gridRate.totalRate,
+        tune432Ratio,
+        targetGridBpm: gridRate.targetGridBpm,
+        isSubHarmonicLocked: gridRate.isSubHarmonicLocked,
+        stemBpm,
+        trackDurSec,
+        crossfadeLeadSec: CROSSFADE_LEAD_SEC,
+        onCrossfade,
+      });
+      if (progressiveOk) return true;
+      if (cand.codec === 'opus') this.opusSupported = false;
+      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
+        return false;
+      }
+    }
+
+    return false;
+  }
+
+  private async playProgressiveMediaStem(opts: {
+    url: string;
+    codec: 'opus' | 'aac';
+    track: StudioTrackRef;
+    targetGain: number;
+    token: number;
+    fadeSec: number;
+    amActive: boolean;
+    neuralHz: number;
+    totalRate: number;
+    tune432Ratio: number;
+    targetGridBpm: number;
+    isSubHarmonicLocked: boolean;
+    stemBpm: number;
+    trackDurSec: number | null;
+    crossfadeLeadSec: number;
+    onCrossfade: () => void;
+  }): Promise<boolean> {
+    if (!this.ctx || !this.studioBus || opts.token !== this.studioLoadToken || typeof Audio === 'undefined') {
       return false;
     }
 
-    const ctx = this.ctx;
-    const now = ctx.currentTime;
-    const buffer = decoded.buffer;
-    const delaySec =
-      amActive && typeof track.downbeatOffsetMs === 'number' && track.downbeatOffsetMs >= 0
-        ? computeDownbeatPhaseDelaySec({
-            amOriginSec: this.amLfoOriginSec,
-            scheduleStartSec: now,
-            downbeatOffsetMs: track.downbeatOffsetMs / Math.max(0.75, gridRate.totalRate),
-            neuralHz,
-            crestCycleFraction: this.amCrestFrac,
-          })
-        : 0;
-    const delaySamples = Math.max(0, Math.round(delaySec * ctx.sampleRate));
-
-    this.clearStudioDeck(fadeSec);
-    this.composer.setStandby(true);
-    if (this.proceduralMaster && this.cleanSubBus) {
-      this.proceduralMaster.gain.setTargetAtTime(0, now, 0.55);
-      this.cleanSubBus.gain.setTargetAtTime(0, now, 0.55);
+    const pooledSlot =
+      this.mediaDeckPool.length > 0
+        ? this.mediaDeckPool[this.mediaDeckCursor % this.mediaDeckPool.length]
+        : null;
+    if (pooledSlot) {
+      this.mediaDeckCursor = (this.mediaDeckCursor + 1) % this.mediaDeckPool.length;
     }
 
-    const deckGain = ctx.createGain();
-    deckGain.gain.setValueAtTime(0.0001, now);
-    deckGain.gain.exponentialRampToValueAtTime(Math.max(0.1, targetGain), now + fadeSec);
-    deckGain.connect(this.studioBus);
+    const el = pooledSlot ? pooledSlot.el : new Audio();
+    if (!pooledSlot) {
+      el.crossOrigin = 'anonymous';
+      (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+      el.setAttribute('playsinline', 'true');
+    }
 
-    const stemNode = new AudioWorkletNode(ctx, 'nootropic-stem-player', {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
-      processorOptions: {
-        sourceSampleRate: buffer.sampleRate,
-        delaySamples,
-      },
-    });
-    stemNode.parameters.get('playbackRate')?.setValueAtTime(gridRate.totalRate, now);
-    stemNode.connect(deckGain);
+    try {
+      el.preload = 'auto';
+      el.loop = false;
+      const pitchEl = el as HTMLAudioElement & {
+        preservesPitch?: boolean;
+        mozPreservesPitch?: boolean;
+        webkitPreservesPitch?: boolean;
+      };
+      // Pure varispeed (no browser WSOLA warble) for exact 432/440 Hz or 1.0x sub-harmonic grid playback
+      if ('preservesPitch' in pitchEl) pitchEl.preservesPitch = false;
+      if ('mozPreservesPitch' in pitchEl) pitchEl.mozPreservesPitch = false;
+      if ('webkitPreservesPitch' in pitchEl) pitchEl.webkitPreservesPitch = false;
+      el.playbackRate = opts.totalRate;
+      el.src = opts.url;
 
-    const leftAll = buffer.getChannelData(0);
-    const rightAll = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : leftAll;
-    const totalFrames = buffer.length;
-    const CHUNK_FRAMES = 16384;
-    const crossfadeLeadSec = Math.min(CROSSFADE_LEAD_SEC, Math.max(2.5, buffer.duration * 0.2));
-    let feedCursor = 0;
-    let endPosted = false;
-    let crossfadeTriggered = false;
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const done = (err?: unknown) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          el.removeEventListener('canplay', onReady);
+          el.removeEventListener('loadeddata', onReady);
+          el.removeEventListener('error', onErr);
+          if (err) reject(err);
+          else resolve();
+        };
+        const onReady = () => done();
+        const onErr = () => done(new Error('progressive_stem_load_failed'));
+        const timer = window.setTimeout(() => done(new Error('progressive_stem_timeout')), 8000);
+        el.addEventListener('canplay', onReady);
+        el.addEventListener('loadeddata', onReady);
+        el.addEventListener('error', onErr);
+        el.load();
+      });
 
-    const triggerCrossfadeOnce = () => {
-      if (crossfadeTriggered) return;
-      crossfadeTriggered = true;
-      if (this.studioCrossfadeTimer !== null) {
-        window.clearTimeout(this.studioCrossfadeTimer);
-        this.studioCrossfadeTimer = null;
-      }
-      onCrossfade();
-    };
-
-    const TARGET_RING_FRAMES = 147456; // ~3.07 s safely inside 262,144-frame ring buffer
-    const topUpChunks = (consumerFrame: number) => {
-      while (
-        feedCursor < totalFrames &&
-        feedCursor - consumerFrame + CHUNK_FRAMES <= TARGET_RING_FRAMES
-      ) {
-        const nextEnd = Math.min(totalFrames, feedCursor + CHUNK_FRAMES);
-        const leftSlice = leftAll.slice(feedCursor, nextEnd);
-        const rightSlice = rightAll.slice(feedCursor, nextEnd);
-        stemNode.port.postMessage(
-          { type: 'chunk', left: leftSlice, right: rightSlice },
-          [leftSlice.buffer, rightSlice.buffer]
-        );
-        feedCursor = nextEnd;
-      }
-      if (feedCursor >= totalFrames && !endPosted) {
-        endPosted = true;
-        stemNode.port.postMessage({ type: 'end' });
-      }
-    };
-
-    stemNode.port.onmessage = (evt) => {
-      if (token !== this.studioLoadToken || !evt.data) return;
-      if (evt.data.type === 'need_chunk') {
-        topUpChunks(Number(evt.data.sourceFrame) || 0);
-      } else if (evt.data.type === 'progress') {
-        const sourceFrame = Number(evt.data.sourceFrame) || 0;
-        topUpChunks(sourceFrame);
-        const remainingFrames = Math.max(0, totalFrames - sourceFrame);
-        const remainingSec = remainingFrames / (buffer.sampleRate * Math.max(0.75, gridRate.totalRate));
-        if (remainingSec <= crossfadeLeadSec) {
-          triggerCrossfadeOnce();
+      if (opts.token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
+        el.pause();
+        if (pooledSlot) {
+          el.removeAttribute('src');
+          el.load();
+        } else {
+          el.src = '';
         }
-      } else if (evt.data.type === 'eof') {
-        triggerCrossfadeOnce();
+        return false;
       }
-    };
 
-    topUpChunks(0);
+      const ctx = this.ctx;
+      const now = ctx.currentTime;
+      const delaySec =
+        opts.amActive && typeof opts.track.downbeatOffsetMs === 'number' && opts.track.downbeatOffsetMs >= 0
+          ? computeDownbeatPhaseDelaySec({
+              amOriginSec: this.amLfoOriginSec,
+              scheduleStartSec: now,
+              downbeatOffsetMs: opts.track.downbeatOffsetMs / Math.max(0.75, opts.totalRate),
+              neuralHz: opts.neuralHz,
+              crestCycleFraction: this.amCrestFrac,
+            })
+          : 0;
 
-    this.activeStudioSource = null;
-    this.activeWsolaNode = null;
-    this.activeWsolaMode = 'none';
-    this.activeStemPlayerNode = stemNode;
-    this.activeStudioGain = deckGain;
-    this.usingStudioAudio = true;
-    this.usingCustomTrack = false;
-    this.activeTrackName = track.name;
-    this.activeTrackKey = track.keyLabel ?? null;
-    this.activeTrackNativeBpm = stemBpm;
-    this.activeStudioAppliedBpm = gridRate.targetGridBpm > 0 ? Math.round(gridRate.targetGridBpm * tune432Ratio) : 0;
-    const codecTag = decoded.codec === 'opus' ? '48 kHz Opus' : '48 kHz AAC';
-    this.activeStemCodecLabel = gridRate.isSubHarmonicLocked
-      ? `${codecTag} · Phase-Locked`
-      : `${codecTag} · Studio`;
-    this.activeStemSubHarmonicLocked = gridRate.isSubHarmonicLocked;
+      const srcNode = pooledSlot ? pooledSlot.srcNode : ctx.createMediaElementSource(el);
+      try {
+        srcNode.disconnect();
+      } catch {
+        // ignore
+      }
 
-    const scheduledDelaySec = Math.max(
-      1.5,
-      delaySec + buffer.duration / Math.max(0.75, gridRate.totalRate) - crossfadeLeadSec
-    );
-    this.scheduleDeckCrossfade(scheduledDelaySec, triggerCrossfadeOnce);
-    return true;
+      const safeDelay = Math.min(0.45, Math.max(0, delaySec));
+      const phaseDelay = safeDelay > 0.0005 ? ctx.createDelay(0.5) : null;
+      if (phaseDelay) {
+        phaseDelay.delayTime.setValueAtTime(safeDelay, now);
+      }
+
+      const deckGain = ctx.createGain();
+      deckGain.gain.setValueAtTime(0.0001, now);
+      if (phaseDelay) {
+        srcNode.connect(phaseDelay);
+        phaseDelay.connect(deckGain);
+      } else {
+        srcNode.connect(deckGain);
+      }
+      deckGain.connect(this.studioBus);
+
+      await el.play();
+
+      if (opts.token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
+        el.pause();
+        if (pooledSlot) {
+          el.removeAttribute('src');
+          el.load();
+        } else {
+          el.src = '';
+        }
+        try {
+          srcNode.disconnect();
+          phaseDelay?.disconnect();
+          deckGain.disconnect();
+        } catch {
+          // ignore
+        }
+        return false;
+      }
+
+      this.clearStudioDeck(opts.fadeSec);
+      this.composer.setStandby(true);
+      if (this.proceduralMaster && this.cleanSubBus) {
+        this.proceduralMaster.gain.setTargetAtTime(0, now, 0.55);
+        this.cleanSubBus.gain.setTargetAtTime(0, now, 0.55);
+      }
+
+      deckGain.gain.exponentialRampToValueAtTime(Math.max(0.1, opts.targetGain), now + opts.fadeSec);
+
+      let crossfadeTriggered = false;
+      let cleanupListeners: (() => void) | null = null;
+      const triggerOnce = () => {
+        if (crossfadeTriggered) return;
+        crossfadeTriggered = true;
+        if (this.studioCrossfadeTimer !== null) {
+          window.clearTimeout(this.studioCrossfadeTimer);
+          this.studioCrossfadeTimer = null;
+        }
+        this.activeStreamCrossfadeCheck = null;
+        cleanupListeners?.();
+        opts.onCrossfade();
+      };
+      const checkPosition = () => {
+        if (
+          !crossfadeTriggered &&
+          Number.isFinite(el.duration) &&
+          el.duration > 12 &&
+          el.currentTime >= el.duration - opts.crossfadeLeadSec * Math.max(0.75, el.playbackRate)
+        ) {
+          triggerOnce();
+        }
+      };
+      const onEnded = () => triggerOnce();
+      el.addEventListener('timeupdate', checkPosition);
+      el.addEventListener('ended', onEnded);
+      cleanupListeners = () => {
+        el.removeEventListener('timeupdate', checkPosition);
+        el.removeEventListener('ended', onEnded);
+      };
+
+      this.activeStudioSource = null;
+      this.activeStemPlayerNode = null;
+      this.activeWsolaNode = null;
+      this.activeWsolaMode = 'none';
+      this.activeStreamEl = el;
+      this.activeStreamSource = srcNode;
+      this.activeMediaDelayNode = phaseDelay;
+      this.activeStreamCleanup = cleanupListeners;
+      this.activeStreamCrossfadeCheck = checkPosition;
+      this.activeStudioGain = deckGain;
+      this.usingStudioAudio = true;
+      this.usingCustomTrack = false;
+      this.activeTrackName = opts.track.name;
+      this.activeTrackKey = opts.track.keyLabel ?? null;
+      this.activeTrackNativeBpm = opts.stemBpm;
+      this.activeStudioAppliedBpm =
+        opts.targetGridBpm > 0 ? Math.round(opts.targetGridBpm * opts.tune432Ratio) : 0;
+      const codecTag = opts.codec === 'opus' ? '48 kHz Opus' : '48 kHz AAC';
+      this.activeStemCodecLabel = opts.isSubHarmonicLocked
+        ? `${codecTag} · Range Stream Phase-Locked`
+        : `${codecTag} · Range Stream`;
+      this.activeStemSubHarmonicLocked = opts.isSubHarmonicLocked;
+
+      const durEst =
+        (Number.isFinite(el.duration) && el.duration > 20 ? el.duration : null) ?? opts.trackDurSec;
+      const scheduledDelaySec = durEst
+        ? Math.max(1.5, safeDelay + durEst / Math.max(0.75, opts.totalRate) - opts.crossfadeLeadSec)
+        : 150;
+      this.scheduleDeckCrossfade(scheduledDelaySec, triggerOnce);
+      return true;
+    } catch {
+      try {
+        el.pause();
+        if (pooledSlot) {
+          el.removeAttribute('src');
+          el.load();
+        } else {
+          el.src = '';
+        }
+      } catch {
+        // ignore
+      }
+      return false;
+    }
   }
 
   private async activateStudioForGenre(genre: ResolvedGenre, fadeSec = 1.8): Promise<void> {
@@ -3058,8 +3499,7 @@ export class PsychoacousticEngine {
         : 0.94 + 0.06 * Math.cos(2 * Math.PI * 0.004 * elapsedSec);
     const amActive = spec?.entrainment.type === 'amplitude_modulation' && spec.entrainment.frequencyHz > 0;
     const nominalDepth = this.computeCalibratedEffectPct(activePhaseFactor, antiHabFactor);
-    const effectiveDepth =
-      scienceMuted || (this.isControlTrial && !isIsolatedScience) ? 0 : nominalDepth;
+    const effectiveDepth = scienceMuted ? 0 : nominalDepth;
 
     // Iso-Principle live frequency trajectory (2-Stage Iso-Bridge OR direct 60s state ramp)
     const isAlphaSpec =
@@ -3090,7 +3530,12 @@ export class PsychoacousticEngine {
             : elapsedSec < stabSec + glideSec
               ? 0.76 + 0.24 * (0.5 * (1 - Math.cos((Math.PI * (elapsedSec - stabSec)) / glideSec)))
               : 1.0;
-        smoothSetParam(this.studioFilter.frequency, Math.max(5200, baseCutoff * softScale), this.ctx.currentTime, 0.4);
+        smoothSetParam(
+          this.studioFilter.frequency,
+          Math.min(this.ctx.sampleRate * 0.44, Math.max(5200, baseCutoff * softScale)),
+          this.ctx.currentTime,
+          0.4
+        );
       }
     } else if (amActive && spec?.entrainment.startFrequencyHz !== undefined) {
       const freqRampSec = Math.min(60, Math.max(25, this.plannedSec * 0.1));
@@ -3150,7 +3595,10 @@ export class PsychoacousticEngine {
           !scienceMuted &&
           !isIsolatedScience;
         // Smooth 0.0028 Hz (~6-min cycle) spectral focus sweep between 600 Hz (warm low-mid) & 2050 Hz (presence)
-        const rotHz = 1325 + 725 * Math.sin(2 * Math.PI * 0.0028 * elapsedSec);
+        const rotHz = Math.min(
+          this.ctx.sampleRate * 0.44,
+          1325 + 725 * Math.sin(2 * Math.PI * 0.0028 * elapsedSec)
+        );
         smoothSetParam(this.band2SpectralRotNode.frequency, rotHz, now, 0.35);
         smoothSetParam(this.band2SpectralRotNode.gain, allowRot ? 1.8 : 0, now, gainTimeConst);
       }
@@ -3277,6 +3725,7 @@ export class PsychoacousticEngine {
       band2FlattenerActive: this.isBand2FlattenerActive(),
       stemCodecLabel: this.usingStudioAudio ? this.activeStemCodecLabel : null,
       stemSubHarmonicLocked: this.usingStudioAudio && this.activeStemSubHarmonicLocked,
+      audioInterrupted: this.audioInterrupted,
     };
   }
 
@@ -3299,7 +3748,11 @@ export class PsychoacousticEngine {
     if (this.ctx) {
       const now = this.ctx.currentTime;
       if (this.studioFilter) {
-        this.studioFilter.frequency.setTargetAtTime(this.computeStudioCutoffHz(), now, 0.3);
+        this.studioFilter.frequency.setTargetAtTime(
+          Math.min(this.ctx.sampleRate * 0.44, this.computeStudioCutoffHz()),
+          now,
+          0.3
+        );
       }
       if (this.studioBus) {
         const gainTrim = 0.98 * Math.max(0.82, Math.min(1.08, 0.88 + 0.12 * this.intensityMultiplier));
@@ -3475,6 +3928,8 @@ export class PsychoacousticEngine {
 
   public stop(): void {
     void this.releaseWakeLock();
+    this.setAudioInterrupted(false);
+    this.bufferCache.clear();
     if (this.visibilityHandler) {
       document.removeEventListener('visibilitychange', this.visibilityHandler);
       this.visibilityHandler = null;
@@ -3550,6 +4005,7 @@ export class PsychoacousticEngine {
         this.lyriaClient.stop();
         this.rainBed.stop();
         this.clearStudioDeck(0.02);
+        this.teardownMediaDeckPool();
         audioElRef?.pause();
         if (audioElRef) audioElRef.srcObject = null;
         if (keepAliveElRef) {
@@ -3571,6 +4027,8 @@ export class PsychoacousticEngine {
 
   private stopImmediate(): void {
     this.isPlaying = false;
+    this.setAudioInterrupted(false);
+    this.bufferCache.clear();
     this.startToken++;
     if (this.pendingCloseTimer !== null) {
       window.clearTimeout(this.pendingCloseTimer);
@@ -3600,6 +4058,7 @@ export class PsychoacousticEngine {
     this.lyriaClient.stop();
     this.rainBed.stop();
     this.clearStudioDeck(0.1);
+    this.teardownMediaDeckPool();
     if (this.visibilityHandler) {
       document.removeEventListener('visibilitychange', this.visibilityHandler);
       this.visibilityHandler = null;
@@ -3608,6 +4067,14 @@ export class PsychoacousticEngine {
     try {
       this.amLfoL?.stop();
       this.amLfoR?.stop();
+      for (const sOsc of this.amShamOscs) {
+        try {
+          sOsc.stop();
+        } catch {
+          // ignore
+        }
+      }
+      this.amShamOscs = [];
       this.pureAmCarrierSrc?.stop();
       this.amCarrierRootOsc?.stop();
       this.amCarrierFifthOsc?.stop();
@@ -3625,6 +4092,7 @@ export class PsychoacousticEngine {
         this.lookaheadLimiterNode.port.onmessage = null;
         this.lookaheadLimiterNode.disconnect();
       }
+      this.musicPreLimiterNode?.disconnect();
       this.envSinkGain?.disconnect();
       this.crossfeedNode?.disconnect();
       this.band2FlattenerNode?.disconnect();
@@ -3651,6 +4119,10 @@ export class PsychoacousticEngine {
     this.amGainR = null;
     this.amLfoL = null;
     this.amLfoR = null;
+    this.amPeriodicGateL = null;
+    this.amPeriodicGateR = null;
+    this.amShamGateL = null;
+    this.amShamGateR = null;
     this.amDepthGainL = null;
     this.amDepthGainR = null;
     this.amTiltDepthL = null;
@@ -3659,6 +4131,7 @@ export class PsychoacousticEngine {
     this.amPureWaveR = null;
     this.amSalienceWaveL = null;
     this.amSalienceWaveR = null;
+    this.musicPreLimiterNode = null;
     this.lookaheadLimiterNode = null;
     this.crossfeedNode = null;
     this.envFollowerNode = null;

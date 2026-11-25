@@ -259,6 +259,7 @@ export function PlayerView({
   const [paywallSyncKey, setPaywallSyncKey] = useState('');
   const [redeemingSyncKey, setRedeemingSyncKey] = useState(false);
   const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('tune');
+  const [audioInterrupted, setAudioInterrupted] = useState(false);
 
   const effectiveFreeLimitSec = FREE_PREVIEW_LIMIT_SEC + shareBonusSec;
   const remainingFreeSec = Math.max(0, effectiveFreeLimitSec - dailyFreeUsedSec);
@@ -405,6 +406,9 @@ export function PlayerView({
     switchedAwayRef.current = false;
     milestonesSentRef.current = new Set();
     endedByUserRef.current = false;
+    const unsubInterrupt = engineRef.current?.onInterruptionChange((interrupted) => {
+      if (mounted) setAudioInterrupted(interrupted);
+    });
 
     const triggerCustomCrossfade = async (trackUrl: string, label: string) => {
       if (!mounted || switchedAwayRef.current || !engineRef.current) return;
@@ -589,6 +593,7 @@ export function PlayerView({
 
     return () => {
       mounted = false;
+      unsubInterrupt?.();
       onPlayingChange?.(false);
       engineRef.current?.stop();
     };
@@ -892,13 +897,12 @@ export function PlayerView({
       return;
     }
     setLayerMonitor(nextMode);
-    engineRef.current?.setControlTrial(false);
     if (!audioStarted) {
       await engineRef.current?.start(
         recommendation.params,
         recommendation.plannedDurationMin,
         recommendation.arm.name,
-        false,
+        isPro ? false : recommendation.isControlTrial,
         recommendation.executableSpec,
         initialCarrier === 'pure_stimulus' ? 'studio_library' : initialCarrier,
         API_BASE
@@ -1082,7 +1086,6 @@ export function PlayerView({
     setModMult(clamped);
     modMultRef.current = clamped;
     setEffectAutoTag(null);
-    engineRef.current?.setControlTrial(false);
     if (layerMonitor === 'music_only') {
       setLayerMonitor('full_mix');
       engineRef.current?.setLayerMonitorMode('full_mix');
@@ -1322,6 +1325,25 @@ export function PlayerView({
           <CheckCircle2 className="h-4 w-4 shrink-0 text-[#34D399]" />
           <span>{shareBonusToast}</span>
         </div>
+      )}
+
+      {(audioInterrupted || telemetry.audioInterrupted) && isPlaying && (
+        <button
+          type="button"
+          onClick={() => {
+            void engineRef.current?.resumeFromInterruption().then((ok) => {
+              if (ok) setAudioInterrupted(false);
+            });
+          }}
+          className="animate-rise flex w-full items-center justify-between gap-3 rounded-xl border border-amber-400/45 bg-amber-500/15 px-4 py-3 text-left text-xs text-amber-100 transition hover:bg-amber-500/20"
+        >
+          <span className="font-medium">
+            Audio paused by a system or Bluetooth interruption — tap anywhere to resume smoothly.
+          </span>
+          <span className="shrink-0 rounded-lg bg-amber-400/25 px-3 py-1 font-semibold text-amber-200">
+            Resume Audio
+          </span>
+        </button>
       )}
 
       {/* STANDALONE STUDIO PLAYER CONSOLE */}

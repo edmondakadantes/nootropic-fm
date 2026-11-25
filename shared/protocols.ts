@@ -380,9 +380,31 @@ export function computeSessionReward(input: {
   return { reward: Number(reward.toFixed(3)), delta };
 }
 
+export function buildFactorizedMarginalScopes(input: {
+  targetState: TargetState;
+  customGoalSlug?: string;
+  currentState?: CurrentState;
+  environment: SessionEnvironment;
+  role?: UserRole;
+}): Array<{ scopeType: 'marginal_goal_state' | 'marginal_goal_env' | 'marginal_goal_role'; scopeId: string }> {
+  const goalKey = input.customGoalSlug || input.targetState;
+  const out: Array<{
+    scopeType: 'marginal_goal_state' | 'marginal_goal_env' | 'marginal_goal_role';
+    scopeId: string;
+  }> = [{ scopeType: 'marginal_goal_env', scopeId: `${goalKey}|${input.environment}` }];
+  if (input.currentState) {
+    out.unshift({ scopeType: 'marginal_goal_state', scopeId: `${goalKey}|${input.currentState}` });
+  }
+  if (input.role) {
+    out.push({ scopeType: 'marginal_goal_role', scopeId: `${goalKey}|${input.role}` });
+  }
+  return out;
+}
+
 /**
  * Implicit behavioral retention reward (weight 0.45) — learns automatically even when
- * a user closes the tab without submitting explicit 10s debrief!
+ * a user closes the tab without submitting explicit 10s debrief, and penalizes <25% early aborts
+ * to eliminate survivorship bias!
  */
 export function computeImplicitReward(input: {
   actualDurationSec: number;
@@ -393,13 +415,21 @@ export function computeImplicitReward(input: {
   if (input.instantGenreSwapped) {
     return { reward: 0.2, outcome: 'instant_swap' };
   }
-  if (input.isEarlyBounce || input.actualDurationSec < 90) {
-    return { reward: 0.22, outcome: 'early_bounce' };
+  if (
+    input.isEarlyBounce ||
+    input.actualDurationSec < 90 ||
+    (input.completionRatio < 0.25 && input.actualDurationSec < 600)
+  ) {
+    const abortReward =
+      input.actualDurationSec < 90
+        ? 0.16
+        : Number((0.18 + Math.max(0, input.completionRatio) * 0.28).toFixed(3));
+    return { reward: abortReward, outcome: 'early_bounce' };
   }
   if (input.completionRatio >= 0.75) {
     return { reward: 0.84, outcome: 'completed_retention' };
   }
-  // Partial listen (between 90s and 75% completion) -> neutral-positive scaled cleanly
+  // Partial listen (>= 25% completion or >= 10m) -> neutral-positive scaled cleanly
   const scaled = 0.48 + Math.min(0.32, input.completionRatio * 0.42);
   return { reward: Number(scaled.toFixed(3)), outcome: 'steady_listen' };
 }
@@ -768,6 +798,7 @@ export function selectProtocolRecommendation(input: {
   liveGenAvailable?: boolean;
   ephemeralMode?: boolean;
   cohortStats: BanditStatRow[];
+  marginalStats?: BanditStatRow[][];
   profileStats: BanditStatRow[];
   cohortGenreStats?: BanditStatRow[];
   profileGenreStats?: BanditStatRow[];
@@ -793,6 +824,9 @@ export function selectProtocolRecommendation(input: {
   }
 
   const cohortMap = new Map(input.cohortStats.map((s) => [s.armId, s]));
+  const marginalMaps = (input.marginalStats ?? []).map(
+    (rows) => new Map(rows.map((s) => [s.armId, s]))
+  );
   const profileMap = new Map(input.profileStats.map((s) => [s.armId, s]));
   const armGenreMap = new Map((input.cohortArmGenreStats ?? []).map((s) => [s.armId, s]));
 
@@ -800,12 +834,26 @@ export function selectProtocolRecommendation(input: {
     const c = cohortMap.get(arm.id);
     const p = profileMap.get(arm.id);
     const ag = armGenreMap.get(arm.id);
+    const marginals = marginalMaps
+      .map((m, idx) => {
+        const row = m.get(arm.id);
+        return row
+          ? {
+              alpha: row.alpha,
+              beta: row.beta,
+              trials: row.trials,
+              weight: idx === 0 ? 0.42 : 0.32,
+            }
+          : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
     const posterior = computeHierarchicalArmPosterior({
       priorAlpha: arm.priorAlpha,
       priorBeta: arm.priorBeta,
       cohortAlpha: c?.alpha,
       cohortBeta: c?.beta,
       cohortTrials: c?.trials,
+      marginals,
       armGenreAlpha: ag?.alpha,
       armGenreBeta: ag?.beta,
       armGenreTrials: ag?.trials,
@@ -813,12 +861,13 @@ export function selectProtocolRecommendation(input: {
       profileBeta: p?.beta,
       profileTrials: p?.trials,
     });
+    const pooledMarginalTrials = marginals.reduce((acc, m) => acc + m.trials, 0);
     const thompsonDraw = sampleHierarchicalThompson(posterior);
     return {
       arm,
       expectedMean: posterior.mean,
       thompsonDraw,
-      cohortTrials: c?.trials ?? 0,
+      cohortTrials: (c?.trials ?? 0) || Math.round(pooledMarginalTrials * 0.5),
       profileTrials: p?.trials ?? 0,
     };
   });

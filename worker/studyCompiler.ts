@@ -1,4 +1,9 @@
 import {
+  EUROPEPMC_HUMAN_AUDITORY_EXCLUSION,
+  appendPubMedHumanAuditoryGuard,
+  isNonAuditoryOrAnimalStudy,
+} from '../shared/openGoals';
+import {
   applySafetyAndDeviceGuardrails,
   compileStudyTextDeterministically,
   verifyAndMergeAiExtraction,
@@ -375,11 +380,13 @@ export async function searchLiveMedicalStudies(
 
   const hasAcousticWord = /(music|sound|audio|auditory|noise|hz|bpm|binaural|isochronic|gamma|alpha|theta|beta|hrv|breath|acoustic|modulation|listening)/i.test(q);
   const cleanQuery = hasAcousticWord ? q : `${q} music auditory`;
+  const epmcQuery = `(${cleanQuery}) ${EUROPEPMC_HUMAN_AUDITORY_EXCLUSION}`;
+  const pubmedQuery = appendPubMedHumanAuditoryGuard(cleanQuery);
 
   const [epmc, pubmed, trials] = await Promise.all([
-    fetchEuropePmcByQuery(cleanQuery, 6),
-    searchPubMedDirect(env, cleanQuery, 3),
-    searchClinicalTrials(cleanQuery, 2),
+    fetchEuropePmcByQuery(epmcQuery, 8),
+    searchPubMedDirect(env, pubmedQuery, 5),
+    searchClinicalTrials(cleanQuery, 3),
   ]);
 
   const seen = new Set<string>();
@@ -389,6 +396,7 @@ export async function searchLiveMedicalStudies(
     (a, b) => Number(b.hasFullAbstract) - Number(a.hasFullAbstract)
   );
   for (const item of ordered) {
+    if (isNonAuditoryOrAnimalStudy(item.title, item.abstractText)) continue;
     const key = item.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 48);
     if (seen.has(key)) continue;
     seen.add(key);

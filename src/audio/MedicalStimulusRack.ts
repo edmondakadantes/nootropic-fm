@@ -194,10 +194,12 @@ export function createPeriodicPulseBuffer(
     }
 
     const t = i / rate;
-    // Warm fundamental + ultra-soft octave shimmer so clinical bursts remain pleasant
+    // Warm fundamental + ultra-soft octave shimmer (clamped < 0.44 * fs for 16 kHz Bluetooth HFP)
+    const safeC = Math.min(rate * 0.44, exactCarrierHz);
     const tone =
-      Math.sin(2 * Math.PI * exactCarrierHz * t) * 0.85 +
-      Math.sin(2 * Math.PI * exactCarrierHz * 2 * t) * 0.15;
+      safeC * 2 < rate * 0.44
+        ? Math.sin(2 * Math.PI * safeC * t) * 0.85 + Math.sin(2 * Math.PI * safeC * 2 * t) * 0.15
+        : Math.sin(2 * Math.PI * safeC * t);
     const sample = tone * env;
     left[i] = sample;
     right[i] = sample;
@@ -393,11 +395,21 @@ export class MedicalStimulusRack {
           });
           const lp = ctx.createBiquadFilter();
           lp.type = 'lowpass';
-          lp.frequency.value = useHarmonicMbi ? 2200 : useChirp ? 3400 : Math.min(3600, carrierHz * 4.5);
+          const nyqMax = ctx.sampleRate * 0.44;
+          lp.frequency.value = Math.min(
+            nyqMax,
+            useHarmonicMbi ? 2200 : useChirp ? 3400 : Math.min(3600, carrierHz * 4.5)
+          );
           lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
           synth.port.postMessage({
             type: 'config',
-            mode: useHarmonicMbi ? 'gamma_mbi' : useChirp ? 'gamma_chirp' : 'gamma_clicks',
+            mode: isControlTrial
+              ? 'aperiodic_sham'
+              : useHarmonicMbi
+                ? 'gamma_mbi'
+                : useChirp
+                  ? 'gamma_chirp'
+                  : 'gamma_clicks',
             rateHz,
             startRateHz: rateHz,
             rampSec: 0,
@@ -452,11 +464,11 @@ export class MedicalStimulusRack {
           });
           const lp = ctx.createBiquadFilter();
           lp.type = 'lowpass';
-          lp.frequency.value = speakerSafeEQ ? 720 : 1800;
+          lp.frequency.value = Math.min(ctx.sampleRate * 0.44, speakerSafeEQ ? 720 : 1800);
           lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
           synth.port.postMessage({
             type: 'config',
-            mode: 'isochronic',
+            mode: isControlTrial ? 'aperiodic_sham' : 'isochronic',
             rateHz,
             startRateHz: spec.entrainment.startFrequencyHz ?? rateHz,
             rampSec:
@@ -520,11 +532,11 @@ export class MedicalStimulusRack {
           });
           const warmLp = ctx.createBiquadFilter();
           warmLp.type = 'lowpass';
-          warmLp.frequency.value = speakerSafeEQ ? 760 : 1200;
+          warmLp.frequency.value = Math.min(ctx.sampleRate * 0.44, speakerSafeEQ ? 760 : 1200);
           warmLp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
           synth.port.postMessage({
             type: 'config',
-            mode: useBinaural ? 'binaural' : 'monaural',
+            mode: isControlTrial ? 'aperiodic_sham' : useBinaural ? 'binaural' : 'monaural',
             rateHz: endBeatHz,
             startRateHz: startBeatHz,
             rampSec:
@@ -597,7 +609,11 @@ export class MedicalStimulusRack {
 
     // 3. Exact SNR-Calibrated Colored Noise Layer (White, Pink, Brown, Soft Rain) + ±30 Hz Binaural Carrier Notch
     if (spec.noise.color !== 'none' && spec.noise.snrDb > -34) {
-      const hpHz = spec.noise.bandpassHz?.[0] ?? (spec.noise.color === 'brown' ? 40 : 100);
+      const nyqMax = ctx.sampleRate * 0.44;
+      const hpHz = Math.min(
+        nyqMax * 0.5,
+        spec.noise.bandpassHz?.[0] ?? (spec.noise.color === 'brown' ? 40 : 100)
+      );
       const defaultLp =
         spec.noise.color === 'brown'
           ? 540
@@ -606,9 +622,12 @@ export class MedicalStimulusRack {
             : spec.noise.color === 'soft_rain'
               ? 2400
               : 2200;
-      const lpHz = speakerSafeEQ
-        ? Math.min(680, spec.noise.bandpassHz?.[1] ?? defaultLp)
-        : spec.noise.bandpassHz?.[1] ?? defaultLp;
+      const lpHz = Math.min(
+        nyqMax,
+        speakerSafeEQ
+          ? Math.min(680, spec.noise.bandpassHz?.[1] ?? defaultLp)
+          : spec.noise.bandpassHz?.[1] ?? defaultLp
+      );
 
       const noiseBuf = createCalibratedNoiseBuffer(ctx, spec.noise.color, 6, { hpHz, lpHz });
       const noiseSrc = ctx.createBufferSource();
@@ -655,16 +674,34 @@ export class MedicalStimulusRack {
     return { hrvBusInput };
   }
 
+  private resolveActiveSynthMode(): string {
+    if (!this.spec) return 'off';
+    if (this.isControlTrial) return 'aperiodic_sham';
+    const eType = this.spec.entrainment.type;
+    if (eType === 'gamma_40hz_clicks') {
+      return this.gammaMode === 'harmonic_mbi'
+        ? 'gamma_mbi'
+        : this.gammaMode === 'gamma_chirp'
+          ? 'gamma_chirp'
+          : 'gamma_clicks';
+    }
+    if (eType === 'isochronic_pulse') return 'isochronic';
+    if (eType === 'binaural_beat') {
+      return !this.speakerSafeEQ && !this.forceMonaural ? 'binaural' : 'monaural';
+    }
+    if (eType === 'monaural_beat') return 'monaural';
+    return 'off';
+  }
+
   private computeEffectiveHrvDepth(): number {
     if (!this.spec || this.scienceMuted || this.hrvBaseDepth <= 0) return 0;
-    if (this.isControlTrial && !this.pureStimulusMode) return 0;
+    if (this.isControlTrial) return 0;
     const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
     return Math.min(0.68, Math.max(0, this.hrvBaseDepth * this.modMult * phaseScale));
   }
 
   private computeStimulusTargetGain(): number {
     if (!this.spec || this.scienceMuted) return 0;
-    if (this.isControlTrial && !this.pureStimulusMode) return 0;
     const baseDepth = Math.max(0.1, Math.min(0.8, this.spec.entrainment.modulationDepth || 0.26));
     const type = this.spec.entrainment.type;
     let base = 0.08;
@@ -672,14 +709,14 @@ export class MedicalStimulusRack {
       base =
         this.gammaMode === 'harmonic_mbi'
           ? this.pureStimulusMode
-            ? 0.25
+            ? 0.24
             : 0.145
           : this.pureStimulusMode
-            ? 0.29
+            ? 0.27
             : 0.18;
-    } else if (type === 'isochronic_pulse') base = this.pureStimulusMode ? 0.27 : 0.165;
+    } else if (type === 'isochronic_pulse') base = this.pureStimulusMode ? 0.25 : 0.165;
     else if (type === 'binaural_beat' || type === 'monaural_beat') {
-      base = this.pureStimulusMode ? 0.27 : 0.155;
+      base = this.pureStimulusMode ? 0.25 : 0.155;
     }
     const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
     const dynScale = this.pureStimulusMode ? 1.0 : this.dynamicMusicScale;
@@ -701,14 +738,17 @@ export class MedicalStimulusRack {
     if (this.clinicalSynthNode) {
       this.clinicalSynthNode.port.postMessage({
         type: 'setMode',
-        mode: useMbi ? 'gamma_mbi' : useChirp ? 'gamma_chirp' : 'gamma_clicks',
+        mode: this.resolveActiveSynthMode(),
         bluetoothSafe: this.bluetoothSafe,
       });
       this.clinicalSynthNode.port.postMessage({ type: 'retune', carrierHz });
     }
     if (this.clinicalSynthWarmLp && this.ctx) {
       this.clinicalSynthWarmLp.frequency.setTargetAtTime(
-        useMbi ? 2200 : useChirp ? 3400 : Math.min(3600, carrierHz * 4.5),
+        Math.min(
+          this.ctx.sampleRate * 0.44,
+          useMbi ? 2200 : useChirp ? 3400 : Math.min(3600, carrierHz * 4.5)
+        ),
         this.ctx.currentTime,
         0.15
       );
@@ -730,7 +770,7 @@ export class MedicalStimulusRack {
     if (this.clinicalSynthNode) {
       this.clinicalSynthNode.port.postMessage({
         type: 'setMode',
-        mode: useBinaural ? 'binaural' : 'monaural',
+        mode: this.resolveActiveSynthMode(),
         bluetoothSafe: this.bluetoothSafe,
       });
     }
@@ -870,6 +910,13 @@ export class MedicalStimulusRack {
 
   public setControlTrial(flag: boolean): void {
     this.isControlTrial = flag;
+    if (this.clinicalSynthNode) {
+      this.clinicalSynthNode.port.postMessage({
+        type: 'setMode',
+        mode: this.resolveActiveSynthMode(),
+        bluetoothSafe: this.bluetoothSafe,
+      });
+    }
     this.refreshLevels(0.065);
   }
 
@@ -928,10 +975,7 @@ export class MedicalStimulusRack {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     if (this.stimulusGain) {
-      const targetStim =
-        this.scienceMuted || (this.isControlTrial && !this.pureStimulusMode)
-          ? 0
-          : this.computeStimulusTargetGain();
+      const targetStim = this.scienceMuted ? 0 : this.computeStimulusTargetGain();
       smoothSetParam(this.stimulusGain.gain, targetStim, now, timeConst);
     }
     if (this.noiseGain) {
@@ -960,7 +1004,7 @@ export class MedicalStimulusRack {
       this.spec?.entrainment.type === 'hrv_breathing_swell'
         ? this.spec.entrainment.frequencyHz || 0.1
         : this.spec?.entrainment.hrvBreathHz ?? 0;
-    const hrvActive = hrvHz > 0 && !this.speakerSafeEQ && !this.isControlTrial;
+    const hrvActive = hrvHz > 0 && !this.speakerSafeEQ;
     let hrvBreathPhase: 'inhale' | 'exhale' | null = null;
     let hrvBreathProgress = 0;
 

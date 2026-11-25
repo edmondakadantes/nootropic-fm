@@ -104,6 +104,13 @@ export function assignStratifiedShamControl(opts: {
   return (opts.rng ?? Math.random)() < 1 / remainingSlots;
 }
 
+export interface FactorizedMarginalInput {
+  alpha: number;
+  beta: number;
+  trials: number;
+  weight?: number;
+}
+
 export interface HierarchicalPosterior {
   mean: number;
   variance: number;
@@ -114,9 +121,10 @@ export interface HierarchicalPosterior {
 }
 
 /**
- * Two-level Hierarchical Empirical-Bayes Normal-Normal Shrinkage Posterior:
+ * Two-level Hierarchical Empirical-Bayes Normal-Normal Shrinkage Posterior with Factorized Marginal Pooling:
  *   mu_{u,a} ~ N(theta_a, tau^2),   y_{u,a,t} ~ N(mu_{u,a}, sigma_meas^2)
- * Pools population-level cohort efficacy `theta_a` while shrinking noisy single-user averages
+ * Pools factorized 2D marginals ((goal×state), (goal×env), (goal×role)) during 5D cohort cold-start,
+ * transitions smoothly to exact 5D cohort cell evidence, and shrinks single-user noisy averages
  * toward the cohort until a listener accumulates ~8+ paired sessions on that protocol arm.
  */
 export function computeHierarchicalArmPosterior(opts: {
@@ -125,6 +133,7 @@ export function computeHierarchicalArmPosterior(opts: {
   cohortAlpha?: number;
   cohortBeta?: number;
   cohortTrials?: number;
+  marginals?: FactorizedMarginalInput[];
   armGenreAlpha?: number;
   armGenreBeta?: number;
   armGenreTrials?: number;
@@ -142,8 +151,23 @@ export function computeHierarchicalArmPosterior(opts: {
       ? Math.min(1, opts.armGenreTrials / 5)
       : 0;
 
+  // Factorized marginal pooling bridges 24,320-cell 5D sparsity and tapers cleanly as exact 5D trials grow
+  const exactCohortN = Math.max(0, opts.cohortTrials ?? 0);
+  const marginalTaper = 1 / (1 + exactCohortN / 8);
+  let margAlphaAdd = 0;
+  let margBetaAdd = 0;
+  if (Array.isArray(opts.marginals)) {
+    for (const m of opts.marginals) {
+      if (!m || !(m.trials > 0)) continue;
+      const w = Math.max(0.05, Math.min(1.0, m.weight ?? 0.35)) * marginalTaper;
+      margAlphaAdd += Math.max(0, m.alpha - opts.priorAlpha) * w;
+      margBetaAdd += Math.max(0, m.beta - opts.priorBeta) * w;
+    }
+  }
+
   const popAlpha =
     opts.priorAlpha +
+    margAlphaAdd +
     (typeof opts.cohortAlpha === 'number' ? Math.max(0, opts.cohortAlpha - opts.priorAlpha) : 0) +
     (typeof opts.armGenreAlpha === 'number'
       ? Math.max(0, opts.armGenreAlpha - opts.priorAlpha) * agShrink * 1.2
@@ -151,6 +175,7 @@ export function computeHierarchicalArmPosterior(opts: {
 
   const popBeta =
     opts.priorBeta +
+    margBetaAdd +
     (typeof opts.cohortBeta === 'number' ? Math.max(0, opts.cohortBeta - opts.priorBeta) : 0) +
     (typeof opts.armGenreBeta === 'number'
       ? Math.max(0, opts.armGenreBeta - opts.priorBeta) * agShrink * 1.2

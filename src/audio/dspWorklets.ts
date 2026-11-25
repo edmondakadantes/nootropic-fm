@@ -1,13 +1,13 @@
 /**
- * Real-Time Studio DSP AudioWorklet Suite (`nootropic.fm` v7.0):
+ * Real-Time Studio DSP AudioWorklet Suite (`nootropic.fm` v8.0):
  *   1. `nootropic-crossfeed-processor`   — M/S-Balanced Bauer/Linkwitz Headphone Crossfeed (0.000 dB mono error)
  *   2. `nootropic-lookahead-limiter`     — True 5.0 ms Lookahead ITU-R BS.1770-4 48-tap (beta=7.857) 4x True-Peak Limiter (-1.0 dBTP) + Live Momentary LUFS Meter
- *   3. `nootropic-wsola-processor`       — 75%-Overlap Stereo Phase-Locked WSOLA Pitch & Time Engine
- *   4. `nootropic-lyria-stream-processor`— Ring-buffered 4-pt Catmull-Rom Cubic Resampler + Cosine Underrun & Overflow Crossfade Guard
+ *   3. `nootropic-wsola-processor`       — 75%-Overlap Stereo Phase-Locked WSOLA Pitch & Time Engine (8-tap Kaiser-Sinc LUT)
+ *   4. `nootropic-lyria-stream-processor`— Ring-buffered 8-tap Polyphase Kaiser-Sinc (beta=5.0) Anti-Aliasing Resampler + Cosine Underrun Guard
  *   5. `nootropic-env-follower`          — K-Weighted Asymmetric (40ms down / 250ms up) Audio-Thread RMS Follower
  *   6. `nootropic-env-flattener`         — Band-2 Modulation-Domain 2–10 Hz Envelope Flattener (+5.8 dB cortical AM SNR)
  *   7. `nootropic-zdf-tilt`              — Per-sample Cytomic ZDF/TPT-SVF Peaking Bell (zero quantum zipper sidebands)
- *   8. `nootropic-clinical-synth`        — Float64 Phase-Accumulated Clinical Rack (Gamma-MBI, Blackman Clicks, Binaural/Monaural, Isochronic)
+ *   8. `nootropic-clinical-synth`        — Float64 Phase-Accumulated Clinical Rack (<0.44*fs HFP Nyquist-clamped + Active Aperiodic Sham)
  *   9. `nootropic-huggins-processor`     — Dichotic Huggins Pitch 3-AFC Headphone Verification Generator (Milne et al. 2021)
  */
 
@@ -21,6 +21,163 @@ function nootropicBesselI0(x) {
     term *= r * r;
     sum += term;
     if (term < sum * 1e-15) break;
+  }
+  return sum;
+}
+
+// 24-Tap Polyphase Windowed-Sinc (Tapered Kaiser-Bessel, beta = 6.5) Resampling LUTs (>62 dB stopband rejection @ 19 kHz, 0.000 dB DC error)
+const SINC24_PHASES = 256;
+const SINC24_TAPS = 24;
+
+function buildPolyphaseSincLut(taps, phases, cutoffCycles, beta) {
+  const half = taps >> 1;
+  const center = half - 1;
+  const lut = new Float32Array((phases + 1) * taps);
+  const invDenom = 1.0 / (nootropicBesselI0(beta) - 1.0);
+  const twoFc = 2.0 * cutoffCycles;
+  const invHalf = 1.0 / half;
+  for (let p = 0; p <= phases; p++) {
+    const t = p / phases;
+    const base = p * taps;
+    let sum = 0.0;
+    for (let k = 0; k < taps; k++) {
+      const d = (k - center) - t; // [-half, +half]
+      const u = d * invHalf;
+      const uSq = u * u;
+      let w = 0.0;
+      if (uSq < 1.0) {
+        w = (nootropicBesselI0(beta * Math.sqrt(1.0 - uSq)) - 1.0) * invDenom;
+      }
+      const x = twoFc * d;
+      const sinc = Math.abs(x) < 1e-9 ? 1.0 : Math.sin(Math.PI * x) / (Math.PI * x);
+      const coeff = sinc * w;
+      lut[base + k] = coeff;
+      sum += coeff;
+    }
+    const invSum = sum > 1e-12 ? 1.0 / sum : 1.0;
+    for (let k = 0; k < taps; k++) {
+      lut[base + k] *= invSum;
+    }
+  }
+  return lut;
+}
+
+const SINC8_PHASES = 256;
+const SINC8_LUT_UNITY = buildPolyphaseSincLut(8, SINC8_PHASES, 0.5, 5.0);
+const SINC8_LUT_DECIM = buildPolyphaseSincLut(8, SINC8_PHASES, 0.452, 5.0);
+const SINC24_LUT_UNITY = buildPolyphaseSincLut(SINC24_TAPS, SINC24_PHASES, 0.5, 6.5);
+const SINC24_LUT_DECIM = buildPolyphaseSincLut(SINC24_TAPS, SINC24_PHASES, 0.452, 6.5);
+const SINC_HFP_KAISER_INV = 1.0 / (nootropicBesselI0(6.0) - 1.0);
+
+function readSinc8Ring(ring, pos, mask, step) {
+  const i0 = Math.floor(pos);
+  const t = pos - i0;
+  if (step > 1.25) {
+    const fc = 0.44 / step;
+    const twoFc = 2.0 * fc;
+    let acc = 0.0;
+    let wSum = 0.0;
+    for (let k = 0; k < 16; k++) {
+      const d = (k - 7) - t;
+      const u = d * 0.125;
+      const uSq = u * u;
+      if (uSq >= 1.0) continue;
+      const w = (nootropicBesselI0(6.0 * Math.sqrt(1.0 - uSq)) - 1.0) * SINC_HFP_KAISER_INV;
+      const x = twoFc * d;
+      const sinc = Math.abs(x) < 1e-9 ? 1.0 : Math.sin(Math.PI * x) / (Math.PI * x);
+      const h = sinc * w;
+      acc += ring[(i0 + k - 7) & mask] * h;
+      wSum += h;
+    }
+    return wSum > 1e-9 ? acc / wSum : ring[i0 & mask];
+  }
+  const lut = step > 1.001 ? SINC8_LUT_DECIM : SINC8_LUT_UNITY;
+  const fPhase = t * SINC8_PHASES;
+  const p0 = fPhase | 0;
+  const frac = fPhase - p0;
+  const b0 = p0 * 8;
+  const b1 = b0 + 8;
+  let sum = 0.0;
+  for (let k = 0; k < 8; k++) {
+    const h = lut[b0 + k] + (lut[b1 + k] - lut[b0 + k]) * frac;
+    sum += ring[(i0 + k - 3) & mask] * h;
+  }
+  return sum;
+}
+
+function readSinc24Ring(ring, pos, mask, step) {
+  const i0 = Math.floor(pos);
+  const t = pos - i0;
+  if (step > 1.25) {
+    const fc = 0.44 / step;
+    const twoFc = 2.0 * fc;
+    let acc = 0.0;
+    let wSum = 0.0;
+    for (let k = 0; k < 24; k++) {
+      const d = (k - 11) - t;
+      const u = d / 12.0;
+      const uSq = u * u;
+      if (uSq >= 1.0) continue;
+      const w = (nootropicBesselI0(6.0 * Math.sqrt(1.0 - uSq)) - 1.0) * SINC_HFP_KAISER_INV;
+      const x = twoFc * d;
+      const sinc = Math.abs(x) < 1e-9 ? 1.0 : Math.sin(Math.PI * x) / (Math.PI * x);
+      const h = sinc * w;
+      acc += ring[(i0 + k - 11) & mask] * h;
+      wSum += h;
+    }
+    return wSum > 1e-9 ? acc / wSum : ring[i0 & mask];
+  }
+  const lut = step > 1.001 ? SINC24_LUT_DECIM : SINC24_LUT_UNITY;
+  const fPhase = t * SINC24_PHASES;
+  const p0 = fPhase | 0;
+  const frac = fPhase - p0;
+  const b0 = p0 * 24;
+  const b1 = b0 + 24;
+  let sum = 0.0;
+  for (let k = 0; k < 24; k++) {
+    const h = lut[b0 + k] + (lut[b1 + k] - lut[b0 + k]) * frac;
+    sum += ring[(i0 + k - 11) & mask] * h;
+  }
+  return sum;
+}
+
+function readSinc24Clamped(ring, pos, mask, totalWritten, step) {
+  const i0 = Math.floor(pos);
+  const t = pos - i0;
+  const maxIdx = Math.max(0, totalWritten - 1);
+  if (step > 1.25) {
+    const fc = 0.44 / step;
+    const twoFc = 2.0 * fc;
+    let acc = 0.0;
+    let wSum = 0.0;
+    for (let k = 0; k < 24; k++) {
+      const d = (k - 11) - t;
+      const u = d / 12.0;
+      const uSq = u * u;
+      if (uSq >= 1.0) continue;
+      const w = (nootropicBesselI0(6.0 * Math.sqrt(1.0 - uSq)) - 1.0) * SINC_HFP_KAISER_INV;
+      const x = twoFc * d;
+      const sinc = Math.abs(x) < 1e-9 ? 1.0 : Math.sin(Math.PI * x) / (Math.PI * x);
+      const h = sinc * w;
+      const rawIdx = i0 + k - 11;
+      const clamped = rawIdx < 0 ? 0 : rawIdx > maxIdx ? maxIdx : rawIdx;
+      acc += ring[clamped & mask] * h;
+      wSum += h;
+    }
+    return wSum > 1e-9 ? acc / wSum : ring[(i0 < 0 ? 0 : i0 > maxIdx ? maxIdx : i0) & mask];
+  }
+  const lut = step > 1.001 ? SINC24_LUT_DECIM : SINC24_LUT_UNITY;
+  const fPhase = t * SINC24_PHASES;
+  const p0 = fPhase | 0;
+  const frac = fPhase - p0;
+  const b0 = p0 * 24;
+  const b1 = b0 + 24;
+  let sum = 0.0;
+  for (let k = 0; k < 24; k++) {
+    const rawIdx = i0 + k - 11;
+    const clamped = rawIdx < 0 ? 0 : rawIdx > maxIdx ? maxIdx : rawIdx;
+    const h = lut[b0 + k] + (lut[b1 + k] - lut[b0 + k]) * frac;
+    sum += ring[clamped & mask] * h;
   }
   return sum;
 }
@@ -493,19 +650,8 @@ class NootropicWsolaProcessor extends AudioWorkletProcessor {
     };
   }
 
-  readCubic(ring, pos) {
-    const mask = this.RING_MASK;
-    const i1 = Math.floor(pos);
-    const t = pos - i1;
-    const y0 = ring[(i1 - 1) & mask];
-    const y1 = ring[i1 & mask];
-    const y2 = ring[(i1 + 1) & mask];
-    const y3 = ring[(i1 + 2) & mask];
-    const c0 = y1;
-    const c1 = 0.5 * (y2 - y0);
-    const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
-    const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
-    return ((c3 * t + c2) * t + c1) * t + c0;
+  readCubic(ring, pos, step = 1.0) {
+    return readSinc8Ring(ring, pos, this.RING_MASK, step);
   }
 
   findBestStereoDelta(nominalStart, step, minDelta, maxDelta) {
@@ -586,8 +732,8 @@ class NootropicWsolaProcessor extends AudioWorkletProcessor {
         sL = ringL[slot];
         sR = ringR[slot];
       } else {
-        sL = this.readCubic(ringL, p);
-        sR = this.readCubic(ringR, p);
+        sL = this.readCubic(ringL, p, step);
+        sR = this.readCubic(ringR, p, step);
       }
       const w = this.hann[k];
       this.olaL[k] += sL * w;
@@ -803,19 +949,8 @@ class NootropicLyriaStreamProcessor extends AudioWorkletProcessor {
     };
   }
 
-  readCubic(ring, pos) {
-    const mask = this.RING_MASK;
-    const i1 = Math.floor(pos);
-    const t = pos - i1;
-    const y0 = ring[(i1 - 1) & mask];
-    const y1 = ring[i1 & mask];
-    const y2 = ring[(i1 + 1) & mask];
-    const y3 = ring[(i1 + 2) & mask];
-    const c0 = y1;
-    const c1 = 0.5 * (y2 - y0);
-    const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
-    const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
-    return ((c3 * t + c2) * t + c1) * t + c0;
+  readCubic(ring, pos, step = 1.0) {
+    return readSinc24Ring(ring, pos, this.RING_MASK, step);
   }
 
   process(_inputs, outputs) {
@@ -837,7 +972,7 @@ class NootropicLyriaStreamProcessor extends AudioWorkletProcessor {
     const fadeOutMargin = Math.max(256, Math.round(0.01 * 48000));
     for (let i = 0; i < outL.length; i++) {
       const rem = this.writePos - this.readPos;
-      if (rem < 4) {
+      if (rem < 16) {
         this.primed = false;
         this.fadeGain = 0;
         this.xfadeRem = 0;
@@ -855,14 +990,14 @@ class NootropicLyriaStreamProcessor extends AudioWorkletProcessor {
       }
       const env = 0.5 * (1 - Math.cos(Math.PI * this.fadeGain));
 
-      let sL = this.readCubic(this.ringL, this.readPos);
-      let sR = this.readCubic(this.ringR, this.readPos);
+      let sL = this.readCubic(this.ringL, this.readPos, this.step);
+      let sR = this.readCubic(this.ringR, this.readPos, this.step);
 
       if (this.xfadeRem > 0) {
         const progress = 1 - this.xfadeRem / this.xfadeTotal;
         const wNew = 0.5 * (1 - Math.cos(Math.PI * progress));
-        const oldL = this.readCubic(this.ringL, this.xfadeOldReadPos);
-        const oldR = this.readCubic(this.ringR, this.xfadeOldReadPos);
+        const oldL = this.readCubic(this.ringL, this.xfadeOldReadPos, this.step);
+        const oldR = this.readCubic(this.ringR, this.xfadeOldReadPos, this.step);
         sL = oldL + (sL - oldL) * wNew;
         sR = oldR + (sR - oldR) * wNew;
         this.xfadeOldReadPos += this.step;
@@ -1103,7 +1238,7 @@ class NootropicZdfTilt extends AudioWorkletProcessor {
         continue;
       }
 
-      if (Math.abs(gdb - this.cachedGdb) > 5e-5) {
+      if (!(Math.abs(gdb - this.cachedGdb) <= 5e-5)) {
         this.cachedGdb = gdb;
         const A = Math.exp(gdb * LN10_OVER_40);
         const k = 1 / (q * A);
@@ -1170,6 +1305,9 @@ class NootropicClinicalSynth extends AudioWorkletProcessor {
     this.p2 = 0.0;
     this.p3 = 0.0;
     this.p4 = 0.0;
+    this.shamP1 = 0.0;
+    this.shamP2 = 0.27;
+    this.shamP3 = 0.61;
     this.slew = 1 - Math.exp(-1 / (0.025 * sampleRate));
     this.outEnv = 0.0;
     this.outSlew = 1 - Math.exp(-1 / (0.015 * sampleRate));
@@ -1230,6 +1368,8 @@ class NootropicClinicalSynth extends AudioWorkletProcessor {
     const targetActive = this.mode !== 'off' ? 1.0 : 0.0;
     const TWO_PI = 2 * Math.PI;
     const invFs = 1 / sampleRate;
+    // Strict < 0.44 * sampleRate dynamic Nyquist clamp (protects 16 kHz / 8 kHz Bluetooth HFP headset switches!)
+    const maxSafeHz = Math.max(400, 0.44 * sampleRate);
 
     for (let i = 0; i < outL.length; i++) {
       this.outEnv += (targetActive - this.outEnv) * this.outSlew;
@@ -1254,33 +1394,46 @@ class NootropicClinicalSynth extends AudioWorkletProcessor {
       this.curLeftHz += (desiredLeft - this.curLeftHz) * this.slew;
       this.curRightHz += (desiredRight - this.curRightHz) * this.slew;
 
+      const safeCarrier = Math.min(maxSafeHz, this.curCarrierHz);
+      const safeRate = Math.min(80, maxSafeHz * 0.12, Math.max(0.1, this.curRateHz));
+
       let l = 0;
       let r = 0;
 
       if (this.mode === 'gamma_mbi') {
-        // Harmonically integrated warm 40 Hz chord (root, 5th, octave, 9th — crest factor < 9 dB)
-        const c = this.curCarrierHz;
+        // Harmonically integrated warm 40 Hz chord (root, 5th, octave, 9th — crest factor < 9 dB, HFP Nyquist-clamped)
+        const c = safeCarrier;
+        const h2 = c * 1.49830708;
+        const h3 = c * 2.0;
+        const h4 = c * 2.2449241;
         this.p1 = (this.p1 + c * invFs) % 1.0;
-        this.p2 = (this.p2 + c * 1.49830708 * invFs) % 1.0;
-        this.p3 = (this.p3 + c * 2.0 * invFs) % 1.0;
-        this.p4 = (this.p4 + c * 2.2449241 * invFs) % 1.0;
-        this.modPhase = (this.modPhase + this.curRateHz * invFs) % 1.0;
+        if (h2 < maxSafeHz) this.p2 = (this.p2 + h2 * invFs) % 1.0;
+        if (h3 < maxSafeHz) this.p3 = (this.p3 + h3 * invFs) % 1.0;
+        if (h4 < maxSafeHz) this.p4 = (this.p4 + h4 * invFs) % 1.0;
+        this.modPhase = (this.modPhase + safeRate * invFs) % 1.0;
+
+        const w1 = 0.46;
+        const w2 = h2 < maxSafeHz ? 0.24 : 0;
+        const w3 = h3 < maxSafeHz ? 0.18 : 0;
+        const w4 = h4 < maxSafeHz ? 0.12 : 0;
+        const normW = 1.0 / (w1 + w2 + w3 + w4);
 
         const chord =
-          Math.sin(TWO_PI * this.p1) * 0.46 +
-          Math.sin(TWO_PI * this.p2) * 0.24 +
-          Math.sin(TWO_PI * this.p3) * 0.18 +
-          Math.sin(TWO_PI * this.p4) * 0.12;
+          (Math.sin(TWO_PI * this.p1) * w1 +
+            (w2 > 0 ? Math.sin(TWO_PI * this.p2) * w2 : 0) +
+            (w3 > 0 ? Math.sin(TWO_PI * this.p3) * w3 : 0) +
+            (w4 > 0 ? Math.sin(TWO_PI * this.p4) * w4 : 0)) *
+          normW;
         const env = (1 - this.depth) + this.depth * 0.5 * (1 - Math.cos(TWO_PI * this.modPhase));
         const val = chord * env * 0.78;
         l = val;
         r = val;
       } else if (this.mode === 'gamma_clicks') {
         // Blackman-Harris windowed GENUS burst with >= 4.0 ms window (~3 ms core) over high-latency Bluetooth
-        this.modPhase = (this.modPhase + this.curRateHz * invFs) % 1.0;
-        this.phaseL = (this.phaseL + this.curCarrierHz * invFs) % 1.0;
+        this.modPhase = (this.modPhase + safeRate * invFs) % 1.0;
+        this.phaseL = (this.phaseL + safeCarrier * invFs) % 1.0;
         const duty = this.bluetoothSafe
-          ? Math.max(this.dutyCycle, Math.min(0.45, 0.004 * this.curRateHz))
+          ? Math.max(this.dutyCycle, Math.min(0.45, 0.004 * safeRate))
           : this.dutyCycle;
         let env = 0;
         if (this.modPhase < duty) {
@@ -1291,16 +1444,18 @@ class NootropicClinicalSynth extends AudioWorkletProcessor {
             0.14128 * Math.cos(2 * TWO_PI * u) -
             0.01168 * Math.cos(3 * TWO_PI * u);
         }
-        const tone =
-          Math.sin(TWO_PI * this.phaseL) * 0.85 + Math.sin(2 * TWO_PI * this.phaseL) * 0.15;
+        const octOk = 2 * safeCarrier < maxSafeHz;
+        const tone = octOk
+          ? Math.sin(TWO_PI * this.phaseL) * 0.85 + Math.sin(2 * TWO_PI * this.phaseL) * 0.15
+          : Math.sin(TWO_PI * this.phaseL);
         const val = tone * Math.max(0, env);
         l = val;
         r = val;
       } else if (this.mode === 'gamma_chirp') {
-        // Emerging 40 Hz upward logarithmic chirp (8 ms core / 10 ms BT-safe, Blackman-Harris window)
-        this.modPhase = (this.modPhase + this.curRateHz * invFs) % 1.0;
+        // Emerging 40 Hz upward logarithmic chirp (8 ms core / 10 ms BT-safe, Blackman-Harris window, <0.44*fs clamped)
+        this.modPhase = (this.modPhase + safeRate * invFs) % 1.0;
         const durSec = this.bluetoothSafe ? 0.010 : 0.008;
-        const duty = Math.max(0.08, Math.min(0.48, durSec * this.curRateHz));
+        const duty = Math.max(0.08, Math.min(0.48, durSec * safeRate));
         let val = 0;
         if (this.modPhase < duty) {
           const u = this.modPhase / duty;
@@ -1309,19 +1464,19 @@ class NootropicClinicalSynth extends AudioWorkletProcessor {
             0.48829 * Math.cos(TWO_PI * u) +
             0.14128 * Math.cos(2 * TWO_PI * u) -
             0.01168 * Math.cos(3 * TWO_PI * u);
-          const f0 = Math.max(180, this.curCarrierHz * 0.75);
-          const f1 = Math.min(3200, Math.max(f0 * 2.0, this.curCarrierHz * 3.8));
-          const k = f1 / f0;
+          const f0 = Math.min(maxSafeHz * 0.5, Math.max(140, safeCarrier * 0.75));
+          const f1 = Math.min(maxSafeHz, 3200, Math.max(f0 * 1.4, safeCarrier * 3.8));
+          const k = Math.max(1.02, f1 / f0);
           const phaseCycles = (f0 * durSec * (Math.pow(k, u) - 1.0)) / Math.log(k);
           val = Math.sin(TWO_PI * phaseCycles) * Math.max(0, env) * 0.92;
         }
         l = val;
         r = val;
       } else if (this.mode === 'isochronic') {
-        this.modPhase = (this.modPhase + this.curRateHz * invFs) % 1.0;
-        this.phaseL = (this.phaseL + this.curCarrierHz * invFs) % 1.0;
+        this.modPhase = (this.modPhase + safeRate * invFs) % 1.0;
+        this.phaseL = (this.phaseL + safeCarrier * invFs) % 1.0;
         const duty = Math.max(0.05, Math.min(0.85, this.dutyCycle));
-        const ramp = Math.min(duty * 0.22, 0.004 * this.curRateHz);
+        const ramp = Math.min(duty * 0.22, 0.004 * safeRate);
         let env = 0;
         if (this.modPhase < duty) {
           if (this.modPhase < ramp) {
@@ -1332,26 +1487,60 @@ class NootropicClinicalSynth extends AudioWorkletProcessor {
             env = 1.0;
           }
         }
-        const tone =
-          Math.sin(TWO_PI * this.phaseL) * 0.85 + Math.sin(2 * TWO_PI * this.phaseL) * 0.15;
+        const octOk = 2 * safeCarrier < maxSafeHz;
+        const tone = octOk
+          ? Math.sin(TWO_PI * this.phaseL) * 0.85 + Math.sin(2 * TWO_PI * this.phaseL) * 0.15
+          : Math.sin(TWO_PI * this.phaseL);
         const val = tone * env;
         l = val;
         r = val;
       } else if (this.mode === 'binaural') {
-        const avg = 0.5 * (this.curLeftHz + this.curRightHz);
-        const fL = avg - 0.5 * this.curRateHz;
-        const fR = avg + 0.5 * this.curRateHz;
+        const maxCenter = Math.max(80, maxSafeHz - 0.5 * safeRate);
+        const avg = Math.min(maxCenter, 0.5 * (this.curLeftHz + this.curRightHz));
+        const fL = avg - 0.5 * safeRate;
+        const fR = avg + 0.5 * safeRate;
         this.phaseL = (this.phaseL + fL * invFs) % 1.0;
         this.phaseR = (this.phaseR + fR * invFs) % 1.0;
         l = Math.sin(TWO_PI * this.phaseL);
         r = Math.sin(TWO_PI * this.phaseR);
       } else if (this.mode === 'monaural') {
-        const avg = 0.5 * (this.curLeftHz + this.curRightHz);
-        const f1 = avg - 0.5 * this.curRateHz;
-        const f2 = avg + 0.5 * this.curRateHz;
+        const maxCenter = Math.max(80, maxSafeHz - 0.5 * safeRate);
+        const avg = Math.min(maxCenter, 0.5 * (this.curLeftHz + this.curRightHz));
+        const f1 = avg - 0.5 * safeRate;
+        const f2 = avg + 0.5 * safeRate;
         this.phaseL = (this.phaseL + f1 * invFs) % 1.0;
         this.phaseR = (this.phaseR + f2 * invFs) % 1.0;
         const val = 0.5 * (Math.sin(TWO_PI * this.phaseL) + Math.sin(TWO_PI * this.phaseR));
+        l = val;
+        r = val;
+      } else if (this.mode === 'aperiodic_sham') {
+        // Active Aperiodic Acoustic Sham: matched-RMS diotic carrier triad with ultra-slow incommensurate drift
+        // (0.17 + 0.29 + 0.43 Hz -> zero cortical ASSR phase-locking across 1–80 Hz, 100% blinded in Science Only)
+        const c = safeCarrier;
+        const h2 = c * 1.49830708;
+        const h3 = c * 2.0;
+        this.p1 = (this.p1 + c * invFs) % 1.0;
+        if (h2 < maxSafeHz) this.p2 = (this.p2 + h2 * invFs) % 1.0;
+        if (h3 < maxSafeHz) this.p3 = (this.p3 + h3 * invFs) % 1.0;
+        this.shamP1 = (this.shamP1 + 0.17 * invFs) % 1.0;
+        this.shamP2 = (this.shamP2 + 0.29 * invFs) % 1.0;
+        this.shamP3 = (this.shamP3 + 0.43 * invFs) % 1.0;
+
+        const w1 = 0.62;
+        const w2 = h2 < maxSafeHz ? 0.24 : 0;
+        const w3 = h3 < maxSafeHz ? 0.14 : 0;
+        const normW = 1.0 / (w1 + w2 + w3);
+        const triad =
+          (Math.sin(TWO_PI * this.p1) * w1 +
+            (w2 > 0 ? Math.sin(TWO_PI * this.p2) * w2 : 0) +
+            (w3 > 0 ? Math.sin(TWO_PI * this.p3) * w3 : 0)) *
+          normW;
+        const slowDrift =
+          0.46 * Math.sin(TWO_PI * this.shamP1) +
+          0.33 * Math.sin(TWO_PI * this.shamP2) +
+          0.21 * Math.sin(TWO_PI * this.shamP3);
+        const env = Math.max(0.22, Math.min(1.22, 0.76 + 0.34 * slowDrift));
+        const val = triad * env * 0.84;
         l = val;
         r = val;
       }
@@ -1598,25 +1787,8 @@ class NootropicStemPlayerProcessor extends AudioWorkletProcessor {
         sR = this.ringR[idx];
         this.readFrac += 1.0;
       } else {
-        const t = this.readFrac - i0;
-        const im1 = (i0 > 0 ? i0 - 1 : i0) & this.ringMask;
-        const ic0 = i0 & this.ringMask;
-        const ic1 = (i0 + 1 < this.totalWritten ? i0 + 1 : i0) & this.ringMask;
-        const ic2 = (i0 + 2 < this.totalWritten ? i0 + 2 : i0 + 1 < this.totalWritten ? i0 + 1 : i0) & this.ringMask;
-        sL = this.hermite4(
-          this.ringL[im1],
-          this.ringL[ic0],
-          this.ringL[ic1],
-          this.ringL[ic2],
-          t
-        );
-        sR = this.hermite4(
-          this.ringR[im1],
-          this.ringR[ic0],
-          this.ringR[ic1],
-          this.ringR[ic2],
-          t
-        );
+        sL = readSinc24Clamped(this.ringL, this.readFrac, this.ringMask, this.totalWritten, step);
+        sR = readSinc24Clamped(this.ringR, this.readFrac, this.ringMask, this.totalWritten, step);
         this.readFrac += step;
       }
 

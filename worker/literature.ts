@@ -1,4 +1,8 @@
 import { getMicroStateById } from '../shared/neuralStates';
+import {
+  appendPubMedHumanAuditoryGuard,
+  isNonAuditoryOrAnimalStudy,
+} from '../shared/openGoals';
 import type { LivePubMedPaper, SessionEnvironment, TargetState } from '../shared/types';
 import type { D1Database, Env } from './env';
 
@@ -50,7 +54,7 @@ async function fetchPubMed(
   environment: SessionEnvironment,
   queryOverride?: string
 ): Promise<LivePubMedPaper[]> {
-  const query =
+  const rawQuery =
     queryOverride ??
     (() => {
       if (environment === 'driving') {
@@ -67,17 +71,18 @@ async function fetchPubMed(
       }
       return '("amplitude modulation"[Title/Abstract] OR "background music"[Title/Abstract] OR "white noise"[Title/Abstract]) AND ("sustained attention"[Title/Abstract] OR "cognitive performance"[Title/Abstract])';
     })();
+  const query = appendPubMedHumanAuditoryGuard(rawQuery);
 
   const apiKeyParam = env.NCBI_API_KEY ? `&api_key=${encodeURIComponent(env.NCBI_API_KEY)}` : '';
   try {
-    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=2&sort=relevance&term=${encodeURIComponent(query)}${apiKeyParam}`;
+    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=5&sort=relevance&term=${encodeURIComponent(query)}${apiKeyParam}`;
     const searchRes = await fetch(searchUrl, {
       signal: AbortSignal.timeout(2500),
       headers: { 'user-agent': 'nootropic.fm/2.0 (mailto:music@nootropic.fm)' },
     });
     if (!searchRes.ok) return [];
     const searchData = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
-    const ids = (searchData.esearchresult?.idlist ?? []).slice(0, 2);
+    const ids = (searchData.esearchresult?.idlist ?? []).slice(0, 5);
     if (ids.length === 0) return [];
 
     const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(',')}${apiKeyParam}`;
@@ -103,11 +108,12 @@ async function fetchPubMed(
     for (const id of ids) {
       const item = sumData.result?.[id];
       if (!item?.title) continue;
+      const cleanTitle = item.title.replace(/\.$/, '');
+      if (isNonAuditoryOrAnimalStudy(cleanTitle)) continue;
       const firstAuthor = item.authors?.[0]?.name ?? 'Research Team';
       const authorLabel =
         (item.authors?.length ?? 0) > 1 ? `${firstAuthor} et al.` : firstAuthor;
       const yearMatch = (item.pubdate ?? '').match(/\d{4}/);
-      const cleanTitle = item.title.replace(/\.$/, '');
       papers.push({
         pmid: id,
         source: 'pubmed',
@@ -118,6 +124,7 @@ async function fetchPubMed(
         url: `https://pubmed.ncbi.nlm.nih.gov/${id}/`,
         appliedMechanism: inferAppliedMechanism(cleanTitle, targetState, environment),
       });
+      if (papers.length >= 2) break;
     }
     return papers;
   } catch {
@@ -150,7 +157,7 @@ async function fetchOpenAlex(
   const keyParam = env.OPENALEX_API_KEY
     ? `&api_key=${encodeURIComponent(env.OPENALEX_API_KEY)}`
     : '';
-  const url = `https://api.openalex.org/works?filter=${encodeURIComponent(filter)}&select=${select}&sort=cited_by_count:desc&per-page=2&mailto=music@nootropic.fm${keyParam}`;
+  const url = `https://api.openalex.org/works?filter=${encodeURIComponent(filter)}&select=${select}&sort=cited_by_count:desc&per-page=6&mailto=music@nootropic.fm${keyParam}`;
 
   try {
     const res = await fetch(url, {
@@ -172,11 +179,12 @@ async function fetchOpenAlex(
     const papers: LivePubMedPaper[] = [];
     for (const w of data.results ?? []) {
       if (!w.title || !w.doi || !w.doi.startsWith('https://doi.org/')) continue;
+      const cleanTitle = w.title.replace(/\.$/, '');
+      if (isNonAuditoryOrAnimalStudy(cleanTitle)) continue;
       const authors = w.authorships ?? [];
       const first = authors[0]?.author?.display_name ?? 'Research Team';
       const authorLabel = authors.length > 1 ? `${first} et al.` : first;
       const oaId = (w.id ?? w.doi).split('/').pop() ?? w.doi;
-      const cleanTitle = w.title.replace(/\.$/, '');
       papers.push({
         pmid: `OA:${oaId}`,
         source: 'openalex',
@@ -188,6 +196,7 @@ async function fetchOpenAlex(
         doiUrl: w.doi,
         appliedMechanism: inferAppliedMechanism(cleanTitle, targetState, environment),
       });
+      if (papers.length >= 2) break;
     }
     return papers;
   } catch {
@@ -247,8 +256,8 @@ export async function fetchVerifiedLiveLiterature(
   const micro = environment === 'driving' ? undefined : getMicroStateById(microStateId);
   const goalSlugKey = customGoal?.slug || targetState;
   const cacheKey = micro
-    ? `v3:${environment}:${goalSlugKey}:${micro.id}`
-    : `v3:${environment}:${goalSlugKey}`;
+    ? `v4:${environment}:${goalSlugKey}:${micro.id}`
+    : `v4:${environment}:${goalSlugKey}`;
   const mem = memoryLitCache.get(cacheKey);
   if (mem && mem.expiresAt > Date.now()) {
     return mem.papers;

@@ -91,6 +91,7 @@ function getProfileTokenHeader(): Record<string, string> {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'same-origin',
     ...init,
     headers: {
       'content-type': 'application/json',

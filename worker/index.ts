@@ -10,6 +10,7 @@ import {
 import {
   PROTOCOL_ARMS,
   buildCohortKey,
+  buildFactorizedMarginalScopes,
   computeImplicitReward,
   computeSessionReward,
   formatCohortLabel,
@@ -80,21 +81,70 @@ const ALLOWED_ORIGINS = new Set([
   'http://127.0.0.1:5173',
 ]);
 
-function corsHeaders(request?: Request): Record<string, string> {
-  const origin = request?.headers.get('origin') ?? '';
-  const allowOrigin =
+function isTrustedOrigin(origin: string): boolean {
+  if (!origin) return false;
+  return (
     ALLOWED_ORIGINS.has(origin) ||
     origin.endsWith('.workers.dev') ||
     origin.endsWith('.web.app') ||
     origin.endsWith('.firebaseapp.com') ||
     origin.endsWith('.vercel.app')
-      ? origin
-      : '*';
+  );
+}
+
+function corsHeaders(request?: Request): Record<string, string> {
+  const origin = request?.headers.get('origin') ?? '';
+  const trusted = isTrustedOrigin(origin);
   return {
-    'access-control-allow-origin': allowOrigin,
+    'access-control-allow-origin': trusted ? origin : '*',
     'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
     'access-control-allow-headers': 'content-type, x-admin-key, x-profile-token, authorization',
+    ...(trusted ? { 'access-control-allow-credentials': 'true', vary: 'Origin' } : {}),
   };
+}
+
+const API_SECURITY_HEADERS: Record<string, string> = {
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+};
+
+const AUTH_COOKIE_NAME = 'nfm_auth';
+
+function extractProfileTokenFromRequest(request: Request): string {
+  const headerTok = request.headers.get('x-profile-token')?.trim() ?? '';
+  if (headerTok) return headerTok;
+  const cookieHeader = request.headers.get('cookie') ?? '';
+  if (!cookieHeader) return '';
+  for (const part of cookieHeader.split(';')) {
+    const eqIdx = part.indexOf('=');
+    if (eqIdx <= 0) continue;
+    const k = part.slice(0, eqIdx).trim();
+    if (k === AUTH_COOKIE_NAME) {
+      try {
+        return decodeURIComponent(part.slice(eqIdx + 1).trim());
+      } catch {
+        return part.slice(eqIdx + 1).trim();
+      }
+    }
+  }
+  return '';
+}
+
+function buildAuthSetCookieHeader(request: Request, token: string | null): string {
+  const isHttps = (() => {
+    try {
+      return new URL(request.url).protocol === 'https:';
+    } catch {
+      return true;
+    }
+  })();
+  const secureFlag = isHttps ? '; Secure' : '';
+  if (!token) {
+    return `${AUTH_COOKIE_NAME}=; Path=/api; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag}`;
+  }
+  return `${AUTH_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/api; Max-Age=7776000; HttpOnly; SameSite=Lax${secureFlag}`;
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
@@ -127,29 +177,58 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
     .join('');
 }
 
-async function signRealtimeTicket(secret: string, ttlMs = 120_000): Promise<{ ticket: string; expiresAt: string }> {
+async function computeRealtimeActorKey(request: Request): Promise<string> {
+  const ip = request.headers.get('cf-connecting-ip') ?? 'local';
+  return (await sha256Hex(`nootropic-fm:ws-actor:${ip}`)).slice(0, 24);
+}
+
+async function signRealtimeTicket(
+  secret: string,
+  actorKey: string,
+  isPro: boolean,
+  ttlMs = 120_000
+): Promise<{ ticket: string; expiresAt: string }> {
   const expMs = Date.now() + ttlMs;
-  const nonceBytes = new Uint8Array(10);
+  const nonceBytes = new Uint8Array(12);
   crypto.getRandomValues(nonceBytes);
   const nonce = Array.from(nonceBytes)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-  const payload = `${expMs}.${nonce}`;
-  const sig = await hmacSha256Hex(secret, `lyria-rt:${payload}`);
+  const proFlag = isPro ? '1' : '0';
+  const payload = `${expMs}.${nonce}.${proFlag}`;
+  const sig = await hmacSha256Hex(secret, `lyria-rt:v2:${payload}.${actorKey}`);
   return {
     ticket: `${payload}.${sig}`,
     expiresAt: new Date(expMs).toISOString(),
   };
 }
 
-async function verifyRealtimeTicket(secret: string, ticket: string): Promise<boolean> {
+async function verifyRealtimeTicket(
+  secret: string,
+  ticket: string,
+  actorKey: string
+): Promise<{ valid: boolean; nonce: string; expMs: number; isPro: boolean }> {
   const parts = ticket.split('.');
-  if (parts.length !== 3) return false;
-  const [expStr, nonce, sig] = parts;
+  if (parts.length !== 4) {
+    return { valid: false, nonce: '', expMs: 0, isPro: false };
+  }
+  const [expStr, nonce, proFlag, sig] = parts;
   const expMs = Number(expStr);
-  if (!Number.isFinite(expMs) || expMs < Date.now() || !nonce || !sig) return false;
-  const expected = await hmacSha256Hex(secret, `lyria-rt:${expStr}.${nonce}`);
-  return constantTimeEqual(sig, expected);
+  if (
+    !Number.isFinite(expMs) ||
+    expMs < Date.now() ||
+    !nonce ||
+    nonce.length < 16 ||
+    (proFlag !== '0' && proFlag !== '1') ||
+    !sig
+  ) {
+    return { valid: false, nonce: '', expMs: 0, isPro: false };
+  }
+  const expected = await hmacSha256Hex(secret, `lyria-rt:v2:${expStr}.${nonce}.${proFlag}.${actorKey}`);
+  if (!constantTimeEqual(sig, expected)) {
+    return { valid: false, nonce: '', expMs: 0, isPro: false };
+  }
+  return { valid: true, nonce, expMs, isPro: proFlag === '1' };
 }
 
 interface CfWebSocket {
@@ -250,38 +329,43 @@ async function checkDailyRateLimit(
   action: string,
   maxPerDay: number
 ): Promise<boolean> {
+  if (maxPerDay <= 0) return false;
   const ip = request.headers.get('cf-connecting-ip') ?? 'local';
   const day = new Date().toISOString().slice(0, 10);
   const hashHex = (await sha256Hex(`nootropic-fm:${day}:${action}:${ip}`)).slice(0, 24);
   const bucketKey = `${day}:${action}:${hashHex}`;
 
-  const existing = await db
-    .prepare('SELECT hits FROM rate_limits WHERE bucket_key = ?')
-    .bind(bucketKey)
+  // Single atomic SQLite upsert + conditional increment: eliminates TOCTOU race & halves D1 round-trips
+  const row = await db
+    .prepare(
+      `INSERT INTO rate_limits (bucket_key, hits, updated_at)
+       VALUES (?, 1, ?)
+       ON CONFLICT(bucket_key) DO UPDATE SET
+         hits = rate_limits.hits + 1,
+         updated_at = excluded.updated_at
+       WHERE rate_limits.hits < ?
+       RETURNING hits`
+    )
+    .bind(bucketKey, new Date().toISOString(), maxPerDay)
     .first<{ hits: number }>();
 
-  if ((existing?.hits ?? 0) >= maxPerDay) {
-    return false;
-  }
-
-  await db
-    .prepare(
-      `INSERT INTO rate_limits (bucket_key, hits, updated_at) VALUES (?, 1, ?)
-       ON CONFLICT(bucket_key) DO UPDATE SET hits = hits + 1, updated_at = excluded.updated_at`
-    )
-    .bind(bucketKey, new Date().toISOString())
-    .run();
-
-  return true;
+  return Boolean(row && row.hits <= maxPerDay);
 }
 
-function json(data: unknown, status = 200, request?: Request): Response {
+function json(
+  data: unknown,
+  status = 200,
+  request?: Request,
+  extraHeaders?: Record<string, string>
+): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
+      ...API_SECURITY_HEADERS,
       ...corsHeaders(request),
+      ...(extraHeaders ?? {}),
     },
   });
 }
@@ -466,7 +550,28 @@ type BanditScopeType =
   | 'profile_state'
   | 'cohort_genre'
   | 'profile_genre'
-  | 'cohort_arm_genre';
+  | 'cohort_arm_genre'
+  | 'marginal_goal_state'
+  | 'marginal_goal_env'
+  | 'marginal_goal_role';
+
+function extractMarginalScopesFromSession(session: {
+  cohortKey: string;
+  targetState: TargetState;
+  currentState: CurrentState;
+  environment: SessionEnvironment;
+}): Array<{ scopeType: BanditScopeType; scopeId: string }> {
+  const parts = session.cohortKey.split('|');
+  const role = parts.length >= 5 ? (parts[1] as UserProfile['role']) : undefined;
+  const goalSlug = parts.length >= 5 ? parts[3] : parts[2] || session.targetState;
+  return buildFactorizedMarginalScopes({
+    targetState: session.targetState,
+    customGoalSlug: goalSlug !== session.targetState ? goalSlug : undefined,
+    currentState: session.currentState,
+    environment: session.environment,
+    role,
+  });
+}
 
 async function fetchBanditRows(
   db: D1Database,
@@ -886,7 +991,7 @@ async function verifyProfileAccess(
   if (!row) return { ok: false, row: null };
 
   const storedHash = row.token_hash ? String(row.token_hash) : '';
-  const providedToken = request.headers.get('x-profile-token')?.trim() ?? '';
+  const providedToken = extractProfileTokenFromRequest(request);
 
   if (!storedHash) {
     // Seamless 1-time token issuance for existing v1 profiles created before migration 0004
@@ -1196,9 +1301,9 @@ export default {
           );
         }
 
-        // Pro members get 60 daily live-AI token refreshes (full 60-min multi-session infinite streaming)
+        // Pro members get 240 daily live-AI token refreshes (full multi-session infinite streaming)
         let isProCaller = false;
-        const providedToken = request.headers.get('x-profile-token')?.trim() ?? '';
+        const providedToken = extractProfileTokenFromRequest(request);
         if (providedToken) {
           const tokenHash = await sha256Hex(providedToken);
           const proRow = await env.DB.prepare(
@@ -1235,7 +1340,8 @@ export default {
           );
         }
 
-        const { ticket, expiresAt } = await signRealtimeTicket(apiKey, 120_000);
+        const actorKey = await computeRealtimeActorKey(request);
+        const { ticket, expiresAt } = await signRealtimeTicket(apiKey, actorKey, isProCaller, 120_000);
         return json(
           {
             available: true,
@@ -1320,7 +1426,7 @@ export default {
       }
 
       // GET /api/music/realtime-ws — Secure Cloudflare Workers WebSocket Proxy to Google Lyria RealTime (BidiGenerateMusic)
-      // Keeps GEMINI_MUSIC_API_KEY 100% server-side; browser authenticates only with a 2-minute HMAC ticket.
+      // Enforces: Origin check + IP-bound HMAC + Atomic Single-Use Nonce (`jti`) + Active Socket Cap (<=2) + Hard Duration Ceiling!
       if (url.pathname === '/api/music/realtime-ws' && request.method === 'GET') {
         const apiKey = env.GEMINI_MUSIC_API_KEY?.trim();
         if (!apiKey) {
@@ -1329,11 +1435,70 @@ export default {
         if ((request.headers.get('Upgrade') ?? '').toLowerCase() !== 'websocket') {
           return new Response('Expected WebSocket Upgrade', { status: 426 });
         }
+        const wsOrigin = request.headers.get('origin') ?? '';
+        if (wsOrigin && !isTrustedOrigin(wsOrigin)) {
+          return new Response('Untrusted WebSocket origin', { status: 403 });
+        }
+
+        const actorKey = await computeRealtimeActorKey(request);
         const ticket = url.searchParams.get('ticket') ?? '';
-        const valid = await verifyRealtimeTicket(apiKey, ticket);
-        if (!valid) {
+        const verified = await verifyRealtimeTicket(apiKey, ticket, actorKey);
+        if (!verified.valid) {
           return new Response('Invalid or expired realtime ticket', { status: 401 });
         }
+
+        const nowMs = Date.now();
+        // 1. Atomic Single-Use Nonce (`jti`) Consumption in D1 — blocks 100% of replay attacks!
+        const claimedNonce = await env.DB.prepare(
+          `INSERT INTO used_ws_nonces (nonce, actor_key, expires_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(nonce) DO NOTHING
+           RETURNING nonce`
+        )
+          .bind(verified.nonce, actorKey, verified.expMs + 60_000)
+          .first<{ nonce: string }>();
+
+        if (!claimedNonce) {
+          return new Response('Realtime ticket already consumed', { status: 401 });
+        }
+
+        // Opportunistic expired nonce & lease garbage collection
+        ctx.waitUntil(
+          env.DB.batch([
+            env.DB.prepare('DELETE FROM used_ws_nonces WHERE expires_at < ?').bind(nowMs),
+            env.DB.prepare('DELETE FROM active_ws_leases WHERE expires_at < ?').bind(nowMs),
+          ]).catch(() => {})
+        );
+
+        // 2. Atomic Concurrent Active Socket Cap per actor (<= 2 allows smooth reconnect overlap while blocking parallel socket floods)
+        const MAX_CONCURRENT_SOCKETS = 2;
+        const maxSessionMs = verified.isPro ? 11 * 60 * 1000 : 110 * 1000;
+        const leaseId = crypto.randomUUID();
+        const claimedLease = await env.DB.prepare(
+          `INSERT INTO active_ws_leases (lease_id, actor_key, expires_at)
+           SELECT ?, ?, ?
+           WHERE (SELECT COUNT(*) FROM active_ws_leases WHERE actor_key = ? AND expires_at > ?) < ?
+           RETURNING lease_id`
+        )
+          .bind(leaseId, actorKey, nowMs + maxSessionMs, actorKey, nowMs, MAX_CONCURRENT_SOCKETS)
+          .first<{ lease_id: string }>();
+        if (!claimedLease) {
+          return new Response('Concurrent realtime stream limit reached', { status: 429 });
+        }
+
+        const releaseLeaseOnce = (() => {
+          let released = false;
+          return () => {
+            if (released) return;
+            released = true;
+            ctx.waitUntil(
+              env.DB.prepare('DELETE FROM active_ws_leases WHERE lease_id = ?')
+                .bind(leaseId)
+                .run()
+                .catch(() => {})
+            );
+          };
+        })();
 
         const upstreamUrl = `https://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateMusic?key=${encodeURIComponent(apiKey)}`;
         const upstreamResp = (await fetch(upstreamUrl, {
@@ -1342,6 +1507,7 @@ export default {
 
         const upstream = upstreamResp.webSocket;
         if (!upstream) {
+          releaseLeaseOnce();
           return new Response('Unable to connect to Google Lyria RealTime upstream', { status: 502 });
         }
         upstream.accept();
@@ -1354,12 +1520,34 @@ export default {
         const server = pair[1];
         server.accept();
 
-        const forwardWsFrame = async (target: CfWebSocket, data: unknown, asText = false) => {
+        const maxDurationTimer = setTimeout(() => {
+          releaseLeaseOnce();
+          try {
+            upstream.close(1000, 'Session stream window complete');
+          } catch {}
+          try {
+            server.close(1000, 'Session stream window complete');
+          } catch {}
+        }, maxSessionMs);
+
+        const cleanupSocketSession = () => {
+          clearTimeout(maxDurationTimer);
+          releaseLeaseOnce();
+        };
+
+        const MAX_CLIENT_FRAME_BYTES = 16_384;
+        const forwardWsFrame = async (target: CfWebSocket, data: unknown, asText = false, enforceCap = false) => {
           if (typeof data === 'string') {
+            if (enforceCap && data.length > MAX_CLIENT_FRAME_BYTES) {
+              throw new Error('Frame too large');
+            }
             target.send(data);
             return;
           }
           if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+            if (enforceCap && data.byteLength > MAX_CLIENT_FRAME_BYTES) {
+              throw new Error('Frame too large');
+            }
             if (asText) {
               target.send(new TextDecoder().decode(data as BufferSource));
             } else {
@@ -1368,34 +1556,45 @@ export default {
             return;
           }
           if (data && typeof (data as { text?: () => Promise<string> }).text === 'function') {
+            const blob = data as Blob;
+            if (enforceCap && blob.size > MAX_CLIENT_FRAME_BYTES) {
+              throw new Error('Frame too large');
+            }
             if (asText) {
-              target.send(await (data as Blob).text());
+              target.send(await blob.text());
             } else {
-              target.send(await (data as Blob).arrayBuffer());
+              target.send(await blob.arrayBuffer());
             }
           }
         };
 
         server.addEventListener('message', (evt) => {
-          void forwardWsFrame(upstream, evt.data, false).catch(() => {
-            try { server.close(1011, 'Upstream send failed'); } catch {}
+          void forwardWsFrame(upstream, evt.data, false, true).catch(() => {
+            cleanupSocketSession();
+            try { upstream.close(1009, 'Invalid client frame'); } catch {}
+            try { server.close(1009, 'Invalid client frame'); } catch {}
           });
         });
         upstream.addEventListener('message', (evt) => {
-          void forwardWsFrame(server, evt.data, true).catch(() => {
+          void forwardWsFrame(server, evt.data, true, false).catch(() => {
+            cleanupSocketSession();
             try { upstream.close(1011, 'Client send failed'); } catch {}
           });
         });
         server.addEventListener('close', (evt) => {
+          cleanupSocketSession();
           try { upstream.close(evt.code || 1000, evt.reason || ''); } catch {}
         });
         upstream.addEventListener('close', (evt) => {
+          cleanupSocketSession();
           try { server.close(evt.code || 1000, evt.reason || ''); } catch {}
         });
         server.addEventListener('error', () => {
+          cleanupSocketSession();
           try { upstream.close(1011, 'Client socket error'); } catch {}
         });
         upstream.addEventListener('error', () => {
+          cleanupSocketSession();
           try { server.close(1011, 'Upstream socket error'); } catch {}
         });
 
@@ -1548,7 +1747,7 @@ export default {
             .bind(id)
             .first<{ token_hash?: string; sync_code_hash?: string }>();
           if (existing?.token_hash) {
-            const provided = request.headers.get('x-profile-token')?.trim() ?? '';
+            const provided = extractProfileTokenFromRequest(request);
             const providedHash = provided ? await sha256Hex(provided) : '';
             if (!provided || !tokenHashMatches(providedHash, existing.token_hash)) {
               // Do not overwrite another user's profile; allocate a clean profile instead
@@ -1654,7 +1853,8 @@ export default {
             ...(syncCode ? { syncCode } : {}),
           },
           200,
-          request
+          request,
+          profileToken ? { 'set-cookie': buildAuthSetCookieHeader(request, profileToken) } : undefined
         );
       }
 
@@ -1724,7 +1924,8 @@ export default {
             pendingDebrief: pendingRow ? mapSessionRow(pendingRow) : null,
           },
           200,
-          request
+          request,
+          { 'set-cookie': buildAuthSetCookieHeader(request, freshToken) }
         );
       }
 
@@ -1767,7 +1968,10 @@ export default {
             ...(issuedSyncCode ? { syncCode: issuedSyncCode } : {}),
           },
           200,
-          request
+          request,
+          auth.issuedLegacyToken
+            ? { 'set-cookie': buildAuthSetCookieHeader(request, auth.issuedLegacyToken) }
+            : undefined
         );
       }
 
@@ -1789,7 +1993,12 @@ export default {
           env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id),
         ]);
 
-        return json({ ok: true, deletedProfileId: id }, 200, request);
+        return json(
+          { ok: true, deletedProfileId: id },
+          200,
+          request,
+          { 'set-cookie': buildAuthSetCookieHeader(request, null) }
+        );
       }
 
       // POST /api/parse
@@ -1944,6 +2153,137 @@ export default {
         }
         const validCustom = sanitizedCustom && !sanitizedCustom.rejectedReason ? sanitizedCustom : null;
 
+        // Sweep stale (>2h) silent-abandoned sessions (<25% completion without debrief/pagehide)
+        // so survivorship bias cannot inflate protocols that users silently closed on mobile.
+        if (!isEphemeral && profile.researchConsent) {
+          const twoHoursAgoIso = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+          const staleRows = await env.DB.prepare(
+            `SELECT id, cohort_key, current_state, target_state, environment, arm_id, music_genre,
+                    is_control_trial, planned_duration_min, actual_duration_sec, completion_ratio
+             FROM sessions
+             WHERE profile_id = ?
+               AND status IN ('active', 'pending_debrief')
+               AND COALESCE(implicit_applied_weight, 0) = 0
+               AND actual_duration_sec >= 10
+               AND created_at < ?
+             ORDER BY created_at DESC
+             LIMIT 2`
+          )
+            .bind(profile.id, twoHoursAgoIso)
+            .all<Record<string, unknown>>()
+            .catch(() => ({ results: [] as Record<string, unknown>[] }));
+
+          for (const st of staleRows.results ?? []) {
+            const stActualSec = Number(st.actual_duration_sec ?? 0);
+            const stPlannedSec = Math.max(300, Number(st.planned_duration_min ?? 25) * 60);
+            const stComp = Number(
+              Math.min(1, Number(st.completion_ratio ?? stActualSec / stPlannedSec)).toFixed(3)
+            );
+            const stEarlyAbort = stActualSec < 90 || (stComp < 0.25 && stActualSec < 600);
+            const stComputed = computeImplicitReward({
+              actualDurationSec: stActualSec,
+              completionRatio: stComp,
+              isEarlyBounce: stEarlyAbort,
+              instantGenreSwapped: false,
+            });
+            const stWeight = 0.45;
+            const stGenre = String(st.music_genre || 'deep_electronic');
+            const stCohort = String(st.cohort_key);
+            const stArm = String(st.arm_id);
+            const stControl = Number(st.is_control_trial ?? 0) === 1;
+            const stMarginals = extractMarginalScopesFromSession({
+              cohortKey: stCohort,
+              targetState: String(st.target_state) as TargetState,
+              currentState: String(st.current_state) as CurrentState,
+              environment: String(st.environment) as SessionEnvironment,
+            });
+
+            const sweepUpdates: Array<Promise<unknown>> = [
+              updateBanditScope(env.DB, {
+                scopeType: 'cohort_genre',
+                scopeId: stCohort,
+                armId: stGenre,
+                mode: 'implicit',
+                reward: stComputed.reward,
+                weight: stWeight,
+                completionRatio: stComp,
+              }),
+              updateBanditScope(env.DB, {
+                scopeType: 'profile_genre',
+                scopeId: profile.id,
+                armId: stGenre,
+                mode: 'implicit',
+                reward: stComputed.reward,
+                weight: stWeight,
+                completionRatio: stComp,
+              }),
+            ];
+            if (!stControl) {
+              sweepUpdates.push(
+                updateBanditScope(env.DB, {
+                  scopeType: 'cohort',
+                  scopeId: stCohort,
+                  armId: stArm,
+                  mode: 'implicit',
+                  reward: stComputed.reward,
+                  weight: stWeight,
+                  completionRatio: stComp,
+                }),
+                updateBanditScope(env.DB, {
+                  scopeType: 'profile',
+                  scopeId: profile.id,
+                  armId: stArm,
+                  mode: 'implicit',
+                  reward: stComputed.reward,
+                  weight: stWeight,
+                  completionRatio: stComp,
+                }),
+                updateBanditScope(env.DB, {
+                  scopeType: 'cohort_arm_genre',
+                  scopeId: `${stCohort}|${stGenre}`,
+                  armId: stArm,
+                  mode: 'implicit',
+                  reward: stComputed.reward,
+                  weight: stWeight,
+                  completionRatio: stComp,
+                }),
+                ...stMarginals.map((m) =>
+                  updateBanditScope(env.DB, {
+                    scopeType: m.scopeType,
+                    scopeId: m.scopeId,
+                    armId: stArm,
+                    mode: 'implicit',
+                    reward: stComputed.reward,
+                    weight: stWeight,
+                    completionRatio: stComp,
+                  })
+                )
+              );
+            }
+            await Promise.all([
+              ...sweepUpdates,
+              env.DB.prepare(
+                `UPDATE sessions
+                 SET implicit_reward_score = ?,
+                     implicit_applied_weight = ?,
+                     retention_outcome = ?,
+                     status = CASE WHEN status = 'active' THEN 'abandoned' ELSE status END
+                 WHERE id = ?`
+              )
+                .bind(stComputed.reward, stWeight, stComputed.outcome, String(st.id))
+                .run(),
+            ]).catch(() => {});
+          }
+        }
+
+        const marginalScopes = buildFactorizedMarginalScopes({
+          targetState: effectiveTarget,
+          customGoalSlug: effectiveGoalSlug,
+          currentState: body.currentState,
+          environment: body.environment,
+          role: profile.role,
+        });
+
         // Check daily cap & R2 custom track cache
         const today = new Date().toISOString().slice(0, 10);
         const provider = resolveMusicProvider(env);
@@ -1952,6 +2292,7 @@ export default {
         const [
           exactCohortStats,
           broadCohortStats,
+          marginalStats,
           profileStats,
           profileStateStats,
           cohortGenreStats,
@@ -1965,6 +2306,9 @@ export default {
         ] = await Promise.all([
           fetchBanditRows(env.DB, 'cohort', cohortKey),
           fetchBanditRows(env.DB, 'cohort', legacyBroadCohortKey),
+          Promise.all(
+            marginalScopes.map((m) => fetchBanditRows(env.DB, m.scopeType, m.scopeId))
+          ),
           isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile', profile.id),
           isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile_state', profileStateKey),
           fetchBanditRows(env.DB, 'cohort_genre', cohortKey),
@@ -2146,6 +2490,7 @@ export default {
             liveGenAvailable,
             ephemeralMode: isEphemeral,
             cohortStats,
+            marginalStats,
             profileStats: mergedProfileStats,
             cohortGenreStats,
             profileGenreStats,
@@ -2692,7 +3037,9 @@ export default {
         let retentionOutcome = session.retentionOutcome ?? null;
 
         if (shouldEvaluateImplicit) {
-          const isEarlyBounce = event === 'pagehide' && actualSec < 90;
+          const isEarlyBounce =
+            event === 'pagehide' &&
+            (actualSec < 90 || (completionRatio < 0.25 && actualSec < 600));
           const computed = computeImplicitReward({
             actualDurationSec: actualSec,
             completionRatio,
@@ -2729,6 +3076,7 @@ export default {
           ];
 
           if (!session.isControlTrial) {
+            const marginalScopes = extractMarginalScopesFromSession(session);
             updates.push(
               updateBanditScope(env.DB, {
                 scopeType: 'cohort',
@@ -2762,7 +3110,20 @@ export default {
                 completionRatio,
                 supersedePrevReward: implicitReward ?? 0,
                 supersedePrevWeight: implicitWeight,
-              })
+              }),
+              ...marginalScopes.map((m) =>
+                updateBanditScope(env.DB, {
+                  scopeType: m.scopeType,
+                  scopeId: m.scopeId,
+                  armId: session.armId,
+                  mode: 'implicit',
+                  reward: computed.reward,
+                  weight: targetWeight,
+                  completionRatio,
+                  supersedePrevReward: implicitReward ?? 0,
+                  supersedePrevWeight: implicitWeight,
+                })
+              )
             );
           }
 
@@ -2953,7 +3314,12 @@ export default {
           )
           .run();
 
-        return json({ profile, profileToken, syncCode, sessionId }, 200, request);
+        return json(
+          { profile, profileToken, syncCode, sessionId },
+          200,
+          request,
+          { 'set-cookie': buildAuthSetCookieHeader(request, profileToken) }
+        );
       }
 
       // POST /api/session/pvt — Saves objective visual 1/RT Psychomotor Vigilance Task metrics
@@ -3387,6 +3753,7 @@ export default {
         }
 
         if (!session.isControlTrial) {
+          const marginalScopes = extractMarginalScopesFromSession(session);
           const [cUp, pUp, , , pGenreUp] = await Promise.all([
             updateBanditScope(env.DB, {
               scopeType: 'cohort',
@@ -3460,6 +3827,20 @@ export default {
               supersedePrevReward: prevImplicitReward,
               supersedePrevWeight: prevImplicitWeight,
             }),
+            ...marginalScopes.map((m) =>
+              updateBanditScope(env.DB, {
+                scopeType: m.scopeType,
+                scopeId: m.scopeId,
+                armId: session.armId,
+                mode: 'explicit',
+                reward: protocolReward,
+                weight: learningWeight,
+                delta,
+                completionRatio,
+                supersedePrevReward: prevImplicitReward,
+                supersedePrevWeight: prevImplicitWeight,
+              })
+            ),
           ]);
           cohortUpdated = cUp;
           profileUpdated = pUp;
@@ -4209,7 +4590,10 @@ export default {
             ...(createdAuth ?? {}),
           },
           200,
-          request
+          request,
+          createdAuth?.profileToken
+            ? { 'set-cookie': buildAuthSetCookieHeader(request, createdAuth.profileToken) }
+            : undefined
         );
       }
 
@@ -4321,117 +4705,144 @@ export default {
         const eventType = String(evt.type ?? '');
         const obj = evt.data?.object ?? {};
 
+        const now = new Date().toISOString();
         if (eventId) {
-          const seen = await env.DB.prepare('SELECT id FROM billing_events WHERE id = ?')
-            .bind(eventId)
-            .first();
-          if (seen) {
+          // Atomic single-statement webhook idempotency claim BEFORE mutating profile entitlements (P2 #11)
+          const claimed = await env.DB.prepare(
+            `INSERT INTO processed_webhooks (event_id, event_type, received_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(event_id) DO NOTHING
+             RETURNING event_id`
+          )
+            .bind(eventId, eventType || 'unknown', now)
+            .first<{ event_id: string }>();
+          if (!claimed) {
             return json({ received: true, duplicate: true }, 200, request);
           }
-        }
 
-        const now = new Date().toISOString();
-        const meta = (obj.metadata as Record<string, string> | undefined) ?? {};
-        let profileId = meta.profile_id || (obj.client_reference_id ? String(obj.client_reference_id) : '');
-        const customerId = obj.customer ? String(obj.customer) : null;
-        const subId =
-          eventType.startsWith('customer.subscription.')
-            ? (obj.id ? String(obj.id) : null)
-            : (obj.subscription ? String(obj.subscription) : null);
-
-        if (!profileId && (customerId || subId)) {
-          const found = await env.DB.prepare(
-            `SELECT id FROM profiles WHERE stripe_customer_id = ? OR stripe_subscription_id = ? LIMIT 1`
-          )
-            .bind(customerId ?? '__none__', subId ?? '__none__')
-            .first<{ id?: string }>();
-          if (found?.id) profileId = found.id;
-        }
-
-        if (profileId) {
-          if (eventType === 'checkout.session.completed') {
-            const email =
-              (obj.customer_details as { email?: string } | undefined)?.email ||
-              (obj.customer_email ? String(obj.customer_email) : null);
-            const isZeroUpfrontTrial = Number(obj.amount_total ?? 1) === 0;
-            const fallbackDays = isZeroUpfrontTrial
-              ? 8
-              : meta.plan === 'annual'
-                ? 370
-                : 35;
-            const fallbackUntil = new Date(
-              Date.now() + fallbackDays * 24 * 60 * 60 * 1000
-            ).toISOString();
-            await env.DB.prepare(
-              `UPDATE profiles
-               SET plan_tier = 'pro',
-                   pro_until = COALESCE(pro_until, ?),
-                   stripe_customer_id = COALESCE(?, stripe_customer_id),
-                   stripe_subscription_id = COALESCE(?, stripe_subscription_id),
-                   billing_email = COALESCE(?, billing_email),
-                   updated_at = ?
-               WHERE id = ?`
-            )
-              .bind(fallbackUntil, customerId, subId, email, now, profileId)
-              .run();
-          } else if (
-            eventType === 'customer.subscription.created' ||
-            eventType === 'customer.subscription.updated'
-          ) {
-            const status = String(obj.status ?? '');
-            const active = status === 'active' || status === 'trialing';
-            const subItems = (
-              obj.items as { data?: Array<{ current_period_end?: number }> } | undefined
-            )?.data;
-            const periodEnd = Number(
-              obj.current_period_end ?? subItems?.[0]?.current_period_end ?? 0
+          // Probabilistic GC of >90-day old processed webhook keys
+          if (Math.random() < 0.02) {
+            const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+            ctx.waitUntil(
+              env.DB.prepare('DELETE FROM processed_webhooks WHERE received_at < ?')
+                .bind(ninetyDaysAgo)
+                .run()
+                .catch(() => {})
             );
-            const proUntil =
-              periodEnd > 0 ? new Date(periodEnd * 1000).toISOString() : null;
-            await env.DB.prepare(
-              `UPDATE profiles
-               SET plan_tier = ?,
-                   pro_until = COALESCE(?, pro_until),
-                   stripe_customer_id = COALESCE(?, stripe_customer_id),
-                   stripe_subscription_id = COALESCE(?, stripe_subscription_id),
-                   updated_at = ?
-               WHERE id = ?`
-            )
-              .bind(active ? 'pro' : 'free', proUntil, customerId, subId, now, profileId)
-              .run();
-          } else if (eventType === 'customer.subscription.deleted') {
-            await env.DB.prepare(
-              `UPDATE profiles SET plan_tier = 'free', updated_at = ? WHERE id = ?`
-            )
-              .bind(now, profileId)
-              .run();
-          } else if (eventType === 'invoice.paid') {
-            const lines = (obj.lines as { data?: Array<{ period?: { end?: number } }> } | undefined)?.data;
-            const periodEnd = Number(lines?.[0]?.period?.end ?? 0);
-            const proUntil =
-              periodEnd > 0
-                ? new Date(periodEnd * 1000).toISOString()
-                : new Date(Date.now() + 35 * 24 * 60 * 60 * 1000).toISOString();
-            await env.DB.prepare(
-              `UPDATE profiles
-               SET plan_tier = 'pro', pro_until = ?, updated_at = ?
-               WHERE id = ?`
-            )
-              .bind(proUntil, now, profileId)
-              .run();
           }
         }
 
-        if (eventId) {
-          const amountCents = Number(obj.amount_paid ?? obj.amount_total ?? 0);
-          const currency = String(obj.currency ?? 'usd');
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO billing_events (id, event_type, profile_id, stripe_customer_id, stripe_subscription_id, amount_cents, currency, status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 'processed', ?)`
-          )
-            .bind(eventId, eventType, profileId || null, customerId, subId, amountCents, currency, now)
-            .run()
-            .catch(() => {});
+        try {
+          const meta = (obj.metadata as Record<string, string> | undefined) ?? {};
+          let profileId = meta.profile_id || (obj.client_reference_id ? String(obj.client_reference_id) : '');
+          const customerId = obj.customer ? String(obj.customer) : null;
+          const subId =
+            eventType.startsWith('customer.subscription.')
+              ? (obj.id ? String(obj.id) : null)
+              : (obj.subscription ? String(obj.subscription) : null);
+
+          if (!profileId && (customerId || subId)) {
+            const found = await env.DB.prepare(
+              `SELECT id FROM profiles WHERE stripe_customer_id = ? OR stripe_subscription_id = ? LIMIT 1`
+            )
+              .bind(customerId ?? '__none__', subId ?? '__none__')
+              .first<{ id?: string }>();
+            if (found?.id) profileId = found.id;
+          }
+
+          if (profileId) {
+            if (eventType === 'checkout.session.completed') {
+              const email =
+                (obj.customer_details as { email?: string } | undefined)?.email ||
+                (obj.customer_email ? String(obj.customer_email) : null);
+              const isZeroUpfrontTrial = Number(obj.amount_total ?? 1) === 0;
+              const fallbackDays = isZeroUpfrontTrial
+                ? 8
+                : meta.plan === 'annual'
+                  ? 370
+                  : 35;
+              const fallbackUntil = new Date(
+                Date.now() + fallbackDays * 24 * 60 * 60 * 1000
+              ).toISOString();
+              await env.DB.prepare(
+                `UPDATE profiles
+                 SET plan_tier = 'pro',
+                     pro_until = COALESCE(pro_until, ?),
+                     stripe_customer_id = COALESCE(?, stripe_customer_id),
+                     stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+                     billing_email = COALESCE(?, billing_email),
+                     updated_at = ?
+                 WHERE id = ?`
+              )
+                .bind(fallbackUntil, customerId, subId, email, now, profileId)
+                .run();
+            } else if (
+              eventType === 'customer.subscription.created' ||
+              eventType === 'customer.subscription.updated'
+            ) {
+              const status = String(obj.status ?? '');
+              const active = status === 'active' || status === 'trialing';
+              const subItems = (
+                obj.items as { data?: Array<{ current_period_end?: number }> } | undefined
+              )?.data;
+              const periodEnd = Number(
+                obj.current_period_end ?? subItems?.[0]?.current_period_end ?? 0
+              );
+              const proUntil =
+                periodEnd > 0 ? new Date(periodEnd * 1000).toISOString() : null;
+              await env.DB.prepare(
+                `UPDATE profiles
+                 SET plan_tier = ?,
+                     pro_until = COALESCE(?, pro_until),
+                     stripe_customer_id = COALESCE(?, stripe_customer_id),
+                     stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+                     updated_at = ?
+                 WHERE id = ?`
+              )
+                .bind(active ? 'pro' : 'free', proUntil, customerId, subId, now, profileId)
+                .run();
+            } else if (eventType === 'customer.subscription.deleted') {
+              await env.DB.prepare(
+                `UPDATE profiles SET plan_tier = 'free', updated_at = ? WHERE id = ?`
+              )
+                .bind(now, profileId)
+                .run();
+            } else if (eventType === 'invoice.paid') {
+              const lines = (obj.lines as { data?: Array<{ period?: { end?: number } }> } | undefined)?.data;
+              const periodEnd = Number(lines?.[0]?.period?.end ?? 0);
+              const proUntil =
+                periodEnd > 0
+                  ? new Date(periodEnd * 1000).toISOString()
+                  : new Date(Date.now() + 35 * 24 * 60 * 60 * 1000).toISOString();
+              await env.DB.prepare(
+                `UPDATE profiles
+                 SET plan_tier = 'pro', pro_until = ?, updated_at = ?
+                 WHERE id = ?`
+              )
+                .bind(proUntil, now, profileId)
+                .run();
+            }
+          }
+
+          if (eventId) {
+            const amountCents = Number(obj.amount_paid ?? obj.amount_total ?? 0);
+            const currency = String(obj.currency ?? 'usd');
+            await env.DB.prepare(
+              `INSERT OR IGNORE INTO billing_events (id, event_type, profile_id, stripe_customer_id, stripe_subscription_id, amount_cents, currency, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'processed', ?)`
+            )
+              .bind(eventId, eventType, profileId || null, customerId, subId, amountCents, currency, now)
+              .run()
+              .catch(() => {});
+          }
+        } catch (webhookErr) {
+          if (eventId) {
+            await env.DB.prepare('DELETE FROM processed_webhooks WHERE event_id = ?')
+              .bind(eventId)
+              .run()
+              .catch(() => {});
+          }
+          throw webhookErr;
         }
 
         return json({ received: true }, 200, request);

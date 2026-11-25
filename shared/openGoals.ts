@@ -325,6 +325,52 @@ function titleCaseWords(words: string[]): string {
     .join(' ');
 }
 
+export const PUBMED_HUMAN_AUDITORY_EXCLUSION =
+  'NOT (mice[Title/Abstract] OR mouse[Title/Abstract] OR rat[Title/Abstract] OR rats[Title/Abstract] OR murine[Title/Abstract] OR rodent[Title/Abstract] OR optogenetics[Title/Abstract] OR optogenetic[Title/Abstract] OR "visual flicker"[Title/Abstract] OR photic[Title/Abstract] OR tDCS[Title/Abstract] OR TMS[Title/Abstract] OR rTMS[Title/Abstract] OR tACS[Title/Abstract])';
+
+export const EUROPEPMC_HUMAN_AUDITORY_EXCLUSION =
+  'NOT (mice OR mouse OR rat OR rats OR murine OR rodent OR optogenetics OR optogenetic OR "visual flicker" OR photic OR tDCS OR TMS OR rTMS OR tACS)';
+
+export function appendPubMedHumanAuditoryGuard(query: string): string {
+  const q = query.trim();
+  if (!q) return q;
+  if (/optogenetics\[Title\/Abstract\]/i.test(q)) return q;
+  const hasAuditory =
+    /\b(music|auditory|acoustic|sound|binaural|monaural|isochronic|noise|listening)\b/i.test(q);
+  const base = hasAuditory
+    ? `(${q})`
+    : `(music[Title/Abstract] OR "auditory stimulation"[Title/Abstract] OR acoustic[Title/Abstract]) AND (${q})`;
+  return `${base} ${PUBMED_HUMAN_AUDITORY_EXCLUSION}`;
+}
+
+const ANIMAL_OR_INVASIVE_RE =
+  /\b(mice|mouse|murine|rat|rats|rodent|rodents|guinea\s+pig|zebrafish|drosophila|macaque|rhesus|non-human\s+primate|hippocampal\s+slice|in\s+vitro|optogenetic|optogenetics|chemogenetic|transgenic|5xfad|app\/ps1|c57bl)\b/i;
+
+const NON_AUDITORY_STIM_RE =
+  /\b(visual\s+flicker|light\s+flicker|photic\s+driving|photic\s+stimulation|stroboscopic|transcranial\s+direct|transcranial\s+magnetic|transcranial\s+alternating|\btdcs\b|\btacs\b|\brtms\b|\btms\b|vagus\s+nerve\s+stimulation|deep\s+brain\s+stimulation|electroconvulsive)\b/i;
+
+const EXPLICIT_AUDITORY_RE =
+  /\b(music|musical|auditory|acoustic|sound|binaural|monaural|isochronic|listening|pink\s+noise|white\s+noise|brown\s+noise)\b/i;
+
+/**
+ * Rejects preclinical animal/in-vitro studies and non-auditory stimulation modalities
+ * (visual flicker, optogenetics, TMS, tDCS, tACS) so open-goal literature stays strictly human + auditory.
+ */
+export function isNonAuditoryOrAnimalStudy(title: string, abstractText = ''): boolean {
+  const combined = `${title} ${abstractText}`.trim();
+  if (!combined) return true;
+  if (ANIMAL_OR_INVASIVE_RE.test(combined)) {
+    return true;
+  }
+  if (NON_AUDITORY_STIM_RE.test(title) && !EXPLICIT_AUDITORY_RE.test(title)) {
+    return true;
+  }
+  if (NON_AUDITORY_STIM_RE.test(combined) && !EXPLICIT_AUDITORY_RE.test(combined)) {
+    return true;
+  }
+  return false;
+}
+
 export function getCuratedGoalBySlug(slug?: string | null): CuratedGoalPreset | undefined {
   if (!slug) return undefined;
   return CURATED_GOAL_PRESETS.find((g) => g.slug === slug);
@@ -363,7 +409,7 @@ export function resolveOpenGoalIntent(
       coords: preset.coords,
       defaultMin: preset.defaultMin,
       dspOverride: preset.dspOverride,
-      pubmedQuery: preset.pubmedQuery,
+      pubmedQuery: appendPubMedHumanAuditoryGuard(preset.pubmedQuery),
       openAlexTerm: preset.openAlexTerm,
       isOpenCustomTopic: false,
     };
@@ -430,7 +476,7 @@ export function resolveOpenGoalIntent(
         coords: safePreset.coords,
         defaultMin: safePreset.defaultMin,
         dspOverride: isDriving ? undefined : safePreset.dspOverride,
-        pubmedQuery: safePreset.pubmedQuery,
+        pubmedQuery: appendPubMedHumanAuditoryGuard(safePreset.pubmedQuery),
         openAlexTerm: safePreset.openAlexTerm,
         isOpenCustomTopic: false,
       };
@@ -474,8 +520,10 @@ export function resolveOpenGoalIntent(
       : { energy: 62, clarity: 89 };
 
   const pubmedTerms = topicWords.map((w) => `${w}[Title/Abstract]`).join(' AND ');
-  const pubmedQuery = `(music[Title/Abstract] OR "auditory stimulation"[Title/Abstract] OR acoustic[Title/Abstract]) AND (${pubmedTerms})`;
-  const openAlexTerm = `music auditory stimulation ${topicPhrase}`;
+  const pubmedQuery = appendPubMedHumanAuditoryGuard(
+    `(music[Title/Abstract] OR "auditory stimulation"[Title/Abstract] OR acoustic[Title/Abstract]) AND (${pubmedTerms})`
+  );
+  const openAlexTerm = `music auditory stimulation human ${topicPhrase}`;
 
   return {
     slug: `custom:${slugSuffix}`,
