@@ -21,6 +21,7 @@ android {
             def ksFile = System.getenv("ANDROID_KEYSTORE_FILE")
             if (ksFile != null && !ksFile.isEmpty() && file(ksFile).exists()) {
                 storeFile file(ksFile)
+                storeType "PKCS12"
                 storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
                 keyAlias System.getenv("ANDROID_KEY_ALIAS")
                 keyPassword System.getenv("ANDROID_KEY_PASSWORD")

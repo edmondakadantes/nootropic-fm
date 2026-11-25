@@ -68,25 +68,33 @@ jobs:
           node scripts/generate-playstore-assets.mjs
           node scripts/publish-google-play.mjs --dry-run
 
-      - name: Decode Upload Keystore
+      - name: Decode & Normalize Upload Keystore (PKCS12)
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           mkdir -p .secrets
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > .secrets/android-upload.jks
-          else
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "ERROR: ANDROID_KEYSTORE_BASE64 secret is missing."
             exit 1
           fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d ' \r\n' | base64 --decode > .secrets/upload-raw.p12
+          PW=$(printf '%s' "$ANDROID_KEYSTORE_PASSWORD" | tr -d '\r\n')
+          ALIAS=$(printf '%s' "$ANDROID_KEY_ALIAS" | tr -d '\r\n')
+          openssl pkcs12 -in .secrets/upload-raw.p12 -passin "pass:$PW" -nodes -out .secrets/upload-temp.pem -legacy || \
+            openssl pkcs12 -in .secrets/upload-raw.p12 -passin "pass:$PW" -nodes -out .secrets/upload-temp.pem
+          openssl pkcs12 -export -in .secrets/upload-temp.pem -name "$ALIAS" -out .secrets/android-upload.p12 -passout "pass:$PW"
+          rm -f .secrets/upload-raw.p12 .secrets/upload-temp.pem
+          keytool -list -v -keystore .secrets/android-upload.p12 -storetype PKCS12 -alias "$ALIAS" -storepass "$PW" | grep "SHA256:"
 
       - name: Build Signed Release AAB & APK
         working-directory: android
         env:
-          ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/.secrets/android-upload.jks
+          ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/.secrets/android-upload.p12
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew bundleRelease assembleRelease --no-daemon
