@@ -641,6 +641,7 @@ interface StudioCatalogTrackItem {
   downbeatOffsetMs?: number;
   sampleRate?: number;
   v7Remastered?: boolean;
+  durationSec?: number;
 }
 
 const STUDIO_TRACK_ACOUSTIC_MAP: Record<
@@ -809,6 +810,7 @@ async function getCoreStudioCatalog(env: Env) {
                 alignedBandsHz: v7.alignedBandsHz,
                 downbeatOffsetMs: v7.downbeatOffsetMs,
                 sampleRate: v7.sampleRate,
+                durationSec: v7.durationSec,
                 v7Remastered: true,
               }
             : {}),

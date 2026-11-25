@@ -239,24 +239,35 @@ async function downloadSourceStem(sourceKey) {
 }
 
 async function uploadR2Object(objectKey, localFile, contentType) {
-  await spawnAsync(
-    process.execPath,
-    [
-      WRANGLER_JS,
-      'r2',
-      'object',
-      'put',
-      `nootropic-fm-audio/${objectKey}`,
-      '--file',
-      localFile,
-      '--content-type',
-      contentType,
-      '--cache-control',
-      'public, max-age=31536000, immutable',
-      '--remote',
-    ],
-    { cwd: ROOT, shell: false }
-  );
+  // Retry transient OAuth token-refresh 401s / network blips (up to 4 attempts, linear backoff)
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      await spawnAsync(
+        process.execPath,
+        [
+          WRANGLER_JS,
+          'r2',
+          'object',
+          'put',
+          `nootropic-fm-audio/${objectKey}`,
+          '--file',
+          localFile,
+          '--content-type',
+          contentType,
+          '--cache-control',
+          'public, max-age=31536000, immutable',
+          '--remote',
+        ],
+        { cwd: ROOT, shell: false }
+      );
+      return;
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 2500 * attempt));
+    }
+  }
+  throw lastErr;
 }
 
 async function renderStem(item, index, total) {
@@ -289,11 +300,13 @@ async function renderStem(item, index, total) {
   if (!alreadyRendered) {
     const srcFile = await downloadSourceStem(item.key);
 
-    // 1. RubberBand R3 + LibSOXR 28-bit 48 kHz WAV
+    // 1. RubberBand R3 "finer" engine (0x20000000) + phase-coherent stereo `channels=together` (0x10000000)
+    //    -> eliminates R2 phasiness & L/R image smearing on percussive electronic material
+    //    + LibSOXR 28-bit 48 kHz WAV
     const filterSteps = [];
     if (item.nativeBpm > 0 && Math.abs(tempoRatio - 1) > 1e-4) {
       filterSteps.push(
-        `rubberband=tempo=${tempoRatio.toFixed(6)}:pitch=1.0:transients=crisp:detector=compound:phase=laminar:window=standard:formant=preserved:pitchq=quality`
+        `rubberband=tempo=${tempoRatio.toFixed(6)}:pitch=1.0:transients=crisp:detector=compound:phase=laminar:window=standard:formant=preserved:pitchq=quality:channels=805306368`
       );
     }
     filterSteps.push('aresample=48000:resampler=soxr:precision=28:dither_method=shibata');
@@ -456,8 +469,8 @@ async function main() {
       sourceKey: r.item.key,
       opusKey: r.opusKey,
       aacKey: r.aacKey,
-      opusUrl: `/api/audio/stream/${r.opusKey.split('/').map((s) => encodeURIComponent(s)).join('/')}`,
-      aacUrl: `/api/audio/stream/${r.aacKey.split('/').map((s) => encodeURIComponent(s)).join('/')}`,
+      opusUrl: `/api/audio/stream/${r.opusKey.split('/').map((s) => encodeURIComponent(s)).join('/')}?r=3`,
+      aacUrl: `/api/audio/stream/${r.aacKey.split('/').map((s) => encodeURIComponent(s)).join('/')}?r=3`,
       opusBytes: r.opusBytes,
       aacBytes: r.aacBytes,
       nativeBpm: r.item.nativeBpm,

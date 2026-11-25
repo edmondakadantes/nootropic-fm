@@ -318,6 +318,7 @@ export const api = {
           downbeatOffsetMs?: number;
           sampleRate?: number;
           v7Remastered?: boolean;
+          durationSec?: number;
         }>
       >;
       customTracks?: CustomTrackInfo[];

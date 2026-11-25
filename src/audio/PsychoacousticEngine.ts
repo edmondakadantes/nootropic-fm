@@ -50,6 +50,7 @@ export interface StudioTrackRef {
   downbeatOffsetMs?: number;
   sampleRate?: number;
   v7Remastered?: boolean;
+  durationSec?: number;
 }
 
 export interface EngineTelemetry {
@@ -850,7 +851,8 @@ export class PsychoacousticEngine {
         !this.isControlTrial &&
         this.layerMonitorMode !== 'science_only' &&
         this.carrierMode !== 'pure_stimulus';
-      flattenerNode.parameters.get('gamma')?.setValueAtTime(wantFlatten ? 0.62 : 0, ctx.currentTime);
+      // Gentler 0.50 exponent keeps more natural groove dynamics (less inverse-pumping on kick-driven genres)
+      flattenerNode.parameters.get('gamma')?.setValueAtTime(wantFlatten ? 0.5 : 0, ctx.currentTime);
       midBand.output.connect(flattenerNode);
       midInputForAm = flattenerNode;
       this.band2FlattenerNode = flattenerNode;
@@ -1231,7 +1233,7 @@ export class PsychoacousticEngine {
 
   private syncBand2Flattener(): void {
     if (!this.ctx || !this.band2FlattenerNode) return;
-    const gamma = this.isBand2FlattenerActive() ? 0.62 : 0;
+    const gamma = this.isBand2FlattenerActive() ? 0.5 : 0;
     this.band2FlattenerNode.parameters.get('gamma')?.setValueAtTime(gamma, this.ctx.currentTime);
   }
 
@@ -2046,9 +2048,24 @@ export class PsychoacousticEngine {
     const stemBpm = track.subHarmonicBpm && track.subHarmonicBpm > 0 ? track.subHarmonicBpm : nativeBpm;
     const neuralHz = this.getActiveTargetNeuralHz();
     const tune432Ratio = this.studySpec?.music.tuningA4Hz === 432 ? 432 / 440 : 1.0;
-    const gridRate = pickPlaybackGridRate(stemBpm, neuralHz, tune432Ratio);
+    // NEVER pitch-shift music to chase a grid: varispeed (no pitch preservation) would detune the stem by up to
+    // ±12% (~2 semitones) and wobble as the Iso-ramp moves. Stems are pre-rendered offline on exact grids, so we
+    // play them at unity rate (only the constant 432/440 tuning ratio) and phase-lock only when truly aligned.
+    const rawGrid = pickPlaybackGridRate(stemBpm, neuralHz, tune432Ratio);
+    const gridRate = {
+      targetGridBpm: stemBpm,
+      tempoScale: 1,
+      totalRate: tune432Ratio,
+      isSubHarmonicLocked: rawGrid.isSubHarmonicLocked && Math.abs(rawGrid.tempoScale - 1) < 1e-9,
+    };
     const amActive =
-      this.studySpec?.entrainment.type === 'amplitude_modulation' && neuralHz > 0;
+      this.studySpec?.entrainment.type === 'amplitude_modulation' &&
+      neuralHz > 0 &&
+      gridRate.isSubHarmonicLocked;
+    const trackDurSec =
+      typeof track.durationSec === 'number' && track.durationSec > 20 ? track.durationSec : null;
+    // Start next-track preload 10 s before the end so the 4 s overlap crossfade never leaves a silent gap
+    const CROSSFADE_LEAD_SEC = 10;
 
     // Path A: Progressive WebCodecs Ogg/Opus HTTP Range streaming (<200 ms start, low RAM)
     if (track.opusUrl && (await canUseWebCodecsOpus())) {
@@ -2081,11 +2098,11 @@ export class PsychoacousticEngine {
       });
       stemNode.parameters.get('playbackRate')?.setValueAtTime(gridRate.totalRate, now);
 
-      let knownTotalFrames = Infinity;
+      let knownTotalFrames = trackDurSec ? Math.round(trackDurSec * 48000) : Infinity;
       let streamHandle: Awaited<ReturnType<typeof streamOpusIntoWorklet>> = null;
       let latestConsumerFrame = 0;
       let crossfadeTriggered = false;
-      const crossfadeLeadSec = 4.0;
+      const crossfadeLeadSec = CROSSFADE_LEAD_SEC;
 
       const triggerCrossfadeOnce = () => {
         if (crossfadeTriggered) return;
@@ -2170,7 +2187,10 @@ export class PsychoacousticEngine {
           ? '48 kHz Opus · WebCodecs Phase-Locked'
           : '48 kHz Opus · WebCodecs';
         this.activeStemSubHarmonicLocked = gridRate.isSubHarmonicLocked;
-        this.scheduleDeckCrossfade(165, triggerCrossfadeOnce);
+        const streamDelaySec = trackDurSec
+          ? Math.max(1.5, delaySec + trackDurSec / Math.max(0.75, gridRate.totalRate) - CROSSFADE_LEAD_SEC)
+          : 150;
+        this.scheduleDeckCrossfade(streamDelaySec, triggerCrossfadeOnce);
         return true;
       }
 
@@ -2237,7 +2257,7 @@ export class PsychoacousticEngine {
     const rightAll = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : leftAll;
     const totalFrames = buffer.length;
     const CHUNK_FRAMES = 16384;
-    const crossfadeLeadSec = Math.min(7, Math.max(2.5, buffer.duration * 0.14));
+    const crossfadeLeadSec = Math.min(CROSSFADE_LEAD_SEC, Math.max(2.5, buffer.duration * 0.2));
     let feedCursor = 0;
     let endPosted = false;
     let crossfadeTriggered = false;
@@ -2794,15 +2814,13 @@ export class PsychoacousticEngine {
     ) {
       const now = this.ctx.currentTime;
       if (this.activeStemPlayerNode && !spec?.music.bpmRamp) {
+        // Constant unity rate (only 432/440 tuning) — never chase the live Iso-ramp with pitch-altering varispeed
         const tune432 = spec?.music.tuningA4Hz === 432 ? 432 / 440 : 1.0;
-        const gridRate = pickPlaybackGridRate(
-          this.activeTrackNativeBpm,
-          liveAmHz || this.getActiveTargetNeuralHz(),
-          tune432
-        );
-        this.activeStemPlayerNode.parameters.get('playbackRate')?.setTargetAtTime(gridRate.totalRate, now, 0.25);
-        this.activeStudioAppliedBpm = gridRate.targetGridBpm > 0 ? Math.round(gridRate.targetGridBpm * tune432) : 0;
-        this.activeStemSubHarmonicLocked = gridRate.isSubHarmonicLocked;
+        const lockNow = pickPlaybackGridRate(this.activeTrackNativeBpm, this.getActiveTargetNeuralHz(), tune432);
+        this.activeStemPlayerNode.parameters.get('playbackRate')?.setTargetAtTime(tune432, now, 0.25);
+        this.activeStudioAppliedBpm = Math.round(this.activeTrackNativeBpm * tune432);
+        this.activeStemSubHarmonicLocked =
+          lockNow.isSubHarmonicLocked && Math.abs(lockNow.tempoScale - 1) < 1e-9;
       } else {
         const alignment = this.computeStudioTempoAlignment(this.activeTrackNativeBpm, targetBpm, false);
         this.activeStudioAppliedBpm = alignment.effectiveBpm;

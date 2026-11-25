@@ -6,70 +6,70 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
     "sourceKey": "lofi_keys/focus/dusty-rhodes-88-1.mp3",
     "opusKey": "v7/lofi_keys/focus/dusty-rhodes-88-1.opus",
     "aacKey": "v7/lofi_keys/focus/dusty-rhodes-88-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/lofi_keys/focus/dusty-rhodes-88-1.opus",
-    "aacUrl": "/api/audio/stream/v7/lofi_keys/focus/dusty-rhodes-88-1.m4a",
-    "opusBytes": 11148124,
-    "aacBytes": 10612346,
+    "opusUrl": "/api/audio/stream/v7/lofi_keys/focus/dusty-rhodes-88-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/lofi_keys/focus/dusty-rhodes-88-1.m4a?r=3",
+    "opusBytes": 11125625,
+    "aacBytes": 10617923,
     "nativeBpm": 88,
     "subHarmonicBpm": 96,
     "alignedBandsHz": [
       16,
       40
     ],
-    "downbeatOffsetMs": 45,
+    "downbeatOffsetMs": 365,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 329.96
+    "durationSec": 330.06
   },
   "lofi_keys/focus/dusty-rhodes-88-2.mp3": {
     "sourceKey": "lofi_keys/focus/dusty-rhodes-88-2.mp3",
     "opusKey": "v7/lofi_keys/focus/dusty-rhodes-88-2.opus",
     "aacKey": "v7/lofi_keys/focus/dusty-rhodes-88-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/lofi_keys/focus/dusty-rhodes-88-2.opus",
-    "aacUrl": "/api/audio/stream/v7/lofi_keys/focus/dusty-rhodes-88-2.m4a",
-    "opusBytes": 13881755,
-    "aacBytes": 12729112,
+    "opusUrl": "/api/audio/stream/v7/lofi_keys/focus/dusty-rhodes-88-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/lofi_keys/focus/dusty-rhodes-88-2.m4a?r=3",
+    "opusBytes": 13831284,
+    "aacBytes": 12733760,
     "nativeBpm": 88,
     "subHarmonicBpm": 80,
     "alignedBandsHz": [
       16,
       40
     ],
-    "downbeatOffsetMs": 425,
+    "downbeatOffsetMs": 420,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 395.56
+    "durationSec": 395.66
   },
   "lofi_keys/calm/evening-felt-rhodes-68-1.mp3": {
     "sourceKey": "lofi_keys/calm/evening-felt-rhodes-68-1.mp3",
     "opusKey": "v7/lofi_keys/calm/evening-felt-rhodes-68-1.opus",
     "aacKey": "v7/lofi_keys/calm/evening-felt-rhodes-68-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/lofi_keys/calm/evening-felt-rhodes-68-1.opus",
-    "aacUrl": "/api/audio/stream/v7/lofi_keys/calm/evening-felt-rhodes-68-1.m4a",
-    "opusBytes": 5067116,
-    "aacBytes": 4917977,
+    "opusUrl": "/api/audio/stream/v7/lofi_keys/calm/evening-felt-rhodes-68-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/lofi_keys/calm/evening-felt-rhodes-68-1.m4a?r=3",
+    "opusBytes": 5087931,
+    "aacBytes": 4921364,
     "nativeBpm": 68,
     "subHarmonicBpm": 75,
     "alignedBandsHz": [
       10,
       40
     ],
-    "downbeatOffsetMs": 65,
+    "downbeatOffsetMs": 105,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 152.74
+    "durationSec": 152.84
   },
   "deep_electronic/drive/warm-analog-pulse-1.mp3": {
     "sourceKey": "deep_electronic/drive/warm-analog-pulse-1.mp3",
     "opusKey": "v7/deep_electronic/drive/warm-analog-pulse-1.opus",
     "aacKey": "v7/deep_electronic/drive/warm-analog-pulse-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/deep_electronic/drive/warm-analog-pulse-1.opus",
-    "aacUrl": "/api/audio/stream/v7/deep_electronic/drive/warm-analog-pulse-1.m4a",
-    "opusBytes": 7958734,
-    "aacBytes": 7133370,
+    "opusUrl": "/api/audio/stream/v7/deep_electronic/drive/warm-analog-pulse-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/deep_electronic/drive/warm-analog-pulse-1.m4a?r=3",
+    "opusBytes": 7870427,
+    "aacBytes": 7133744,
     "nativeBpm": 112,
     "subHarmonicBpm": 120,
     "alignedBandsHz": [
@@ -78,20 +78,20 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
       16,
       40
     ],
-    "downbeatOffsetMs": 130,
+    "downbeatOffsetMs": 135,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 221.76
+    "durationSec": 221.85
   },
   "deep_electronic/drive/warm-analog-pulse-2.mp3": {
     "sourceKey": "deep_electronic/drive/warm-analog-pulse-2.mp3",
     "opusKey": "v7/deep_electronic/drive/warm-analog-pulse-2.opus",
     "aacKey": "v7/deep_electronic/drive/warm-analog-pulse-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/deep_electronic/drive/warm-analog-pulse-2.opus",
-    "aacUrl": "/api/audio/stream/v7/deep_electronic/drive/warm-analog-pulse-2.m4a",
-    "opusBytes": 9122774,
-    "aacBytes": 8260712,
+    "opusUrl": "/api/audio/stream/v7/deep_electronic/drive/warm-analog-pulse-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/deep_electronic/drive/warm-analog-pulse-2.m4a?r=3",
+    "opusBytes": 9022913,
+    "aacBytes": 8265358,
     "nativeBpm": 112,
     "subHarmonicBpm": 100,
     "alignedBandsHz": [
@@ -102,74 +102,74 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 256.66
+    "durationSec": 256.76
   },
   "deep_electronic/calm/velvet-sub-horizon-68-1.mp3": {
     "sourceKey": "deep_electronic/calm/velvet-sub-horizon-68-1.mp3",
     "opusKey": "v7/deep_electronic/calm/velvet-sub-horizon-68-1.opus",
     "aacKey": "v7/deep_electronic/calm/velvet-sub-horizon-68-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/deep_electronic/calm/velvet-sub-horizon-68-1.opus",
-    "aacUrl": "/api/audio/stream/v7/deep_electronic/calm/velvet-sub-horizon-68-1.m4a",
-    "opusBytes": 5015876,
-    "aacBytes": 4770288,
+    "opusUrl": "/api/audio/stream/v7/deep_electronic/calm/velvet-sub-horizon-68-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/deep_electronic/calm/velvet-sub-horizon-68-1.m4a?r=3",
+    "opusBytes": 5002135,
+    "aacBytes": 4774150,
     "nativeBpm": 68,
     "subHarmonicBpm": 75,
     "alignedBandsHz": [
       10,
       40
     ],
-    "downbeatOffsetMs": 155,
+    "downbeatOffsetMs": 65,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 148.22
+    "durationSec": 148.31
   },
   "deep_electronic/calm/analog-drift-pulse-68-2.mp3": {
     "sourceKey": "deep_electronic/calm/analog-drift-pulse-68-2.mp3",
     "opusKey": "v7/deep_electronic/calm/analog-drift-pulse-68-2.opus",
     "aacKey": "v7/deep_electronic/calm/analog-drift-pulse-68-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/deep_electronic/calm/analog-drift-pulse-68-2.opus",
-    "aacUrl": "/api/audio/stream/v7/deep_electronic/calm/analog-drift-pulse-68-2.m4a",
-    "opusBytes": 5711319,
-    "aacBytes": 5229417,
+    "opusUrl": "/api/audio/stream/v7/deep_electronic/calm/analog-drift-pulse-68-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/deep_electronic/calm/analog-drift-pulse-68-2.m4a?r=3",
+    "opusBytes": 5724421,
+    "aacBytes": 5236400,
     "nativeBpm": 68,
     "subHarmonicBpm": 75,
     "alignedBandsHz": [
       10,
       40
     ],
-    "downbeatOffsetMs": 120,
+    "downbeatOffsetMs": 645,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 162.62
+    "durationSec": 162.71
   },
   "deep_electronic/focus/neural-analog-flow-92-1.mp3": {
     "sourceKey": "deep_electronic/focus/neural-analog-flow-92-1.mp3",
     "opusKey": "v7/deep_electronic/focus/neural-analog-flow-92-1.opus",
     "aacKey": "v7/deep_electronic/focus/neural-analog-flow-92-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/deep_electronic/focus/neural-analog-flow-92-1.opus",
-    "aacUrl": "/api/audio/stream/v7/deep_electronic/focus/neural-analog-flow-92-1.m4a",
-    "opusBytes": 5303706,
-    "aacBytes": 5112509,
+    "opusUrl": "/api/audio/stream/v7/deep_electronic/focus/neural-analog-flow-92-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/deep_electronic/focus/neural-analog-flow-92-1.m4a?r=3",
+    "opusBytes": 5307056,
+    "aacBytes": 5115210,
     "nativeBpm": 92,
     "subHarmonicBpm": 96,
     "alignedBandsHz": [
       16,
       40
     ],
-    "downbeatOffsetMs": 610,
+    "downbeatOffsetMs": 620,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 158.74
+    "durationSec": 158.84
   },
   "deep_electronic/focus/modular-focus-grid-96-2.mp3": {
     "sourceKey": "deep_electronic/focus/modular-focus-grid-96-2.mp3",
     "opusKey": "v7/deep_electronic/focus/modular-focus-grid-96-2.opus",
     "aacKey": "v7/deep_electronic/focus/modular-focus-grid-96-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/deep_electronic/focus/modular-focus-grid-96-2.opus",
-    "aacUrl": "/api/audio/stream/v7/deep_electronic/focus/modular-focus-grid-96-2.m4a",
+    "opusUrl": "/api/audio/stream/v7/deep_electronic/focus/modular-focus-grid-96-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/deep_electronic/focus/modular-focus-grid-96-2.m4a?r=3",
     "opusBytes": 5884334,
     "aacBytes": 5530832,
     "nativeBpm": 96,
@@ -188,70 +188,70 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
     "sourceKey": "cinematic_strings/focus/chamber-flow-92-1.mp3",
     "opusKey": "v7/cinematic_strings/focus/chamber-flow-92-1.opus",
     "aacKey": "v7/cinematic_strings/focus/chamber-flow-92-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/cinematic_strings/focus/chamber-flow-92-1.opus",
-    "aacUrl": "/api/audio/stream/v7/cinematic_strings/focus/chamber-flow-92-1.m4a",
-    "opusBytes": 11620194,
-    "aacBytes": 11093084,
+    "opusUrl": "/api/audio/stream/v7/cinematic_strings/focus/chamber-flow-92-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/cinematic_strings/focus/chamber-flow-92-1.m4a?r=3",
+    "opusBytes": 11624132,
+    "aacBytes": 11094642,
     "nativeBpm": 92,
     "subHarmonicBpm": 96,
     "alignedBandsHz": [
       16,
       40
     ],
-    "downbeatOffsetMs": 115,
+    "downbeatOffsetMs": 140,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 344.58
+    "durationSec": 344.67
   },
   "cinematic_strings/focus/chamber-flow-92-2.mp3": {
     "sourceKey": "cinematic_strings/focus/chamber-flow-92-2.mp3",
     "opusKey": "v7/cinematic_strings/focus/chamber-flow-92-2.opus",
     "aacKey": "v7/cinematic_strings/focus/chamber-flow-92-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/cinematic_strings/focus/chamber-flow-92-2.opus",
-    "aacUrl": "/api/audio/stream/v7/cinematic_strings/focus/chamber-flow-92-2.m4a",
-    "opusBytes": 11037047,
-    "aacBytes": 10624084,
+    "opusUrl": "/api/audio/stream/v7/cinematic_strings/focus/chamber-flow-92-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/cinematic_strings/focus/chamber-flow-92-2.m4a?r=3",
+    "opusBytes": 11002185,
+    "aacBytes": 10626962,
     "nativeBpm": 92,
     "subHarmonicBpm": 100,
     "alignedBandsHz": [
       10,
       40
     ],
-    "downbeatOffsetMs": 450,
+    "downbeatOffsetMs": 440,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 330.1
+    "durationSec": 330.19
   },
   "jazz_rhodes/focus/late-night-rhodes-92-1.mp3": {
     "sourceKey": "jazz_rhodes/focus/late-night-rhodes-92-1.mp3",
     "opusKey": "v7/jazz_rhodes/focus/late-night-rhodes-92-1.opus",
     "aacKey": "v7/jazz_rhodes/focus/late-night-rhodes-92-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/jazz_rhodes/focus/late-night-rhodes-92-1.opus",
-    "aacUrl": "/api/audio/stream/v7/jazz_rhodes/focus/late-night-rhodes-92-1.m4a",
-    "opusBytes": 11889733,
-    "aacBytes": 11057376,
+    "opusUrl": "/api/audio/stream/v7/jazz_rhodes/focus/late-night-rhodes-92-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/jazz_rhodes/focus/late-night-rhodes-92-1.m4a?r=3",
+    "opusBytes": 11788445,
+    "aacBytes": 11064778,
     "nativeBpm": 92,
     "subHarmonicBpm": 96,
     "alignedBandsHz": [
       16,
       40
     ],
-    "downbeatOffsetMs": 545,
+    "downbeatOffsetMs": 310,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 343.85
+    "durationSec": 343.95
   },
   "jazz_rhodes/focus/late-night-rhodes-92-2.mp3": {
     "sourceKey": "jazz_rhodes/focus/late-night-rhodes-92-2.mp3",
     "opusKey": "v7/jazz_rhodes/focus/late-night-rhodes-92-2.opus",
     "aacKey": "v7/jazz_rhodes/focus/late-night-rhodes-92-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/jazz_rhodes/focus/late-night-rhodes-92-2.opus",
-    "aacUrl": "/api/audio/stream/v7/jazz_rhodes/focus/late-night-rhodes-92-2.m4a",
-    "opusBytes": 9455290,
-    "aacBytes": 8709820,
+    "opusUrl": "/api/audio/stream/v7/jazz_rhodes/focus/late-night-rhodes-92-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/jazz_rhodes/focus/late-night-rhodes-92-2.m4a?r=3",
+    "opusBytes": 9509942,
+    "aacBytes": 8717611,
     "nativeBpm": 92,
     "subHarmonicBpm": 100,
     "alignedBandsHz": [
@@ -262,54 +262,54 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 270.85
+    "durationSec": 270.95
   },
   "acoustic_pluck/focus/nylon-arpeggios-90-1.mp3": {
     "sourceKey": "acoustic_pluck/focus/nylon-arpeggios-90-1.mp3",
     "opusKey": "v7/acoustic_pluck/focus/nylon-arpeggios-90-1.opus",
     "aacKey": "v7/acoustic_pluck/focus/nylon-arpeggios-90-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/acoustic_pluck/focus/nylon-arpeggios-90-1.opus",
-    "aacUrl": "/api/audio/stream/v7/acoustic_pluck/focus/nylon-arpeggios-90-1.m4a",
-    "opusBytes": 12085967,
-    "aacBytes": 10861683,
+    "opusUrl": "/api/audio/stream/v7/acoustic_pluck/focus/nylon-arpeggios-90-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/acoustic_pluck/focus/nylon-arpeggios-90-1.m4a?r=3",
+    "opusBytes": 12199838,
+    "aacBytes": 10864286,
     "nativeBpm": 90,
     "subHarmonicBpm": 96,
     "alignedBandsHz": [
       16,
       40
     ],
-    "downbeatOffsetMs": 165,
+    "downbeatOffsetMs": 160,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 337.42
+    "durationSec": 337.52
   },
   "acoustic_pluck/focus/nylon-arpeggios-90-2.mp3": {
     "sourceKey": "acoustic_pluck/focus/nylon-arpeggios-90-2.mp3",
     "opusKey": "v7/acoustic_pluck/focus/nylon-arpeggios-90-2.opus",
     "aacKey": "v7/acoustic_pluck/focus/nylon-arpeggios-90-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/acoustic_pluck/focus/nylon-arpeggios-90-2.opus",
-    "aacUrl": "/api/audio/stream/v7/acoustic_pluck/focus/nylon-arpeggios-90-2.m4a",
-    "opusBytes": 11567054,
-    "aacBytes": 10429706,
+    "opusUrl": "/api/audio/stream/v7/acoustic_pluck/focus/nylon-arpeggios-90-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/acoustic_pluck/focus/nylon-arpeggios-90-2.m4a?r=3",
+    "opusBytes": 11692297,
+    "aacBytes": 10432959,
     "nativeBpm": 90,
     "subHarmonicBpm": 100,
     "alignedBandsHz": [
       10,
       40
     ],
-    "downbeatOffsetMs": 145,
+    "downbeatOffsetMs": 150,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 324
+    "durationSec": 324.1
   },
   "nature_rain/calm/warm-rain-pads-1.mp3": {
     "sourceKey": "nature_rain/calm/warm-rain-pads-1.mp3",
     "opusKey": "v7/nature_rain/calm/warm-rain-pads-1.opus",
     "aacKey": "v7/nature_rain/calm/warm-rain-pads-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/nature_rain/calm/warm-rain-pads-1.opus",
-    "aacUrl": "/api/audio/stream/v7/nature_rain/calm/warm-rain-pads-1.m4a",
+    "opusUrl": "/api/audio/stream/v7/nature_rain/calm/warm-rain-pads-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/nature_rain/calm/warm-rain-pads-1.m4a?r=3",
     "opusBytes": 11809717,
     "aacBytes": 11588571,
     "nativeBpm": 0,
@@ -325,8 +325,8 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
     "sourceKey": "nature_rain/calm/warm-rain-pads-2.mp3",
     "opusKey": "v7/nature_rain/calm/warm-rain-pads-2.opus",
     "aacKey": "v7/nature_rain/calm/warm-rain-pads-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/nature_rain/calm/warm-rain-pads-2.opus",
-    "aacUrl": "/api/audio/stream/v7/nature_rain/calm/warm-rain-pads-2.m4a",
+    "opusUrl": "/api/audio/stream/v7/nature_rain/calm/warm-rain-pads-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/nature_rain/calm/warm-rain-pads-2.m4a?r=3",
     "opusBytes": 11865828,
     "aacBytes": 11578880,
     "nativeBpm": 0,
@@ -342,10 +342,10 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
     "sourceKey": "dub_reggae/focus/warm-island-dub-88-1.mp3",
     "opusKey": "v7/dub_reggae/focus/warm-island-dub-88-1.opus",
     "aacKey": "v7/dub_reggae/focus/warm-island-dub-88-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/dub_reggae/focus/warm-island-dub-88-1.opus",
-    "aacUrl": "/api/audio/stream/v7/dub_reggae/focus/warm-island-dub-88-1.m4a",
-    "opusBytes": 3843869,
-    "aacBytes": 3594068,
+    "opusUrl": "/api/audio/stream/v7/dub_reggae/focus/warm-island-dub-88-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/dub_reggae/focus/warm-island-dub-88-1.m4a?r=3",
+    "opusBytes": 3788164,
+    "aacBytes": 3598374,
     "nativeBpm": 88,
     "subHarmonicBpm": 96,
     "alignedBandsHz": [
@@ -356,16 +356,16 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 111.61
+    "durationSec": 111.71
   },
   "dub_reggae/focus/warm-island-dub-88-2.mp3": {
     "sourceKey": "dub_reggae/focus/warm-island-dub-88-2.mp3",
     "opusKey": "v7/dub_reggae/focus/warm-island-dub-88-2.opus",
     "aacKey": "v7/dub_reggae/focus/warm-island-dub-88-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/dub_reggae/focus/warm-island-dub-88-2.opus",
-    "aacUrl": "/api/audio/stream/v7/dub_reggae/focus/warm-island-dub-88-2.m4a",
-    "opusBytes": 6575844,
-    "aacBytes": 6282436,
+    "opusUrl": "/api/audio/stream/v7/dub_reggae/focus/warm-island-dub-88-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/dub_reggae/focus/warm-island-dub-88-2.m4a?r=3",
+    "opusBytes": 6569215,
+    "aacBytes": 6295051,
     "nativeBpm": 88,
     "subHarmonicBpm": 80,
     "alignedBandsHz": [
@@ -376,16 +376,16 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 195.3
+    "durationSec": 195.5
   },
   "ambient_space/calm/celestial-drift-64-1.mp3": {
     "sourceKey": "ambient_space/calm/celestial-drift-64-1.mp3",
     "opusKey": "v7/ambient_space/calm/celestial-drift-64-1.opus",
     "aacKey": "v7/ambient_space/calm/celestial-drift-64-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/ambient_space/calm/celestial-drift-64-1.opus",
-    "aacUrl": "/api/audio/stream/v7/ambient_space/calm/celestial-drift-64-1.m4a",
-    "opusBytes": 6635596,
-    "aacBytes": 5954068,
+    "opusUrl": "/api/audio/stream/v7/ambient_space/calm/celestial-drift-64-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/ambient_space/calm/celestial-drift-64-1.m4a?r=3",
+    "opusBytes": 6620170,
+    "aacBytes": 5956744,
     "nativeBpm": 64,
     "subHarmonicBpm": 60,
     "alignedBandsHz": [
@@ -394,20 +394,20 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
       16,
       40
     ],
-    "downbeatOffsetMs": 665,
+    "downbeatOffsetMs": 610,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 184.99
+    "durationSec": 185.09
   },
   "ambient_space/calm/celestial-drift-64-2.mp3": {
     "sourceKey": "ambient_space/calm/celestial-drift-64-2.mp3",
     "opusKey": "v7/ambient_space/calm/celestial-drift-64-2.opus",
     "aacKey": "v7/ambient_space/calm/celestial-drift-64-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/ambient_space/calm/celestial-drift-64-2.opus",
-    "aacUrl": "/api/audio/stream/v7/ambient_space/calm/celestial-drift-64-2.m4a",
-    "opusBytes": 6234544,
-    "aacBytes": 5979186,
+    "opusUrl": "/api/audio/stream/v7/ambient_space/calm/celestial-drift-64-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/ambient_space/calm/celestial-drift-64-2.m4a?r=3",
+    "opusBytes": 6253576,
+    "aacBytes": 5982532,
     "nativeBpm": 64,
     "subHarmonicBpm": 60,
     "alignedBandsHz": [
@@ -416,110 +416,110 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
       16,
       40
     ],
-    "downbeatOffsetMs": 765,
+    "downbeatOffsetMs": 760,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 185.74
+    "durationSec": 185.84
   },
   "ambient_space/focus/stellar-focus-pulse-84-1.mp3": {
     "sourceKey": "ambient_space/focus/stellar-focus-pulse-84-1.mp3",
     "opusKey": "v7/ambient_space/focus/stellar-focus-pulse-84-1.opus",
     "aacKey": "v7/ambient_space/focus/stellar-focus-pulse-84-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/ambient_space/focus/stellar-focus-pulse-84-1.opus",
-    "aacUrl": "/api/audio/stream/v7/ambient_space/focus/stellar-focus-pulse-84-1.m4a",
-    "opusBytes": 6281118,
-    "aacBytes": 6036784,
+    "opusUrl": "/api/audio/stream/v7/ambient_space/focus/stellar-focus-pulse-84-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/ambient_space/focus/stellar-focus-pulse-84-1.m4a?r=3",
+    "opusBytes": 6291620,
+    "aacBytes": 6039621,
     "nativeBpm": 84,
     "subHarmonicBpm": 80,
     "alignedBandsHz": [
       16,
       40
     ],
-    "downbeatOffsetMs": 505,
+    "downbeatOffsetMs": 465,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 187.5
+    "durationSec": 187.6
   },
   "solo_piano/calm/felt-piano-flow-72-1.mp3": {
     "sourceKey": "solo_piano/calm/felt-piano-flow-72-1.mp3",
     "opusKey": "v7/solo_piano/calm/felt-piano-flow-72-1.opus",
     "aacKey": "v7/solo_piano/calm/felt-piano-flow-72-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/solo_piano/calm/felt-piano-flow-72-1.opus",
-    "aacUrl": "/api/audio/stream/v7/solo_piano/calm/felt-piano-flow-72-1.m4a",
-    "opusBytes": 5875260,
-    "aacBytes": 5591000,
+    "opusUrl": "/api/audio/stream/v7/solo_piano/calm/felt-piano-flow-72-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/solo_piano/calm/felt-piano-flow-72-1.m4a?r=3",
+    "opusBytes": 5906996,
+    "aacBytes": 5593754,
     "nativeBpm": 72,
     "subHarmonicBpm": 75,
     "alignedBandsHz": [
       10,
       40
     ],
-    "downbeatOffsetMs": 320,
+    "downbeatOffsetMs": 645,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 173.66
+    "durationSec": 173.76
   },
   "solo_piano/focus/felt-piano-flow-86-2.mp3": {
     "sourceKey": "solo_piano/focus/felt-piano-flow-86-2.mp3",
     "opusKey": "v7/solo_piano/focus/felt-piano-flow-86-2.opus",
     "aacKey": "v7/solo_piano/focus/felt-piano-flow-86-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/solo_piano/focus/felt-piano-flow-86-2.opus",
-    "aacUrl": "/api/audio/stream/v7/solo_piano/focus/felt-piano-flow-86-2.m4a",
-    "opusBytes": 6428810,
-    "aacBytes": 5820655,
+    "opusUrl": "/api/audio/stream/v7/solo_piano/focus/felt-piano-flow-86-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/solo_piano/focus/felt-piano-flow-86-2.m4a?r=3",
+    "opusBytes": 6434272,
+    "aacBytes": 5822935,
     "nativeBpm": 86,
     "subHarmonicBpm": 80,
     "alignedBandsHz": [
       16,
       40
     ],
-    "downbeatOffsetMs": 345,
+    "downbeatOffsetMs": 350,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 180.82
+    "durationSec": 180.91
   },
   "bossa_nova/focus/rio-bossa-groove-92-1.mp3": {
     "sourceKey": "bossa_nova/focus/rio-bossa-groove-92-1.mp3",
     "opusKey": "v7/bossa_nova/focus/rio-bossa-groove-92-1.opus",
     "aacKey": "v7/bossa_nova/focus/rio-bossa-groove-92-1.m4a",
-    "opusUrl": "/api/audio/stream/v7/bossa_nova/focus/rio-bossa-groove-92-1.opus",
-    "aacUrl": "/api/audio/stream/v7/bossa_nova/focus/rio-bossa-groove-92-1.m4a",
-    "opusBytes": 5924428,
-    "aacBytes": 5544011,
+    "opusUrl": "/api/audio/stream/v7/bossa_nova/focus/rio-bossa-groove-92-1.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/bossa_nova/focus/rio-bossa-groove-92-1.m4a?r=3",
+    "opusBytes": 5901706,
+    "aacBytes": 5547215,
     "nativeBpm": 92,
     "subHarmonicBpm": 96,
     "alignedBandsHz": [
       16,
       40
     ],
-    "downbeatOffsetMs": 395,
+    "downbeatOffsetMs": 240,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 172.18
+    "durationSec": 172.28
   },
   "bossa_nova/focus/rio-bossa-groove-92-2.mp3": {
     "sourceKey": "bossa_nova/focus/rio-bossa-groove-92-2.mp3",
     "opusKey": "v7/bossa_nova/focus/rio-bossa-groove-92-2.opus",
     "aacKey": "v7/bossa_nova/focus/rio-bossa-groove-92-2.m4a",
-    "opusUrl": "/api/audio/stream/v7/bossa_nova/focus/rio-bossa-groove-92-2.opus",
-    "aacUrl": "/api/audio/stream/v7/bossa_nova/focus/rio-bossa-groove-92-2.m4a",
-    "opusBytes": 5670630,
-    "aacBytes": 5338957,
+    "opusUrl": "/api/audio/stream/v7/bossa_nova/focus/rio-bossa-groove-92-2.opus?r=3",
+    "aacUrl": "/api/audio/stream/v7/bossa_nova/focus/rio-bossa-groove-92-2.m4a?r=3",
+    "opusBytes": 5656440,
+    "aacBytes": 5341858,
     "nativeBpm": 92,
     "subHarmonicBpm": 100,
     "alignedBandsHz": [
       10,
       40
     ],
-    "downbeatOffsetMs": 285,
+    "downbeatOffsetMs": 225,
     "lufs": -14,
     "truePeakDbtp": -1.5,
     "sampleRate": 48000,
-    "durationSec": 165.8
+    "durationSec": 165.9
   }
 };
