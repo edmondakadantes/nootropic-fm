@@ -1,4 +1,9 @@
 import {
+  NEURAL_MICRO_STATES,
+  type NeuralCoords,
+  type NeuralMicroState,
+} from '../../shared/neuralStates';
+import {
   computeIsoBridgeForState,
   pickSmartInitialEffectTier,
 } from '../../shared/psychometrics';
@@ -443,6 +448,178 @@ export function buildInstantQuickTryRecommendation(
   const rec = buildRawQuickTryRecommendation(id);
   return applyQuickTryProfile(rec, profile);
 }
+
+export function previewMicroStateTrajectory(
+  microState: NeuralMicroState,
+  coords: NeuralCoords,
+  targetState: TargetState,
+  profile?: UserProfile | null
+): {
+  hzSummary: string;
+  effectLabel: string;
+  genreLabel: string;
+  isIsoBridge: boolean;
+  isoWaypointCoords?: NeuralCoords;
+} {
+  const isDriving = profile?.role === 'driver';
+  const msId = microState.id;
+  const targetHz =
+    targetState === 'energy_lift'
+      ? msId === 'low_mood'
+        ? 14
+        : 18
+      : targetState === 'alert_focus'
+        ? msId === 'burned_out' || msId === 'screen_fatigue'
+          ? 14
+          : msId === 'pre_performance'
+            ? 13
+            : 16
+        : targetState === 'deep_flow'
+          ? msId === 'creative_block'
+            ? 10.5
+            : msId === 'burned_out' || msId === 'low_mood'
+              ? 12
+              : 15
+          : targetState === 'calm_reset'
+            ? microState.coreState === 'anxious' || msId === 'overwhelmed'
+              ? 0.1
+              : 10
+            : 6;
+
+  const isoBridge =
+    targetHz > 12
+      ? computeIsoBridgeForState({
+          currentState: microState.coreState,
+          microStateId: msId,
+          targetState,
+          targetHz,
+          safetyMode: isDriving,
+        })
+      : undefined;
+
+  const tierInfo = pickSmartInitialEffectTier({
+    currentState: microState.coreState,
+    microStateId: msId,
+    targetState,
+    safetyMode: isDriving,
+    noiseSensitivity: profile?.noiseSensitivity,
+    preferredModMult: profile?.preferredModMult,
+  });
+
+  const effectLabel =
+    tierInfo.tier === 'max'
+      ? 'Max Effect · 94%'
+      : tierInfo.tier === 'min'
+        ? 'Min Effect · 36%'
+        : isoBridge
+          ? 'Iso-Bridge · 38% → 65%'
+          : 'Standard · 65%';
+
+  // Continuous coordinate-derived entry Hz when no Iso-Bridge overrides
+  const coordStartHz = Number(
+    Math.max(8.0, Math.min(16.0, 8.5 + (coords.energy / 100) * 7.0)).toFixed(1)
+  );
+
+  const hzSummary = isoBridge
+    ? `3m ${isoBridge.stabilizeHz} Hz Calm → ${targetHz} Hz`
+    : targetHz === 0.1
+      ? '0.10 Hz HRV Breath Tide'
+      : targetState === 'sleep_winddown'
+        ? `${Math.min(10, coordStartHz)} → 6 Hz Theta Drift`
+        : Math.abs(coordStartHz - targetHz) >= 1.2
+          ? `${coordStartHz} → ${targetHz} Hz Trajectory`
+          : `${targetHz} Hz Locked Wave`;
+
+  const genreLabel =
+    targetState === 'sleep_winddown'
+      ? 'Nature & Rain'
+      : targetState === 'calm_reset'
+        ? msId === 'low_mood'
+          ? 'Solo Piano'
+          : 'Nature & Rain'
+        : msId === 'low_mood' || msId === 'creative_block'
+          ? 'Acoustic Guitar (Major)'
+          : isoBridge || microState.coreState === 'anxious' || microState.coreState === 'stressed'
+            ? 'Lo-Fi Keys (Warm)'
+            : 'Deep Electronic';
+
+  return {
+    hzSummary,
+    effectLabel,
+    genreLabel,
+    isIsoBridge: Boolean(isoBridge),
+    isoWaypointCoords: isoBridge ? { energy: 40, clarity: 74 } : undefined,
+  };
+}
+
+/**
+ * Builds an instant (<1 ms) ProtocolRecommendation directly from any 2D Neural Brain Map
+ * coordinate `(energy, clarity)` + nearest `NeuralMicroState` + chosen `TargetState`.
+ */
+export function buildMicroStateGoalRecommendation(
+  microState: NeuralMicroState,
+  coords: NeuralCoords,
+  targetState: TargetState,
+  profile?: UserProfile | null
+): ProtocolRecommendation {
+  const msId = microState.id;
+  const mappedFeeling: QuickFeelingId =
+    msId === 'low_mood'
+      ? 'sad_low'
+      : msId === 'burned_out' || msId === 'screen_fatigue'
+        ? 'burned_out'
+        : microState.coreState === 'anxious' || microState.coreState === 'stressed'
+          ? 'stressed_anxious'
+          : microState.coreState === 'distracted' || microState.coreState === 'restless'
+            ? 'distracted'
+            : microState.coreState === 'fatigued'
+              ? 'tired_fog'
+              : 'calm_ready';
+
+  const rec = buildStateGoalQuickRecommendation(mappedFeeling, targetState, profile);
+  rec.sessionId = `eph_quick_${msId}_${targetState}_${Date.now().toString(36)}`;
+  rec.currentState = microState.coreState;
+  rec.microStateId = msId;
+  rec.microStateLabel = microState.label;
+  rec.arousalPct = coords.energy;
+  rec.clarityPct = coords.clarity;
+
+  if (rec.executableSpec && rec.executableSpec.entrainment.type === 'amplitude_modulation') {
+    const targetHz = rec.executableSpec.entrainment.frequencyHz;
+    const isDriving = profile?.role === 'driver';
+    const isoBridge = computeIsoBridgeForState({
+      currentState: microState.coreState,
+      microStateId: msId,
+      targetState,
+      targetHz,
+      safetyMode: isDriving,
+    });
+    if (isoBridge) {
+      rec.executableSpec.entrainment.isoBridge = isoBridge;
+      rec.executableSpec.entrainment.startFrequencyHz = isoBridge.stabilizeHz;
+    } else {
+      delete rec.executableSpec.entrainment.isoBridge;
+      const coordStartHz = Number(
+        Math.max(8.0, Math.min(16.0, 8.5 + (coords.energy / 100) * 7.0)).toFixed(1)
+      );
+      rec.executableSpec.entrainment.startFrequencyHz =
+        targetState === 'sleep_winddown' ? Math.min(10, coordStartHz) : coordStartHz;
+    }
+    // Modulate initial warm filter cutoff smoothly from clarity coordinate
+    if (coords.clarity < 40) {
+      const warmCap = Math.round(1650 + (coords.clarity / 40) * 650);
+      rec.params.filterCutoffHz = Math.min(rec.params.filterCutoffHz, warmCap);
+      rec.executableSpec.music.spectralLowPassHz = Math.min(
+        rec.executableSpec.music.spectralLowPassHz,
+        warmCap
+      );
+    }
+  }
+
+  return rec;
+}
+
+export { NEURAL_MICRO_STATES };
 
 function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation {
   const sessionId = `eph_quick_${id}_${Date.now().toString(36)}`;

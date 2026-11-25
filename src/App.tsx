@@ -60,10 +60,12 @@ import {
 } from './lib/api';
 import {
   buildInstantQuickTryRecommendation,
+  buildMicroStateGoalRecommendation,
   buildStateGoalQuickRecommendation,
   type QuickFeelingId,
   type QuickTryId,
 } from './lib/quickTryProtocols';
+import type { NeuralCoords, NeuralMicroState } from '../shared/neuralStates';
 
 const StudyLabView = lazy(() =>
   import('./components/StudyLabView').then((m) => ({ default: m.StudyLabView }))
@@ -198,7 +200,7 @@ export default function App() {
               setQrToast(
                 'Welcome to nootropic.fm Pro! Unlimited music styles & all science studies are now unlocked.'
               );
-              setScreen('checkin');
+              setScreen('landing');
             }
           } catch {
             // Webhook will still activate Pro asynchronously if verification timed out
@@ -225,7 +227,7 @@ export default function App() {
           );
           await configPromise;
           setBooting(false);
-          setScreen('checkin');
+          setScreen('landing');
           return;
         } catch {
           setErrorBanner('Scanned QR Sync Key was invalid or already erased.');
@@ -293,6 +295,17 @@ export default function App() {
     (feelingId: QuickFeelingId, target: TargetState) => {
       setErrorBanner(null);
       const rec = buildStateGoalQuickRecommendation(feelingId, target, profile);
+      setActiveRec(rec);
+      setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+      setScreen('player');
+    },
+    [moodFromTarget, profile]
+  );
+
+  const handleLaunchMicroStateGoal = useCallback(
+    (microState: NeuralMicroState, coords: NeuralCoords, target: TargetState) => {
+      setErrorBanner(null);
+      const rec = buildMicroStateGoalRecommendation(microState, coords, target, profile);
       setActiveRec(rec);
       setFieldMood(moodFromTarget(rec.environment, rec.targetState));
       setScreen('player');
@@ -804,6 +817,7 @@ export default function App() {
             profile={profile}
             onInstantPlay={handleInstantHeroPlay}
             onLaunchStateGoal={handleLaunchStateGoal}
+            onLaunchMicroStateGoal={handleLaunchMicroStateGoal}
             onStartCustomize={() => {
               setSelectedPreset(null);
               setScreen('checkin');
