@@ -363,13 +363,68 @@ export const NEURAL_EFFECT_MULT: Record<NeuralEffectTier, number> = {
   max: 1.48,
 };
 
+export interface ComputedIsoBridge {
+  stabilizeHz: number;
+  stabilizeDurationSec: number;
+  rampDurationSec: number;
+  stabilizeEffectScale: number;
+  reasonLabel: string;
+}
+
 /**
- * Smartly auto-selects the initial Neural Effect tier (Min ~35% / Standard ~65% / Max ~94%)
- * from the listener's learned Bandit preference, current cognitive deficit, target state,
- * noise sensitivity, and road-safety context.
+ * Computes a 2-Stage Iso-Principle Bridge when a listener enters from an anxious, stressed,
+ * over-caffeinated, or burned-out state yet requests an activating Focus / Energy protocol:
+ * Stage 1 (0–3m) stabilizes autonomic tension at 10–11.5 Hz Alpha (~38% gentle envelope),
+ * then smoothly glides over 60s into the full 14–16 Hz Focus plateau (~65% Standard).
+ */
+export function computeIsoBridgeForState(input: {
+  currentState: string;
+  microStateId?: string | null;
+  targetState: string;
+  targetHz: number;
+  safetyMode?: boolean;
+}): ComputedIsoBridge | undefined {
+  if (input.safetyMode || input.targetHz <= 12) return undefined;
+  const ms = input.microStateId ?? '';
+  const isHyperOrFragile =
+    input.currentState === 'anxious' ||
+    input.currentState === 'stressed' ||
+    ms === 'burned_out' ||
+    ms === 'screen_fatigue' ||
+    ms === 'wired_but_tired' ||
+    ms === 'overcaffeinated' ||
+    ms === 'anxious_racing' ||
+    ms === 'overwhelmed';
+  if (!isHyperOrFragile) return undefined;
+
+  const wantsActivation =
+    input.targetState === 'alert_focus' ||
+    input.targetState === 'energy_lift' ||
+    (input.targetState === 'deep_flow' &&
+      (input.currentState === 'anxious' || ms === 'burned_out' || ms === 'overcaffeinated'));
+  if (!wantsActivation) return undefined;
+
+  const stabilizeHz =
+    input.currentState === 'anxious' || ms === 'burned_out' || ms === 'anxious_racing'
+      ? 10.0
+      : 11.5;
+  return {
+    stabilizeHz,
+    stabilizeDurationSec: 180,
+    rampDurationSec: 60,
+    stabilizeEffectScale: 0.58,
+    reasonLabel: `2-Stage Iso-Bridge · 3m ${stabilizeHz} Hz Calm → ${input.targetHz} Hz`,
+  };
+}
+
+/**
+ * Smartly auto-selects the initial Neural Effect tier (Min ~36% / Standard ~65% / Max ~94%)
+ * from Second 1 based on the listener's current mental state, target goal, Iso-Bridge status,
+ * learned Bandit preference, noise sensitivity, and road-safety context.
  */
 export function pickSmartInitialEffectTier(input: {
   currentState: string;
+  microStateId?: string | null;
   targetState: string;
   safetyMode?: boolean;
   noiseSensitivity?: 'low' | 'medium' | 'high';
@@ -379,24 +434,66 @@ export function pickSmartInitialEffectTier(input: {
     return { tier: 'min', modMult: NEURAL_EFFECT_MULT.min, autoReason: 'Auto · Road-safe' };
   }
   if (typeof input.preferredModMult === 'number' && Number.isFinite(input.preferredModMult)) {
-    if (input.preferredModMult >= 1.18) {
+    if (input.preferredModMult >= 1.24) {
       return { tier: 'max', modMult: NEURAL_EFFECT_MULT.max, autoReason: 'Auto · Saved pref' };
     }
     if (input.preferredModMult <= 0.78) {
       return { tier: 'min', modMult: NEURAL_EFFECT_MULT.min, autoReason: 'Auto · Saved pref' };
     }
   }
+  const ms = input.microStateId ?? '';
   if (input.targetState === 'sleep_winddown') {
     return { tier: 'min', modMult: NEURAL_EFFECT_MULT.min, autoReason: 'Auto · Sleep gentle' };
   }
-  if (input.noiseSensitivity === 'high' || input.currentState === 'anxious') {
+  if (input.noiseSensitivity === 'high') {
     return { tier: 'min', modMult: NEURAL_EFFECT_MULT.min, autoReason: 'Auto · Gentle comfort' };
   }
-  if (
-    (input.currentState === 'fatigued' || input.currentState === 'scattered') &&
-    (input.targetState === 'energy_lift' || input.targetState === 'alert_focus')
-  ) {
-    return { tier: 'max', modMult: NEURAL_EFFECT_MULT.max, autoReason: 'Auto · Focus boost' };
+
+  // Check if 2-Stage Iso-Bridge handles fragile/anxious -> focus/energy transition
+  const hasIsoBridge = Boolean(
+    computeIsoBridgeForState({
+      currentState: input.currentState,
+      microStateId: ms,
+      targetState: input.targetState,
+      targetHz: 16,
+      safetyMode: input.safetyMode,
+    })
+  );
+  if (hasIsoBridge) {
+    return {
+      tier: 'standard',
+      modMult: NEURAL_EFFECT_MULT.standard,
+      autoReason: 'Auto · 2-Stage Iso-Bridge',
+    };
   }
+
+  // Anxious / Stressed / Burned Out aiming for Calm Reset or gentle Deep Flow -> Min Effect (~36%)
+  if (
+    input.targetState === 'calm_reset' ||
+    input.currentState === 'anxious' ||
+    input.currentState === 'stressed' ||
+    ms === 'burned_out' ||
+    ms === 'screen_fatigue'
+  ) {
+    return { tier: 'min', modMult: NEURAL_EFFECT_MULT.min, autoReason: 'Auto · Gentle calm' };
+  }
+
+  // Tired / Brain Fog / Distracted / Low-Mood Energy Rescue -> Max Effect (~94%) from Second 1!
+  const isDeficitRescue =
+    ((input.currentState === 'fatigued' ||
+      input.currentState === 'distracted' ||
+      ms === 'brain_fog' ||
+      ms === 'sleep_deprived' ||
+      ms === 'procrastinating' ||
+      ms === 'distracted_scattered') &&
+      (input.targetState === 'energy_lift' ||
+        input.targetState === 'alert_focus' ||
+        input.targetState === 'deep_flow')) ||
+    (ms === 'low_mood' && input.targetState === 'energy_lift');
+
+  if (isDeficitRescue) {
+    return { tier: 'max', modMult: NEURAL_EFFECT_MULT.max, autoReason: 'Auto · Max boost' };
+  }
+
   return { tier: 'standard', modMult: NEURAL_EFFECT_MULT.standard, autoReason: 'Auto · Balanced' };
 }

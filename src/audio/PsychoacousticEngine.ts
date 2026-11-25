@@ -885,10 +885,12 @@ export class PsychoacousticEngine {
     const amTargetEndHz =
       isAlphaSpec && this.alphaIafHz !== null ? this.alphaIafHz : this.studySpec.entrainment.frequencyHz;
     const amStartHz = this.studySpec.entrainment.startFrequencyHz ?? amTargetEndHz;
-    const targetAmDepth = amActiveForSpec ? this.studySpec.entrainment.modulationDepth : 0;
+    const initBridge = this.studySpec.entrainment.isoBridge;
+    const initPhaseScale =
+      initBridge && this.modDepthMultiplier < 1.24 ? initBridge.stabilizeEffectScale : 1.0;
     const initialDepth = this.isControlTrial
       ? 0
-      : Math.min(0.75, Math.max(0, targetAmDepth * 1.32 * 0.76 * this.modDepthMultiplier));
+      : this.computeCalibratedEffectPct(initPhaseScale, 1.0);
 
     let flattenedMidOutput: AudioNode = midBand.output;
     if (this.workletsReady) {
@@ -1135,7 +1137,7 @@ export class PsychoacousticEngine {
 
       const amScienceGain = ctx.createGain();
       amScienceGain.gain.setValueAtTime(
-        this.computeAmScienceCarrierTarget(0.76),
+        this.computeAmScienceCarrierTarget(initPhaseScale),
         ctx.currentTime
       );
 
@@ -3004,25 +3006,46 @@ export class PsychoacousticEngine {
   public updateElapsed(elapsedSec: number, gainTimeConst = 0.14): EngineTelemetry {
     this.elapsedSec = elapsedSec;
     const progressRatio = Math.min(1, Math.max(0, elapsedSec / this.plannedSec));
+    const spec = this.studySpec;
+    const isoBridge = spec?.entrainment.isoBridge;
     let phase: SessionPhase = 'plateau';
     let phaseLabel = 'Study Protocol Plateau';
+    // Immediate Second-1 adaptive effect (1.0 from t=0 unless 2-Stage Iso-Bridge is stabilizing or final 10% landing)
     let phaseModFactor = 1.0;
 
-    const entryDurationSec = Math.min(45, Math.max(20, this.plannedSec * 0.08));
-    if (elapsedSec < entryDurationSec) {
-      phase = 'entry';
-      phaseLabel = 'Entry & Iso-Alignment';
-      phaseModFactor = 0.76 + (elapsedSec / entryDurationSec) * 0.24;
-    } else if (progressRatio > 0.9) {
+    if (progressRatio > 0.9) {
       phase = 'landing';
       phaseLabel = 'Gentle Landing';
-      phaseModFactor = 1.0 - ((progressRatio - 0.9) / 0.1) * 0.4;
+      phaseModFactor = 1.0 - ((progressRatio - 0.9) / 0.1) * 0.35;
+    } else if (isoBridge) {
+      const stabSec = Math.max(30, isoBridge.stabilizeDurationSec);
+      const glideSec = Math.max(15, isoBridge.rampDurationSec);
+      const manualMaxOverride = this.modDepthMultiplier >= 1.24;
+      if (elapsedSec < stabSec) {
+        phase = 'entry';
+        phaseLabel = `Stage 1/2 · ${isoBridge.stabilizeHz} Hz Calm Stabilizer`;
+        phaseModFactor = manualMaxOverride ? 1.0 : isoBridge.stabilizeEffectScale;
+      } else if (elapsedSec < stabSec + glideSec) {
+        const s = 0.5 * (1 - Math.cos((Math.PI * (elapsedSec - stabSec)) / glideSec));
+        phase = 'entry';
+        phaseLabel = `Iso-Bridge Glide · ${isoBridge.stabilizeHz} → ${spec?.entrainment.frequencyHz} Hz`;
+        phaseModFactor = manualMaxOverride
+          ? 1.0
+          : isoBridge.stabilizeEffectScale + (1.0 - isoBridge.stabilizeEffectScale) * s;
+      } else {
+        phase = 'plateau';
+        phaseLabel = 'Stage 2/2 · Locked Focus Plateau';
+        phaseModFactor = 1.0;
+      }
+    } else if (elapsedSec < 25) {
+      phase = 'entry';
+      phaseLabel = 'State-Locked Active Entry';
+      phaseModFactor = 1.0;
     }
 
     const antiMonotonyActive = this.isAntiMonotonyPulseActive();
     this.composer.updateProgress(progressRatio, antiMonotonyActive);
 
-    const spec = this.studySpec;
     const scienceMuted = this.layerMonitorMode === 'music_only';
     const isIsolatedScience =
       this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus';
@@ -3031,13 +3054,13 @@ export class PsychoacousticEngine {
     const antiHabFactor =
       isIsolatedScience || this.isControlTrial
         ? 1.0
-        : 0.92 + 0.08 * Math.cos(2 * Math.PI * 0.004 * elapsedSec);
+        : 0.94 + 0.06 * Math.cos(2 * Math.PI * 0.004 * elapsedSec);
     const amActive = spec?.entrainment.type === 'amplitude_modulation' && spec.entrainment.frequencyHz > 0;
     const nominalDepth = this.computeCalibratedEffectPct(activePhaseFactor, antiHabFactor);
     const effectiveDepth =
       scienceMuted || (this.isControlTrial && !isIsolatedScience) ? 0 : nominalDepth;
 
-    // Iso-Principle live frequency ramp (startFrequencyHz -> target frequencyHz within 90s)
+    // Iso-Principle live frequency trajectory (2-Stage Iso-Bridge OR direct 60s state ramp)
     const isAlphaSpec =
       Boolean(spec && spec.entrainment.frequencyHz >= 8 && spec.entrainment.frequencyHz <= 12);
     const targetSpecHz =
@@ -3045,8 +3068,31 @@ export class PsychoacousticEngine {
         ? this.alphaIafHz
         : spec?.entrainment.frequencyHz ?? this.params?.modulationHz ?? 16;
     let liveAmHz = targetSpecHz;
-    if (amActive && spec?.entrainment.startFrequencyHz !== undefined) {
-      const freqRampSec = Math.min(90, Math.max(30, this.plannedSec * 0.15));
+    if (amActive && isoBridge) {
+      const stabSec = Math.max(30, isoBridge.stabilizeDurationSec);
+      const glideSec = Math.max(15, isoBridge.rampDurationSec);
+      if (elapsedSec < stabSec) {
+        liveAmHz = isoBridge.stabilizeHz;
+      } else if (elapsedSec < stabSec + glideSec) {
+        const s = 0.5 * (1 - Math.cos((Math.PI * (elapsedSec - stabSec)) / glideSec));
+        liveAmHz = Number(
+          (isoBridge.stabilizeHz + (targetSpecHz - isoBridge.stabilizeHz) * s).toFixed(2)
+        );
+      } else {
+        liveAmHz = targetSpecHz;
+      }
+      if (this.ctx && this.studioFilter) {
+        const baseCutoff = this.computeStudioCutoffHz();
+        const softScale =
+          elapsedSec < stabSec
+            ? 0.68
+            : elapsedSec < stabSec + glideSec
+              ? 0.68 + 0.32 * (0.5 * (1 - Math.cos((Math.PI * (elapsedSec - stabSec)) / glideSec)))
+              : 1.0;
+        smoothSetParam(this.studioFilter.frequency, Math.max(950, baseCutoff * softScale), this.ctx.currentTime, 0.4);
+      }
+    } else if (amActive && spec?.entrainment.startFrequencyHz !== undefined) {
+      const freqRampSec = Math.min(60, Math.max(25, this.plannedSec * 0.1));
       const rampRatio = Math.min(1, Math.max(0, elapsedSec / freqRampSec));
       liveAmHz = Number(
         (

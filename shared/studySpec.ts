@@ -65,10 +65,19 @@ export interface StudyReferenceMeta {
   source: 'core' | 'pubmed' | 'europepmc' | 'clinicaltrials' | 'custom_text';
 }
 
+export interface IsoBridgeSpec {
+  stabilizeHz: number;
+  stabilizeDurationSec: number;
+  rampDurationSec: number;
+  stabilizeEffectScale: number;
+  reasonLabel: string;
+}
+
 export interface StudyEntrainmentSpec {
   type: EntrainmentType;
   frequencyHz: number;
   startFrequencyHz?: number;
+  isoBridge?: IsoBridgeSpec;
   carrierLeftHz?: number;
   carrierRightHz?: number;
   modulationBandHz: [number, number];

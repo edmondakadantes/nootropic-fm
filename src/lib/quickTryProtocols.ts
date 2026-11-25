@@ -1,7 +1,325 @@
-import type { ExecutableStudySpec } from '../../shared/studySpec';
-import type { ProtocolArm, ProtocolRecommendation, ScientificStudy, UserProfile } from '../../shared/types';
+import {
+  computeIsoBridgeForState,
+  pickSmartInitialEffectTier,
+} from '../../shared/psychometrics';
+import { resolvedGenreToPalette, type ExecutableStudySpec } from '../../shared/studySpec';
+import type {
+  CurrentState,
+  ProtocolArm,
+  ProtocolRecommendation,
+  ResolvedGenre,
+  ScientificStudy,
+  TargetState,
+  UserProfile,
+} from '../../shared/types';
 
 export type QuickTryId = 'focus_lofi' | 'mood_uplift' | 'calm_rain' | 'energy_electronic';
+
+export type QuickFeelingId =
+  | 'tired_fog'
+  | 'distracted'
+  | 'stressed_anxious'
+  | 'burned_out'
+  | 'sad_low'
+  | 'calm_ready';
+
+export interface QuickFeelingMeta {
+  id: QuickFeelingId;
+  label: string;
+  tag: string;
+  currentState: CurrentState;
+  microStateId: string;
+  recommendedTarget: TargetState;
+}
+
+export const QUICK_FEELINGS: QuickFeelingMeta[] = [
+  {
+    id: 'tired_fog',
+    label: 'Tired / Brain Fog',
+    tag: 'LOW ENERGY',
+    currentState: 'fatigued',
+    microStateId: 'brain_fog',
+    recommendedTarget: 'energy_lift',
+  },
+  {
+    id: 'distracted',
+    label: 'Distracted / Scattered',
+    tag: 'MIND JUMPING',
+    currentState: 'distracted',
+    microStateId: 'distracted_scattered',
+    recommendedTarget: 'alert_focus',
+  },
+  {
+    id: 'stressed_anxious',
+    label: 'Stressed / Anxious',
+    tag: 'TENSE · RACING',
+    currentState: 'anxious',
+    microStateId: 'anxious_racing',
+    recommendedTarget: 'calm_reset',
+  },
+  {
+    id: 'burned_out',
+    label: 'Burned Out / Drained',
+    tag: 'DEPLETED',
+    currentState: 'fatigued',
+    microStateId: 'burned_out',
+    recommendedTarget: 'calm_reset',
+  },
+  {
+    id: 'sad_low',
+    label: 'Sad / Low Mood',
+    tag: 'NEEDS WARMTH',
+    currentState: 'fatigued',
+    microStateId: 'low_mood',
+    recommendedTarget: 'energy_lift',
+  },
+  {
+    id: 'calm_ready',
+    label: 'Calm & Grounded',
+    tag: 'STEADY',
+    currentState: 'calm_neutral',
+    microStateId: 'calm_steady',
+    recommendedTarget: 'deep_flow',
+  },
+];
+
+export function previewStateGoalTrajectory(
+  feelingId: QuickFeelingId,
+  targetState: TargetState,
+  profile?: UserProfile | null
+): {
+  hzSummary: string;
+  effectLabel: string;
+  genreLabel: string;
+  isIsoBridge: boolean;
+} {
+  const feeling = QUICK_FEELINGS.find((f) => f.id === feelingId) ?? QUICK_FEELINGS[1];
+  const isDriving = profile?.role === 'driver';
+  const targetHz =
+    targetState === 'energy_lift'
+      ? feelingId === 'sad_low'
+        ? 14
+        : 18
+      : targetState === 'alert_focus'
+        ? feelingId === 'burned_out'
+          ? 14
+          : 16
+        : targetState === 'deep_flow'
+          ? feelingId === 'burned_out' || feelingId === 'sad_low'
+            ? 12
+            : 15
+          : targetState === 'calm_reset'
+            ? feelingId === 'stressed_anxious'
+              ? 0.1
+              : 10
+            : 6;
+
+  const isoBridge =
+    targetHz > 12
+      ? computeIsoBridgeForState({
+          currentState: feeling.currentState,
+          microStateId: feeling.microStateId,
+          targetState,
+          targetHz,
+          safetyMode: isDriving,
+        })
+      : undefined;
+
+  const tierInfo = pickSmartInitialEffectTier({
+    currentState: feeling.currentState,
+    microStateId: feeling.microStateId,
+    targetState,
+    safetyMode: isDriving,
+    noiseSensitivity: profile?.noiseSensitivity,
+    preferredModMult: profile?.preferredModMult,
+  });
+
+  const effectLabel =
+    tierInfo.tier === 'max'
+      ? 'Max Effect · 94%'
+      : tierInfo.tier === 'min'
+        ? 'Min Effect · 36%'
+        : isoBridge
+          ? 'Iso-Bridge · 38% → 65%'
+          : 'Standard · 65%';
+
+  const hzSummary = isoBridge
+    ? `3m ${isoBridge.stabilizeHz} Hz Calm → ${targetHz} Hz`
+    : targetHz === 0.1
+      ? '0.10 Hz HRV Breath Tide'
+      : feeling.currentState === 'fatigued' && targetHz >= 14
+        ? `10 → ${targetHz} Hz Beta Lift`
+        : feeling.currentState === 'distracted' && targetHz >= 14
+          ? `12 → ${targetHz} Hz Attention Lock`
+          : targetState === 'sleep_winddown'
+            ? '8.5 → 6 Hz Theta Drift'
+            : `${targetHz} Hz Active Wave`;
+
+  const genreLabel =
+    targetState === 'sleep_winddown'
+      ? 'Nature & Rain'
+      : targetState === 'calm_reset'
+        ? feelingId === 'sad_low'
+          ? 'Solo Piano'
+          : 'Nature & Rain'
+        : feelingId === 'sad_low'
+          ? 'Acoustic Guitar (Major)'
+          : feelingId === 'stressed_anxious' || feelingId === 'burned_out'
+            ? 'Lo-Fi Keys (Warm)'
+            : 'Deep Electronic';
+
+  return {
+    hzSummary,
+    effectLabel,
+    genreLabel,
+    isIsoBridge: Boolean(isoBridge),
+  };
+}
+
+/**
+ * Builds an instant (<1 ms), state-calibrated ProtocolRecommendation for any of the
+ * 6 Current Feelings × 5 Target Outcomes on the Main Page 2-Click Launcher.
+ */
+export function buildStateGoalQuickRecommendation(
+  feelingId: QuickFeelingId,
+  targetState: TargetState,
+  profile?: UserProfile | null
+): ProtocolRecommendation {
+  const feeling = QUICK_FEELINGS.find((f) => f.id === feelingId) ?? QUICK_FEELINGS[1];
+
+  const baseId: QuickTryId =
+    targetState === 'calm_reset' || targetState === 'sleep_winddown'
+      ? 'calm_rain'
+      : feelingId === 'sad_low'
+        ? 'mood_uplift'
+        : targetState === 'energy_lift'
+          ? 'energy_electronic'
+          : 'focus_lofi';
+
+  const rec = structuredClone(buildRawQuickTryRecommendation(baseId));
+  rec.sessionId = `eph_quick_${feelingId}_${targetState}_${Date.now().toString(36)}`;
+  rec.currentState = feeling.currentState;
+  rec.microStateId = feeling.microStateId;
+  rec.microStateLabel = feeling.label;
+  rec.targetState = targetState;
+
+  const genre: ResolvedGenre =
+    targetState === 'sleep_winddown'
+      ? 'nature_rain'
+      : targetState === 'calm_reset'
+        ? feelingId === 'sad_low'
+          ? 'solo_piano'
+          : 'nature_rain'
+        : feelingId === 'sad_low'
+          ? 'acoustic_pluck'
+          : feelingId === 'stressed_anxious' || feelingId === 'burned_out'
+            ? 'lofi_keys'
+            : 'deep_electronic';
+
+  rec.params.genre = genre;
+  rec.fallbackCoreGenre = genre;
+
+  if (targetState === 'sleep_winddown' && rec.executableSpec) {
+    rec.plannedDurationMin = 30;
+    rec.params.modulationHz = 6;
+    rec.params.modulationDepth = 0.28;
+    rec.params.bpm = 0;
+    rec.params.energyTier = 'calm';
+    rec.params.noiseColor = 'brown';
+    rec.params.noiseLevel = 0.16;
+    rec.arm.id = 'theta-drift-6hz';
+    rec.arm.name = 'Theta Sleep Drift · 6 Hz';
+    rec.executableSpec.id = 'jespersen-2022-cochrane-sleep';
+    rec.executableSpec.shortLabel = 'Cochrane Sleep Wind-Down · 6 Hz';
+    rec.executableSpec.entrainment = {
+      type: 'amplitude_modulation',
+      frequencyHz: 6,
+      startFrequencyHz: 8.5,
+      modulationBandHz: [160, 2800],
+      modulationDepth: 0.28,
+      waveform: 'raised_cosine',
+      phaseOffsetDeg: 18,
+      hrvBreathHz: 0.1,
+    };
+    rec.executableSpec.music.instrumentPalette = resolvedGenreToPalette(genre);
+    rec.executableSpec.music.bpm = 0;
+    rec.executableSpec.music.percussion = 'none';
+    rec.executableSpec.noise = { color: 'brown', snrDb: -16 };
+    rec.executableSpec.protocol.targetState = 'sleep_winddown';
+  } else if (targetState === 'calm_reset' && feelingId !== 'stressed_anxious' && rec.executableSpec) {
+    rec.plannedDurationMin = 20;
+    rec.params.modulationHz = 10;
+    rec.params.modulationDepth = 0.3;
+    rec.params.energyTier = 'calm';
+    rec.arm.id = 'alpha-parasympathetic-10hz';
+    rec.arm.name = 'Alpha Calm Reset · 10 Hz';
+    rec.executableSpec.entrainment = {
+      type: 'amplitude_modulation',
+      frequencyHz: 10,
+      startFrequencyHz: 12.5,
+      modulationBandHz: [190, 3800],
+      modulationDepth: 0.3,
+      waveform: 'raised_cosine',
+      phaseOffsetDeg: 24,
+      hrvBreathHz: 0.1,
+    };
+    rec.executableSpec.music.instrumentPalette = resolvedGenreToPalette(genre);
+    rec.executableSpec.protocol.targetState = 'calm_reset';
+  } else if (rec.executableSpec && rec.executableSpec.entrainment.type === 'amplitude_modulation') {
+    const targetHz =
+      targetState === 'energy_lift'
+        ? feelingId === 'sad_low'
+          ? 14
+          : 18
+        : targetState === 'alert_focus'
+          ? feelingId === 'burned_out'
+            ? 14
+            : 16
+          : feelingId === 'burned_out' || feelingId === 'sad_low'
+            ? 12
+            : 15;
+
+    rec.plannedDurationMin = targetState === 'deep_flow' ? 35 : 25;
+    rec.params.modulationHz = targetHz;
+    rec.params.energyTier =
+      targetState === 'energy_lift' && feelingId !== 'stressed_anxious' && feelingId !== 'burned_out'
+        ? 'drive'
+        : 'focus';
+    rec.arm.name =
+      targetState === 'energy_lift'
+        ? `${targetHz} Hz Energy Lift`
+        : targetState === 'deep_flow'
+          ? `${targetHz} Hz Deep Flow`
+          : `${targetHz} Hz Sharp Focus`;
+
+    rec.executableSpec.entrainment.frequencyHz = targetHz;
+    rec.executableSpec.music.instrumentPalette = resolvedGenreToPalette(genre);
+    rec.executableSpec.protocol.targetState = targetState;
+    if (feelingId === 'stressed_anxious' || feelingId === 'burned_out') {
+      rec.params.filterCutoffHz = 1950;
+      rec.executableSpec.music.spectralLowPassHz = 1950;
+    }
+
+    const isDriving = profile?.role === 'driver';
+    const isoBridge = computeIsoBridgeForState({
+      currentState: feeling.currentState,
+      microStateId: feeling.microStateId,
+      targetState,
+      targetHz,
+      safetyMode: isDriving,
+    });
+    if (isoBridge) {
+      rec.executableSpec.entrainment.isoBridge = isoBridge;
+      rec.executableSpec.entrainment.startFrequencyHz = isoBridge.stabilizeHz;
+    } else if (feeling.currentState === 'fatigued') {
+      rec.executableSpec.entrainment.startFrequencyHz = 10;
+    } else if (feeling.currentState === 'distracted') {
+      rec.executableSpec.entrainment.startFrequencyHz = 12;
+    }
+  }
+
+  return applyQuickTryProfile(rec, profile);
+}
 
 const QUICK_TRY_CITATIONS: Record<QuickTryId, ScientificStudy[]> = {
   focus_lofi: [

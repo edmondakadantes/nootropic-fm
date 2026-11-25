@@ -173,6 +173,7 @@ export function PlayerView({
 
   const smartEffectInit = pickSmartInitialEffectTier({
     currentState: recommendation.currentState,
+    microStateId: recommendation.microStateId,
     targetState: recommendation.targetState,
     safetyMode: recommendation.safetyMode,
     noiseSensitivity: profile?.noiseSensitivity,
@@ -366,6 +367,7 @@ export function PlayerView({
     setLayerMonitor(initialCarrier === 'pure_stimulus' ? 'science_only' : 'full_mix');
     const nextSmartEffect = pickSmartInitialEffectTier({
       currentState: recommendation.currentState,
+      microStateId: recommendation.microStateId,
       targetState: recommendation.targetState,
       safetyMode: recommendation.safetyMode,
       noiseSensitivity: profile?.noiseSensitivity,

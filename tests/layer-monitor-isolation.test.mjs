@@ -322,3 +322,54 @@ test('3. Smart Neural Effect Selector: auto-picks Min / Standard / Max from cogn
   assert.ok(stdPct >= 63 && stdPct <= 67, `Expected ~65% Standard Effect, got ${stdPct}%`);
   assert.ok(maxPct >= 92 && maxPct <= 95, `Expected ~94% Max Effect, got ${maxPct}%`);
 });
+
+test('4. 2-Stage Iso-Bridge: stabilizes Anxious/Stressed/Burned-Out -> Focus at 10-11.5 Hz for 3m, then glides S-curve to 16 Hz', async () => {
+  const { computeIsoBridgeForState, pickSmartInitialEffectTier } = await import(
+    '../shared/psychometrics.ts'
+  );
+
+  // Anxious -> Sharp Focus (16 Hz) activates 2-Stage Iso-Bridge at 10.0 Hz for 180s + 60s glide
+  const anxBridge = computeIsoBridgeForState({
+    currentState: 'anxious',
+    microStateId: 'anxious_racing',
+    targetState: 'alert_focus',
+    targetHz: 16,
+    safetyMode: false,
+  });
+  assert.ok(anxBridge, 'Anxious -> Alert Focus must activate 2-Stage Iso-Bridge');
+  assert.equal(anxBridge.stabilizeHz, 10.0);
+  assert.equal(anxBridge.stabilizeDurationSec, 180);
+  assert.equal(anxBridge.rampDurationSec, 60);
+
+  const anxTier = pickSmartInitialEffectTier({
+    currentState: 'anxious',
+    microStateId: 'anxious_racing',
+    targetState: 'alert_focus',
+  });
+  assert.equal(anxTier.tier, 'standard');
+  assert.match(anxTier.autoReason, /Iso-Bridge/);
+
+  // Burned Out -> Focus also activates 10.0 Hz Iso-Bridge
+  const burnBridge = computeIsoBridgeForState({
+    currentState: 'fatigued',
+    microStateId: 'burned_out',
+    targetState: 'alert_focus',
+    targetHz: 14,
+  });
+  assert.ok(burnBridge && burnBridge.stabilizeHz === 10.0);
+
+  // Tired / Brain Fog -> Focus does NOT delay with Iso-Bridge; launches at Max Effect from Second 1!
+  const tiredBridge = computeIsoBridgeForState({
+    currentState: 'fatigued',
+    microStateId: 'brain_fog',
+    targetState: 'alert_focus',
+    targetHz: 16,
+  });
+  assert.equal(tiredBridge, undefined);
+  const tiredTier = pickSmartInitialEffectTier({
+    currentState: 'fatigued',
+    microStateId: 'brain_fog',
+    targetState: 'alert_focus',
+  });
+  assert.equal(tiredTier.tier, 'max');
+});

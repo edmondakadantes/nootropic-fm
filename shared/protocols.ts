@@ -10,12 +10,20 @@ import {
   NEURAL_EFFECT_MULT,
   assignStratifiedShamControl,
   computeHierarchicalArmPosterior,
+  computeIsoBridgeForState,
   pickSmartInitialEffectTier,
   sampleHierarchicalThompson,
+  type ComputedIsoBridge,
   type NeuralEffectTier,
 } from './psychometrics';
 
-export { NEURAL_EFFECT_MULT, pickSmartInitialEffectTier, type NeuralEffectTier };
+export {
+  NEURAL_EFFECT_MULT,
+  computeIsoBridgeForState,
+  pickSmartInitialEffectTier,
+  type ComputedIsoBridge,
+  type NeuralEffectTier,
+};
 import { buildCheckInExecutableSpec } from './studyPresets';
 import { resolvedGenreToPalette } from './studySpec';
 import type {
@@ -876,9 +884,13 @@ export function selectProtocolRecommendation(input: {
       microState.id === 'wired_but_tired' ||
       microState.id === 'anxious_racing'
     ) {
-      // Never spike cortisol on an already-wired nervous system: smooth Alpha->SMR ceiling
-      params.modulationHz = Math.min(params.modulationHz, 12.5);
-      params.modulationDepth = Number(Math.max(0.16, params.modulationDepth * 0.82).toFixed(2));
+      // If aiming for calm/sleep keep <=12 Hz; if aiming for focus/energy, keep 15–16 Hz plateau while 2-Stage Iso-Bridge stabilizes at 10–11.5 Hz for the first 3 min!
+      if (effectiveTarget === 'calm_reset' || effectiveTarget === 'sleep_winddown') {
+        params.modulationHz = Math.min(params.modulationHz, 12.0);
+      } else {
+        params.modulationHz = Math.min(params.modulationHz, 16.0);
+      }
+      params.modulationDepth = Number(Math.max(0.16, params.modulationDepth * 0.88).toFixed(2));
       params.filterCutoffHz = Math.min(params.filterCutoffHz, 2100);
     } else if (microState.id === 'creative_block') {
       // Open associative alpha-border modulation & spacious suspended harmony
@@ -970,6 +982,7 @@ export function selectProtocolRecommendation(input: {
 
   const baseExecutableSpec = buildCheckInExecutableSpec({
     armId: chosen.arm.id,
+    currentState: input.currentState,
     targetState: effectiveTarget,
     bpm: params.bpm,
     modulationHz: params.modulationHz,

@@ -58,7 +58,12 @@ import {
   getStoredProfileAuth,
   saveStoredProfileAuth,
 } from './lib/api';
-import { buildInstantQuickTryRecommendation, type QuickTryId } from './lib/quickTryProtocols';
+import {
+  buildInstantQuickTryRecommendation,
+  buildStateGoalQuickRecommendation,
+  type QuickFeelingId,
+  type QuickTryId,
+} from './lib/quickTryProtocols';
 
 const StudyLabView = lazy(() =>
   import('./components/StudyLabView').then((m) => ({ default: m.StudyLabView }))
@@ -82,7 +87,7 @@ export default function App() {
     typeof window !== 'undefined' && /^#sync=([A-Za-z0-9-]+)$/i.test(window.location.hash);
   const hasInitialStoredProfile = Boolean(getStoredProfileAuth()?.profileId);
 
-  const [screen, setScreen] = useState<Screen>(hasInitialStoredProfile ? 'checkin' : 'landing');
+  const [screen, setScreen] = useState<Screen>('landing');
   const [booting, setBooting] = useState(hasInitialHashSync);
   const [runtimeConfig, setRuntimeConfig] = useState<AppRuntimeConfig | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -277,6 +282,17 @@ export default function App() {
     (id: QuickTryId) => {
       setErrorBanner(null);
       const rec = buildInstantQuickTryRecommendation(id, profile);
+      setActiveRec(rec);
+      setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+      setScreen('player');
+    },
+    [moodFromTarget, profile]
+  );
+
+  const handleLaunchStateGoal = useCallback(
+    (feelingId: QuickFeelingId, target: TargetState) => {
+      setErrorBanner(null);
+      const rec = buildStateGoalQuickRecommendation(feelingId, target, profile);
       setActiveRec(rec);
       setFieldMood(moodFromTarget(rec.environment, rec.targetState));
       setScreen('player');
@@ -785,7 +801,9 @@ export default function App() {
           <HeroLandingView
             isPro={profile?.planTier === 'pro'}
             hasProfile={Boolean(profile)}
+            profile={profile}
             onInstantPlay={handleInstantHeroPlay}
+            onLaunchStateGoal={handleLaunchStateGoal}
             onStartCustomize={() => {
               setSelectedPreset(null);
               setScreen('checkin');

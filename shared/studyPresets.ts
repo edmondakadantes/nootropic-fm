@@ -1,6 +1,7 @@
 import type { ExecutableStudySpec } from './studySpec';
+import { computeIsoBridgeForState } from './psychometrics';
 import { applySafetyAndDeviceGuardrails } from './studyCompilerCore';
-import type { OutputDevice, ResolvedGenre, SessionEnvironment } from './types';
+import type { CurrentState, OutputDevice, ResolvedGenre, SessionEnvironment } from './types';
 
 /**
  * Ground-Truth Verified Clinical Executable Protocols.
@@ -749,6 +750,7 @@ export function getPresetStudySpecById(
  */
 export function buildCheckInExecutableSpec(input: {
   armId: string;
+  currentState?: CurrentState;
   targetState: string;
   bpm: number;
   modulationHz: number;
@@ -782,6 +784,32 @@ export function buildCheckInExecutableSpec(input: {
   template.music.bpm = input.bpm;
   if (input.bpm > 0 && input.armId !== 'theta-drift-6hz') {
     delete template.music.bpmRamp;
+  }
+
+  // State-aware Iso-Principle start frequency & 2-Stage Iso-Bridge (when entering from stress/anxiety/burnout)
+  const isDriving = input.environment === 'driving' || input.device === 'car_audio';
+  const isoBridge = computeIsoBridgeForState({
+    currentState: input.currentState ?? 'calm_neutral',
+    microStateId: input.microStateId,
+    targetState: input.targetState,
+    targetHz: input.modulationHz,
+    safetyMode: isDriving,
+  });
+  if (isoBridge && template.entrainment.type === 'amplitude_modulation') {
+    template.entrainment.isoBridge = isoBridge;
+    template.entrainment.startFrequencyHz = isoBridge.stabilizeHz;
+  } else if (template.entrainment.type === 'amplitude_modulation') {
+    delete template.entrainment.isoBridge;
+    if (input.currentState === 'fatigued' && input.modulationHz >= 14) {
+      template.entrainment.startFrequencyHz = 10;
+    } else if (input.currentState === 'distracted' && input.modulationHz >= 14) {
+      template.entrainment.startFrequencyHz = 12;
+    } else if (
+      input.targetState === 'calm_reset' &&
+      (input.currentState === 'anxious' || input.currentState === 'stressed')
+    ) {
+      template.entrainment.startFrequencyHz = 13;
+    }
   }
   template.noise.color = input.noiseColor;
   template.noise.snrDb =
