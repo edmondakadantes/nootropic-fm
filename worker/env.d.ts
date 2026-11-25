@@ -39,6 +39,7 @@ export interface R2ObjectInfo {
   size: number;
   etag: string;
   httpMetadata?: R2HttpMetadata;
+  customMetadata?: Record<string, string>;
   writeHttpMetadata?: (headers: Headers) => void;
 }
 
@@ -62,7 +63,12 @@ export interface R2Bucket {
     value: ArrayBuffer | ArrayBufferView | string | ReadableStream<Uint8Array>,
     options?: { httpMetadata?: R2HttpMetadata; customMetadata?: Record<string, string> }
   ): Promise<R2ObjectInfo>;
-  list(options?: { prefix?: string; limit?: number; cursor?: string }): Promise<R2Objects>;
+  list(options?: {
+    prefix?: string;
+    limit?: number;
+    cursor?: string;
+    include?: Array<'httpMetadata' | 'customMetadata'>;
+  }): Promise<R2Objects>;
 }
 
 export interface ExecutionContext {

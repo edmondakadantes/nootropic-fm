@@ -257,7 +257,7 @@ export class LyriaRealtimeClient {
               window.clearTimeout(timeout);
               this.reconnectCount = 0;
               this.setStatus('streaming', 'Endless Stream active through 3-Band LR4 DSP');
-              this.outputGain?.gain.exponentialRampToValueAtTime(0.92, this.activeCtx.currentTime + 1.5);
+              this.outputGain?.gain.exponentialRampToValueAtTime(0.86, this.activeCtx.currentTime + 1.5);
               finish(true);
             }
           }

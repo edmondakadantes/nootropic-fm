@@ -148,6 +148,7 @@ export class GenerativeComposer {
   private intensityMult = 1.0;
 
   private chordIdx = 0;
+  private prevVoicedMidis: number[] = [];
   private stepCount = 0;
   private nextStepTime = 0;
   private fractal = new PinkFractalWalk();
@@ -174,6 +175,7 @@ export class GenerativeComposer {
     this.reverbSend = reverbSend;
     this.delaySend = delaySend;
     this.chordIdx = 0;
+    this.prevVoicedMidis = [];
     this.stepCount = 0;
     this.progressRatio = 0;
     this.usingRealSamples = false;
@@ -433,10 +435,37 @@ export class GenerativeComposer {
 
     const nextOscs: OscillatorNode[] = [];
     const nextGains: GainNode[] = [];
+    const nextVoicedMidis: number[] = [];
     const isStrings = this.palette === 'cinematic_strings';
 
     degree.intervals.forEach((semi, voiceIdx) => {
-      const freq = midiToHz(rootMidi + semi, tuning);
+      let voicedMidi = rootMidi + semi;
+      if (voiceIdx === 0) {
+        while (voicedMidi > 50) voicedMidi -= 12;
+        while (voicedMidi < 38) voicedMidi += 12;
+      } else {
+        while (voicedMidi > 69) voicedMidi -= 12;
+        while (voicedMidi < 53) voicedMidi += 12;
+        const prevMidi = this.prevVoicedMidis[voiceIdx];
+        if (prevMidi !== undefined) {
+          let bestMidi = voicedMidi;
+          let bestDist = Math.abs(voicedMidi - prevMidi);
+          for (const shift of [-12, 12]) {
+            const cand = voicedMidi + shift;
+            if (cand >= 48 && cand <= 76) {
+              const dist = Math.abs(cand - prevMidi);
+              if (dist < bestDist) {
+                bestDist = dist;
+                bestMidi = cand;
+              }
+            }
+          }
+          voicedMidi = bestMidi;
+        }
+      }
+      nextVoicedMidis.push(voicedMidi);
+
+      const freq = midiToHz(voicedMidi, tuning);
       const detunes = voiceIdx === 0 ? [0] : isStrings ? [-8, -2, 3, 9] : [-4, 4];
 
       detunes.forEach((detune, dIdx) => {
@@ -475,6 +504,7 @@ export class GenerativeComposer {
       });
     });
 
+    this.prevVoicedMidis = nextVoicedMidis;
     this.activePadOscs = nextOscs;
     this.activePadGains = nextGains;
   }
@@ -491,13 +521,26 @@ export class GenerativeComposer {
     while (this.nextStepTime < ctx.currentTime + lookahead) {
       const step = this.stepCount % 16;
       const swing =
-        (this.palette === 'warm_rhodes' || this.palette === 'felt_piano') && step % 2 === 1
-          ? eighthDur * 0.12
+        step % 2 === 1
+          ? this.palette === 'warm_rhodes'
+            ? eighthDur * 0.16
+            : this.palette === 'nylon_acoustic'
+              ? eighthDur * 0.11
+              : this.palette === 'felt_piano'
+                ? eighthDur * 0.08
+                : 0
           : 0;
+      const pocketDelay =
+        this.palette === 'warm_rhodes' && (step % 4 === 1 || step % 4 === 3) ? 0.011 : 0;
+      const rubato =
+        this.palette === 'felt_piano' ? (this.fractal.next() - 0.5) * 0.022 : 0;
       const humanMicro = (Math.random() - 0.5) * 0.008;
-      const t = Math.max(ctx.currentTime + 0.01, this.nextStepTime + swing + humanMicro);
+      const t = Math.max(ctx.currentTime + 0.01, this.nextStepTime + swing + pocketDelay + rubato + humanMicro);
       const lift = this.antiMonotonyActive ? 1.2 : 1.0;
       const perc = liveBpm === 0 ? 'none' : this.musicSpec.percussion;
+      const metricAccent = step === 0 || step === 8 ? 1.0 : step === 4 || step === 12 ? 0.84 : 0.64;
+      const phraseBreath = 0.88 + 0.18 * Math.sin((this.stepCount / 16) * Math.PI);
+      const phraseAccent = metricAccent * phraseBreath;
 
       // 1. Percussion Layer (strictly obeys study's percussion lock!)
       if (perc !== 'none') {
@@ -505,7 +548,9 @@ export class GenerativeComposer {
           this.triggerWarmSubKick(t, (step === 0 ? 0.46 : 0.34) * (perc === 'minimal_soft' ? 0.65 : 1.0));
         }
         if (this.hatPattern[step] && !this.speakerSafeEQ) {
-          this.triggerBrushedAirHat(t, 0.024 * (perc === 'minimal_soft' ? 0.6 : 1.0));
+          this.triggerBrushedAirHat(t, 0.024 * phraseBreath * (perc === 'minimal_soft' ? 0.6 : 1.0));
+        } else if (perc === 'steady_pulse' && !this.speakerSafeEQ && step % 2 === 1 && Math.random() < 0.35) {
+          this.triggerBrushedAirHat(t + 0.008, 0.011);
         }
       }
 
@@ -515,7 +560,7 @@ export class GenerativeComposer {
         (this.palette === 'deep_electronic' || this.palette === 'warm_rhodes') &&
         (step === 0 || step === 6 || step === 8 || step === 14)
       ) {
-        this.triggerCleanBass(t, step === 14 ? 7 : 0, 0.21, eighthDur * 1.5);
+        this.triggerCleanBass(t, step === 14 ? 7 : 0, 0.21 * phraseBreath, eighthDur * 1.5);
       }
 
       // 3. 1/f Pink-Fractal Melodic & Harmonic Voice (Never loops identically!)
@@ -525,12 +570,12 @@ export class GenerativeComposer {
           : Math.max(0.18, Math.min(0.68, 0.22 + this.musicSpec.density * 0.45));
       const isStrongBeat = step === 0 || step === 4 || step === 8 || step === 12;
       if ((isStrongBeat && Math.random() < noteProb + 0.25) || Math.random() < noteProb * 0.55) {
-        this.triggerMelodicVoice(t, step, lift);
+        this.triggerMelodicVoice(t, step, lift, phraseAccent);
       }
 
       // Occasional warm chord comp on beat 1 or syncopated offbeat
       if (step === 0 && (this.stepCount % 32 === 0 || Math.random() < 0.45)) {
-        this.triggerHarmonicVoicing(t, 0.1 * lift);
+        this.triggerHarmonicVoicing(t, 0.1 * lift * phraseBreath);
       }
 
       this.nextStepTime += eighthDur;
@@ -547,11 +592,11 @@ export class GenerativeComposer {
     return Math.max(36, Math.min(81, this.musicSpec.rootMidi + degree.rootOffset + scale[idx] + octaveShift));
   }
 
-  private triggerMelodicVoice(time: number, step: number, lift: number): void {
+  private triggerMelodicVoice(time: number, step: number, lift: number, phraseAccent = 1.0): void {
     if (!this.ctx || !this.pulseBus || !this.musicSpec) return;
     const midi = this.pickFractalMidi(this.palette === 'ambient_water' ? 12 : 12);
     const freq = midiToHz(midi, this.musicSpec.tuningA4Hz);
-    const vel = (0.11 + Math.random() * 0.08) * lift * this.intensityMult;
+    const vel = (0.11 + Math.random() * 0.08) * lift * phraseAccent * this.intensityMult;
 
     // 1. Prefer REAL recorded studio instrument multi-samples from Cloudflare R2!
     if (this.sampler.isPaletteReady(this.palette)) {
@@ -629,13 +674,20 @@ export class GenerativeComposer {
 
     notes.slice(1, 4).forEach((semi, idx) => {
       const freq = midiToHz(this.musicSpec!.rootMidi + degree.rootOffset + semi + 12, tuning);
-      const offset = idx * 0.028;
+      const strumStep =
+        this.palette === 'nylon_acoustic'
+          ? 0.032
+          : this.palette === 'felt_piano'
+            ? 0.036
+            : 0.028;
+      const offset = idx * strumStep;
+      const voiceWeight = idx === 1 ? 0.5 : 0.45;
       if (this.palette === 'warm_rhodes') {
-        this.playRhodesTineNote(time + offset, freq, amp * 0.55);
+        this.playRhodesTineNote(time + offset, freq, amp * (voiceWeight + 0.05));
       } else if (this.palette === 'nylon_acoustic') {
-        this.playNylonPluckNote(time + offset, freq, amp * 0.55);
+        this.playNylonPluckNote(time + offset, freq, amp * (voiceWeight + 0.05));
       } else {
-        this.playFeltPianoNote(time + offset, freq, amp * 0.52);
+        this.playFeltPianoNote(time + offset, freq, amp * voiceWeight);
       }
     });
   }
@@ -887,6 +939,7 @@ export class GenerativeComposer {
     }
     this.activePadOscs = [];
     this.activePadGains = [];
+    this.prevVoicedMidis = [];
     this.sampler.clear();
     this.usingRealSamples = false;
     this.filterLfo = null;

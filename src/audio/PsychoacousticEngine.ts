@@ -26,6 +26,9 @@ export interface StudioTrackRef {
   url: string;
   energy: EnergyTier;
   bpm?: number;
+  lufs?: number;
+  rootMidi?: number;
+  keyLabel?: string;
 }
 
 export interface EngineTelemetry {
@@ -45,6 +48,7 @@ export interface EngineTelemetry {
   usingStudioAudio: boolean;
   usingCustomTrack?: boolean;
   activeTrackName: string | null;
+  activeTrackKey?: string | null;
   // v3.0 Study-to-Sound & Live As-We-Go Telemetry
   carrierMode: CarrierEngineMode;
   entrainmentType: EntrainmentType;
@@ -60,6 +64,27 @@ export interface EngineTelemetry {
   usingRealSamples?: boolean;
   studioRetuned432?: boolean;
   layerMonitorMode: LayerMonitorMode;
+}
+
+/**
+ * Transparent Mastering Soft-Knee Clipper Curve:
+ * Linear (0.000% harmonic distortion) below |0.72|, gentle analog tanh saturation above |0.72|
+ * capping absolute master peaks below -0.80 dBFS (0.912).
+ */
+function createMasteringLimiterCurve(): Float32Array<ArrayBuffer> {
+  const n = 4096;
+  const curve = new Float32Array(new ArrayBuffer(n * 4));
+  const knee = 0.72;
+  const headroom = 0.192;
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / (n - 1) - 1;
+    const ax = Math.abs(x);
+    curve[i] =
+      ax <= knee
+        ? x
+        : Math.sign(x) * (knee + headroom * Math.tanh((ax - knee) / headroom));
+  }
+  return curve;
 }
 
 /**
@@ -272,13 +297,21 @@ export class PsychoacousticEngine {
   private pureAmCarrierGain: GainNode | null = null;
   private pureAmCarrierSrc: AudioBufferSourceNode | null = null;
 
-  // 3-Band LR4 Cortical AM nodes
+  // 3-Band LR4 Cortical AM + Velvet Spectral Tilt nodes
   private amGainL: GainNode | null = null;
   private amGainR: GainNode | null = null;
   private amLfoL: OscillatorNode | null = null;
   private amLfoR: OscillatorNode | null = null;
   private amDepthGainL: GainNode | null = null;
   private amDepthGainR: GainNode | null = null;
+  private amTiltDepthL: GainNode | null = null;
+  private amTiltDepthR: GainNode | null = null;
+
+  // Dynamic SNR Music Envelope Follower (keeps Layer 1 stimulus locked at true study SNR)
+  private musicEnvAnalyser: AnalyserNode | null = null;
+  private musicEnvBuf: Float32Array<ArrayBuffer> | null = null;
+  private musicEnvSmoothedRms = 0.165;
+  private snrTimer: number | null = null;
 
   // Modular sub-engines
   private composer = new GenerativeComposer();
@@ -314,6 +347,7 @@ export class PsychoacousticEngine {
   private usingCustomTrack = false;
   private activeCustomTrack: { url: string; label: string } | null = null;
   private activeTrackName: string | null = null;
+  private activeTrackKey: string | null = null;
   private activeTrackNativeBpm = 0;
   private activeStudioAppliedBpm = 0;
 
@@ -384,13 +418,20 @@ export class PsychoacousticEngine {
     };
     document.addEventListener('visibilitychange', this.visibilityHandler);
 
-    // Master Peak Limiter / Studio Compressor
+    // Master Peak Limiter / Studio Compressor + 3 ms Lookahead Soft-Knee Stage (-0.80 dBFS ceiling)
     const compressor = ctx.createDynamicsCompressor();
-    compressor.threshold.value = -12;
-    compressor.knee.value = 18;
-    compressor.ratio.value = 3.2;
-    compressor.attack.value = 0.012;
-    compressor.release.value = 0.22;
+    compressor.threshold.value = -14;
+    compressor.knee.value = 16;
+    compressor.ratio.value = 2.8;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.18;
+
+    const lookaheadDelay = ctx.createDelay(0.02);
+    lookaheadDelay.delayTime.value = 0.003;
+
+    const masterLimiter = ctx.createWaveShaper();
+    masterLimiter.curve = createMasteringLimiterCurve();
+    masterLimiter.oversample = '2x';
 
     const masterGain = ctx.createGain();
     masterGain.gain.setValueAtTime(0.0001, ctx.currentTime);
@@ -408,7 +449,9 @@ export class PsychoacousticEngine {
     scopeMasterAnalyser.fftSize = 2048;
     scopeMasterAnalyser.smoothingTimeConstant = 0.0;
 
-    compressor.connect(masterGain);
+    compressor.connect(lookaheadDelay);
+    lookaheadDelay.connect(masterLimiter);
+    masterLimiter.connect(masterGain);
     masterGain.connect(analyser);
     masterGain.connect(scopeMasterAnalyser);
 
@@ -478,12 +521,63 @@ export class PsychoacousticEngine {
     const musicMixBus = ctx.createGain();
     musicMixBus.gain.value = 1.0;
 
+    const postHrvMusicNode: AudioNode = hrvBusInput ?? preHrvBus;
     if (hrvBusInput) {
       preHrvBus.connect(hrvBusInput);
-      hrvBusInput.connect(musicMixBus);
-    } else {
-      preHrvBus.connect(musicMixBus);
     }
+
+    // Headphone Studio Crossfeed Matrix on Layer 2 Music ONLY (280 us ITD, 195-1750 Hz, -16.8 dB)
+    // Eliminates long-session super-stereo fatigue while keeping Layer 1 Binaural Beats 100% isolated L/R!
+    if (!params.speakerSafeEQ) {
+      const xfSplit = ctx.createChannelSplitter(2);
+      const xfMerge = ctx.createChannelMerger(2);
+      const directGainL = ctx.createGain();
+      const directGainR = ctx.createGain();
+      directGainL.gain.value = 0.94;
+      directGainR.gain.value = 0.94;
+
+      const buildCrossfeedArm = (targetChannel: 0 | 1) => {
+        const delay = ctx.createDelay(0.005);
+        delay.delayTime.value = 0.00028;
+        const hp = ctx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 195;
+        hp.Q.value = 0.55;
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 1750;
+        lp.Q.value = 0.55;
+        const level = ctx.createGain();
+        level.gain.value = 0.145;
+        delay.connect(hp);
+        hp.connect(lp);
+        lp.connect(level);
+        level.connect(xfMerge, 0, targetChannel);
+        return delay;
+      };
+
+      const feedLtoR = buildCrossfeedArm(1);
+      const feedRtoL = buildCrossfeedArm(0);
+
+      postHrvMusicNode.connect(xfSplit);
+      xfSplit.connect(directGainL, 0);
+      xfSplit.connect(directGainR, 1);
+      directGainL.connect(xfMerge, 0, 0);
+      directGainR.connect(xfMerge, 0, 1);
+      xfSplit.connect(feedLtoR, 0);
+      xfSplit.connect(feedRtoL, 1);
+      xfMerge.connect(musicMixBus);
+    } else {
+      postHrvMusicNode.connect(musicMixBus);
+    }
+
+    // Dynamic SNR Envelope Follower tap on Layer 2 Music (uses default Analyser size)
+    const musicEnvAnalyser = ctx.createAnalyser();
+    musicEnvAnalyser.smoothingTimeConstant = 0.0;
+    musicMixBus.connect(musicEnvAnalyser);
+    this.musicEnvAnalyser = musicEnvAnalyser;
+    this.musicEnvBuf = new Float32Array(new ArrayBuffer(musicEnvAnalyser.fftSize * 4));
+    this.musicEnvSmoothedRms = 0.165;
 
     const spectralPocketNotch = ctx.createBiquadFilter();
     spectralPocketNotch.type = 'peaking';
@@ -505,12 +599,12 @@ export class PsychoacousticEngine {
 
     const startWithMusic = this.carrierMode === 'generative_live';
     const proceduralMaster = ctx.createGain();
-    proceduralMaster.gain.setValueAtTime(startWithMusic ? 1.0 : 0.0001, ctx.currentTime);
+    proceduralMaster.gain.setValueAtTime(startWithMusic ? 0.94 : 0.0001, ctx.currentTime);
     proceduralMaster.connect(musicAuditionGain);
     this.proceduralMaster = proceduralMaster;
 
     const studioBus = ctx.createGain();
-    studioBus.gain.setValueAtTime(0.98, ctx.currentTime);
+    studioBus.gain.setValueAtTime(0.96, ctx.currentTime);
     const studioFilter = ctx.createBiquadFilter();
     studioFilter.type = 'lowpass';
     studioFilter.Q.value = 0.62;
@@ -598,11 +692,24 @@ export class PsychoacousticEngine {
     const amGainL = ctx.createGain();
     amGainL.gain.setValueAtTime(initialAmGains.bias, ctx.currentTime);
 
+    // Hybrid Velvet AM Spectral Presence Tilt (1350 Hz peaking modulated in phase with AM crest)
+    const amTiltL = ctx.createBiquadFilter();
+    amTiltL.type = 'peaking';
+    amTiltL.frequency.setValueAtTime(1350, ctx.currentTime);
+    amTiltL.Q.value = 0.85;
+    amTiltL.gain.setValueAtTime(0, ctx.currentTime);
+    const amTiltDepthL = ctx.createGain();
+    amTiltDepthL.gain.setValueAtTime(amActiveForSpec ? initialDepth * 5.6 : 0, ctx.currentTime);
+
     amLfoL.connect(amDepthGainL);
     amDepthGainL.connect(amGainL.gain);
+    amLfoL.connect(amTiltDepthL);
+    amTiltDepthL.connect(amTiltL.gain);
+    amGainL.connect(amTiltL);
     amLfoL.start();
 
-    let midOutput: AudioNode = amGainL;
+    let midOutput: AudioNode = amTiltL;
+    this.amTiltDepthL = amTiltDepthL;
 
     if (useStereoSpread) {
       const splitter = ctx.createChannelSplitter(2);
@@ -623,25 +730,38 @@ export class PsychoacousticEngine {
       const amGainR = ctx.createGain();
       amGainR.gain.setValueAtTime(initialAmGains.bias, ctx.currentTime);
 
+      const amTiltR = ctx.createBiquadFilter();
+      amTiltR.type = 'peaking';
+      amTiltR.frequency.setValueAtTime(1350, ctx.currentTime);
+      amTiltR.Q.value = 0.85;
+      amTiltR.gain.setValueAtTime(0, ctx.currentTime);
+      const amTiltDepthR = ctx.createGain();
+      amTiltDepthR.gain.setValueAtTime(amActiveForSpec ? initialDepth * 5.6 : 0, ctx.currentTime);
+
       amLfoR.connect(amDepthGainR);
       amDepthGainR.connect(amGainR.gain);
+      amLfoR.connect(amTiltDepthR);
+      amTiltDepthR.connect(amTiltR.gain);
+      amGainR.connect(amTiltR);
       amLfoR.start();
 
       midBand.output.connect(splitter);
       splitter.connect(amGainL, 0);
       splitter.connect(amGainR, 1);
-      amGainL.connect(merger, 0, 0);
-      amGainR.connect(merger, 0, 1);
+      amTiltL.connect(merger, 0, 0);
+      amTiltR.connect(merger, 0, 1);
 
       this.amGainR = amGainR;
       this.amLfoR = amLfoR;
       this.amDepthGainR = amDepthGainR;
+      this.amTiltDepthR = amTiltDepthR;
       midOutput = merger;
     } else {
       midBand.output.connect(amGainL);
       this.amGainR = null;
       this.amLfoR = null;
       this.amDepthGainR = null;
+      this.amTiltDepthR = null;
     }
 
     const eType = this.studySpec.entrainment.type;
@@ -770,6 +890,28 @@ export class PsychoacousticEngine {
     };
     document.addEventListener('visibilitychange', this.visibilityHandler);
 
+    if (this.snrTimer !== null) {
+      window.clearInterval(this.snrTimer);
+    }
+    this.snrTimer = window.setInterval(() => {
+      if (!this.isPlaying || !this.ctx || !this.musicEnvAnalyser || !this.musicEnvBuf) return;
+      if (this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus') {
+        this.stimulusRack.setDynamicMusicEnvelope(1.0);
+        return;
+      }
+      this.musicEnvAnalyser.getFloatTimeDomainData(this.musicEnvBuf);
+      let sumSq = 0;
+      const len = this.musicEnvBuf.length;
+      for (let i = 0; i < len; i++) {
+        const s = this.musicEnvBuf[i];
+        sumSq += s * s;
+      }
+      const rms = Math.sqrt(sumSq / Math.max(1, len));
+      const alpha = rms > this.musicEnvSmoothedRms ? 0.28 : 0.14;
+      this.musicEnvSmoothedRms += alpha * (rms - this.musicEnvSmoothedRms);
+      this.stimulusRack.setDynamicMusicEnvelope(this.musicEnvSmoothedRms / 0.165);
+    }, 120);
+
     if (this.carrierMode === 'studio_library' && !skipInitialStudioDeck) {
       void this.activateStudioForGenre(this.genre);
     }
@@ -800,12 +942,23 @@ export class PsychoacousticEngine {
 
   private computeAmGainPair(depth: number): { bias: number; swing: number } {
     if (depth <= 0.001) return { bias: 1.0, swing: 0 };
-    const rms = Math.sqrt((1 - depth / 2) ** 2 + (depth ** 2) / 8);
+    // Smooth velvet knee above 0.36 while synchronous spectral presence tilt carries upper cortical salience
+    const vcaDepth = depth <= 0.36 ? depth : 0.36 + (depth - 0.36) * 0.68;
+    const rms = Math.sqrt((1 - vcaDepth / 2) ** 2 + (vcaDepth ** 2) / 8);
     const makeup = Math.min(1.14, 1 / Math.max(0.74, rms));
     return {
-      bias: Number(((1 - depth / 2) * makeup).toFixed(4)),
-      swing: Number(((depth / 2) * makeup).toFixed(4)),
+      bias: Number(((1 - vcaDepth / 2) * makeup).toFixed(4)),
+      swing: Number(((vcaDepth / 2) * makeup).toFixed(4)),
     };
+  }
+
+  private computeTrackLufsGain(track: StudioTrackRef | null, genre: ResolvedGenre): number {
+    const base = genre === 'nature_rain' ? 0.54 : 0.94;
+    if (track && typeof track.lufs === 'number' && Number.isFinite(track.lufs)) {
+      const trimDb = Math.max(-6.0, Math.min(4.0, -14.0 - track.lufs));
+      return Number(Math.max(0.28, Math.min(1.35, base * Math.pow(10, trimDb / 20))).toFixed(3));
+    }
+    return base;
   }
 
   private syncRainBed(): void {
@@ -875,6 +1028,7 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = false;
       this.usingCustomTrack = false;
       this.activeTrackName = null;
+      this.activeTrackKey = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
       if (this.layerMonitorMode === 'science_only') {
@@ -885,13 +1039,14 @@ export class PsychoacousticEngine {
       this.stimulusRack.setScienceMuted(muteScience);
       this.stimulusRack.setPureStimulusMode(false);
       this.pureAmCarrierGain?.gain.setTargetAtTime(0.0001, now, 0.4);
-      this.proceduralMaster.gain.setTargetAtTime(1.0, now, 0.65);
+      this.proceduralMaster.gain.setTargetAtTime(0.94, now, 0.65);
       this.cleanSubBus.gain.setTargetAtTime(0.9, now, 0.65);
     } else if (mode === 'pure_stimulus') {
       this.clearStudioDeck(1.2);
       this.usingStudioAudio = false;
       this.usingCustomTrack = false;
       this.activeTrackName = null;
+      this.activeTrackKey = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
       this.layerMonitorMode = 'science_only';
@@ -958,6 +1113,7 @@ export class PsychoacousticEngine {
           this.musicAuditionGain?.gain.setTargetAtTime(1.0, now, 0.25);
           this.usingStudioAudio = false;
           this.usingCustomTrack = false;
+          this.activeTrackKey = null;
           this.activeTrackNativeBpm = 0;
           this.activeStudioAppliedBpm = 0;
           this.proceduralMaster.gain.setTargetAtTime(0.0001, now, 0.85);
@@ -1187,7 +1343,8 @@ export class PsychoacousticEngine {
     isCustom: boolean,
     onCrossfade?: () => void,
     fadeInSec = 1.8,
-    nativeBpm = 0
+    nativeBpm = 0,
+    keyLabel: string | null = null
   ): Promise<boolean> {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return false;
     try {
@@ -1309,6 +1466,7 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = true;
       this.usingCustomTrack = isCustom;
       this.activeTrackName = trackName;
+      this.activeTrackKey = keyLabel;
       this.activeTrackNativeBpm = nativeBpm;
       this.activeStudioAppliedBpm = alignment.effectiveBpm;
       return true;
@@ -1402,11 +1560,12 @@ export class PsychoacousticEngine {
       this.clearStudioDeck(1.2);
       this.usingStudioAudio = false;
       this.activeTrackName = null;
+      this.activeTrackKey = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
       if (this.ctx && this.proceduralMaster && this.cleanSubBus) {
         const now = this.ctx.currentTime;
-        this.proceduralMaster.gain.setTargetAtTime(1.0, now, 0.7);
+        this.proceduralMaster.gain.setTargetAtTime(0.94, now, 0.7);
         this.cleanSubBus.gain.setTargetAtTime(0.9, now, 0.7);
       }
       return;
@@ -1415,8 +1574,20 @@ export class PsychoacousticEngine {
     const chosenIdx = this.studioTrackIdx % tracks.length;
     const track = tracks[chosenIdx];
     const nativeBpm = this.inferTrackNativeBpm(track, genre);
-    // For Soft Rain & Nature, gently tuck warm pads so our stereo rain & raindrops stay crystal clear!
-    const studioTargetGain = genre === 'nature_rain' ? 0.54 : 0.96;
+    const trackKeyLabel = track.keyLabel ?? null;
+    // Calibrated EBU R128 (-14 LUFS) gain trim so all genres & engines stay volume-matched!
+    const studioTargetGain = this.computeTrackLufsGain(track, genre);
+
+    const alignHarmonicRootToTrack = () => {
+      if (typeof track.rootMidi !== 'number' || !this.ctx || !this.studySpec) return;
+      const retunedHz = this.stimulusRack.retuneToMusicalRoot(
+        track.rootMidi,
+        this.studySpec.music.tuningA4Hz
+      );
+      if (retunedHz && this.spectralPocketNotch) {
+        this.spectralPocketNotch.frequency.setTargetAtTime(retunedHz, this.ctx.currentTime, 0.45);
+      }
+    };
 
     // 1. Instant HTTP 206 Range streaming (<0.3s start) with smooth 4s Dual-Deck rotation across tracks!
     const streamed = await this.playStreamingTrack(
@@ -1431,9 +1602,13 @@ export class PsychoacousticEngine {
         void this.activateStudioForGenre(genre, 4.0);
       },
       fadeSec,
-      nativeBpm
+      nativeBpm,
+      trackKeyLabel
     );
-    if (streamed) return;
+    if (streamed) {
+      alignHarmonicRootToTrack();
+      return;
+    }
     if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return;
 
     // 2. Fallback to decoded AudioBuffer
@@ -1442,6 +1617,7 @@ export class PsychoacousticEngine {
       return;
     }
 
+    alignHarmonicRootToTrack();
     this.playStudioBuffer(
       buffer,
       track.name,
@@ -1452,7 +1628,8 @@ export class PsychoacousticEngine {
         this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
         void this.activateStudioForGenre(genre, 4.0);
       },
-      nativeBpm
+      nativeBpm,
+      trackKeyLabel
     );
   }
 
@@ -1477,7 +1654,8 @@ export class PsychoacousticEngine {
     token: number,
     targetGain: number,
     onCrossfade: () => void,
-    nativeBpm = 0
+    nativeBpm = 0,
+    keyLabel: string | null = null
   ): void {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return;
     const ctx = this.ctx;
@@ -1511,6 +1689,7 @@ export class PsychoacousticEngine {
     this.activeStudioGain = deckGain;
     this.usingStudioAudio = true;
     this.activeTrackName = trackName;
+    this.activeTrackKey = keyLabel;
     this.activeTrackNativeBpm = nativeBpm;
     this.activeStudioAppliedBpm =
       is432 && nativeBpm > 0 ? Math.round(nativeBpm * (432 / 440)) : nativeBpm;
@@ -1597,8 +1776,10 @@ export class PsychoacousticEngine {
     if (this.ctx && this.amGainL && this.amDepthGainL && this.amLfoL) {
       const now = this.ctx.currentTime;
       const amGains = this.computeAmGainPair(effectiveDepth);
+      const tiltDbGain = amActive ? effectiveDepth * 5.6 : 0;
       this.amGainL.gain.setTargetAtTime(amGains.bias, now, 0.35);
       this.amDepthGainL.gain.setTargetAtTime(amGains.swing, now, 0.35);
+      this.amTiltDepthL?.gain.setTargetAtTime(tiltDbGain, now, 0.35);
       if (amActive) {
         this.amLfoL.frequency.setTargetAtTime(Math.max(0.5, liveAmHz), now, 0.5);
       }
@@ -1606,6 +1787,7 @@ export class PsychoacousticEngine {
       if (this.amGainR && this.amDepthGainR && this.amLfoR) {
         this.amGainR.gain.setTargetAtTime(amGains.bias, now, 0.35);
         this.amDepthGainR.gain.setTargetAtTime(amGains.swing, now, 0.35);
+        this.amTiltDepthR?.gain.setTargetAtTime(tiltDbGain, now, 0.35);
         if (amActive) {
           this.amLfoR.frequency.setTargetAtTime(Math.max(0.5, liveAmHz), now, 0.5);
         }
@@ -1677,6 +1859,7 @@ export class PsychoacousticEngine {
       usingStudioAudio: this.usingStudioAudio,
       usingCustomTrack: this.usingCustomTrack,
       activeTrackName: this.activeTrackName,
+      activeTrackKey: this.activeTrackKey,
       carrierMode: this.carrierMode,
       entrainmentType: stim.entrainmentType,
       stimulusCarrierLabel: stim.carrierLabel,
@@ -1893,6 +2076,11 @@ export class PsychoacousticEngine {
       const keepAliveElRef = this.keepAliveEl;
       const keepAliveUrlRef = this.keepAliveUrl;
       this.isPlaying = false;
+      if (this.snrTimer !== null) {
+        window.clearInterval(this.snrTimer);
+        this.snrTimer = null;
+      }
+      this.activeTrackKey = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
       this.composer.stop();
@@ -1921,6 +2109,9 @@ export class PsychoacousticEngine {
       this.scopeModAnalyser = null;
       this.scopeLeftAnalyser = null;
       this.scopeRightAnalyser = null;
+      this.musicEnvAnalyser = null;
+      this.musicEnvBuf = null;
+      this.musicEnvSmoothedRms = 0.165;
       return;
     }
     this.stopImmediate();
@@ -1928,11 +2119,16 @@ export class PsychoacousticEngine {
 
   private stopImmediate(): void {
     this.isPlaying = false;
+    if (this.snrTimer !== null) {
+      window.clearInterval(this.snrTimer);
+      this.snrTimer = null;
+    }
     this.studioLoadToken++;
     this.usingStudioAudio = false;
     this.usingCustomTrack = false;
     this.activeCustomTrack = null;
     this.activeTrackName = null;
+    this.activeTrackKey = null;
     this.activeTrackNativeBpm = 0;
     this.activeStudioAppliedBpm = 0;
     this.studioDeckPausedRemainingSec = null;
@@ -1975,6 +2171,8 @@ export class PsychoacousticEngine {
     this.amLfoR = null;
     this.amDepthGainL = null;
     this.amDepthGainR = null;
+    this.amTiltDepthL = null;
+    this.amTiltDepthR = null;
     this.pureAmCarrierGain = null;
     this.pureAmCarrierSrc = null;
     this.cleanSubBus = null;
@@ -1983,6 +2181,9 @@ export class PsychoacousticEngine {
     this.studioFilter = null;
     this.musicAuditionGain = null;
     this.spectralPocketNotch = null;
+    this.musicEnvAnalyser = null;
+    this.musicEnvBuf = null;
+    this.musicEnvSmoothedRms = 0.165;
     this.layerMonitorMode = 'full_mix';
     if (this.ctx) {
       this.ctx.close().catch(() => {});

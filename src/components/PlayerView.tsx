@@ -1759,6 +1759,11 @@ export function PlayerView({
               <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#34D399]">
                 {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz` : `A=${telemetry.tuningA4Hz} Hz`}
               </div>
+              {telemetry.usingStudioAudio && telemetry.activeTrackKey && (
+                <div className="mt-0.5 font-mono-tech text-[10px] text-[#8E8E88]">
+                  Key-locked · {telemetry.activeTrackKey}
+                </div>
+              )}
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
               <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Depth</div>

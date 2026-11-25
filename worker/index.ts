@@ -623,13 +623,54 @@ async function updateBanditScope(
   };
 }
 
+interface StudioCatalogTrackItem {
+  key: string;
+  name: string;
+  url: string;
+  size: number;
+  energy: EnergyTier;
+  bpm: number;
+  lufs: number;
+  rootMidi: number;
+  keyLabel: string;
+}
+
+const STUDIO_TRACK_ACOUSTIC_MAP: Record<
+  string,
+  { bpm: number; lufs: number; rootMidi: number; keyLabel: string }
+> = {
+  'lofi_keys/focus/dusty-rhodes-88-1.mp3': { bpm: 88, lufs: -14.7, rootMidi: 48, keyLabel: 'C maj' },
+  'lofi_keys/focus/dusty-rhodes-88-2.mp3': { bpm: 88, lufs: -14.7, rootMidi: 48, keyLabel: 'C maj' },
+  'deep_electronic/drive/warm-analog-pulse-1.mp3': { bpm: 112, lufs: -12.9, rootMidi: 43, keyLabel: 'G min' },
+  'deep_electronic/drive/warm-analog-pulse-2.mp3': { bpm: 112, lufs: -13.6, rootMidi: 43, keyLabel: 'G maj' },
+  'cinematic_strings/focus/chamber-flow-92-1.mp3': { bpm: 92, lufs: -14.8, rootMidi: 46, keyLabel: 'Bb maj' },
+  'cinematic_strings/focus/chamber-flow-92-2.mp3': { bpm: 92, lufs: -14.7, rootMidi: 46, keyLabel: 'Bb maj' },
+  'jazz_rhodes/focus/late-night-rhodes-92-1.mp3': { bpm: 92, lufs: -13.4, rootMidi: 48, keyLabel: 'C maj' },
+  'jazz_rhodes/focus/late-night-rhodes-92-2.mp3': { bpm: 92, lufs: -14.3, rootMidi: 48, keyLabel: 'C maj' },
+  'acoustic_pluck/focus/nylon-arpeggios-90-1.mp3': { bpm: 90, lufs: -14.5, rootMidi: 43, keyLabel: 'G maj' },
+  'acoustic_pluck/focus/nylon-arpeggios-90-2.mp3': { bpm: 90, lufs: -14.3, rootMidi: 43, keyLabel: 'G maj' },
+  'nature_rain/calm/warm-rain-pads-1.mp3': { bpm: 0, lufs: -14.5, rootMidi: 51, keyLabel: 'Eb maj' },
+  'nature_rain/calm/warm-rain-pads-2.mp3': { bpm: 0, lufs: -14.1, rootMidi: 44, keyLabel: 'Ab maj' },
+  'dub_reggae/focus/warm-island-dub-88-1.mp3': { bpm: 88, lufs: -13.1, rootMidi: 44, keyLabel: 'Ab maj' },
+  'dub_reggae/focus/warm-island-dub-88-2.mp3': { bpm: 88, lufs: -12.5, rootMidi: 43, keyLabel: 'G min' },
+  'ambient_space/calm/celestial-drift-64-1.mp3': { bpm: 64, lufs: -12.0, rootMidi: 50, keyLabel: 'D maj' },
+  'ambient_space/calm/celestial-drift-64-2.mp3': { bpm: 64, lufs: -11.8, rootMidi: 46, keyLabel: 'Bb min' },
+  'solo_piano/calm/felt-piano-flow-72-1.mp3': { bpm: 72, lufs: -11.2, rootMidi: 49, keyLabel: 'Db maj' },
+  'solo_piano/focus/felt-piano-flow-86-2.mp3': { bpm: 86, lufs: -11.6, rootMidi: 50, keyLabel: 'D maj' },
+  'bossa_nova/focus/rio-bossa-groove-92-1.mp3': { bpm: 92, lufs: -12.7, rootMidi: 51, keyLabel: 'Eb maj' },
+  'bossa_nova/focus/rio-bossa-groove-92-2.mp3': { bpm: 92, lufs: -12.6, rootMidi: 43, keyLabel: 'G maj' },
+  'deep_electronic/calm/velvet-sub-horizon-68-1.mp3': { bpm: 68, lufs: -13.2, rootMidi: 43, keyLabel: 'G min' },
+  'deep_electronic/calm/analog-drift-pulse-68-2.mp3': { bpm: 68, lufs: -13.4, rootMidi: 46, keyLabel: 'Bb min' },
+  'deep_electronic/focus/neural-analog-flow-92-1.mp3': { bpm: 92, lufs: -12.9, rootMidi: 42, keyLabel: 'F# maj' },
+  'deep_electronic/focus/modular-focus-grid-96-2.mp3': { bpm: 96, lufs: -12.8, rootMidi: 42, keyLabel: 'F# maj' },
+  'lofi_keys/calm/evening-felt-rhodes-68-1.mp3': { bpm: 68, lufs: -12.5, rootMidi: 49, keyLabel: 'Db maj' },
+  'ambient_space/focus/stellar-focus-pulse-84-1.mp3': { bpm: 84, lufs: -12.3, rootMidi: 50, keyLabel: 'D maj' },
+};
+
 // 5-minute isolate cache for core studio stems so we don't spam R2 Class A `list()` on every player mount
 let coreCatalogCache: {
   expiresAt: number;
-  tracksByGenre: Record<
-    ResolvedGenre,
-    Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier }>
-  >;
+  tracksByGenre: Record<ResolvedGenre, StudioCatalogTrackItem[]>;
 } | null = null;
 
 async function getCoreStudioCatalog(env: Env) {
@@ -637,10 +678,7 @@ async function getCoreStudioCatalog(env: Env) {
     return coreCatalogCache.tracksByGenre;
   }
 
-  const tracksByGenre: Record<
-    ResolvedGenre,
-    Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier; bpm: number }>
-  > = {
+  const tracksByGenre: Record<ResolvedGenre, StudioCatalogTrackItem[]> = {
     lofi_keys: [],
     deep_electronic: [],
     cinematic_strings: [],
@@ -681,14 +719,18 @@ async function getCoreStudioCatalog(env: Env) {
       case 'bossa_nova':
         return 92;
       case 'deep_electronic':
-        return 112;
+        return energy === 'calm' ? 68 : energy === 'focus' ? 94 : 112;
     }
   };
 
   if (env.AUDIO_BUCKET) {
     let cursor: string | undefined;
     for (let page = 0; page < 4; page++) {
-      const listed = await env.AUDIO_BUCKET.list({ limit: 500, cursor });
+      const listed = await env.AUDIO_BUCKET.list({
+        limit: 500,
+        cursor,
+        include: ['customMetadata'],
+      });
       for (const obj of listed.objects) {
         if (obj.key.startsWith('custom/')) continue;
         if (!/\.(mp3|ogg|opus|m4a|wav)$/i.test(obj.key)) continue;
@@ -721,13 +763,34 @@ async function getCoreStudioCatalog(env: Env) {
 
         const resolvedName = cleanName || 'Studio Track';
         const encodedPath = segments.map((s) => encodeURIComponent(s)).join('/');
+        const known = STUDIO_TRACK_ACOUSTIC_MAP[obj.key];
+        const meta = obj.customMetadata ?? {};
+        const metaBpm = Number(meta.bpm);
+        const metaLufs = Number(meta.lufs);
+        const metaRoot = Number(meta.rootMidi);
+
         tracksByGenre[genreKey].push({
           key: obj.key,
           name: resolvedName,
           url: `/api/audio/stream/${encodedPath}`,
           size: obj.size,
           energy,
-          bpm: inferStudioTrackBpm(genreKey, energy, resolvedName),
+          bpm:
+            known?.bpm ??
+            (Number.isFinite(metaBpm) && metaBpm >= 0
+              ? Math.round(metaBpm)
+              : inferStudioTrackBpm(genreKey, energy, resolvedName)),
+          lufs:
+            known?.lufs ??
+            (Number.isFinite(metaLufs) && metaLufs >= -32 && metaLufs <= -4
+              ? Number(metaLufs.toFixed(1))
+              : -14.0),
+          rootMidi:
+            known?.rootMidi ??
+            (Number.isFinite(metaRoot) && metaRoot >= 36 && metaRoot <= 72
+              ? Math.round(metaRoot)
+              : 48),
+          keyLabel: known?.keyLabel ?? (meta.keyLabel?.trim() || 'C min'),
         });
       }
       if (!listed.truncated || !listed.cursor) break;
@@ -3651,6 +3714,90 @@ export default {
           `SELECT * FROM dataset_inquiries ORDER BY created_at DESC LIMIT 200`
         ).all<Record<string, unknown>>();
         return json({ count: rows.results.length, inquiries: rows.results }, 200, request);
+      }
+
+      // POST /api/admin/seed-studio-stem — Admin-Protected Lyria 3.5 Core Stem Generator (Preserves SynthID Watermark!)
+      if (url.pathname === '/api/admin/seed-studio-stem' && request.method === 'POST') {
+        if (!isAuthorizedAdmin(request, env)) {
+          return json({ error: 'Unauthorized (provide X-Admin-Key header).' }, 401, request);
+        }
+        const body = (await request.json().catch(() => ({}))) as {
+          genre?: string;
+          energy?: string;
+          fileSlug?: string;
+          bpm?: number;
+          rootMidi?: number;
+          keyLabel?: string;
+          prompt?: string;
+        };
+
+        const genre = String(body.genre ?? '') as ResolvedGenre;
+        const energy = String(body.energy ?? 'focus') as EnergyTier;
+        const fileSlug = String(body.fileSlug ?? '')
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 64);
+        const prompt = String(body.prompt ?? '').trim();
+
+        if (!(genre in GENRE_META)) {
+          return json({ error: 'Invalid genre.' }, 400, request);
+        }
+        if (energy !== 'calm' && energy !== 'focus' && energy !== 'drive') {
+          return json({ error: 'Invalid energy tier.' }, 400, request);
+        }
+        if (!fileSlug || prompt.length < 16) {
+          return json({ error: 'Valid fileSlug and prompt are required.' }, 400, request);
+        }
+
+        const provider = resolveMusicProvider(env);
+        if (!provider || !env.AUDIO_BUCKET) {
+          return json({ error: 'Music provider or AUDIO_BUCKET unavailable.' }, 503, request);
+        }
+
+        const generated = await provider.generate({ prompt, durationSec: 150 });
+        const bpm = Number.isFinite(Number(body.bpm)) ? Math.round(Number(body.bpm)) : 92;
+        const rootMidi = Number.isFinite(Number(body.rootMidi)) ? Math.round(Number(body.rootMidi)) : 48;
+        const keyLabel = String(body.keyLabel ?? 'C min').trim() || 'C min';
+        const r2Key = `${genre}/${energy}/${fileSlug}.mp3`;
+
+        // Write raw Lyria 3.5 bytes straight to R2 without transcoding so SynthID watermark remains 100% intact
+        await env.AUDIO_BUCKET.put(r2Key, generated.audioBytes, {
+          httpMetadata: {
+            contentType: generated.contentType || 'audio/mpeg',
+            cacheControl: 'public, max-age=31536000, immutable',
+          },
+          customMetadata: {
+            genre,
+            energy,
+            bpm: String(bpm),
+            rootMidi: String(rootMidi),
+            keyLabel,
+            lufs: '-13.5',
+            provider: generated.provider,
+            modelId: generated.modelId,
+          },
+        });
+
+        coreCatalogCache = null;
+        const encoded = r2Key
+          .split('/')
+          .map((s) => encodeURIComponent(s))
+          .join('/');
+
+        return json(
+          {
+            ok: true,
+            key: r2Key,
+            url: `/api/audio/stream/${encoded}`,
+            sizeBytes: generated.audioBytes.byteLength,
+            bpm,
+            rootMidi,
+            keyLabel,
+          },
+          200,
+          request
+        );
       }
 
       // POST /api/billing/checkout — Creates a Stripe Subscription Checkout Session ($9.99/mo or $59/yr)

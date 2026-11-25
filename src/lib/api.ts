@@ -301,7 +301,17 @@ export const api = {
     apiFetch<{
       tracksByGenre: Record<
         ResolvedGenre,
-        Array<{ key: string; name: string; url: string; size: number; energy: EnergyTier; bpm?: number }>
+        Array<{
+          key: string;
+          name: string;
+          url: string;
+          size: number;
+          energy: EnergyTier;
+          bpm?: number;
+          lufs?: number;
+          rootMidi?: number;
+          keyLabel?: string;
+        }>
       >;
       customTracks?: CustomTrackInfo[];
     }>('/api/audio/catalog'),

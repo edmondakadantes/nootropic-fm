@@ -164,6 +164,7 @@ export class MedicalStimulusRack {
   private modMult = 1.0;
   private intensityMult = 1.0;
   private phaseModFactor = 1.0;
+  private dynamicMusicScale = 1.0;
 
   private activeSources: AudioScheduledSourceNode[] = [];
   private stimulusGain: GainNode | null = null;
@@ -202,6 +203,7 @@ export class MedicalStimulusRack {
     this.pureStimulusMode = pureStimulusMode;
     this.scienceMuted = false;
     this.phaseModFactor = 1.0;
+    this.dynamicMusicScale = 1.0;
     this.primaryCarrierHz = null;
     this.currentHz = spec.entrainment.startFrequencyHz ?? spec.entrainment.frequencyHz;
 
@@ -461,10 +463,43 @@ export class MedicalStimulusRack {
       base = this.pureStimulusMode ? 0.26 : 0.135;
     }
     const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
-    return Math.min(0.42, Math.max(0.0001, base * (0.68 + baseDepth * 0.95) * this.modMult * phaseScale));
+    const dynScale = this.pureStimulusMode ? 1.0 : this.dynamicMusicScale;
+    return Math.min(0.42, Math.max(0.0001, base * (0.68 + baseDepth * 0.95) * this.modMult * phaseScale * dynScale));
   }
 
   public getPrimaryCarrierHz(): number | null {
+    return this.primaryCarrierHz;
+  }
+
+  public setDynamicMusicEnvelope(scale: number): void {
+    const clamped = Math.max(0.52, Math.min(1.28, scale));
+    if (Math.abs(clamped - this.dynamicMusicScale) < 0.025) return;
+    this.dynamicMusicScale = clamped;
+    this.refreshLevels(0.22);
+  }
+
+  public retuneToMusicalRoot(rootMidi: number, tuningA4Hz: 440 | 432): number | null {
+    if (!this.ctx || !this.spec || this.isControlTrial) return this.primaryCarrierHz;
+    if (this.spec.entrainment.carrierLeftHz !== undefined) {
+      return this.primaryCarrierHz;
+    }
+    this.spec.music.rootMidi = rootMidi;
+    const eType = this.spec.entrainment.type;
+    if ((eType === 'binaural_beat' || eType === 'monaural_beat') && this.beatOscL && this.beatOscR) {
+      const newCenterHz = computeHarmonicCarrierHz(rootMidi, tuningA4Hz, 220);
+      this.beatCenterHz = newCenterHz;
+      const beatHz = this.currentHz || this.spec.entrainment.frequencyHz || 10;
+      const leftHz = Number((newCenterHz - beatHz / 2).toFixed(2));
+      const rightHz = Number((newCenterHz + beatHz / 2).toFixed(2));
+      this.primaryCarrierHz = Number(((leftHz + rightHz) / 2).toFixed(2));
+      const now = this.ctx.currentTime;
+      this.beatOscL.frequency.setTargetAtTime(leftHz, now, 0.45);
+      this.beatOscR.frequency.setTargetAtTime(rightHz, now, 0.45);
+      this.carrierLabel =
+        eType === 'binaural_beat' && !this.speakerSafeEQ
+          ? `${leftHz} Hz L / ${rightHz} Hz R (${beatHz} Hz Beat)`
+          : `${leftHz} + ${rightHz} Hz Monaural (${beatHz} Hz Beat)`;
+    }
     return this.primaryCarrierHz;
   }
 
@@ -473,7 +508,8 @@ export class MedicalStimulusRack {
       return 0.0001;
     }
     const linear = snrDbToLinearGain(this.spec.noise.snrDb);
-    const boosted = this.pureStimulusMode ? Math.min(0.68, linear * 1.35) : linear;
+    const dynScale = this.pureStimulusMode ? 1.0 : 0.72 + 0.28 * this.dynamicMusicScale;
+    const boosted = this.pureStimulusMode ? Math.min(0.68, linear * 1.35) : Math.min(0.68, linear * dynScale);
     const capped = this.speakerSafeEQ ? Math.min(0.06, boosted) : boosted;
     return Math.max(0.0001, capped * this.intensityMult);
   }
@@ -535,14 +571,14 @@ export class MedicalStimulusRack {
     this.refreshLevels();
   }
 
-  private refreshLevels(): void {
+  private refreshLevels(timeConst = 0.25): void {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     if (this.stimulusGain) {
-      this.stimulusGain.gain.setTargetAtTime(this.computeStimulusTargetGain(), now, 0.25);
+      this.stimulusGain.gain.setTargetAtTime(this.computeStimulusTargetGain(), now, timeConst);
     }
     if (this.noiseGain) {
-      this.noiseGain.gain.setTargetAtTime(this.computeNoiseTargetGain(), now, 0.25);
+      this.noiseGain.gain.setTargetAtTime(this.computeNoiseTargetGain(), now, timeConst);
     }
     if (this.hrvCarrierGain && this.hrvDepthGain) {
       const effHrv = this.computeEffectiveHrvDepth();
@@ -599,6 +635,7 @@ export class MedicalStimulusRack {
     this.beatSymmetric = false;
     this.primaryCarrierHz = null;
     this.phaseModFactor = 1.0;
+    this.dynamicMusicScale = 1.0;
     this.scienceMuted = false;
     this.ctx = null;
   }
