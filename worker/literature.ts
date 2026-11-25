@@ -1,5 +1,6 @@
 import { getMicroStateById } from '../shared/neuralStates';
 import {
+  OPENALEX_HUMAN_AUDITORY_EXCLUSION,
   appendPubMedHumanAuditoryGuard,
   isNonAuditoryOrAnimalStudy,
 } from '../shared/openGoals';
@@ -152,7 +153,8 @@ async function fetchOpenAlex(
       return 'amplitude modulation music sustained attention';
     })();
 
-  const filter = `title_and_abstract.search:${term},has_doi:true,type:article`;
+  const cleanTerm = term.replace(/[,()]/g, ' ').replace(/\s+/g, ' ').trim();
+  const filter = `title_and_abstract.search:(${cleanTerm}) ${OPENALEX_HUMAN_AUDITORY_EXCLUSION},has_doi:true,type:article`;
   const select = 'id,doi,title,publication_year,authorships,primary_location';
   const keyParam = env.OPENALEX_API_KEY
     ? `&api_key=${encodeURIComponent(env.OPENALEX_API_KEY)}`
@@ -256,8 +258,8 @@ export async function fetchVerifiedLiveLiterature(
   const micro = environment === 'driving' ? undefined : getMicroStateById(microStateId);
   const goalSlugKey = customGoal?.slug || targetState;
   const cacheKey = micro
-    ? `v4:${environment}:${goalSlugKey}:${micro.id}`
-    : `v4:${environment}:${goalSlugKey}`;
+    ? `v5:${environment}:${goalSlugKey}:${micro.id}`
+    : `v5:${environment}:${goalSlugKey}`;
   const mem = memoryLitCache.get(cacheKey);
   if (mem && mem.expiresAt > Date.now()) {
     return mem.papers;

@@ -55,7 +55,14 @@ const {
   isNonAuditoryOrAnimalStudy,
   PUBMED_HUMAN_AUDITORY_EXCLUSION,
   EUROPEPMC_HUMAN_AUDITORY_EXCLUSION,
+  OPENALEX_HUMAN_AUDITORY_EXCLUSION,
 } = await import('../shared/openGoals.ts');
+const { PsychoacousticEngine } = await import('../src/audio/PsychoacousticEngine.ts');
+const { LyriaRealtimeClient } = await import('../src/audio/LyriaRealtimeClient.ts');
+const { MedicalStimulusRack, createCalibratedNoiseBuffer } = await import('../src/audio/MedicalStimulusRack.ts');
+const { StereoRainBed, createStereoRainBuffer } = await import('../src/audio/StereoRainBed.ts');
+const { GenerativeComposer } = await import('../src/audio/GenerativeComposer.ts');
+const { StudioSampler } = await import('../src/audio/StudioSampler.ts');
 const { applySafetyAndDeviceGuardrails } = await import('../shared/studyCompilerCore.ts');
 const { VERIFIED_STUDY_PRESETS } = await import('../shared/studyPresets.ts');
 const { computeHierarchicalArmPosterior } = await import('../shared/psychometrics.ts');
@@ -150,21 +157,13 @@ function loadWorkletProcessors(sampleRate = 48000) {
       };
     }
   }
-  const sandbox = {
-    AudioWorkletProcessor: MockAudioWorkletProcessor,
-    registerProcessor: (name, Ctor) => registry.set(name, Ctor),
-    sampleRate,
-    Math,
-    Float32Array,
-    Float64Array,
-    Int32Array,
-    Uint8Array,
-    Array,
-    Number,
-    Boolean,
-    Infinity,
-  };
-  vm.runInNewContext(DSP_WORKLET_CODE, sandbox);
+  const compileWorklets = new Function(
+    'AudioWorkletProcessor',
+    'registerProcessor',
+    'sampleRate',
+    DSP_WORKLET_CODE
+  );
+  compileWorklets(MockAudioWorkletProcessor, (name, Ctor) => registry.set(name, Ctor), sampleRate);
   return registry;
 }
 
@@ -848,15 +847,20 @@ test('P1 #6: NootropicClinicalSynth clamps carriers/harmonics/chirps < 0.44*samp
 // P1 #7 — Animal/Non-Auditory Study Exclusion & MSO 150–900 Hz / <=45 Hz Binaural Guardrails
 // ============================================================================
 test('P1 #7: Excludes rodent/optogenetic/tACS/TMS/photic papers without false positives & enforces 150–900 Hz / <=45 Hz MSO binaural limits', () => {
-  // 1. Boolean query guards
-  assert.ok(PUBMED_HUMAN_AUDITORY_EXCLUSION.includes('mice[Title/Abstract]') && PUBMED_HUMAN_AUDITORY_EXCLUSION.includes('optogenetics[Title/Abstract]'));
-  assert.ok(EUROPEPMC_HUMAN_AUDITORY_EXCLUSION.includes('NOT (mice OR mouse OR rat'));
+  // 1. Boolean query guards across PubMed, Europe PMC & OpenAlex
+  assert.ok(
+    PUBMED_HUMAN_AUDITORY_EXCLUSION.includes('Animals[MeSH Terms] NOT Humans[MeSH Terms]') &&
+      PUBMED_HUMAN_AUDITORY_EXCLUSION.includes('mice[Title]') &&
+      PUBMED_HUMAN_AUDITORY_EXCLUSION.includes('optogenetics[Title/Abstract]')
+  );
+  assert.ok(EUROPEPMC_HUMAN_AUDITORY_EXCLUSION.includes('NOT (TITLE:mice OR TITLE:mouse'));
+  assert.ok(OPENALEX_HUMAN_AUDITORY_EXCLUSION.includes('NOT (mice OR murine OR rodent OR optogenetics'));
   const guarded = appendPubMedHumanAuditoryGuard('("auditory beat"[Title/Abstract])');
-  assert.ok(guarded.includes('NOT (mice[Title/Abstract]'));
+  assert.ok(guarded.includes('Animals[MeSH Terms] NOT Humans[MeSH Terms]'));
   assert.equal(appendPubMedHumanAuditoryGuard(guarded), guarded, 'appendPubMedHumanAuditoryGuard must be idempotent');
   assert.equal(appendPubMedHumanAuditoryGuard('   '), '', 'Empty query must stay empty');
 
-  // 2. Post-fetch classifier: positive rejections
+  // 2. Post-fetch classifier: positive rejections (including awake rodent execution in abstract)
   const nonAuditoryCases = [
     ['40 Hz optogenetic stimulation of PV interneurons clears amyloid in 5xFAD mice', ''],
     ['Transcranial alternating current stimulation (tACS) at 10 Hz alpha modulates cognition', ''],
@@ -864,24 +868,32 @@ test('P1 #7: Excludes rodent/optogenetic/tACS/TMS/photic papers without false po
     ['40 Hz visual flicker / photic driving entrains V1 cortex in murine models', ''],
     ['In vitro hippocampal slice gamma oscillations in Wistar rats', ''],
     ['Anodal tDCS combined with working memory training', ''],
+    [
+      'Gamma auditory steady-state responses in rodent cortex',
+      'Adult male Wistar rats were implanted with epidural electrodes during 40 Hz acoustic click trains.',
+    ],
   ];
   for (const [title, abs] of nonAuditoryCases) {
     assert.equal(isNonAuditoryOrAnimalStudy(title, abs), true, `Must reject non-auditory/animal study: "${title}"`);
   }
 
-  // 3. Post-fetch classifier: valid human auditory studies (including word-boundary traps like "rate", "duration", "moderate", "treatment")
+  // 3. Post-fetch classifier: valid human auditory studies (including UI "mouse button" & human RCT citing 5xFAD background!)
   const validHumanAuditoryCases = [
     [
       'Rapid 16 Hz amplitude modulation in music supports sustained attention in human adults',
-      'Participants completed a randomized controlled trial of moderate duration and heart rate monitoring.',
+      'Participants completed a randomized controlled trial of moderate duration, responding to targets by clicking a computer mouse button.',
     ],
     [
       '6 Hz theta binaural beat auditory stimulation reduces preoperative anxiety',
-      'Healthy adult volunteers listened through stereo headphones for a 30-minute treatment duration.',
+      'Healthy adult volunteers listened through stereo headphones for a 30-minute treatment duration with mouse cursor tracking.',
     ],
     [
       '40 Hz auditory steady-state response (ASSR) during gamma-modulated acoustic bursts',
       'Electroencephalography in 36 healthy participants showed phase-locked cortical entrainment.',
+    ],
+    [
+      'Gamma sensory stimulation in patients with mild Alzheimer disease',
+      'Motivated by preclinical 40 Hz GENUS findings in 5xFAD mice, we conducted a randomized placebo-controlled clinical trial of daily 40 Hz auditory and visual stimulation in human patients with mild Alzheimer disease.',
     ],
   ];
   for (const [title, abs] of validHumanAuditoryCases) {
@@ -1406,5 +1418,852 @@ test('P2 #11: Enforces `HttpOnly; SameSite=Lax; Secure` `nfm_auth` cookie, atomi
     assert.ok(hdr.includes("Content-Security-Policy:") && hdr.includes("worker-src 'self' blob:"), `${relPath} must allow AudioWorklet blob: workers`);
     assert.ok(hdr.includes("object-src 'none'") && hdr.includes("frame-ancestors 'none'"), `${relPath} must block object-src and clickjacking`);
     assert.ok(hdr.includes('X-Content-Type-Options: nosniff') && hdr.includes('X-Frame-Options: DENY'));
+  }
+});
+
+// ============================================================================
+// Deep Regression #12 — P0 #2 Real `PsychoacousticEngine` Safari/iOS `mediaDeckPool` Race & Crossfade Safety
+// ============================================================================
+function createMockAudioParam(initial = 0, tracker = null, label = '') {
+  const param = {
+    value: initial,
+    _setValueCalls: [],
+    setValueAtTime(v, t) {
+      this.value = v;
+      this._setValueCalls.push({ v, t });
+      if (tracker) tracker.push({ label, v });
+      return this;
+    },
+    linearRampToValueAtTime(v) {
+      this.value = v;
+      if (tracker) tracker.push({ label, v });
+      return this;
+    },
+    exponentialRampToValueAtTime(v) {
+      this.value = v;
+      if (tracker) tracker.push({ label, v });
+      return this;
+    },
+    setTargetAtTime(v) {
+      this.value = v;
+      if (tracker) tracker.push({ label, v });
+      return this;
+    },
+    cancelScheduledValues() {
+      return this;
+    },
+    cancelAndHoldAtTime() {
+      return this;
+    },
+  };
+  return param;
+}
+
+function createMockAudioContext(sampleRate = 48000) {
+  const freqRecords = [];
+  const makeNode = (extra = {}) => ({
+    connect() {
+      return arguments[0];
+    },
+    disconnect() {},
+    ...extra,
+  });
+  return {
+    sampleRate,
+    currentTime: 0.5,
+    state: 'running',
+    destination: makeNode(),
+    _freqRecords: freqRecords,
+    resume: async () => {},
+    close: async () => {},
+    addEventListener() {},
+    removeEventListener() {},
+    createGain() {
+      return makeNode({ gain: createMockAudioParam(1) });
+    },
+    createDelay() {
+      return makeNode({ delayTime: createMockAudioParam(0) });
+    },
+    createStereoPanner() {
+      return makeNode({ pan: createMockAudioParam(0) });
+    },
+    createBiquadFilter() {
+      const fParam = createMockAudioParam(350, freqRecords, 'biquad');
+      let rawVal = 350;
+      Object.defineProperty(fParam, 'value', {
+        get: () => rawVal,
+        set: (v) => {
+          rawVal = v;
+          freqRecords.push({ label: 'biquad', v });
+        },
+      });
+      return makeNode({
+        type: 'lowpass',
+        frequency: fParam,
+        Q: createMockAudioParam(0.707),
+        gain: createMockAudioParam(0),
+      });
+    },
+    createOscillator() {
+      const fParam = createMockAudioParam(440, freqRecords, 'osc');
+      let rawVal = 440;
+      Object.defineProperty(fParam, 'value', {
+        get: () => rawVal,
+        set: (v) => {
+          rawVal = v;
+          freqRecords.push({ label: 'osc', v });
+        },
+      });
+      return makeNode({
+        type: 'sine',
+        frequency: fParam,
+        detune: createMockAudioParam(0),
+        start() {},
+        stop() {},
+      });
+    },
+    createBuffer(channels, length, sr) {
+      const chs = Array.from({ length: channels }, () => new Float32Array(length));
+      return {
+        numberOfChannels: channels,
+        length,
+        sampleRate: sr,
+        duration: length / sr,
+        getChannelData: (c) => chs[c],
+      };
+    },
+    createBufferSource() {
+      return makeNode({
+        buffer: null,
+        loop: false,
+        playbackRate: createMockAudioParam(1),
+        start() {},
+        stop() {},
+        onended: null,
+      });
+    },
+    createDynamicsCompressor() {
+      return makeNode({
+        threshold: createMockAudioParam(-12),
+        knee: createMockAudioParam(6),
+        ratio: createMockAudioParam(2),
+        attack: createMockAudioParam(0.003),
+        release: createMockAudioParam(0.25),
+      });
+    },
+    createWaveShaper() {
+      return makeNode({ curve: null, oversample: 'none' });
+    },
+    createChannelSplitter() {
+      return makeNode();
+    },
+    createChannelMerger() {
+      return makeNode();
+    },
+    createAnalyser() {
+      return makeNode({
+        fftSize: 1024,
+        frequencyBinCount: 512,
+        smoothingTimeConstant: 0,
+        getFloatTimeDomainData() {},
+        getFloatFrequencyData() {},
+        getByteFrequencyData() {},
+      });
+    },
+    createMediaElementSource(el) {
+      return makeNode({ mediaElement: el });
+    },
+  };
+}
+
+test('P0 #2 (Deep Behavioral): Real PsychoacousticEngine mediaDeckPool survives delayed iOS unlock play() race & rapid 5-way stem crossfades without clobbering active audio', async () => {
+  const origDoc = globalThis.document;
+  const origWin = globalThis.window;
+  const origAudio = globalThis.Audio;
+  const createdElements = [];
+
+  function makeMockMediaEl() {
+    const listeners = new Map();
+    let currentSrc = '';
+    const el = {
+      preload: 'auto',
+      crossOrigin: null,
+      loop: false,
+      playsInline: false,
+      preservesPitch: true,
+      muted: false,
+      volume: 1,
+      playbackRate: 1,
+      currentTime: 0,
+      duration: 210,
+      paused: true,
+      get src() {
+        return currentSrc;
+      },
+      set src(val) {
+        currentSrc = val;
+        if (val && !val.startsWith('data:')) {
+          queueMicrotask(() => {
+            if (currentSrc === val) {
+              const fn = listeners.get('canplay') || listeners.get('loadeddata');
+              if (fn) fn();
+            }
+          });
+        }
+      },
+      setAttribute() {},
+      removeAttribute(attr) {
+        if (attr === 'src') currentSrc = '';
+      },
+      load() {},
+      pause() {
+        this.paused = true;
+      },
+      play() {
+        this.paused = false;
+        const capturedSrc = currentSrc;
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            if (currentSrc === capturedSrc && capturedSrc && !capturedSrc.startsWith('data:')) {
+              const fn = listeners.get('playing');
+              if (fn) fn();
+            }
+            resolve();
+          }, 25);
+        });
+      },
+      addEventListener(evt, fn) {
+        listeners.set(evt, fn);
+      },
+      removeEventListener(evt) {
+        listeners.delete(evt);
+      },
+    };
+    createdElements.push(el);
+    return el;
+  }
+
+  try {
+    globalThis.window = globalThis;
+    globalThis.document = {
+      visibilityState: 'visible',
+      createElement(tag) {
+        if (tag === 'audio') return makeMockMediaEl();
+        return {};
+      },
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    globalThis.Audio = function MockAudio() {
+      return makeMockMediaEl();
+    };
+
+    const eng = new PsychoacousticEngine();
+    const mockCtx = createMockAudioContext(48000);
+    eng.ctx = mockCtx;
+    eng.isPlaying = true;
+    eng.studioBus = mockCtx.createGain();
+    eng.cleanSubBus = mockCtx.createGain();
+    eng.studySpec = structuredClone(VERIFIED_STUDY_PRESETS[0]);
+
+    // 1. Trigger initMediaDeckPool(ctx) WITHOUT awaiting its 25ms play() promise, and immediately start Stem A!
+    eng.initMediaDeckPool(mockCtx);
+    assert.equal(createdElements.length, 4, 'mediaDeckPool must pre-allocate 4 reusable <audio> slots');
+
+    const tokA = ++eng.studioLoadToken;
+    const urlA = 'https://www.nootropic.fm/api/audio/stream/v7/lofi_keys_a.m4a';
+    const okA = await eng.playProgressiveMediaStem({
+      url: urlA,
+      codec: 'aac',
+      track: { key: 'lofi_a', name: 'Lo-Fi Keys A', url: urlA, energy: 'focus' },
+      targetGain: 0.9,
+      token: tokA,
+      fadeSec: 0.03,
+      amActive: false,
+      neuralHz: 16,
+      totalRate: 1.0,
+      tune432Ratio: 1.0,
+      targetGridBpm: 88,
+      isSubHarmonicLocked: false,
+      stemBpm: 88,
+      trackDurSec: 210,
+      crossfadeLeadSec: 10,
+      onCrossfade: () => {},
+    });
+    assert.equal(okA, true);
+
+    // Wait 55ms so the delayed initial unlock play().then() resolves AFTER Stem A was mounted
+    await new Promise((r) => setTimeout(r, 55));
+    const activeSlotA = eng.activeMediaSlot;
+    assert.ok(activeSlotA, 'Active deck must hold an acquired mediaDeckPool slot');
+    assert.equal(
+      activeSlotA.el.src,
+      urlA,
+      'Delayed initMediaDeckPool unlock resolution must NEVER wipe active stem el.src'
+    );
+    assert.equal(activeSlotA.el.muted, false, 'Active stem element must NEVER be left muted by unlock race');
+    assert.equal(activeSlotA.el.paused, false, 'Active stem element must remain playing');
+
+    // 2. Rapid 5-way genre/stem crossfades (recycling pooled slots while 0.03s fade-out timers fire!)
+    for (const stemName of ['bossa_b', 'dub_c', 'piano_d', 'strings_e', 'ambient_f']) {
+      const tok = ++eng.studioLoadToken;
+      const u = `https://www.nootropic.fm/api/audio/stream/v7/${stemName}.m4a`;
+      const ok = await eng.playProgressiveMediaStem({
+        url: u,
+        codec: 'aac',
+        track: { key: stemName, name: stemName, url: u, energy: 'focus' },
+        targetGain: 0.9,
+        token: tok,
+        fadeSec: 0.03,
+        amActive: false,
+        neuralHz: 16,
+        totalRate: 432 / 440,
+        tune432Ratio: 432 / 440,
+        targetGridBpm: 88,
+        isSubHarmonicLocked: false,
+        stemBpm: 88,
+        trackDurSec: 210,
+        crossfadeLeadSec: 10,
+        onCrossfade: () => {},
+      });
+      assert.equal(ok, true);
+    }
+
+    // Wait 250ms for ALL earlier clearStudioDeck fade-out timers (fadeSec * 1000 + 150 = 180ms) to fire!
+    await new Promise((r) => setTimeout(r, 250));
+    const finalSlot = eng.activeMediaSlot;
+    assert.ok(finalSlot, 'Final deck must remain active after stale crossfade timers fire');
+    assert.equal(
+      finalSlot.el.src,
+      'https://www.nootropic.fm/api/audio/stream/v7/ambient_f.m4a',
+      'Stale clearStudioDeck timer from recycled slot must NEVER clobber final active stem src'
+    );
+    assert.equal(finalSlot.el.paused, false, 'Stale clearStudioDeck timer must NEVER pause final active stem');
+
+    // 3. playStreamingTrack (custom vibe / legacy stem) must ALSO reuse pre-unlocked mediaDeckPool (total elements stays 4!)
+    const tokCustom = ++eng.studioLoadToken;
+    const okCustom = await eng.playStreamingTrack(
+      'https://www.nootropic.fm/api/audio/stream/custom/test_vibe.mp3',
+      'Custom Vibe',
+      tokCustom,
+      0.9,
+      true,
+      undefined,
+      0.03
+    );
+    assert.equal(okCustom, true);
+    assert.equal(createdElements.length, 4, 'playStreamingTrack must reuse pre-unlocked 4-slot mediaDeckPool with zero extra new Audio() allocations');
+
+    eng.clearStudioDeck(0);
+  } finally {
+    globalThis.document = origDoc;
+    globalThis.window = origWin;
+    globalThis.Audio = origAudio;
+  }
+});
+
+// ============================================================================
+// Deep Regression #13 — P1 #5 SINC32 (>80 dB Alias Rejection) & WSOLA Real-Time Speed (<2.0s)
+// ============================================================================
+test('P1 #5 (Deep Speed & Stopband): SINC32 achieves <= -80 dBc alias rejection & NootropicWsolaProcessor renders 2.0s stereo < 2000 ms', () => {
+  const reg44 = loadWorkletProcessors(44100);
+  const LyriaCtor = reg44.get('nootropic-lyria-stream-processor');
+  const lyria = new LyriaCtor();
+  const inSr = 48000;
+  const outSr = 44100;
+  const pcm = new Float32Array(inSr * 2);
+  for (let i = 0; i < pcm.length; i++) pcm[i] = 0.7 * Math.sin((2 * Math.PI * 19000 * i) / inSr);
+  lyria.port._deliver({ type: 'pcm', left: pcm, right: pcm });
+
+  const out = new Float32Array(128 * 450);
+  for (let off = 0; off < out.length; off += 128) {
+    const oL = new Float32Array(128);
+    lyria.process([], [[oL, new Float32Array(128)]]);
+    out.set(oL, off);
+  }
+  const st = out.subarray(Math.round(0.2 * outSr));
+  const aliasDb = db(goertzelMag(st, outSr, 15100) / goertzelMag(st, outSr, 19000));
+  assert.ok(aliasDb <= -80, `Expected SINC32 stopband rejection <= -80 dBc at 15.1 kHz, got ${aliasDb.toFixed(2)} dBc`);
+
+  // WSOLA real-time CPU regression check (previously took 68,476 ms when lag correlation called Sinc8 131k times/hop!)
+  const reg48 = loadWorkletProcessors(48000);
+  const WsolaCtor = reg48.get('nootropic-wsola-processor');
+  const wsola = new WsolaCtor();
+  const frames = 128 * 750; // 2.00s @ 48 kHz
+  const srcL = new Float32Array(frames);
+  const srcR = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) {
+    srcL[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / 48000);
+    srcR[i] = 0.5 * Math.cos((2 * Math.PI * 440 * i) / 48000);
+  }
+  const t0 = performance.now();
+  for (let off = 0; off < frames; off += 128) {
+    wsola.process(
+      [[srcL.subarray(off, off + 128), srcR.subarray(off, off + 128)]],
+      [[new Float32Array(128), new Float32Array(128)]],
+      {
+        bypass: new Float32Array([0]),
+        pitchRatio: new Float32Array([432 / 440]),
+        tempoRatio: new Float32Array([0.94]),
+      }
+    );
+  }
+  const elapsedMs = performance.now() - t0;
+  assert.ok(
+    elapsedMs < 2000,
+    `NootropicWsolaProcessor 2.0s render must complete in < 2000 ms for mobile real-time safety (took ${elapsedMs.toFixed(1)} ms)`
+  );
+});
+
+// ============================================================================
+// Deep Regression #14 — P0 #3 CORS/WS Subdomain Lockdown & Seamless 11m Lyria Reconnect
+// ============================================================================
+test('P0 #3 (Deep Security & Continuity): Blocks third-party .vercel.app/.workers.dev origins & preserves seamless 0.86 outputGain across 11m Lyria WS rotation', async () => {
+  const dbConn = createInMemoryD1();
+  const env = { DB: dbConn, GEMINI_MUSIC_API_KEY: 'test_lyria_secret_v8_deep' };
+  const ctx = createExecCtx();
+
+  for (const untrustedOrigin of [
+    'https://evil-attacker.vercel.app',
+    'https://evil-attacker.workers.dev',
+    'https://evil-attacker.web.app',
+    'https://evil-attacker.firebaseapp.com',
+  ]) {
+    const tokRes = await worker.fetch(
+      new Request('https://www.nootropic.fm/api/music/realtime-token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: untrustedOrigin, 'cf-connecting-ip': '198.51.100.77' },
+        body: '{}',
+      }),
+      env,
+      ctx
+    );
+    assert.equal(tokRes.status, 403, `POST /api/music/realtime-token must reject ${untrustedOrigin}`);
+    assert.equal(
+      tokRes.headers.get('access-control-allow-credentials'),
+      null,
+      `Must NEVER grant Access-Control-Allow-Credentials to ${untrustedOrigin}`
+    );
+    assert.notEqual(
+      tokRes.headers.get('access-control-allow-origin'),
+      untrustedOrigin,
+      `Must NEVER echo untrusted Origin ${untrustedOrigin}`
+    );
+  }
+
+  // Test LyriaRealtimeClient seamless 11m socket rotation (zero outputGain drop to 0.0001 on socket #2!)
+  const origWs = globalThis.WebSocket;
+  const origWin = globalThis.window;
+  const origAtob = globalThis.atob;
+  const origAWN = globalThis.AudioWorkletNode;
+  const sockets = [];
+  const pcmB64 = Buffer.alloc(128, 16).toString('base64');
+
+  class MockLyriaWs {
+    static OPEN = 1;
+    constructor(url) {
+      this.url = url;
+      this.readyState = 1;
+      sockets.push(this);
+      queueMicrotask(() => {
+        if (this.onopen) this.onopen();
+      });
+    }
+    send(raw) {
+      const msg = JSON.parse(raw);
+      if (msg.setup) {
+        queueMicrotask(() => {
+          if (this.onmessage) this.onmessage({ data: JSON.stringify({ setupComplete: {} }) });
+        });
+      } else if (msg.playbackControl === 'PLAY') {
+        queueMicrotask(() => {
+          if (this.onmessage) {
+            this.onmessage({
+              data: JSON.stringify({ serverContent: { audioChunks: [{ data: pcmB64 }] } }),
+            });
+          }
+        });
+      }
+    }
+    close() {
+      this.readyState = 3;
+    }
+  }
+
+  try {
+    globalThis.window = Object.assign(globalThis, {
+      location: { origin: 'https://www.nootropic.fm', protocol: 'https:', host: 'www.nootropic.fm' },
+    });
+    globalThis.WebSocket = MockLyriaWs;
+    globalThis.AudioWorkletNode = class MockAWN {
+      constructor() {
+        this.port = { postMessage() {}, onmessage: null };
+      }
+      connect(n) {
+        return n;
+      }
+      disconnect() {}
+    };
+    if (!globalThis.atob) {
+      globalThis.atob = (b64) => Buffer.from(b64, 'base64').toString('binary');
+    }
+
+    const mockCtx = createMockAudioContext(48000);
+    mockCtx.audioWorklet = { addModule: async () => {} };
+    const dest = mockCtx.createGain();
+    const client = new LyriaRealtimeClient();
+
+    const ok = await client.connect({
+      ctx: mockCtx,
+      destinationBus: dest,
+      token: 'ticket_1',
+      model: 'models/lyria-realtime-exp',
+      spec: VERIFIED_STUDY_PRESETS[0],
+      genre: 'lofi_keys',
+      apiBase: 'https://www.nootropic.fm',
+      fetchFreshToken: async () => ({ token: 'ticket_2', model: 'models/lyria-realtime-exp' }),
+    });
+    assert.equal(ok, true);
+    assert.equal(sockets.length, 1);
+
+    const outGainParam = client.outputGain.gain;
+    // Initial connect() sets 0.0001 once on node creation + once on initial fade-in, then ramps to 0.86
+    const zeroDropsBeforeRotation = outGainParam._setValueCalls.filter((c) => c.v <= 0.001).length;
+    assert.equal(outGainParam.value, 0.86);
+
+    // Simulate 11-minute Worker hard timer closing Socket #1 (`code: 1000`) -> triggers seamless reconnect to Socket #2
+    sockets[0].onclose({ code: 1000, reason: 'Session stream window complete' });
+    await new Promise((r) => setTimeout(r, 950));
+    assert.equal(sockets.length, 2, 'Client must automatically open Socket #2 using fetchFreshToken');
+
+    const zeroDropsAfterSocket2 = outGainParam._setValueCalls.filter((c) => c.v <= 0.001).length;
+    assert.equal(
+      zeroDropsAfterSocket2,
+      zeroDropsBeforeRotation,
+      'Mid-session 11m WebSocket rotation must NEVER reset outputGain to 0.0001 (prevents click & 1.5s dropout!)'
+    );
+    assert.equal(outGainParam.value, 0.86);
+
+    client.stop();
+  } finally {
+    globalThis.WebSocket = origWs;
+    globalThis.window = origWin;
+    globalThis.atob = origAtob;
+    globalThis.AudioWorkletNode = origAWN;
+  }
+});
+
+// ============================================================================
+// Deep Regression #15 — P2 #10 Dynamic Headroom Reservation at Max (1.48x) Neural Effect + Noise
+// ============================================================================
+test('P2 #10 (Deep Max-Effect Headroom): computeMusicPreLimiterCeiling reserves headroom for Max (1.48x) Layer-1 AM + noise (<0.01 dB ducking)', () => {
+  const eng = new PsychoacousticEngine();
+  eng.studySpec = structuredClone(VERIFIED_STUDY_PRESETS[0]); // amplitude_modulation
+  eng.layerMonitorMode = 'full_mix';
+  eng.carrierMode = 'studio_library';
+  eng.modDepthMultiplier = 1.48; // Max Neural Effect
+  eng.intensityMultiplier = 1.35;
+  eng.params = {
+    modulationHz: 16,
+    modulationDepth: 0.38,
+    bpm: 92,
+    harmonicMode: 'warm_min9',
+    noiseColor: 'pink',
+    noiseLevel: 0.24,
+    filterCutoffHz: 1800,
+    genre: 'deep_electronic',
+    genreSelectionMode: 'user_chosen',
+    energyTier: 'focus',
+    speakerSafeEQ: false,
+  };
+
+  const dynamicCeiling = eng.computeMusicPreLimiterCeiling();
+  assert.ok(
+    dynamicCeiling >= 0.42 && dynamicCeiling <= 0.48,
+    `Expected dynamic musicPreLimiter ceiling in [0.42, 0.48] at Max Neural Effect + noise, got ${dynamicCeiling}`
+  );
+  eng.layerMonitorMode = 'music_only';
+  assert.equal(eng.computeMusicPreLimiterCeiling(), LIMITER_CEILING_LINEAR);
+  eng.layerMonitorMode = 'full_mix';
+
+  // Run dual-limiter DSP with heavy 0.42 peak Layer-1 signal + 1.80 drum burst using dynamicCeiling -> 0.000 dB ducking!
+  const sr = 48000;
+  const reg = loadWorkletProcessors(sr);
+  const LimCtor = reg.get('nootropic-lookahead-limiter');
+  const preLim = new LimCtor();
+  const masterLim = new LimCtor();
+  const frames = 128 * 300;
+  const out = new Float32Array(frames);
+  for (let off = 0; off < frames; off += 128) {
+    const l1 = new Float32Array(128);
+    const l2 = new Float32Array(128);
+    for (let k = 0; k < 128; k++) {
+      const idx = off + k;
+      const t = idx / sr;
+      l1[k] = 0.42 * Math.sin(2 * Math.PI * 220 * t);
+      l2[k] = (idx < frames / 2 ? 0.08 : 1.8) * Math.sin(2 * Math.PI * 1000 * t);
+    }
+    const preOut = new Float32Array(128);
+    preLim.process([[l2, l2]], [[preOut, new Float32Array(128)]], {
+      ceiling: new Float32Array([dynamicCeiling]),
+    });
+    const sum = new Float32Array(128);
+    for (let k = 0; k < 128; k++) sum[k] = preOut[k] + l1[k];
+    const mOut = new Float32Array(128);
+    masterLim.process([[sum, sum]], [[mOut, new Float32Array(128)]], {
+      ceiling: new Float32Array([LIMITER_CEILING_LINEAR]),
+    });
+    out.set(mOut, off);
+  }
+  const q0 = Math.round(0.12 * sr);
+  const q1 = Math.round(0.35 * sr);
+  const b0 = Math.round(0.55 * sr);
+  const b1 = Math.round(0.78 * sr);
+  const maxEffectDuckDb = Math.abs(db(goertzelMag(out.subarray(b0, b1), sr, 220) / goertzelMag(out.subarray(q0, q1), sr, 220)));
+  assert.ok(
+    maxEffectDuckDb < 0.01,
+    `Expected < 0.01 dB Layer-1 ducking even at Max (0.42 peak) Layer-1 + 1.80 drum transient, got ${maxEffectDuckDb.toFixed(5)} dB`
+  );
+});
+
+// ============================================================================
+// Deep Regression #16 — P1 #6 & P0 #4 Full 8 kHz HFP Graph Nyquist Audit & HRV Sham Blinding
+// ============================================================================
+test('P1 #6 & P0 #4 (Deep 8 kHz HFP & HRV Sham): StereoRainBed, GenerativeComposer, StudioSampler & MedicalStimulusRack clamp 100% of nodes <= 0.44*fs @ 8 kHz & blind HRV sham', () => {
+  const origWin = globalThis.window;
+  try {
+    globalThis.window = globalThis;
+    const ctx8k = createMockAudioContext(8000);
+    const nyqSafe8k = 8000 * 0.44; // 3520 Hz
+
+    // 1. StereoRainBed + procedural rain & soft_rain buffers @ 8 kHz
+    const rainBuf8k = createStereoRainBuffer(ctx8k, 1);
+    assert.equal(rainBuf8k.sampleRate, 8000);
+    const softRain8k = createCalibratedNoiseBuffer(ctx8k, 'soft_rain', 1, { hpHz: 100, lpHz: 2400 });
+    assert.equal(softRain8k.sampleRate, 8000);
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(null, { status: 404 });
+    try {
+      const rainBed = new StereoRainBed();
+      rainBed.attach(ctx8k, ctx8k.createGain(), false, '');
+      rainBed.stop();
+
+      // 2. GenerativeComposer across bossa_nova (5400 Hz hat!) & Rhodes/Felt Piano @ 8 kHz
+      const composer = new GenerativeComposer();
+      const musicSpec = { ...structuredClone(VERIFIED_STUDY_PRESETS[0].music), percussion: 'steady_pulse', bpm: 110 };
+      composer.start({
+        ctx: ctx8k,
+        musicSpec,
+        genre: 'bossa_nova',
+        proceduralMaster: ctx8k.createGain(),
+        cleanSubBus: ctx8k.createGain(),
+        reverbSend: ctx8k.createGain(),
+        delaySend: ctx8k.createGain(),
+        speakerSafeEQ: false,
+      });
+      composer.scheduleLiveSteps();
+      composer.updateProgress(0.8, true);
+      composer.stop();
+
+      // 3. StudioSampler with 6800 Hz cutoff @ 8 kHz
+      const sampler = new StudioSampler();
+      sampler.attach(ctx8k, '');
+      sampler.bank.set('warm_rhodes', new Map([[60, ctx8k.createBuffer(2, 8000, 8000)]]));
+      sampler.playNote({
+        palette: 'warm_rhodes',
+        midi: 64,
+        time: 0.5,
+        gain: 0.3,
+        durationSec: 1.0,
+        tuningA4Hz: 440,
+        cutoffHz: 6800,
+        destination: ctx8k.createGain(),
+      });
+      sampler.clear();
+
+      // 4. MedicalStimulusRack non-worklet fallback @ 8 kHz + HRV Sham blinding check
+      const hrvSpec = structuredClone(VERIFIED_STUDY_PRESETS[0]);
+      hrvSpec.entrainment.type = 'hrv_breathing_swell';
+      hrvSpec.entrainment.frequencyHz = 0.1;
+      hrvSpec.entrainment.modulationDepth = 0.36;
+      hrvSpec.noise.color = 'white'; // defaultLp = 6200 Hz -> must clamp <= 3520 Hz!
+      hrvSpec.noise.snrDb = -18;
+
+      const rack = new MedicalStimulusRack();
+      const { hrvBusInput } = rack.start({
+        ctx: ctx8k,
+        spec: hrvSpec,
+        masterDestination: ctx8k.createGain(),
+        speakerSafeEQ: false,
+        isControlTrial: true,
+        pureStimulusMode: true,
+        workletsReady: false,
+      });
+      assert.ok(hrvBusInput, 'HRV protocol must mount hrvBusInput');
+      assert.equal(rack.hrvPeriodicGate.gain.value, 0, 'HRV sham must mute periodic 0.10 Hz Mayer-wave LFO');
+      assert.equal(rack.hrvShamGate.gain.value, 1, 'HRV sham must enable aperiodic 0.037+0.061 Hz LFOs');
+      assert.ok(
+        rack.hrvDepthGain.gain.value > 0.08,
+        `HRV sham in Science Only must maintain non-zero breathing modulation depth (got ${rack.hrvDepthGain.gain.value})`
+      );
+      rack.stop();
+
+      // Also exercise non-worklet sham on gamma_40hz_clicks @ 8 kHz
+      const gammaSpec = structuredClone(VERIFIED_STUDY_PRESETS[0]);
+      gammaSpec.entrainment.type = 'gamma_40hz_clicks';
+      gammaSpec.entrainment.frequencyHz = 40;
+      gammaSpec.entrainment.carrierLeftHz = 4800; // > 8 kHz Nyquist -> must clamp!
+      const rackGamma = new MedicalStimulusRack();
+      rackGamma.start({
+        ctx: ctx8k,
+        spec: gammaSpec,
+        masterDestination: ctx8k.createGain(),
+        speakerSafeEQ: false,
+        isControlTrial: true,
+        pureStimulusMode: true,
+        workletsReady: false,
+      });
+      rackGamma.stop();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+
+    const violations = ctx8k._freqRecords.filter((r) => r.v > nyqSafe8k + 1e-6);
+    assert.equal(
+      violations.length,
+      0,
+      `Found above-Nyquist (> ${nyqSafe8k} Hz) filter/oscillator frequencies @ 8 kHz HFP: ${JSON.stringify(violations.slice(0, 5))}`
+    );
+  } finally {
+    globalThis.window = origWin;
+  }
+});
+
+// ============================================================================
+// Deep Regression #17 — P1 #8 `/api/session/dismiss` Early-Abort Penalty & P2 #11 Cookie Upgrade / Webhook Guard
+// ============================================================================
+test('P1 #8 & P2 #11 (Deep Worker Edge Cases): /api/session/dismiss penalizes <25% aborts, legacy x-profile-token upgrades to HttpOnly cookie, & webhook rejects empty eventId', async () => {
+  const dbConn = createInMemoryD1();
+  const webhookSecret = 'whsec_v8_deep_edge_secret';
+  const env = { DB: dbConn, STRIPE_WEBHOOK_SECRET: webhookSecret };
+  const ctx = createExecCtx();
+  const origFetch = globalThis.fetch;
+
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ esearchresult: { idlist: [] }, results: [] }), { status: 200 });
+
+    const profRes = await worker.fetch(
+      new Request('https://www.nootropic.fm/api/profile', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'cf-connecting-ip': '192.0.2.99' },
+        body: JSON.stringify({
+          age: 31,
+          gender: 'male',
+          role: 'knowledge_worker',
+          occupationLabel: 'Data Scientist',
+          researchConsent: true,
+        }),
+      }),
+      env,
+      ctx
+    );
+    const { profile, profileToken } = await profRes.json();
+
+    // 1. Existing user sending ONLY `x-profile-token` (no Cookie yet) to GET /api/profile/:id MUST receive `Set-Cookie: nfm_auth=...; HttpOnly`!
+    const migRes = await worker.fetch(
+      new Request(`https://www.nootropic.fm/api/profile/${profile.id}`, {
+        headers: { 'x-profile-token': profileToken },
+      }),
+      env,
+      ctx
+    );
+    assert.equal(migRes.status, 200);
+    const migCookie = migRes.headers.get('set-cookie') ?? '';
+    assert.ok(
+      migCookie.startsWith('nfm_auth=') && migCookie.includes('HttpOnly') && migCookie.includes('Secure'),
+      `Legacy x-profile-token caller must be upgraded to HttpOnly nfm_auth cookie, got: ${migCookie}`
+    );
+
+    // 2. User starts 30m session, aborts at 50s (<25%) via "End & Rate", and skips debrief (`POST /api/session/dismiss`)
+    const startRes = await worker.fetch(
+      new Request('https://www.nootropic.fm/api/protocol/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Cookie: migCookie.split(';')[0], 'cf-connecting-ip': '192.0.2.99' },
+        body: JSON.stringify({
+          profileId: profile.id,
+          currentState: 'stressed',
+          targetState: 'calm_reset',
+          environment: 'office',
+          device: 'headphones',
+          durationMin: 30,
+        }),
+      }),
+      env,
+      ctx
+    );
+    const { recommendation } = await startRes.json();
+
+    const dismissRes = await worker.fetch(
+      new Request('https://www.nootropic.fm/api/session/dismiss', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Cookie: migCookie.split(';')[0], 'cf-connecting-ip': '192.0.2.99' },
+        body: JSON.stringify({ sessionId: recommendation.sessionId, actualDurationSec: 50 }),
+      }),
+      env,
+      ctx
+    );
+    assert.equal(dismissRes.status, 200);
+    const dismissJson = await dismissRes.json();
+    assert.equal(dismissJson.retentionOutcome, 'early_bounce');
+
+    const dismissedRow = dbConn._sqlite
+      .prepare('SELECT status, retention_outcome, implicit_reward_score, implicit_applied_weight FROM sessions WHERE id = ?')
+      .get(recommendation.sessionId);
+    assert.equal(dismissedRow.status, 'abandoned');
+    assert.equal(dismissedRow.retention_outcome, 'early_bounce');
+    assert.equal(dismissedRow.implicit_applied_weight, 0.45);
+    assert.ok(dismissedRow.implicit_reward_score <= 0.25);
+
+    // 3. Stripe webhook with empty `id: ""` MUST be rejected with 400 (cannot bypass processed_webhooks!)
+    const emptyIdPayload = JSON.stringify({ id: '', type: 'checkout.session.completed', data: { object: {} } });
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = await hmacSha256HexNode(webhookSecret, `${ts}.${emptyIdPayload}`);
+    const emptyIdRes = await worker.fetch(
+      new Request('https://www.nootropic.fm/api/billing/webhook', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'stripe-signature': `t=${ts},v1=${sig}` },
+        body: emptyIdPayload,
+      }),
+      env,
+      ctx
+    );
+    assert.equal(emptyIdRes.status, 400, 'Stripe webhook without event id must be rejected with 400');
+
+    // 4. `customer.subscription.deleted` clears BOTH `plan_tier = 'free'` and `pro_until = NULL`
+    dbConn._sqlite
+      .prepare("UPDATE profiles SET plan_tier = 'pro', pro_until = '2099-01-01T00:00:00.000Z', stripe_subscription_id = 'sub_del_v8' WHERE id = ?")
+      .run(profile.id);
+    const delSubPayload = JSON.stringify({
+      id: 'evt_sub_del_v8',
+      type: 'customer.subscription.deleted',
+      data: { object: { id: 'sub_del_v8', metadata: { profile_id: profile.id } } },
+    });
+    const delSig = await hmacSha256HexNode(webhookSecret, `${ts}.${delSubPayload}`);
+    const delSubRes = await worker.fetch(
+      new Request('https://www.nootropic.fm/api/billing/webhook', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'stripe-signature': `t=${ts},v1=${delSig}` },
+        body: delSubPayload,
+      }),
+      env,
+      ctx
+    );
+    assert.equal(delSubRes.status, 200);
+    const afterCancel = dbConn._sqlite.prepare('SELECT plan_tier, pro_until FROM profiles WHERE id = ?').get(profile.id);
+    assert.equal(afterCancel.plan_tier, 'free');
+    assert.equal(afterCancel.pro_until, null);
+  } finally {
+    globalThis.fetch = origFetch;
   }
 });

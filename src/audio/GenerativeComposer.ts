@@ -430,12 +430,13 @@ export class GenerativeComposer {
     this.progressRatio = Math.min(1, Math.max(0, progressRatio));
     this.antiMonotonyActive = antiMonotonyActive;
     if (this.ctx && this.padFilter) {
+      const nyqMax = this.ctx.sampleRate * 0.44;
       const target =
         this.computeCutoffHz() *
         (0.88 + 0.22 * this.intensityMult) *
         (antiMonotonyActive ? 1.14 : 1.0);
       this.padFilter.frequency.setTargetAtTime(
-        Math.max(420, Math.min(4800, target)),
+        Math.min(nyqMax, Math.max(420, Math.min(4800, target))),
         this.ctx.currentTime,
         0.55
       );
@@ -501,11 +502,13 @@ export class GenerativeComposer {
   }
 
   private computeCutoffHz(): number {
+    const nyqMax = this.ctx ? this.ctx.sampleRate * 0.44 : 4800;
     const base = this.musicSpec?.spectralLowPassHz ?? 1650;
-    if (this.palette === 'felt_piano') return Math.min(base, 1450);
-    if (this.palette === 'warm_rhodes') return Math.min(base, 1650);
-    if (this.palette === 'cinematic_strings') return Math.min(base * 1.08, 2200);
-    return base;
+    let cutoff = base;
+    if (this.palette === 'felt_piano') cutoff = Math.min(base, 1450);
+    else if (this.palette === 'warm_rhodes') cutoff = Math.min(base, 1650);
+    else if (this.palette === 'cinematic_strings') cutoff = Math.min(base * 1.08, 2200);
+    return Math.min(nyqMax, cutoff);
   }
 
   private getPalettePadGain(): number {
@@ -935,6 +938,8 @@ export class GenerativeComposer {
 
   private playFeltPianoNote(time: number, freq: number, amp: number): void {
     if (!this.ctx || !this.pulseBus) return;
+    const nyqMax = this.ctx.sampleRate * 0.44;
+    const safeFreq = Math.min(nyqMax, freq);
     const osc1 = this.ctx.createOscillator();
     const osc2 = this.ctx.createOscillator();
     const lp = this.ctx.createBiquadFilter();
@@ -943,21 +948,21 @@ export class GenerativeComposer {
 
     osc1.type = 'triangle';
     osc2.type = 'sine';
-    osc1.frequency.setValueAtTime(freq, time);
-    osc2.frequency.setValueAtTime(freq * 2, time);
+    osc1.frequency.setValueAtTime(safeFreq, time);
+    osc2.frequency.setValueAtTime(Math.min(nyqMax, safeFreq * 2), time);
 
     lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(Math.min(1850, this.computeCutoffHz() * 1.1), time);
-    lp.frequency.exponentialRampToValueAtTime(340, time + 1.6);
+    lp.frequency.setValueAtTime(Math.min(nyqMax, Math.min(1850, this.computeCutoffHz() * 1.1)), time);
+    lp.frequency.exponentialRampToValueAtTime(Math.min(nyqMax, 340), time + 1.6);
 
     gain.gain.setValueAtTime(0.0001, time);
     gain.gain.linearRampToValueAtTime(amp, time + 0.014);
     gain.gain.exponentialRampToValueAtTime(0.0001, time + 2.2);
 
-    pan.pan.value = Math.max(-0.5, Math.min(0.5, ((freq - 320) / 500) * 0.4));
+    pan.pan.value = Math.max(-0.5, Math.min(0.5, ((safeFreq - 320) / 500) * 0.4));
 
     const overtoneGain = this.ctx.createGain();
-    overtoneGain.gain.value = 0.22;
+    overtoneGain.gain.value = safeFreq * 2 < nyqMax ? 0.22 : 0;
 
     osc1.connect(lp);
     osc2.connect(overtoneGain);
@@ -974,6 +979,8 @@ export class GenerativeComposer {
 
   private playRhodesTineNote(time: number, freq: number, amp: number): void {
     if (!this.ctx || !this.pulseBus) return;
+    const nyqMax = this.ctx.sampleRate * 0.44;
+    const safeFreq = Math.min(nyqMax, freq);
     const carrier = this.ctx.createOscillator();
     const mod = this.ctx.createOscillator();
     const modGain = this.ctx.createGain();
@@ -981,12 +988,12 @@ export class GenerativeComposer {
     const pan = this.ctx.createStereoPanner();
 
     carrier.type = 'sine';
-    carrier.frequency.setValueAtTime(freq, time);
+    carrier.frequency.setValueAtTime(safeFreq, time);
     mod.type = 'sine';
-    mod.frequency.setValueAtTime(freq * 2, time);
+    mod.frequency.setValueAtTime(Math.min(nyqMax, safeFreq * 2), time);
 
     // Classic FM Rhodes bell transient
-    modGain.gain.setValueAtTime(freq * 0.75, time);
+    modGain.gain.setValueAtTime(safeFreq * 2 < nyqMax ? safeFreq * 0.75 : 1, time);
     modGain.gain.exponentialRampToValueAtTime(1, time + 0.35);
 
     gain.gain.setValueAtTime(0.0001, time);
@@ -1008,6 +1015,8 @@ export class GenerativeComposer {
 
   private playNylonPluckNote(time: number, freq: number, amp: number): void {
     if (!this.ctx || !this.pulseBus) return;
+    const nyqMax = this.ctx.sampleRate * 0.44;
+    const safeFreq = Math.min(nyqMax, freq);
     const osc = this.ctx.createOscillator();
     const oscSub = this.ctx.createOscillator();
     const lp = this.ctx.createBiquadFilter();
@@ -1015,13 +1024,13 @@ export class GenerativeComposer {
     const pan = this.ctx.createStereoPanner();
 
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(freq, time);
+    osc.frequency.setValueAtTime(safeFreq, time);
     oscSub.type = 'sine';
-    oscSub.frequency.setValueAtTime(freq * 0.5, time);
+    oscSub.frequency.setValueAtTime(Math.min(nyqMax, safeFreq * 0.5), time);
 
     lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(Math.min(2600, this.computeCutoffHz() * 1.4), time);
-    lp.frequency.exponentialRampToValueAtTime(420, time + 0.65);
+    lp.frequency.setValueAtTime(Math.min(nyqMax, Math.min(2600, this.computeCutoffHz() * 1.4)), time);
+    lp.frequency.exponentialRampToValueAtTime(Math.min(nyqMax, 420), time + 0.65);
     lp.Q.value = 1.4;
 
     gain.gain.setValueAtTime(0.0001, time);
@@ -1047,17 +1056,18 @@ export class GenerativeComposer {
 
   private playElectronicPluck(time: number, freq: number, amp: number, step: number): void {
     if (!this.ctx || !this.pulseBus) return;
+    const nyqMax = this.ctx.sampleRate * 0.44;
     const osc = this.ctx.createOscillator();
     const lp = this.ctx.createBiquadFilter();
     const gain = this.ctx.createGain();
     const pan = this.ctx.createStereoPanner();
 
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(freq, time);
+    osc.frequency.setValueAtTime(Math.min(nyqMax, freq), time);
 
     lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(Math.min(2400, this.computeCutoffHz() * 1.2), time);
-    lp.frequency.exponentialRampToValueAtTime(320, time + 0.34);
+    lp.frequency.setValueAtTime(Math.min(nyqMax, Math.min(2400, this.computeCutoffHz() * 1.2)), time);
+    lp.frequency.exponentialRampToValueAtTime(Math.min(nyqMax, 320), time + 0.34);
     lp.Q.value = 2.0;
 
     gain.gain.setValueAtTime(0.0001, time);
@@ -1165,10 +1175,11 @@ export class GenerativeComposer {
     const bp = this.ctx.createBiquadFilter();
     const gain = this.ctx.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(420, time);
-    osc.frequency.exponentialRampToValueAtTime(195, time + 0.028);
+    const nyqMax = this.ctx.sampleRate * 0.44;
+    osc.frequency.setValueAtTime(Math.min(nyqMax, 420), time);
+    osc.frequency.exponentialRampToValueAtTime(Math.min(nyqMax, 195), time + 0.028);
     bp.type = 'bandpass';
-    bp.frequency.value = 680;
+    bp.frequency.value = Math.min(nyqMax, 680);
     bp.Q.value = 2.1;
 
     gain.gain.setValueAtTime(0.0001, time);
@@ -1191,7 +1202,7 @@ export class GenerativeComposer {
     const bp = this.ctx.createBiquadFilter();
     const gain = this.ctx.createGain();
     bp.type = 'bandpass';
-    bp.frequency.value = this.genre === 'bossa_nova' ? 5400 : 4600;
+    bp.frequency.value = Math.min(this.ctx.sampleRate * 0.44, this.genre === 'bossa_nova' ? 5400 : 4600);
     bp.Q.value = 1.35;
 
     gain.gain.setValueAtTime(0.0001, time);

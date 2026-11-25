@@ -326,10 +326,13 @@ function titleCaseWords(words: string[]): string {
 }
 
 export const PUBMED_HUMAN_AUDITORY_EXCLUSION =
-  'NOT (mice[Title/Abstract] OR mouse[Title/Abstract] OR rat[Title/Abstract] OR rats[Title/Abstract] OR murine[Title/Abstract] OR rodent[Title/Abstract] OR optogenetics[Title/Abstract] OR optogenetic[Title/Abstract] OR "visual flicker"[Title/Abstract] OR photic[Title/Abstract] OR tDCS[Title/Abstract] OR TMS[Title/Abstract] OR rTMS[Title/Abstract] OR tACS[Title/Abstract])';
+  'NOT ((Animals[MeSH Terms] NOT Humans[MeSH Terms]) OR mice[Title] OR mouse[Title] OR rat[Title] OR rats[Title] OR murine[Title] OR rodent[Title] OR optogenetics[Title/Abstract] OR optogenetic[Title/Abstract] OR "visual flicker"[Title/Abstract] OR photic[Title/Abstract] OR tDCS[Title/Abstract] OR TMS[Title/Abstract] OR rTMS[Title/Abstract] OR tACS[Title/Abstract])';
 
 export const EUROPEPMC_HUMAN_AUDITORY_EXCLUSION =
-  'NOT (mice OR mouse OR rat OR rats OR murine OR rodent OR optogenetics OR optogenetic OR "visual flicker" OR photic OR tDCS OR TMS OR rTMS OR tACS)';
+  'NOT (TITLE:mice OR TITLE:mouse OR TITLE:rat OR TITLE:rats OR TITLE:murine OR TITLE:rodent OR optogenetics OR optogenetic OR TITLE:"visual flicker" OR TITLE:photic OR TITLE:tDCS OR TITLE:TMS OR TITLE:rTMS OR TITLE:tACS)';
+
+export const OPENALEX_HUMAN_AUDITORY_EXCLUSION =
+  'NOT (mice OR murine OR rodent OR optogenetics OR optogenetic OR tdcs OR rtms OR tacs)';
 
 export function appendPubMedHumanAuditoryGuard(query: string): string {
   const q = query.trim();
@@ -343,8 +346,17 @@ export function appendPubMedHumanAuditoryGuard(query: string): string {
   return `${base} ${PUBMED_HUMAN_AUDITORY_EXCLUSION}`;
 }
 
+const UI_MOUSE_PHRASE_RE =
+  /\b(?:computer\s+mouse(?:\s+buttons?|\s+clicks?|\s+cursors?|\s+pointers?)?|mouse\s+(?:buttons?|clicks?|clicking|cursors?|pointers?|tracking|movements?|wheel|pad))\b/gi;
+
 const ANIMAL_OR_INVASIVE_RE =
-  /\b(mice|mouse|murine|rat|rats|rodent|rodents|guinea\s+pig|zebrafish|drosophila|macaque|rhesus|non-human\s+primate|hippocampal\s+slice|in\s+vitro|optogenetic|optogenetics|chemogenetic|transgenic|5xfad|app\/ps1|c57bl)\b/i;
+  /\b(mice|mouse|murine|rat|rats|rodent|rodents|guinea\s+pig|zebrafish|drosophila|macaque|rhesus|non-human\s+primate|hippocampal\s+slice|brain\s+slice|in\s+vitro|optogenetic|optogenetics|chemogenetic|transgenic|5xfad|app\/ps1|c57bl|wistar|sprague-dawley)\b/i;
+
+const DIRECT_PRECLINICAL_EXEC_RE =
+  /\b(hippocampal\s+slice|brain\s+slice|in\s+vitro|sacrificed|euthanized|anesthetized\s+(?:mice|rats|animals|rodents)|(?:male|female|adult)\s+(?:wistar|sprague-dawley|c57bl|balb\/c|mice|rats)|(?:mice|rats|rodents|animals)\s+were)\b/i;
+
+const EXPLICIT_HUMAN_TRIAL_RE =
+  /\b(human\s+(?:adults|participants|volunteers|subjects|patients|listeners)|healthy\s+(?:adults|participants|volunteers|subjects)|patients\s+with|randomized\s+(?:controlled|clinical|crossover|placebo-controlled)\s+trial|double-blind\s+(?:clinical|placebo-controlled|randomized)|clinical\s+trial\s+in\s+(?:humans|patients|adults))\b/i;
 
 const NON_AUDITORY_STIM_RE =
   /\b(visual\s+flicker|light\s+flicker|photic\s+driving|photic\s+stimulation|stroboscopic|transcranial\s+direct|transcranial\s+magnetic|transcranial\s+alternating|\btdcs\b|\btacs\b|\brtms\b|\btms\b|vagus\s+nerve\s+stimulation|deep\s+brain\s+stimulation|electroconvulsive)\b/i;
@@ -354,15 +366,28 @@ const EXPLICIT_AUDITORY_RE =
 
 /**
  * Rejects preclinical animal/in-vitro studies and non-auditory stimulation modalities
- * (visual flicker, optogenetics, TMS, tDCS, tACS) so open-goal literature stays strictly human + auditory.
+ * (visual flicker, optogenetics, TMS, tDCS, tACS) while retaining human auditory clinical trials
+ * that mention UI computer-mouse clicks or cite prior animal work in background context.
  */
 export function isNonAuditoryOrAnimalStudy(title: string, abstractText = ''): boolean {
-  const combined = `${title} ${abstractText}`.trim();
+  const cleanTitle = title.replace(UI_MOUSE_PHRASE_RE, 'button response').trim();
+  const cleanAbstract = abstractText.replace(UI_MOUSE_PHRASE_RE, 'button response').trim();
+  const combined = `${cleanTitle} ${cleanAbstract}`.trim();
   if (!combined) return true;
-  if (ANIMAL_OR_INVASIVE_RE.test(combined)) {
+  if (ANIMAL_OR_INVASIVE_RE.test(cleanTitle)) {
     return true;
   }
-  if (NON_AUDITORY_STIM_RE.test(title) && !EXPLICIT_AUDITORY_RE.test(title)) {
+  if (ANIMAL_OR_INVASIVE_RE.test(cleanAbstract)) {
+    if (DIRECT_PRECLINICAL_EXEC_RE.test(cleanAbstract)) {
+      return true;
+    }
+    const isHumanAuditoryTrialWithBackgroundRef =
+      EXPLICIT_HUMAN_TRIAL_RE.test(combined) && EXPLICIT_AUDITORY_RE.test(combined);
+    if (!isHumanAuditoryTrialWithBackgroundRef) {
+      return true;
+    }
+  }
+  if (NON_AUDITORY_STIM_RE.test(cleanTitle) && !EXPLICIT_AUDITORY_RE.test(cleanTitle)) {
     return true;
   }
   if (NON_AUDITORY_STIM_RE.test(combined) && !EXPLICIT_AUDITORY_RE.test(combined)) {

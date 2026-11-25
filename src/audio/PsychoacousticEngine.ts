@@ -427,8 +427,19 @@ export class PsychoacousticEngine {
   private mediaDeckPool: Array<{
     el: HTMLAudioElement;
     srcNode: MediaElementAudioSourceNode;
+    generation: number;
+    inUse: boolean;
+    fadingOut: boolean;
   }> = [];
   private mediaDeckCursor = 0;
+  private activeMediaSlot: {
+    el: HTMLAudioElement;
+    srcNode: MediaElementAudioSourceNode;
+    generation: number;
+    inUse: boolean;
+    fadingOut: boolean;
+  } | null = null;
+  private activeMediaSlotGen = 0;
   private activeMediaDelayNode: DelayNode | null = null;
   private activeStudioSource: AudioBufferSourceNode | null = null;
   private activeStreamEl: HTMLAudioElement | null = null;
@@ -574,10 +585,7 @@ export class PsychoacousticEngine {
         numberOfOutputs: 1,
         outputChannelCount: [2],
       });
-      const initPreCeil =
-        (this.layerMonitorMode as LayerMonitorMode) === 'music_only'
-          ? LIMITER_CEILING_LINEAR
-          : 0.68;
+      const initPreCeil = this.computeMusicPreLimiterCeiling();
       musicPreLim.parameters.get('ceiling')?.setValueAtTime(initPreCeil, ctx.currentTime);
       musicMasterBus.connect(musicPreLim);
       musicPreLim.connect(masterSumBus);
@@ -793,7 +801,10 @@ export class PsychoacousticEngine {
     spectralPocketNotch.type = 'peaking';
     const discreteCarrierHz = this.stimulusRack.getPrimaryCarrierHz();
     const pocketHz = discreteCarrierHz ?? amCarrierRootHz;
-    spectralPocketNotch.frequency.setValueAtTime(pocketHz ?? 250, ctx.currentTime);
+    spectralPocketNotch.frequency.setValueAtTime(
+      Math.min(nyquistSafe, pocketHz ?? 250),
+      ctx.currentTime
+    );
     spectralPocketNotch.Q.value = discreteCarrierHz ? 2.6 : 2.1;
     const wantPocket = Boolean(
       pocketHz &&
@@ -1563,39 +1574,116 @@ export class PsychoacousticEngine {
     if (typeof Audio === 'undefined' || typeof ctx.createMediaElementSource !== 'function') {
       return;
     }
-    for (let i = 0; i < 2; i++) {
+    // 4 pre-unlocked <audio> + MediaElementAudioSourceNode slots guarantee overlap-safe crossfades
+    // and rapid genre switches without ever recycling a slot that is still fading out!
+    for (let i = 0; i < 4; i++) {
       try {
         const el = new Audio();
         el.crossOrigin = 'anonymous';
         el.preload = 'none';
         (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
         el.setAttribute('playsinline', 'true');
+        const srcNode = ctx.createMediaElementSource(el);
+        const slot = {
+          el,
+          srcNode,
+          generation: 0,
+          inUse: false,
+          fadingOut: false,
+        };
         if (this.keepAliveUrl) {
+          const unlockGen = slot.generation;
           el.src = this.keepAliveUrl;
           el.muted = true;
           void el
             .play()
             .then(() => {
+              // Generation guard: NEVER clobber src/pause if a stem already claimed this slot!
+              if (slot.generation !== unlockGen) return;
               el.pause();
               el.muted = false;
               el.removeAttribute('src');
               el.load();
             })
             .catch(() => {
+              if (slot.generation !== unlockGen) return;
               el.muted = false;
               el.removeAttribute('src');
             });
         }
-        const srcNode = ctx.createMediaElementSource(el);
-        this.mediaDeckPool.push({ el, srcNode });
+        this.mediaDeckPool.push(slot);
       } catch {
         break;
       }
     }
   }
 
+  private acquireMediaDeckSlot(): {
+    slot: PsychoacousticEngine['mediaDeckPool'][number];
+    gen: number;
+  } | null {
+    if (this.mediaDeckPool.length === 0) return null;
+    const len = this.mediaDeckPool.length;
+    let chosen: PsychoacousticEngine['mediaDeckPool'][number] | null = null;
+    for (let step = 0; step < len; step++) {
+      const cand = this.mediaDeckPool[(this.mediaDeckCursor + step) % len];
+      if (!cand.inUse && !cand.fadingOut) {
+        chosen = cand;
+        this.mediaDeckCursor = (this.mediaDeckCursor + step + 1) % len;
+        break;
+      }
+    }
+    if (!chosen) {
+      for (let step = 0; step < len; step++) {
+        const cand = this.mediaDeckPool[(this.mediaDeckCursor + step) % len];
+        if (!cand.inUse && cand !== this.activeMediaSlot) {
+          chosen = cand;
+          this.mediaDeckCursor = (this.mediaDeckCursor + step + 1) % len;
+          break;
+        }
+      }
+    }
+    if (!chosen) return null;
+    chosen.generation += 1;
+    chosen.inUse = true;
+    chosen.fadingOut = false;
+    chosen.el.muted = false;
+    try {
+      chosen.el.volume = 1.0;
+    } catch {
+      // read-only on iOS WebKit (hardware volume); WebAudio GainNode controls deck level
+    }
+    return { slot: chosen, gen: chosen.generation };
+  }
+
+  private releaseFailedMediaSlot(
+    slot: PsychoacousticEngine['mediaDeckPool'][number] | null,
+    claimedGen: number,
+    fallbackEl: HTMLAudioElement
+  ): void {
+    try {
+      if (slot) {
+        if (slot.generation !== claimedGen) return;
+        slot.inUse = false;
+        slot.fadingOut = false;
+        slot.el.pause();
+        slot.el.removeAttribute('src');
+        slot.el.load();
+        slot.srcNode.disconnect();
+      } else {
+        fallbackEl.pause();
+        fallbackEl.src = '';
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   private teardownMediaDeckPool(): void {
     for (const slot of this.mediaDeckPool) {
+      slot.generation += 1;
+      slot.inUse = false;
+      slot.fadingOut = false;
       try {
         slot.el.pause();
         slot.el.removeAttribute('src');
@@ -1607,6 +1695,35 @@ export class PsychoacousticEngine {
     }
     this.mediaDeckPool = [];
     this.mediaDeckCursor = 0;
+    this.activeMediaSlot = null;
+    this.activeMediaSlotGen = 0;
+  }
+
+  /**
+   * Computes exact Layer-2 `musicPreLimiter` ceiling so `musicPreLimiterCeiling + maxLayer1Peak < LIMITER_CEILING_LINEAR`
+   * across ALL Neural Effect tiers (Min, Standard, Max) and ALL noise levels, guaranteeing 0.000 dB Layer-1 ducking!
+   */
+  private computeMusicPreLimiterCeiling(): number {
+    if (this.layerMonitorMode === 'music_only') {
+      return LIMITER_CEILING_LINEAR;
+    }
+    const spec = this.studySpec;
+    if (!spec) return 0.68;
+    const eType = spec.entrainment.type;
+    const amActive = eType === 'amplitude_modulation' && spec.entrainment.frequencyHz > 0;
+    const amPeak = amActive ? this.computeAmScienceCarrierTarget(1.0) * 0.96 : 0;
+    const stimPeak =
+      !amActive && eType !== 'none' && eType !== 'hrv_breathing_swell'
+        ? Math.min(0.36, 0.22 * Math.max(0.5, this.modDepthMultiplier))
+        : 0;
+    const noisePeak =
+      spec.noise.color !== 'none' && spec.noise.snrDb > -34
+        ? Math.min(0.18, Math.pow(10, spec.noise.snrDb / 20) * 0.36 * this.intensityMultiplier)
+        : 0;
+    const reservedLayer1 = Math.min(0.45, Math.max(0.19, amPeak + stimPeak + noisePeak));
+    return Number(
+      Math.max(0.42, Math.min(0.68, LIMITER_CEILING_LINEAR - reservedLayer1 - 0.02)).toFixed(4)
+    );
   }
 
   private specNeedsPureHrvReferenceCarrier(): boolean {
@@ -1878,7 +1995,7 @@ export class PsychoacousticEngine {
     const muteMusic = mode === 'science_only' || this.carrierMode === 'pure_stimulus';
     const muteScience = mode === 'music_only';
 
-    const preLimCeiling = muteScience ? LIMITER_CEILING_LINEAR : 0.68;
+    const preLimCeiling = this.computeMusicPreLimiterCeiling();
     smoothSetParam(this.musicPreLimiterNode?.parameters.get('ceiling'), preLimCeiling, now, 0.065);
 
     const targetMusicGain = muteMusic
@@ -1955,7 +2072,18 @@ export class PsychoacousticEngine {
         this.layerMonitorMode = 'full_mix';
       }
       const muteScience = this.layerMonitorMode === 'music_only';
-      smoothSetParam(this.musicAuditionGain?.gain, 1.0, now, 0.12);
+      smoothSetParam(
+        this.musicPreLimiterNode?.parameters.get('ceiling'),
+        this.computeMusicPreLimiterCeiling(),
+        now,
+        0.12
+      );
+      smoothSetParam(
+        this.musicAuditionGain?.gain,
+        muteScience ? 1.0 : this.computeFullMixMusicPocketGain(),
+        now,
+        0.12
+      );
       this.stimulusRack.setScienceMuted(muteScience);
       this.stimulusRack.setPureStimulusMode(false);
       smoothSetParam(this.pureAmCarrierGain?.gain, 0, now, 0.12);
@@ -2002,7 +2130,18 @@ export class PsychoacousticEngine {
         this.layerMonitorMode = 'full_mix';
       }
       const muteScience = this.layerMonitorMode === 'music_only';
-      smoothSetParam(this.musicAuditionGain?.gain, 1.0, now, 0.12);
+      smoothSetParam(
+        this.musicPreLimiterNode?.parameters.get('ceiling'),
+        this.computeMusicPreLimiterCeiling(),
+        now,
+        0.12
+      );
+      smoothSetParam(
+        this.musicAuditionGain?.gain,
+        muteScience ? 1.0 : this.computeFullMixMusicPocketGain(),
+        now,
+        0.12
+      );
       this.stimulusRack.setScienceMuted(muteScience);
       this.stimulusRack.setPureStimulusMode(false);
       smoothSetParam(this.pureAmCarrierGain?.gain, 0, now, 0.12);
@@ -2039,7 +2178,18 @@ export class PsychoacousticEngine {
       this.layerMonitorMode = 'full_mix';
     }
     const muteScience = this.layerMonitorMode === 'music_only';
-    smoothSetParam(this.musicAuditionGain?.gain, 1.0, this.ctx.currentTime, 0.12);
+    smoothSetParam(
+      this.musicPreLimiterNode?.parameters.get('ceiling'),
+      this.computeMusicPreLimiterCeiling(),
+      this.ctx.currentTime,
+      0.12
+    );
+    smoothSetParam(
+      this.musicAuditionGain?.gain,
+      muteScience ? 1.0 : this.computeFullMixMusicPocketGain(),
+      this.ctx.currentTime,
+      0.12
+    );
     this.stimulusRack.setScienceMuted(muteScience);
     this.stimulusRack.setPureStimulusMode(false);
     smoothSetParam(this.pureAmCarrierGain?.gain, 0, this.ctx.currentTime, 0.12);
@@ -2066,20 +2216,36 @@ export class PsychoacousticEngine {
         onStatus?.(st, note);
         if (st === 'streaming' && this.ctx && this.proceduralMaster && this.cleanSubBus) {
           const now = this.ctx.currentTime;
-          this.clearStudioDeck(1.2);
-          this.carrierMode = 'lyria_realtime';
-          if (this.layerMonitorMode === 'science_only') {
-            this.layerMonitorMode = 'full_mix';
+          const wasAlreadyLyria = this.carrierMode === 'lyria_realtime';
+          if (!wasAlreadyLyria) {
+            this.clearStudioDeck(1.2);
+            this.carrierMode = 'lyria_realtime';
+            if (this.layerMonitorMode === 'science_only') {
+              this.layerMonitorMode = 'full_mix';
+            }
           }
-          smoothSetParam(this.musicAuditionGain?.gain, 1.0, now, 0.12);
+          const isSciOnly = this.layerMonitorMode === 'science_only';
+          const isMusOnly = this.layerMonitorMode === 'music_only';
+          smoothSetParam(
+            this.musicPreLimiterNode?.parameters.get('ceiling'),
+            this.computeMusicPreLimiterCeiling(),
+            now,
+            0.12
+          );
+          smoothSetParam(
+            this.musicAuditionGain?.gain,
+            isSciOnly ? 0 : isMusOnly ? 1.0 : this.computeFullMixMusicPocketGain(),
+            now,
+            0.12
+          );
           smoothSetParam(
             this.amScienceCarrierGain?.gain,
             this.computeAmScienceCarrierTarget(1.0),
             now,
             0.12
           );
-          this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(1, now);
-          this.syncAmWaveformForMonitorMode(false);
+          this.crossfeedNode?.parameters.get('enabled')?.setValueAtTime(isSciOnly ? 0 : 1, now);
+          this.syncAmWaveformForMonitorMode(isSciOnly);
           this.usingStudioAudio = false;
           this.usingCustomTrack = false;
           this.activeTrackKey = null;
@@ -2142,16 +2308,21 @@ export class PsychoacousticEngine {
     const prevSrc = this.activeStudioSource;
     const prevStreamEl = this.activeStreamEl;
     const prevStreamSrc = this.activeStreamSource;
+    const prevSlot = this.activeMediaSlot;
+    const releaseGen = this.activeMediaSlotGen;
     const prevMediaDelay = this.activeMediaDelayNode;
     const prevWsola = this.activeWsolaNode;
     const prevStemPlayer = this.activeStemPlayerNode;
     const prevGain = this.activeStudioGain;
-    const isPooledEl = Boolean(
-      prevStreamEl && this.mediaDeckPool.some((slot) => slot.el === prevStreamEl)
-    );
+    if (prevSlot) {
+      prevSlot.inUse = false;
+      prevSlot.fadingOut = true;
+    }
     this.activeStudioSource = null;
     this.activeStreamEl = null;
     this.activeStreamSource = null;
+    this.activeMediaSlot = null;
+    this.activeMediaSlotGen = 0;
     this.activeMediaDelayNode = null;
     this.activeWsolaNode = null;
     this.activeWsolaMode = 'none';
@@ -2159,23 +2330,31 @@ export class PsychoacousticEngine {
     this.activeStudioGain = null;
 
     const cleanupMediaEl = () => {
-      if (!prevStreamEl) return;
       try {
-        prevStreamEl.pause();
-        if (isPooledEl) {
-          prevStreamEl.removeAttribute('src');
-          prevStreamEl.load();
-          // Disconnect pooled MediaElementAudioSourceNode from old delay/gain so next use starts clean
-          prevStreamSrc?.disconnect();
-        } else {
-          prevStreamEl.src = '';
-          prevStreamSrc?.disconnect();
-        }
+        prevMediaDelay?.disconnect();
       } catch {
         // ignore
       }
+      if (!prevStreamEl) return;
+      if (prevSlot) {
+        // Generation guard: NEVER pause, clear src, or disconnect if this pooled slot was already acquired by a newer stem!
+        if (prevSlot.generation !== releaseGen) return;
+        prevSlot.fadingOut = false;
+        prevSlot.inUse = false;
+        try {
+          prevStreamEl.pause();
+          prevStreamEl.removeAttribute('src');
+          prevStreamEl.load();
+          prevStreamSrc?.disconnect();
+        } catch {
+          // ignore
+        }
+        return;
+      }
       try {
-        prevMediaDelay?.disconnect();
+        prevStreamEl.pause();
+        prevStreamEl.src = '';
+        prevStreamSrc?.disconnect();
       } catch {
         // ignore
       }
@@ -2394,12 +2573,18 @@ export class PsychoacousticEngine {
     keyLabel: string | null = null
   ): Promise<boolean> {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return false;
-    try {
-      const el = new Audio();
+    const claimed = this.acquireMediaDeckSlot();
+    const pooledSlot = claimed?.slot ?? null;
+    const claimedGen = claimed?.gen ?? 0;
+    const el = pooledSlot ? pooledSlot.el : new Audio();
+    if (!pooledSlot) {
       el.crossOrigin = 'anonymous';
+      (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+      el.setAttribute('playsinline', 'true');
+    }
+    try {
       el.preload = 'auto';
       el.loop = !onCrossfade;
-      (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
       const pitchEl = el as HTMLAudioElement & {
         preservesPitch?: boolean;
         mozPreservesPitch?: boolean;
@@ -2447,14 +2632,18 @@ export class PsychoacousticEngine {
       });
 
       if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
-        el.pause();
-        el.src = '';
+        this.releaseFailedMediaSlot(pooledSlot, claimedGen, el);
         return false;
       }
 
       const ctx = this.ctx;
       const now = ctx.currentTime;
-      const srcNode = ctx.createMediaElementSource(el);
+      const srcNode = pooledSlot ? pooledSlot.srcNode : ctx.createMediaElementSource(el);
+      try {
+        srcNode.disconnect();
+      } catch {
+        // ignore
+      }
       const deckGain = ctx.createGain();
       deckGain.gain.setValueAtTime(0.0001, now);
 
@@ -2484,19 +2673,17 @@ export class PsychoacousticEngine {
       await el.play();
 
       if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
-        el.pause();
-        el.src = '';
         try {
           if (wsolaNode) {
             wsolaNode.port.postMessage({ type: 'stop' });
             wsolaNode.port.onmessage = null;
             wsolaNode.disconnect();
           }
-          srcNode.disconnect();
           deckGain.disconnect();
         } catch {
           // ignore
         }
+        this.releaseFailedMediaSlot(pooledSlot, claimedGen, el);
         return false;
       }
 
@@ -2543,6 +2730,8 @@ export class PsychoacousticEngine {
 
       this.activeStreamEl = el;
       this.activeStreamSource = srcNode;
+      this.activeMediaSlot = pooledSlot;
+      this.activeMediaSlotGen = claimedGen;
       this.activeStreamCleanup = cleanupListeners;
       this.activeStreamCrossfadeCheck = crossfadeChecker;
       this.activeWsolaNode = wsolaNode;
@@ -2556,6 +2745,7 @@ export class PsychoacousticEngine {
       this.activeStudioAppliedBpm = alignment.effectiveBpm;
       return true;
     } catch {
+      this.releaseFailedMediaSlot(pooledSlot, claimedGen, el);
       return false;
     }
   }
@@ -2883,13 +3073,9 @@ export class PsychoacousticEngine {
       return false;
     }
 
-    const pooledSlot =
-      this.mediaDeckPool.length > 0
-        ? this.mediaDeckPool[this.mediaDeckCursor % this.mediaDeckPool.length]
-        : null;
-    if (pooledSlot) {
-      this.mediaDeckCursor = (this.mediaDeckCursor + 1) % this.mediaDeckPool.length;
-    }
+    const claimed = this.acquireMediaDeckSlot();
+    const pooledSlot = claimed?.slot ?? null;
+    const claimedGen = claimed?.gen ?? 0;
 
     const el = pooledSlot ? pooledSlot.el : new Audio();
     if (!pooledSlot) {
@@ -2935,13 +3121,7 @@ export class PsychoacousticEngine {
       });
 
       if (opts.token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
-        el.pause();
-        if (pooledSlot) {
-          el.removeAttribute('src');
-          el.load();
-        } else {
-          el.src = '';
-        }
+        this.releaseFailedMediaSlot(pooledSlot, claimedGen, el);
         return false;
       }
 
@@ -2984,20 +3164,13 @@ export class PsychoacousticEngine {
       await el.play();
 
       if (opts.token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
-        el.pause();
-        if (pooledSlot) {
-          el.removeAttribute('src');
-          el.load();
-        } else {
-          el.src = '';
-        }
         try {
-          srcNode.disconnect();
           phaseDelay?.disconnect();
           deckGain.disconnect();
         } catch {
           // ignore
         }
+        this.releaseFailedMediaSlot(pooledSlot, claimedGen, el);
         return false;
       }
 
@@ -3047,6 +3220,8 @@ export class PsychoacousticEngine {
       this.activeWsolaMode = 'none';
       this.activeStreamEl = el;
       this.activeStreamSource = srcNode;
+      this.activeMediaSlot = pooledSlot;
+      this.activeMediaSlotGen = claimedGen;
       this.activeMediaDelayNode = phaseDelay;
       this.activeStreamCleanup = cleanupListeners;
       this.activeStreamCrossfadeCheck = checkPosition;
@@ -3072,17 +3247,7 @@ export class PsychoacousticEngine {
       this.scheduleDeckCrossfade(scheduledDelaySec, triggerOnce);
       return true;
     } catch {
-      try {
-        el.pause();
-        if (pooledSlot) {
-          el.removeAttribute('src');
-          el.load();
-        } else {
-          el.src = '';
-        }
-      } catch {
-        // ignore
-      }
+      this.releaseFailedMediaSlot(pooledSlot, claimedGen, el);
       return false;
     }
   }
@@ -3758,6 +3923,12 @@ export class PsychoacousticEngine {
         const gainTrim = 0.98 * Math.max(0.82, Math.min(1.08, 0.88 + 0.12 * this.intensityMultiplier));
         this.studioBus.gain.setTargetAtTime(gainTrim, now, 0.3);
       }
+      smoothSetParam(
+        this.musicPreLimiterNode?.parameters.get('ceiling'),
+        this.computeMusicPreLimiterCeiling(),
+        now,
+        0.12
+      );
     }
     if (this.carrierMode === 'lyria_realtime' && this.studySpec) {
       this.lyriaClient.steer(
@@ -3772,13 +3943,21 @@ export class PsychoacousticEngine {
   public adjustModDepth(multiplier: number): void {
     this.modDepthMultiplier = Math.max(0.0, Math.min(1.65, multiplier));
     this.stimulusRack.setModMultiplier(this.modDepthMultiplier);
-    if (this.ctx && this.musicAuditionGain && this.layerMonitorMode === 'full_mix') {
+    if (this.ctx) {
       smoothSetParam(
-        this.musicAuditionGain.gain,
-        this.computeFullMixMusicPocketGain(),
+        this.musicPreLimiterNode?.parameters.get('ceiling'),
+        this.computeMusicPreLimiterCeiling(),
         this.ctx.currentTime,
         0.08
       );
+      if (this.musicAuditionGain && this.layerMonitorMode === 'full_mix') {
+        smoothSetParam(
+          this.musicAuditionGain.gain,
+          this.computeFullMixMusicPocketGain(),
+          this.ctx.currentTime,
+          0.08
+        );
+      }
     }
     if (this.isPlaying) {
       this.updateElapsed(this.elapsedSec, 0.08);

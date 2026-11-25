@@ -561,11 +561,11 @@ export async function compileMedicalStudy(
     raw.toUpperCase().match(/NCT\d{6,10}/)?.[0];
 
   const cacheKey = pmidMatch
-    ? `v31:pmid:${pmidMatch}`
+    ? `v8:pmid:${pmidMatch}`
     : doiMatch
-      ? `v31:doi:${doiMatch.toLowerCase()}`
+      ? `v8:doi:${doiMatch.toLowerCase()}`
       : nctMatch
-        ? `v31:nct:${nctMatch}`
+        ? `v8:nct:${nctMatch}`
         : null;
 
   if (cacheKey && !input.abstractOverride) {
@@ -710,13 +710,21 @@ export async function compileMedicalStudy(
     }
   }
 
+  if (isNonAuditoryOrAnimalStudy(resolvedRef.title, fullText)) {
+    const scopeNote =
+      'Preclinical or non-auditory source detected: translated conservatively into a safe human non-invasive acoustic protocol.';
+    if (!spec.protocol.safetyNotes.includes(scopeNote)) {
+      spec.protocol.safetyNotes.push(scopeNote);
+    }
+  }
+
   const finalCacheKey =
     resolvedRef.pmid
-      ? `v31:pmid:${resolvedRef.pmid}`
+      ? `v8:pmid:${resolvedRef.pmid}`
       : resolvedRef.doi
-        ? `v31:doi:${resolvedRef.doi.toLowerCase()}`
+        ? `v8:doi:${resolvedRef.doi.toLowerCase()}`
         : resolvedRef.nctId
-          ? `v31:nct:${resolvedRef.nctId}`
+          ? `v8:nct:${resolvedRef.nctId}`
           : null;
 
   if (finalCacheKey) {

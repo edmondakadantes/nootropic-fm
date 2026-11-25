@@ -94,7 +94,8 @@ export function createCalibratedNoiseBuffer(
           totalGen - start,
           Math.max(18, Math.round(sampleRate * (isPlink ? 0.011 : 0.005)))
         );
-        const baseHz = isPlink ? 720 + Math.random() * 1450 : 1200 + Math.random() * 2800;
+        const rawBaseHz = isPlink ? 720 + Math.random() * 1450 : 1200 + Math.random() * 2800;
+        const baseHz = Math.min(sampleRate * 0.32, rawBaseHz);
         const amp = isPlink ? 0.042 + Math.random() * 0.032 : 0.026 + Math.random() * 0.024;
         let phase = Math.random() * Math.PI * 2;
         let lp = 0;
@@ -253,6 +254,8 @@ export class MedicalStimulusRack {
   private hrvCarrierGain: GainNode | null = null;
   private hrvExtraGains: GainNode[] = [];
   private hrvDepthGain: GainNode | null = null;
+  private hrvPeriodicGate: GainNode | null = null;
+  private hrvShamGate: GainNode | null = null;
   private hrvBaseDepth = 0;
   private beatOscL: OscillatorNode | null = null;
   private beatOscR: OscillatorNode | null = null;
@@ -350,16 +353,43 @@ export class MedicalStimulusRack {
       hrvLfo.type = 'sine';
       hrvLfo.frequency.setValueAtTime(hrvHz, now);
 
+      const hrvPeriodicGate = ctx.createGain();
+      hrvPeriodicGate.gain.setValueAtTime(isControlTrial ? 0 : 1, now);
+      hrvLfo.connect(hrvPeriodicGate);
+
+      // Active Aperiodic Sham for 0.10 Hz HRV: two incommensurate ultra-slow oscillators (0.037 + 0.061 Hz)
+      // strictly outside the 0.08–0.12 Hz Mayer-wave baroreflex resonance band so Science Only remains blinded.
+      const hrvShamGate = ctx.createGain();
+      hrvShamGate.gain.setValueAtTime(isControlTrial ? 1 : 0, now);
+      const hrvShamSpecs: Array<[number, number]> = [
+        [0.037, 0.58],
+        [0.061, 0.42],
+      ];
+      for (const [sHz, sWeight] of hrvShamSpecs) {
+        const sOsc = ctx.createOscillator();
+        sOsc.type = 'sine';
+        sOsc.frequency.setValueAtTime(sHz, now);
+        const sGain = ctx.createGain();
+        sGain.gain.setValueAtTime(sWeight, now);
+        sOsc.connect(sGain);
+        sGain.connect(hrvShamGate);
+        sOsc.start(now);
+        this.activeSources.push(sOsc);
+      }
+
       const hrvDepth = ctx.createGain();
       hrvDepth.gain.setValueAtTime(effHrv / 2, now);
 
-      hrvLfo.connect(hrvDepth);
+      hrvPeriodicGate.connect(hrvDepth);
+      hrvShamGate.connect(hrvDepth);
       hrvDepth.connect(hrvGain.gain);
       hrvLfo.start(now);
 
       this.activeSources.push(hrvLfo);
       this.hrvCarrierGain = hrvGain;
       this.hrvDepthGain = hrvDepth;
+      this.hrvPeriodicGate = hrvPeriodicGate;
+      this.hrvShamGate = hrvShamGate;
       hrvBusInput = hrvGain;
     }
 
@@ -422,6 +452,14 @@ export class MedicalStimulusRack {
           lp.connect(stimGain);
           this.clinicalSynthNode = synth;
           this.clinicalSynthWarmLp = lp;
+        } else if (isControlTrial) {
+          this.mountFallbackAperiodicSham(
+            ctx,
+            carrierHz,
+            useHarmonicMbi ? 2200 : Math.min(3600, carrierHz * 4.5),
+            stimGain,
+            now
+          );
         } else {
           const buf = createPeriodicPulseBuffer(ctx, {
             pulseRateHz: rateHz,
@@ -435,7 +473,10 @@ export class MedicalStimulusRack {
 
           const lp = ctx.createBiquadFilter();
           lp.type = 'lowpass';
-          lp.frequency.value = useHarmonicMbi ? 2200 : Math.min(3600, carrierHz * 4.5);
+          lp.frequency.value = Math.min(
+            ctx.sampleRate * 0.44,
+            useHarmonicMbi ? 2200 : Math.min(3600, carrierHz * 4.5)
+          );
           lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
           src.connect(lp);
@@ -483,6 +524,8 @@ export class MedicalStimulusRack {
           lp.connect(stimGain);
           this.clinicalSynthNode = synth;
           this.clinicalSynthWarmLp = lp;
+        } else if (isControlTrial) {
+          this.mountFallbackAperiodicSham(ctx, carrierHz, speakerSafeEQ ? 720 : 1800, stimGain, now);
         } else {
           const buf = createPeriodicPulseBuffer(ctx, {
             pulseRateHz: rateHz,
@@ -496,7 +539,7 @@ export class MedicalStimulusRack {
 
           const lp = ctx.createBiquadFilter();
           lp.type = 'lowpass';
-          lp.frequency.value = speakerSafeEQ ? 720 : 1800;
+          lp.frequency.value = Math.min(ctx.sampleRate * 0.44, speakerSafeEQ ? 720 : 1800);
           lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
           src.connect(lp);
@@ -552,17 +595,26 @@ export class MedicalStimulusRack {
           warmLp.connect(stimGain);
           this.clinicalSynthNode = synth;
           this.clinicalSynthWarmLp = warmLp;
+        } else if (isControlTrial) {
+          this.mountFallbackAperiodicSham(
+            ctx,
+            this.primaryCarrierHz,
+            speakerSafeEQ ? 760 : 1200,
+            stimGain,
+            now
+          );
         } else {
+          const nyqMax = ctx.sampleRate * 0.44;
           const oscL = ctx.createOscillator();
           const oscR = ctx.createOscillator();
           oscL.type = 'sine';
           oscR.type = 'sine';
-          oscL.frequency.setValueAtTime(leftHz, now);
-          oscR.frequency.setValueAtTime(rightHz, now);
+          oscL.frequency.setValueAtTime(Math.min(nyqMax, leftHz), now);
+          oscR.frequency.setValueAtTime(Math.min(nyqMax, rightHz), now);
 
           const warmLp = ctx.createBiquadFilter();
           warmLp.type = 'lowpass';
-          warmLp.frequency.value = speakerSafeEQ ? 760 : 1200;
+          warmLp.frequency.value = Math.min(nyqMax, speakerSafeEQ ? 760 : 1200);
           warmLp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
           if (useBinaural) {
@@ -647,7 +699,7 @@ export class MedicalStimulusRack {
       // ±30 Hz carrier notch clears masking noise around dichotic binaural carriers (Ingendoh 2023)
       const noiseCarrierNotch = ctx.createBiquadFilter();
       noiseCarrierNotch.type = 'peaking';
-      const notchHz = Math.max(80, Math.min(1800, this.primaryCarrierHz ?? 220));
+      const notchHz = Math.max(80, Math.min(nyqMax, Math.min(1800, this.primaryCarrierHz ?? 220)));
       noiseCarrierNotch.frequency.setValueAtTime(notchHz, now);
       noiseCarrierNotch.Q.setValueAtTime(Math.max(5.0, notchHz / 28), now);
       const wantNotch =
@@ -674,6 +726,62 @@ export class MedicalStimulusRack {
     return { hrvBusInput };
   }
 
+  private mountFallbackAperiodicSham(
+    ctx: AudioContext,
+    carrierHz: number,
+    warmLpCutoffHz: number,
+    stimGain: AudioNode,
+    now: number
+  ): void {
+    const nyqMax = ctx.sampleRate * 0.44;
+    const safeF0 = Math.max(90, Math.min(nyqMax * 0.85, Math.min(540, carrierHz || 220)));
+    const shamEnv = ctx.createGain();
+    shamEnv.gain.setValueAtTime(0.76, now);
+
+    const shamOscs: Array<[number, number]> = [
+      [0.17, 0.1],
+      [0.29, 0.08],
+      [0.43, 0.06],
+    ];
+    for (const [lfoHz, lfoAmp] of shamOscs) {
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.setValueAtTime(lfoHz, now);
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.setValueAtTime(lfoAmp, now);
+      lfo.connect(lfoGain);
+      lfoGain.connect(shamEnv.gain);
+      lfo.start(now);
+      this.activeSources.push(lfo);
+    }
+
+    const warmLp = ctx.createBiquadFilter();
+    warmLp.type = 'lowpass';
+    warmLp.frequency.value = Math.min(nyqMax, warmLpCutoffHz);
+    warmLp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
+
+    const partials: Array<[number, number]> = [
+      [1.0, 0.56],
+      [1.5, 0.14],
+      [2.0, 0.1],
+    ];
+    for (const [mult, weight] of partials) {
+      if (safeF0 * mult >= nyqMax) continue;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(safeF0 * mult, now);
+      const pGain = ctx.createGain();
+      pGain.gain.setValueAtTime(weight, now);
+      osc.connect(pGain);
+      pGain.connect(shamEnv);
+      osc.start(now);
+      this.activeSources.push(osc);
+    }
+
+    shamEnv.connect(warmLp);
+    warmLp.connect(stimGain);
+  }
+
   private resolveActiveSynthMode(): string {
     if (!this.spec) return 'off';
     if (this.isControlTrial) return 'aperiodic_sham';
@@ -695,9 +803,9 @@ export class MedicalStimulusRack {
 
   private computeEffectiveHrvDepth(): number {
     if (!this.spec || this.scienceMuted || this.hrvBaseDepth <= 0) return 0;
-    if (this.isControlTrial) return 0;
     const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
-    return Math.min(0.68, Math.max(0, this.hrvBaseDepth * this.modMult * phaseScale));
+    const shamScale = this.isControlTrial ? 0.85 : 1.0;
+    return Math.min(0.68, Math.max(0, this.hrvBaseDepth * this.modMult * phaseScale * shamScale));
   }
 
   private computeStimulusTargetGain(): number {
@@ -709,7 +817,7 @@ export class MedicalStimulusRack {
       base =
         this.gammaMode === 'harmonic_mbi'
           ? this.pureStimulusMode
-            ? 0.24
+            ? 0.31
             : 0.145
           : this.pureStimulusMode
             ? 0.27
@@ -867,13 +975,15 @@ export class MedicalStimulusRack {
           carrierRightHz: rightHz,
         });
       }
+      const nyqMax = this.ctx.sampleRate * 0.44;
       if (this.beatOscL && this.beatOscR) {
-        this.beatOscL.frequency.setTargetAtTime(leftHz, now, 0.45);
-        this.beatOscR.frequency.setTargetAtTime(rightHz, now, 0.45);
+        this.beatOscL.frequency.setTargetAtTime(Math.min(nyqMax, leftHz), now, 0.45);
+        this.beatOscR.frequency.setTargetAtTime(Math.min(nyqMax, rightHz), now, 0.45);
       }
       if (this.noiseCarrierNotch) {
-        this.noiseCarrierNotch.frequency.setTargetAtTime(this.primaryCarrierHz, now, 0.45);
-        this.noiseCarrierNotch.Q.setTargetAtTime(Math.max(5.0, this.primaryCarrierHz / 28), now, 0.45);
+        const clampedNotch = Math.min(nyqMax, this.primaryCarrierHz);
+        this.noiseCarrierNotch.frequency.setTargetAtTime(clampedNotch, now, 0.45);
+        this.noiseCarrierNotch.Q.setTargetAtTime(Math.max(5.0, clampedNotch / 28), now, 0.45);
       }
       this.carrierLabel =
         eType === 'binaural_beat' && !this.speakerSafeEQ && !this.forceMonaural
@@ -916,6 +1026,11 @@ export class MedicalStimulusRack {
         mode: this.resolveActiveSynthMode(),
         bluetoothSafe: this.bluetoothSafe,
       });
+    }
+    if (this.ctx) {
+      const now = this.ctx.currentTime;
+      smoothSetParam(this.hrvPeriodicGate?.gain, flag ? 0 : 1, now, 0.08);
+      smoothSetParam(this.hrvShamGate?.gain, flag ? 1 : 0, now, 0.08);
     }
     this.refreshLevels(0.065);
   }
@@ -960,8 +1075,9 @@ export class MedicalStimulusRack {
         : Number((leftHz + liveBeatHz).toFixed(2));
       if (this.beatOscL && this.beatOscR) {
         const now = this.ctx.currentTime;
-        this.beatOscL.frequency.setTargetAtTime(leftHz, now, 0.4);
-        this.beatOscR.frequency.setTargetAtTime(rightHz, now, 0.4);
+        const nyqMax = this.ctx.sampleRate * 0.44;
+        this.beatOscL.frequency.setTargetAtTime(Math.min(nyqMax, leftHz), now, 0.4);
+        this.beatOscR.frequency.setTargetAtTime(Math.min(nyqMax, rightHz), now, 0.4);
       }
       this.carrierLabel =
         spec.entrainment.type === 'binaural_beat' && !this.speakerSafeEQ && !this.forceMonaural
@@ -1055,6 +1171,8 @@ export class MedicalStimulusRack {
     this.hrvCarrierGain = null;
     this.hrvExtraGains = [];
     this.hrvDepthGain = null;
+    this.hrvPeriodicGate = null;
+    this.hrvShamGate = null;
     this.hrvBaseDepth = 0;
     this.beatOscL = null;
     this.beatOscR = null;

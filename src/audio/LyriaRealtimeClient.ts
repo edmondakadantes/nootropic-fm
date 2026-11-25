@@ -42,6 +42,7 @@ export class LyriaRealtimeClient {
   private reconnectCount = 0;
   private reconnectTimer: number | null = null;
   private lastSentBpm = 0;
+  private hasStreamedOnce = false;
 
   public async connect(opts: {
     ctx: AudioContext;
@@ -57,6 +58,7 @@ export class LyriaRealtimeClient {
     this.stop();
     this.intentionalStop = false;
     this.reconnectCount = 0;
+    this.hasStreamedOnce = false;
     this.activeCtx = opts.ctx;
     this.activeSpec = opts.spec;
     this.activeGenre = opts.genre;
@@ -190,10 +192,14 @@ export class LyriaRealtimeClient {
             if (this.status !== 'streaming') {
               window.clearTimeout(timeout);
               this.reconnectCount = 0;
+              const isInitialFadeIn = !this.hasStreamedOnce;
+              this.hasStreamedOnce = true;
               this.setStatus('streaming', 'Endless Stream active through 3-Band LR4 DSP');
-              const now = this.activeCtx.currentTime;
-              this.outputGain?.gain.setValueAtTime(0.0001, now);
-              this.outputGain?.gain.exponentialRampToValueAtTime(0.86, now + 1.5);
+              if (isInitialFadeIn) {
+                const now = this.activeCtx.currentTime;
+                this.outputGain?.gain.setValueAtTime(0.0001, now);
+                this.outputGain?.gain.exponentialRampToValueAtTime(0.86, now + 1.5);
+              }
               finish(true);
             }
           }
@@ -416,6 +422,7 @@ export class LyriaRealtimeClient {
       this.outputGain = null;
     }
     this.lastSentBpm = 0;
+    this.hasStreamedOnce = false;
     this.status = 'idle';
   }
 }

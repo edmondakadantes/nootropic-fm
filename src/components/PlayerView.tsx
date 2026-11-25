@@ -975,7 +975,7 @@ export function PlayerView({
             recommendation.params,
             recommendation.plannedDurationMin,
             recommendation.arm.name,
-            recommendation.isControlTrial,
+            isPro ? false : recommendation.isControlTrial,
             recommendation.executableSpec,
             'lyria_realtime',
             API_BASE
@@ -1049,7 +1049,7 @@ export function PlayerView({
         recommendation.params,
         recommendation.plannedDurationMin,
         recommendation.arm.name,
-        recommendation.isControlTrial,
+        isPro ? false : recommendation.isControlTrial,
         recommendation.executableSpec,
         nextMode,
         API_BASE

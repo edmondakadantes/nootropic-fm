@@ -161,24 +161,29 @@ export function createStereoRainBuffer(ctx: AudioContext, durationSec = 14): Aud
       const decayRate = surfaceType === 'window' ? 8.2 : surfaceType === 'foliage' ? 6.8 : 5.4;
       const env = attack * Math.exp(-u * decayRate) * endTaper;
 
+      const nyqMax = rate * 0.44;
       let sample = 0;
       if (surfaceType === 'puddle_bubble') {
         // Real Minnaert acoustic bubble: water drop impact slap + upward-sweeping cavity resonance
-        const instHz = baseHz * (1 + 0.44 * Math.pow(u, 0.75));
+        const instHz = Math.min(nyqMax, baseHz * (1 + 0.44 * Math.pow(u, 0.75)));
         phase1 += (2 * Math.PI * instHz) / rate;
-        phase2 += (2 * Math.PI * instHz * 2.14) / rate;
+        const hasOvertone = instHz * 2.14 < nyqMax;
+        if (hasOvertone) phase2 += (2 * Math.PI * instHz * 2.14) / rate;
         const slap = u < 0.12 ? (rand() * 2 - 1) * (1 - u / 0.12) * 0.55 : 0;
-        sample = (Math.sin(phase1) * 0.72 + Math.sin(phase2) * 0.16 + slap) * env;
+        sample = (Math.sin(phase1) * 0.72 + (hasOvertone ? Math.sin(phase2) * 0.16 : 0) + slap) * env;
       } else if (surfaceType === 'window') {
         // Crisp damped glass/eaves water tap (dual modal resonance + broadband droplet transient)
-        phase1 += (2 * Math.PI * baseHz * (1 - 0.08 * u)) / rate;
-        phase2 += (2 * Math.PI * baseHz * 1.63) / rate;
+        const f1 = Math.min(nyqMax, baseHz * (1 - 0.08 * u));
+        phase1 += (2 * Math.PI * f1) / rate;
+        const hasMode2 = baseHz * 1.63 < nyqMax;
+        if (hasMode2) phase2 += (2 * Math.PI * baseHz * 1.63) / rate;
         const burst = (rand() * 2 - 1) * Math.exp(-u * 14);
         lpState += 0.42 * (burst - lpState);
-        sample = (lpState * 0.68 + Math.sin(phase1) * 0.28 + Math.sin(phase2) * 0.14) * env;
+        sample =
+          (lpState * 0.68 + Math.sin(phase1) * 0.28 + (hasMode2 ? Math.sin(phase2) * 0.14 : 0)) * env;
       } else {
         // Broad leaf & wet canopy patter
-        phase1 += (2 * Math.PI * baseHz) / rate;
+        phase1 += (2 * Math.PI * Math.min(nyqMax, baseHz)) / rate;
         const burst = rand() * 2 - 1;
         lpState += 0.28 * (burst - lpState);
         sample = (lpState * 0.74 + Math.sin(phase1) * 0.26) * env;
@@ -262,20 +267,22 @@ export class StereoRainBed {
     this.speakerSafe = speakerSafe;
 
     // Sculpted natural studio rainfall EQ: preserves crisp 1.5–6.5 kHz droplet articulation without sibilance
+    // All cutoffs clamped <= 0.44 * sampleRate for 16 kHz / 8 kHz Bluetooth HFP safety.
+    const nyqMax = Math.max(800, ctx.sampleRate * 0.44);
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
-    hp.frequency.value = 95;
+    hp.frequency.value = Math.min(nyqMax * 0.5, 95);
     hp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
     const dropletClarity = ctx.createBiquadFilter();
     dropletClarity.type = 'peaking';
-    dropletClarity.frequency.value = 2350;
+    dropletClarity.frequency.value = Math.min(nyqMax, 2350);
     dropletClarity.Q.value = 0.85;
     dropletClarity.gain.value = 1.4;
 
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = speakerSafe ? 5400 : 9600;
+    lp.frequency.value = Math.min(nyqMax, speakerSafe ? 5400 : 9600);
     lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
     const gain = ctx.createGain();

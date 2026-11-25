@@ -85,10 +85,8 @@ function isTrustedOrigin(origin: string): boolean {
   if (!origin) return false;
   return (
     ALLOWED_ORIGINS.has(origin) ||
-    origin.endsWith('.workers.dev') ||
-    origin.endsWith('.web.app') ||
-    origin.endsWith('.firebaseapp.com') ||
-    origin.endsWith('.vercel.app')
+    /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) ||
+    /^https:\/\/nootropic-fm(\.[a-z0-9-]+)?\.workers\.dev$/i.test(origin)
   );
 }
 
@@ -96,10 +94,11 @@ function corsHeaders(request?: Request): Record<string, string> {
   const origin = request?.headers.get('origin') ?? '';
   const trusted = isTrustedOrigin(origin);
   return {
-    'access-control-allow-origin': trusted ? origin : '*',
+    'access-control-allow-origin': trusted ? origin : 'https://nootropic.fm',
     'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
     'access-control-allow-headers': 'content-type, x-admin-key, x-profile-token, authorization',
-    ...(trusted ? { 'access-control-allow-credentials': 'true', vary: 'Origin' } : {}),
+    vary: 'Origin',
+    ...(trusted ? { 'access-control-allow-credentials': 'true' } : {}),
   };
 }
 
@@ -1289,6 +1288,10 @@ export default {
 
       // POST /api/music/realtime-token — Mints a short-lived HMAC ticket for our secure Lyria RealTime WS proxy
       if (url.pathname === '/api/music/realtime-token' && request.method === 'POST') {
+        const reqOrigin = request.headers.get('origin') ?? '';
+        if (reqOrigin && !isTrustedOrigin(reqOrigin)) {
+          return json({ available: false, error: 'Untrusted request origin' }, 403, request);
+        }
         const apiKey = env.GEMINI_MUSIC_API_KEY?.trim();
         if (!apiKey) {
           return json(
@@ -1846,6 +1849,10 @@ export default {
           .bind(profile.id)
           .first<Record<string, unknown>>();
 
+        const headerOnlyTok = request.headers.get('x-profile-token')?.trim() ?? '';
+        const hasAuthCookie = (request.headers.get('cookie') ?? '').includes(`${AUTH_COOKIE_NAME}=`);
+        const cookieTokenToSet = profileToken || (!hasAuthCookie && headerOnlyTok ? headerOnlyTok : '');
+
         return json(
           {
             profile: savedRow ? mapProfileRow(savedRow) : { ...profile, planTier: 'free', proUntil: null },
@@ -1854,7 +1861,9 @@ export default {
           },
           200,
           request,
-          profileToken ? { 'set-cookie': buildAuthSetCookieHeader(request, profileToken) } : undefined
+          cookieTokenToSet
+            ? { 'set-cookie': buildAuthSetCookieHeader(request, cookieTokenToSet) }
+            : undefined
         );
       }
 
@@ -1960,6 +1969,11 @@ export default {
           fetchTopPersonalGenres(env.DB, id),
         ]);
 
+        const headerOnlyTok = request.headers.get('x-profile-token')?.trim() ?? '';
+        const hasAuthCookie = (request.headers.get('cookie') ?? '').includes(`${AUTH_COOKIE_NAME}=`);
+        const upgradeCookieTok =
+          auth.issuedLegacyToken || (!hasAuthCookie && headerOnlyTok ? headerOnlyTok : '');
+
         return json(
           {
             profile: { ...mapProfileRow(auth.row, Number(countRow?.cnt ?? 0)), favoriteGenres },
@@ -1969,8 +1983,8 @@ export default {
           },
           200,
           request,
-          auth.issuedLegacyToken
-            ? { 'set-cookie': buildAuthSetCookieHeader(request, auth.issuedLegacyToken) }
+          upgradeCookieTok
+            ? { 'set-cookie': buildAuthSetCookieHeader(request, upgradeCookieTok) }
             : undefined
         );
       }
@@ -3754,6 +3768,9 @@ export default {
 
         if (!session.isControlTrial) {
           const marginalScopes = extractMarginalScopesFromSession(session);
+          const cohortParts = session.cohortKey.split('|');
+          const sessionGoalKey =
+            (cohortParts.length >= 5 ? cohortParts[3] : cohortParts[2]) || session.targetState;
           const [cUp, pUp, , , pGenreUp] = await Promise.all([
             updateBanditScope(env.DB, {
               scopeType: 'cohort',
@@ -3781,7 +3798,7 @@ export default {
             }),
             updateBanditScope(env.DB, {
               scopeType: 'profile_state',
-              scopeId: `${profileId}|${session.currentState}|${session.targetState}`,
+              scopeId: `${profileId}|${session.currentState}|${sessionGoalKey}`,
               armId: session.armId,
               mode: 'explicit',
               reward: protocolReward,
@@ -3942,17 +3959,147 @@ export default {
         );
       }
 
-      // POST /api/session/dismiss
+      // POST /api/session/dismiss — Marks skipped debrief as abandoned & applies <25% early-abort survival penalty if not yet evaluated
       if (url.pathname === '/api/session/dismiss' && request.method === 'POST') {
         const allowed = await checkDailyRateLimit(env.DB, request, 'dismiss', 60);
         if (!allowed) return json({ error: 'Rate limit reached.' }, 429, request);
-        const body = (await request.json()) as { sessionId: string };
-        await env.DB.prepare(
-          `UPDATE sessions SET status = 'abandoned' WHERE id = ? AND status IN ('active', 'pending_debrief')`
+        const body = (await request.json().catch(() => ({}))) as {
+          sessionId?: string;
+          actualDurationSec?: number;
+        };
+        if (!body.sessionId || body.sessionId.startsWith('eph_')) {
+          return json({ ok: true }, 200, request);
+        }
+
+        const existing = await env.DB.prepare(
+          `SELECT s.*, p.research_consent
+           FROM sessions s
+           LEFT JOIN profiles p ON p.id = s.profile_id
+           WHERE s.id = ? AND s.status IN ('active', 'pending_debrief')`
         )
           .bind(body.sessionId)
+          .first<Record<string, unknown>>();
+
+        if (!existing) {
+          return json({ ok: true }, 200, request);
+        }
+
+        const session = mapSessionRow(existing);
+        const actualSec = Math.max(
+          session.actualDurationSec,
+          Math.round(Number(body.actualDurationSec ?? 0))
+        );
+        const plannedSec = Math.max(60, session.plannedDurationMin * 60);
+        const completionRatio = Number(Math.min(1, Math.max(0, actualSec / plannedSec)).toFixed(3));
+        const prevImplicitWeight = Number(existing.implicit_applied_weight ?? 0);
+        const researchConsent = Number(existing.research_consent ?? 1) === 1;
+
+        let implicitReward =
+          existing.implicit_reward_score !== null && existing.implicit_reward_score !== undefined
+            ? Number(existing.implicit_reward_score)
+            : null;
+        let implicitWeight = prevImplicitWeight;
+        let retentionOutcome = session.retentionOutcome ?? null;
+
+        if (researchConsent && actualSec >= 10 && prevImplicitWeight === 0) {
+          const isEarlyBounce = actualSec < 90 || (completionRatio < 0.25 && actualSec < 600);
+          const computed = computeImplicitReward({
+            actualDurationSec: actualSec,
+            completionRatio,
+            isEarlyBounce,
+            instantGenreSwapped: false,
+          });
+          const targetWeight = 0.45;
+          const finalGenre = session.musicGenre || 'deep_electronic';
+          const updates: Array<Promise<unknown>> = [
+            updateBanditScope(env.DB, {
+              scopeType: 'cohort_genre',
+              scopeId: session.cohortKey,
+              armId: finalGenre,
+              mode: 'implicit',
+              reward: computed.reward,
+              weight: targetWeight,
+              completionRatio,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'profile_genre',
+              scopeId: String(existing.profile_id),
+              armId: finalGenre,
+              mode: 'implicit',
+              reward: computed.reward,
+              weight: targetWeight,
+              completionRatio,
+            }),
+          ];
+          if (!session.isControlTrial) {
+            const marginalScopes = extractMarginalScopesFromSession(session);
+            updates.push(
+              updateBanditScope(env.DB, {
+                scopeType: 'cohort',
+                scopeId: session.cohortKey,
+                armId: session.armId,
+                mode: 'implicit',
+                reward: computed.reward,
+                weight: targetWeight,
+                completionRatio,
+              }),
+              updateBanditScope(env.DB, {
+                scopeType: 'profile',
+                scopeId: String(existing.profile_id),
+                armId: session.armId,
+                mode: 'implicit',
+                reward: computed.reward,
+                weight: targetWeight,
+                completionRatio,
+              }),
+              updateBanditScope(env.DB, {
+                scopeType: 'cohort_arm_genre',
+                scopeId: `${session.cohortKey}|${finalGenre}`,
+                armId: session.armId,
+                mode: 'implicit',
+                reward: computed.reward,
+                weight: targetWeight,
+                completionRatio,
+              }),
+              ...marginalScopes.map((m) =>
+                updateBanditScope(env.DB, {
+                  scopeType: m.scopeType,
+                  scopeId: m.scopeId,
+                  armId: session.armId,
+                  mode: 'implicit',
+                  reward: computed.reward,
+                  weight: targetWeight,
+                  completionRatio,
+                })
+              )
+            );
+          }
+          await Promise.all(updates);
+          implicitReward = computed.reward;
+          implicitWeight = targetWeight;
+          retentionOutcome = computed.outcome;
+        }
+
+        await env.DB.prepare(
+          `UPDATE sessions
+           SET status = 'abandoned',
+               actual_duration_sec = MAX(actual_duration_sec, ?),
+               completion_ratio = MAX(completion_ratio, ?),
+               implicit_reward_score = COALESCE(?, implicit_reward_score),
+               implicit_applied_weight = ?,
+               retention_outcome = COALESCE(?, retention_outcome)
+           WHERE id = ?`
+        )
+          .bind(
+            actualSec,
+            completionRatio,
+            implicitReward,
+            implicitWeight,
+            retentionOutcome,
+            body.sessionId
+          )
           .run();
-        return json({ ok: true }, 200, request);
+        return json({ ok: true, retentionOutcome }, 200, request);
       }
 
       // GET /api/insights — SQL-Aggregated Research Brain (ZERO profileId exposed publicly!)
@@ -4701,35 +4848,36 @@ export default {
             object?: Record<string, unknown>;
           };
         };
-        const eventId = String(evt.id ?? '');
+        const eventId = String(evt.id ?? '').trim();
         const eventType = String(evt.type ?? '');
         const obj = evt.data?.object ?? {};
+        if (!eventId) {
+          return json({ error: 'Missing Stripe event id' }, 400, request);
+        }
 
         const now = new Date().toISOString();
-        if (eventId) {
-          // Atomic single-statement webhook idempotency claim BEFORE mutating profile entitlements (P2 #11)
-          const claimed = await env.DB.prepare(
-            `INSERT INTO processed_webhooks (event_id, event_type, received_at)
-             VALUES (?, ?, ?)
-             ON CONFLICT(event_id) DO NOTHING
-             RETURNING event_id`
-          )
-            .bind(eventId, eventType || 'unknown', now)
-            .first<{ event_id: string }>();
-          if (!claimed) {
-            return json({ received: true, duplicate: true }, 200, request);
-          }
+        // Atomic single-statement webhook idempotency claim BEFORE mutating profile entitlements (P2 #11)
+        const claimed = await env.DB.prepare(
+          `INSERT INTO processed_webhooks (event_id, event_type, received_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(event_id) DO NOTHING
+           RETURNING event_id`
+        )
+          .bind(eventId, eventType || 'unknown', now)
+          .first<{ event_id: string }>();
+        if (!claimed) {
+          return json({ received: true, duplicate: true }, 200, request);
+        }
 
-          // Probabilistic GC of >90-day old processed webhook keys
-          if (Math.random() < 0.02) {
-            const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-            ctx.waitUntil(
-              env.DB.prepare('DELETE FROM processed_webhooks WHERE received_at < ?')
-                .bind(ninetyDaysAgo)
-                .run()
-                .catch(() => {})
-            );
-          }
+        // Probabilistic GC of >90-day old processed webhook keys
+        if (Math.random() < 0.02) {
+          const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+          ctx.waitUntil(
+            env.DB.prepare('DELETE FROM processed_webhooks WHERE received_at < ?')
+              .bind(ninetyDaysAgo)
+              .run()
+              .catch(() => {})
+          );
         }
 
         try {
@@ -4803,7 +4951,7 @@ export default {
                 .run();
             } else if (eventType === 'customer.subscription.deleted') {
               await env.DB.prepare(
-                `UPDATE profiles SET plan_tier = 'free', updated_at = ? WHERE id = ?`
+                `UPDATE profiles SET plan_tier = 'free', pro_until = NULL, updated_at = ? WHERE id = ?`
               )
                 .bind(now, profileId)
                 .run();

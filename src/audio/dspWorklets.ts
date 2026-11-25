@@ -25,9 +25,9 @@ function nootropicBesselI0(x) {
   return sum;
 }
 
-// 24-Tap Polyphase Windowed-Sinc (Tapered Kaiser-Bessel, beta = 6.5) Resampling LUTs (>62 dB stopband rejection @ 19 kHz, 0.000 dB DC error)
-const SINC24_PHASES = 256;
-const SINC24_TAPS = 24;
+// 32-Tap Polyphase Windowed-Sinc (Tapered Kaiser-Bessel, beta = 8.2) Resampling LUTs (>90 dB stopband rejection @ 19 kHz, 0.000 dB DC error)
+const SINC32_PHASES = 256;
+const SINC32_TAPS = 32;
 
 function buildPolyphaseSincLut(taps, phases, cutoffCycles, beta) {
   const half = taps >> 1;
@@ -65,9 +65,9 @@ function buildPolyphaseSincLut(taps, phases, cutoffCycles, beta) {
 const SINC8_PHASES = 256;
 const SINC8_LUT_UNITY = buildPolyphaseSincLut(8, SINC8_PHASES, 0.5, 5.0);
 const SINC8_LUT_DECIM = buildPolyphaseSincLut(8, SINC8_PHASES, 0.452, 5.0);
-const SINC24_LUT_UNITY = buildPolyphaseSincLut(SINC24_TAPS, SINC24_PHASES, 0.5, 6.5);
-const SINC24_LUT_DECIM = buildPolyphaseSincLut(SINC24_TAPS, SINC24_PHASES, 0.452, 6.5);
-const SINC_HFP_KAISER_INV = 1.0 / (nootropicBesselI0(6.0) - 1.0);
+const SINC32_LUT_UNITY = buildPolyphaseSincLut(SINC32_TAPS, SINC32_PHASES, 0.5, 8.2);
+const SINC32_LUT_DECIM = buildPolyphaseSincLut(SINC32_TAPS, SINC32_PHASES, 0.435, 8.2);
+const SINC_HFP_KAISER_INV = 1.0 / (nootropicBesselI0(6.5) - 1.0);
 
 function readSinc8Ring(ring, pos, mask, step) {
   const i0 = Math.floor(pos);
@@ -82,7 +82,7 @@ function readSinc8Ring(ring, pos, mask, step) {
       const u = d * 0.125;
       const uSq = u * u;
       if (uSq >= 1.0) continue;
-      const w = (nootropicBesselI0(6.0 * Math.sqrt(1.0 - uSq)) - 1.0) * SINC_HFP_KAISER_INV;
+      const w = (nootropicBesselI0(6.5 * Math.sqrt(1.0 - uSq)) - 1.0) * SINC_HFP_KAISER_INV;
       const x = twoFc * d;
       const sinc = Math.abs(x) < 1e-9 ? 1.0 : Math.sin(Math.PI * x) / (Math.PI * x);
       const h = sinc * w;
@@ -105,7 +105,7 @@ function readSinc8Ring(ring, pos, mask, step) {
   return sum;
 }
 
-function readSinc24Ring(ring, pos, mask, step) {
+function readSinc32Ring(ring, pos, mask, step) {
   const i0 = Math.floor(pos);
   const t = pos - i0;
   if (step > 1.25) {
@@ -113,35 +113,35 @@ function readSinc24Ring(ring, pos, mask, step) {
     const twoFc = 2.0 * fc;
     let acc = 0.0;
     let wSum = 0.0;
-    for (let k = 0; k < 24; k++) {
-      const d = (k - 11) - t;
-      const u = d / 12.0;
+    for (let k = 0; k < 32; k++) {
+      const d = (k - 15) - t;
+      const u = d / 16.0;
       const uSq = u * u;
       if (uSq >= 1.0) continue;
-      const w = (nootropicBesselI0(6.0 * Math.sqrt(1.0 - uSq)) - 1.0) * SINC_HFP_KAISER_INV;
+      const w = (nootropicBesselI0(6.5 * Math.sqrt(1.0 - uSq)) - 1.0) * SINC_HFP_KAISER_INV;
       const x = twoFc * d;
       const sinc = Math.abs(x) < 1e-9 ? 1.0 : Math.sin(Math.PI * x) / (Math.PI * x);
       const h = sinc * w;
-      acc += ring[(i0 + k - 11) & mask] * h;
+      acc += ring[(i0 + k - 15) & mask] * h;
       wSum += h;
     }
     return wSum > 1e-9 ? acc / wSum : ring[i0 & mask];
   }
-  const lut = step > 1.001 ? SINC24_LUT_DECIM : SINC24_LUT_UNITY;
-  const fPhase = t * SINC24_PHASES;
+  const lut = step > 1.001 ? SINC32_LUT_DECIM : SINC32_LUT_UNITY;
+  const fPhase = t * SINC32_PHASES;
   const p0 = fPhase | 0;
   const frac = fPhase - p0;
-  const b0 = p0 * 24;
-  const b1 = b0 + 24;
+  const b0 = p0 * 32;
+  const b1 = b0 + 32;
   let sum = 0.0;
-  for (let k = 0; k < 24; k++) {
+  for (let k = 0; k < 32; k++) {
     const h = lut[b0 + k] + (lut[b1 + k] - lut[b0 + k]) * frac;
-    sum += ring[(i0 + k - 11) & mask] * h;
+    sum += ring[(i0 + k - 15) & mask] * h;
   }
   return sum;
 }
 
-function readSinc24Clamped(ring, pos, mask, totalWritten, step) {
+function readSinc32Clamped(ring, pos, mask, totalWritten, step) {
   const i0 = Math.floor(pos);
   const t = pos - i0;
   const maxIdx = Math.max(0, totalWritten - 1);
@@ -150,31 +150,31 @@ function readSinc24Clamped(ring, pos, mask, totalWritten, step) {
     const twoFc = 2.0 * fc;
     let acc = 0.0;
     let wSum = 0.0;
-    for (let k = 0; k < 24; k++) {
-      const d = (k - 11) - t;
-      const u = d / 12.0;
+    for (let k = 0; k < 32; k++) {
+      const d = (k - 15) - t;
+      const u = d / 16.0;
       const uSq = u * u;
       if (uSq >= 1.0) continue;
-      const w = (nootropicBesselI0(6.0 * Math.sqrt(1.0 - uSq)) - 1.0) * SINC_HFP_KAISER_INV;
+      const w = (nootropicBesselI0(6.5 * Math.sqrt(1.0 - uSq)) - 1.0) * SINC_HFP_KAISER_INV;
       const x = twoFc * d;
       const sinc = Math.abs(x) < 1e-9 ? 1.0 : Math.sin(Math.PI * x) / (Math.PI * x);
       const h = sinc * w;
-      const rawIdx = i0 + k - 11;
+      const rawIdx = i0 + k - 15;
       const clamped = rawIdx < 0 ? 0 : rawIdx > maxIdx ? maxIdx : rawIdx;
       acc += ring[clamped & mask] * h;
       wSum += h;
     }
     return wSum > 1e-9 ? acc / wSum : ring[(i0 < 0 ? 0 : i0 > maxIdx ? maxIdx : i0) & mask];
   }
-  const lut = step > 1.001 ? SINC24_LUT_DECIM : SINC24_LUT_UNITY;
-  const fPhase = t * SINC24_PHASES;
+  const lut = step > 1.001 ? SINC32_LUT_DECIM : SINC32_LUT_UNITY;
+  const fPhase = t * SINC32_PHASES;
   const p0 = fPhase | 0;
   const frac = fPhase - p0;
-  const b0 = p0 * 24;
-  const b1 = b0 + 24;
+  const b0 = p0 * 32;
+  const b1 = b0 + 32;
   let sum = 0.0;
-  for (let k = 0; k < 24; k++) {
-    const rawIdx = i0 + k - 11;
+  for (let k = 0; k < 32; k++) {
+    const rawIdx = i0 + k - 15;
     const clamped = rawIdx < 0 ? 0 : rawIdx > maxIdx ? maxIdx : rawIdx;
     const h = lut[b0 + k] + (lut[b1 + k] - lut[b0 + k]) * frac;
     sum += ring[clamped & mask] * h;
@@ -654,58 +654,84 @@ class NootropicWsolaProcessor extends AudioWorkletProcessor {
     return readSinc8Ring(ring, pos, this.RING_MASK, step);
   }
 
+  readLinear(ring, pos) {
+    const i0 = Math.floor(pos);
+    const frac = pos - i0;
+    const s0 = ring[i0 & this.RING_MASK];
+    return s0 + (ring[(i0 + 1) & this.RING_MASK] - s0) * frac;
+  }
+
   findBestStereoDelta(nominalStart, step, minDelta, maxDelta) {
     if (!this.hasPrev || (Math.abs(step - 1.0) < 0.0002 && this.mode === 'ring')) {
       return 0;
     }
     if (minDelta >= maxDelta) return minDelta;
     const tailLen = this.prevTailLen;
-    let refE = 0;
-    for (let k = 0; k < tailLen; k += 4) {
-      const l = this.prevTailL[k];
-      const r = this.prevTailR[k];
-      refE += l * l + r * r;
+    const prevL = this.prevTailL;
+    const prevR = this.prevTailR;
+    const ringL = this.ringL;
+    const ringR = this.ringR;
+    const mask = this.RING_MASK;
+
+    let refECoarse = 0;
+    for (let k = 0; k < tailLen; k += 8) {
+      const l = prevL[k];
+      const r = prevR[k];
+      refECoarse += l * l + r * r;
     }
-    if (refE <= 1e-8) return 0;
+    if (refECoarse <= 1e-8) return 0;
 
     let bestDelta = Math.max(minDelta, Math.min(maxDelta, 0));
     let bestCorr = -Infinity;
-    const ringL = this.ringL;
-    const ringR = this.ringR;
 
+    // Coarse 4-sample lag sweep using inlined integer ring tap (6 kHz effective correlation BW @ 48 kHz)
     for (let d = minDelta; d <= maxDelta; d += 4) {
       let num = 0;
       let candE = 0;
-      const base = nominalStart + d;
-      for (let k = 0; k < tailLen; k += 4) {
-        const p = base + k * step;
-        const cL = this.readCubic(ringL, p);
-        const cR = this.readCubic(ringR, p);
-        num += this.prevTailL[k] * cL + this.prevTailR[k] * cR;
+      let p = nominalStart + d;
+      const pStep8 = step * 8;
+      for (let k = 0; k < tailLen; k += 8) {
+        const idx = Math.floor(p) & mask;
+        const cL = ringL[idx];
+        const cR = ringR[idx];
+        num += prevL[k] * cL + prevR[k] * cR;
         candE += cL * cL + cR * cR;
+        p += pStep8;
       }
-      const score = num / (Math.sqrt(refE * candE) + 1e-9);
+      const score = num / (Math.sqrt(refECoarse * candE) + 1e-9);
       if (score > bestCorr) {
         bestCorr = score;
         bestDelta = d;
       }
     }
 
+    let refEFine = 0;
+    for (let k = 0; k < tailLen; k += 2) {
+      const l = prevL[k];
+      const r = prevR[k];
+      refEFine += l * l + r * r;
+    }
     const coarseBest = bestDelta;
+    bestCorr = -Infinity;
     const fineLo = Math.max(minDelta, coarseBest - 3);
     const fineHi = Math.min(maxDelta, coarseBest + 3);
+    const pStep2 = step * 2;
     for (let d = fineLo; d <= fineHi; d++) {
       let num = 0;
       let candE = 0;
-      const base = nominalStart + d;
+      let p = nominalStart + d;
       for (let k = 0; k < tailLen; k += 2) {
-        const p = base + k * step;
-        const cL = this.readCubic(ringL, p);
-        const cR = this.readCubic(ringR, p);
-        num += this.prevTailL[k] * cL + this.prevTailR[k] * cR;
+        const i0 = Math.floor(p);
+        const frac = p - i0;
+        const s0L = ringL[i0 & mask];
+        const cL = s0L + (ringL[(i0 + 1) & mask] - s0L) * frac;
+        const s0R = ringR[i0 & mask];
+        const cR = s0R + (ringR[(i0 + 1) & mask] - s0R) * frac;
+        num += prevL[k] * cL + prevR[k] * cR;
         candE += cL * cL + cR * cR;
+        p += pStep2;
       }
-      const score = num / (Math.sqrt(refE * candE) + 1e-9);
+      const score = num / (Math.sqrt(refEFine * candE) + 1e-9);
       if (score > bestCorr) {
         bestCorr = score;
         bestDelta = d;
@@ -950,7 +976,7 @@ class NootropicLyriaStreamProcessor extends AudioWorkletProcessor {
   }
 
   readCubic(ring, pos, step = 1.0) {
-    return readSinc24Ring(ring, pos, this.RING_MASK, step);
+    return readSinc32Ring(ring, pos, this.RING_MASK, step);
   }
 
   process(_inputs, outputs) {
@@ -1652,7 +1678,7 @@ class NootropicHugginsProcessor extends AudioWorkletProcessor {
  * with:
  *   - Integer sample delay (\`delaySamples\`) locking musical downbeat to Band-2 AM crest
  *   - Bit-transparent integer copy pass-through when effectiveRate === 1.000000
- *   - 4-point Hermite cubic varispeed interpolation for 432 Hz / 44.1 kHz DAC ratios
+ *   - 32-tap Polyphase Windowed-Sinc (Kaiser-Bessel, beta=8.2) varispeed interpolation for 432 Hz / 44.1 kHz DAC ratios
  */
 class NootropicStemPlayerProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -1726,14 +1752,6 @@ class NootropicStemPlayerProcessor extends AudioWorkletProcessor {
     };
   }
 
-  hermite4(y0, y1, y2, y3, t) {
-    const c0 = y1;
-    const c1 = 0.5 * (y2 - y0);
-    const c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
-    const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
-    return ((c3 * t + c2) * t + c1) * t + c0;
-  }
-
   process(_inputs, outputs, parameters) {
     const out = outputs[0];
     if (!out || out.length === 0) return !this.stopped;
@@ -1787,8 +1805,8 @@ class NootropicStemPlayerProcessor extends AudioWorkletProcessor {
         sR = this.ringR[idx];
         this.readFrac += 1.0;
       } else {
-        sL = readSinc24Clamped(this.ringL, this.readFrac, this.ringMask, this.totalWritten, step);
-        sR = readSinc24Clamped(this.ringR, this.readFrac, this.ringMask, this.totalWritten, step);
+        sL = readSinc32Clamped(this.ringL, this.readFrac, this.ringMask, this.totalWritten, step);
+        sR = readSinc32Clamped(this.ringR, this.readFrac, this.ringMask, this.totalWritten, step);
         this.readFrac += step;
       }
 

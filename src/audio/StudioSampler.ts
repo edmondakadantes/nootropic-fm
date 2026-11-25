@@ -134,7 +134,7 @@ export class StudioSampler {
     if (opts.cutoffHz && opts.cutoffHz < 12000) {
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
-      lp.frequency.setValueAtTime(opts.cutoffHz, opts.time);
+      lp.frequency.setValueAtTime(Math.min(ctx.sampleRate * 0.44, opts.cutoffHz), opts.time);
       lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
       src.connect(lp);
       lp.connect(env);

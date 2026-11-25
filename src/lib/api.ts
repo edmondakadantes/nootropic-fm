@@ -290,10 +290,10 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  dismissPending: (sessionId: string) =>
-    apiFetch<{ ok: boolean }>('/api/session/dismiss', {
+  dismissPending: (sessionId: string, actualDurationSec?: number) =>
+    apiFetch<{ ok: boolean; retentionOutcome?: string | null }>('/api/session/dismiss', {
       method: 'POST',
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify({ sessionId, actualDurationSec }),
     }),
 
   getInsights: (profileId?: string) =>

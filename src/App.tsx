@@ -622,8 +622,9 @@ export default function App() {
   const handleDismissPending = async () => {
     if (!pendingDebrief) return;
     const id = pendingDebrief.id;
+    const dur = pendingDebrief.actualDurationSec;
     setPendingDebrief(null);
-    await api.dismissPending(id).catch(() => {});
+    await api.dismissPending(id, dur).catch(() => {});
   };
 
   const handleRestoreIdentity = async () => {
