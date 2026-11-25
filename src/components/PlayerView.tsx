@@ -958,13 +958,31 @@ export function PlayerView({
     if (nextMode === 'lyria_realtime') {
       if (!isPro && dailyLyriaUsedRef.current >= FREE_LYRIA_PREVIEW_SEC) {
         setLyriaNotice(
-          "You used today's 90s Endless Stream preview. Start your 7-Day Free Trial ($0 today) for unlimited live streaming, or enjoy Studio Mix."
+          "Today's 90s HD AI preview is complete — continuing on Live Non-Looping Synth. Start your 7-Day Free Trial ($0 today) for unlimited HD AI streaming."
         );
-        if (carrierMode !== 'studio_library') {
-          setCarrierMode('studio_library');
-          setAudioSource('studio_library');
-          engineRef.current?.setCarrierMode('studio_library');
+        if (!audioStarted) {
+          setCarrierMode('generative_live');
+          setAudioSource('procedural_fallback');
+          await engineRef.current?.start(
+            recommendation.params,
+            recommendation.plannedDurationMin,
+            recommendation.arm.name,
+            recommendation.isControlTrial,
+            recommendation.executableSpec,
+            'generative_live',
+            API_BASE
+          );
+          setAudioStarted(true);
+          setIsPlaying(true);
+          return;
         }
+        if (!isPlaying) {
+          await engineRef.current?.resume();
+          setIsPlaying(true);
+        }
+        setCarrierMode('generative_live');
+        setAudioSource('procedural_fallback');
+        engineRef.current?.setCarrierMode('generative_live');
         return;
       }
       if (connectingLyria) return;

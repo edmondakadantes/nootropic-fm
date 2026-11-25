@@ -180,14 +180,59 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
     .join('');
 }
 
-async function computeRealtimeActorKey(request: Request): Promise<string> {
+const WS_BIND_COOKIE_NAME = 'nfm_ws_bind';
+
+function extractCookieValue(request: Request, cookieName: string): string {
+  const cookieHeader = request.headers.get('cookie') ?? '';
+  if (!cookieHeader) return '';
+  for (const part of cookieHeader.split(';')) {
+    const eqIdx = part.indexOf('=');
+    if (eqIdx <= 0) continue;
+    const k = part.slice(0, eqIdx).trim();
+    if (k === cookieName) {
+      try {
+        return decodeURIComponent(part.slice(eqIdx + 1).trim());
+      } catch {
+        return part.slice(eqIdx + 1).trim();
+      }
+    }
+  }
+  return '';
+}
+
+function buildWsBindSetCookieHeader(request: Request, bindId: string): string {
+  const isHttps = (() => {
+    try {
+      return new URL(request.url).protocol === 'https:';
+    } catch {
+      return true;
+    }
+  })();
+  const secureFlag = isHttps ? '; Secure' : '';
+  return `${WS_BIND_COOKIE_NAME}=${encodeURIComponent(bindId)}; Path=/api/music; Max-Age=7200; HttpOnly; SameSite=Lax${secureFlag}`;
+}
+
+async function computeIpActorKey(request: Request): Promise<string> {
   const ip = request.headers.get('cf-connecting-ip') ?? 'local';
   return (await sha256Hex(`nootropic-fm:ws-actor:${ip}`)).slice(0, 24);
 }
 
+async function computeCookieActorKey(request: Request, explicitBindId?: string): Promise<string> {
+  const bindId = explicitBindId || extractCookieValue(request, WS_BIND_COOKIE_NAME);
+  if (bindId && bindId.length >= 16) {
+    return (await sha256Hex(`nootropic-fm:ws-bind:${bindId}`)).slice(0, 24);
+  }
+  const authCookieTok = extractCookieValue(request, AUTH_COOKIE_NAME);
+  if (authCookieTok && authCookieTok.length >= 16) {
+    return (await sha256Hex(`nootropic-fm:ws-auth:${authCookieTok}`)).slice(0, 24);
+  }
+  return '';
+}
+
 async function signRealtimeTicket(
   secret: string,
-  actorKey: string,
+  ipActorKey: string,
+  cookieActorKey: string,
   isPro: boolean,
   ttlMs = 120_000
 ): Promise<{ ticket: string; expiresAt: string }> {
@@ -199,9 +244,12 @@ async function signRealtimeTicket(
     .join('');
   const proFlag = isPro ? '1' : '0';
   const payload = `${expMs}.${nonce}.${proFlag}`;
-  const sig = await hmacSha256Hex(secret, `lyria-rt:v2:${payload}.${actorKey}`);
+  const ipHalf = (await hmacSha256Hex(secret, `lyria-rt:v2:ip:${payload}.${ipActorKey}`)).slice(0, 32);
+  const cookieHalf = cookieActorKey
+    ? (await hmacSha256Hex(secret, `lyria-rt:v2:ck:${payload}.${cookieActorKey}`)).slice(0, 32)
+    : (await hmacSha256Hex(secret, `lyria-rt:v2:ip2:${payload}.${ipActorKey}`)).slice(0, 32);
   return {
-    ticket: `${payload}.${sig}`,
+    ticket: `${payload}.${ipHalf}${cookieHalf}`,
     expiresAt: new Date(expMs).toISOString(),
   };
 }
@@ -209,11 +257,12 @@ async function signRealtimeTicket(
 async function verifyRealtimeTicket(
   secret: string,
   ticket: string,
-  actorKey: string
-): Promise<{ valid: boolean; nonce: string; expMs: number; isPro: boolean }> {
+  ipActorKey: string,
+  cookieActorKey: string
+): Promise<{ valid: boolean; nonce: string; expMs: number; isPro: boolean; matchedActorKey: string }> {
   const parts = ticket.split('.');
   if (parts.length !== 4) {
-    return { valid: false, nonce: '', expMs: 0, isPro: false };
+    return { valid: false, nonce: '', expMs: 0, isPro: false, matchedActorKey: '' };
   }
   const [expStr, nonce, proFlag, sig] = parts;
   const expMs = Number(expStr);
@@ -223,15 +272,26 @@ async function verifyRealtimeTicket(
     !nonce ||
     nonce.length < 16 ||
     (proFlag !== '0' && proFlag !== '1') ||
-    !sig
+    !sig ||
+    sig.length !== 64
   ) {
-    return { valid: false, nonce: '', expMs: 0, isPro: false };
+    return { valid: false, nonce: '', expMs: 0, isPro: false, matchedActorKey: '' };
   }
-  const expected = await hmacSha256Hex(secret, `lyria-rt:v2:${expStr}.${nonce}.${proFlag}.${actorKey}`);
-  if (!constantTimeEqual(sig, expected)) {
-    return { valid: false, nonce: '', expMs: 0, isPro: false };
+  const payload = `${expStr}.${nonce}.${proFlag}`;
+  const sigIp = sig.slice(0, 32);
+  const sigCk = sig.slice(32, 64);
+
+  if (cookieActorKey) {
+    const expectedCk = (await hmacSha256Hex(secret, `lyria-rt:v2:ck:${payload}.${cookieActorKey}`)).slice(0, 32);
+    if (constantTimeEqual(sigCk, expectedCk)) {
+      return { valid: true, nonce, expMs, isPro: proFlag === '1', matchedActorKey: cookieActorKey };
+    }
   }
-  return { valid: true, nonce, expMs, isPro: proFlag === '1' };
+  const expectedIp = (await hmacSha256Hex(secret, `lyria-rt:v2:ip:${payload}.${ipActorKey}`)).slice(0, 32);
+  if (constantTimeEqual(sigIp, expectedIp)) {
+    return { valid: true, nonce, expMs, isPro: proFlag === '1', matchedActorKey: ipActorKey };
+  }
+  return { valid: false, nonce: '', expMs: 0, isPro: false, matchedActorKey: '' };
 }
 
 interface CfWebSocket {
@@ -1347,9 +1407,31 @@ export default {
           );
         }
 
-        const actorKey = await computeRealtimeActorKey(request);
-        const { ticket, expiresAt } = await signRealtimeTicket(apiKey, actorKey, isProCaller, 120_000);
-        return json(
+        let wsBindCookieToSet: string | null = null;
+        const existingWsBind = extractCookieValue(request, WS_BIND_COOKIE_NAME);
+        const existingAuthCookie = extractCookieValue(request, AUTH_COOKIE_NAME);
+        let explicitBindId: string | undefined;
+        if (!existingWsBind && !existingAuthCookie) {
+          const rnd = new Uint8Array(16);
+          crypto.getRandomValues(rnd);
+          explicitBindId = Array.from(rnd)
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('');
+          wsBindCookieToSet = buildWsBindSetCookieHeader(request, explicitBindId);
+        }
+
+        const [ipActorKey, cookieActorKey] = await Promise.all([
+          computeIpActorKey(request),
+          computeCookieActorKey(request, explicitBindId),
+        ]);
+        const { ticket, expiresAt } = await signRealtimeTicket(
+          apiKey,
+          ipActorKey,
+          cookieActorKey,
+          isProCaller,
+          120_000
+        );
+        const resp = json(
           {
             available: true,
             token: ticket,
@@ -1359,6 +1441,10 @@ export default {
           200,
           request
         );
+        if (wsBindCookieToSet) {
+          resp.headers.append('set-cookie', wsBindCookieToSet);
+        }
+        return resp;
       }
 
       // POST /api/admin/seed-studio-track — Admin-only curated Studio R2 catalog builder (copy or Lyria 3.5)
@@ -1447,12 +1533,16 @@ export default {
           return new Response('Untrusted WebSocket origin', { status: 403 });
         }
 
-        const actorKey = await computeRealtimeActorKey(request);
+        const [ipActorKey, cookieActorKey] = await Promise.all([
+          computeIpActorKey(request),
+          computeCookieActorKey(request),
+        ]);
         const ticket = url.searchParams.get('ticket') ?? '';
-        const verified = await verifyRealtimeTicket(apiKey, ticket, actorKey);
+        const verified = await verifyRealtimeTicket(apiKey, ticket, ipActorKey, cookieActorKey);
         if (!verified.valid) {
           return new Response('Invalid or expired realtime ticket', { status: 401 });
         }
+        const actorKey = verified.matchedActorKey;
 
         const nowMs = Date.now();
         // 1. Atomic Single-Use Nonce (`jti`) Consumption in D1 — blocks 100% of replay attacks!
