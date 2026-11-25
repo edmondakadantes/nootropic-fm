@@ -1372,6 +1372,162 @@ class NootropicHugginsProcessor extends AudioWorkletProcessor {
   }
 }
 
+/**
+ * Lock-Free Sample-Accurate Stem Player (v7.0 Phase-Locked AudioWorklet)
+ * Plays pre-rendered 48 kHz sub-harmonic Opus/AAC stems directly inside AudioWorklet
+ * with:
+ *   - Integer sample delay (\`delaySamples\`) locking musical downbeat to Band-2 AM crest
+ *   - Bit-transparent integer copy pass-through when effectiveRate === 1.000000
+ *   - 4-point Hermite cubic varispeed interpolation for 432 Hz / 44.1 kHz DAC ratios
+ */
+class NootropicStemPlayerProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      {
+        name: 'playbackRate',
+        defaultValue: 1.0,
+        minValue: 0.72,
+        maxValue: 1.38,
+        automationRate: 'k-rate',
+      },
+    ];
+  }
+
+  constructor(options) {
+    super();
+    const opts = (options && options.processorOptions) || {};
+    const srcSr = Number(opts.sourceSampleRate) || 48000;
+    this.sourceScale = srcSr > 0 ? srcSr / sampleRate : 1.0;
+    this.remainingDelaySamples = Math.max(0, Math.round(Number(opts.delaySamples) || 0));
+
+    this.ringSize = 65536;
+    this.ringMask = 65535;
+    this.ringL = new Float32Array(this.ringSize);
+    this.ringR = new Float32Array(this.ringSize);
+    this.totalWritten = 0;
+    this.readFrac = 0;
+    this.eofReceived = false;
+    this.eofNotified = false;
+    this.needChunkPending = false;
+    this.stopped = false;
+    this.nextProgressFrame = 4096;
+
+    this.port.onmessage = (e) => {
+      const m = e.data;
+      if (!m) return;
+      if (m.type === 'chunk') {
+        const l = m.left;
+        const r = m.right || l;
+        if (l && l.length > 0) {
+          for (let i = 0; i < l.length; i++) {
+            const idx = (this.totalWritten + i) & this.ringMask;
+            this.ringL[idx] = l[i];
+            this.ringR[idx] = r[i];
+          }
+          this.totalWritten += l.length;
+        }
+        this.needChunkPending = false;
+      } else if (m.type === 'delay') {
+        this.remainingDelaySamples = Math.max(0, Math.round(Number(m.delaySamples) || 0));
+      } else if (m.type === 'end') {
+        this.eofReceived = true;
+        this.needChunkPending = false;
+      } else if (m.type === 'stop') {
+        this.stopped = true;
+      }
+    };
+  }
+
+  hermite4(y0, y1, y2, y3, t) {
+    const c0 = y1;
+    const c1 = 0.5 * (y2 - y0);
+    const c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+    const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+    return ((c3 * t + c2) * t + c1) * t + c0;
+  }
+
+  process(_inputs, outputs, parameters) {
+    const out = outputs[0];
+    if (!out || out.length === 0) return !this.stopped;
+    const outL = out[0];
+    const outR = out.length > 1 ? out[1] : null;
+    if (this.stopped) {
+      outL.fill(0);
+      if (outR) outR.fill(0);
+      return false;
+    }
+
+    const rateParam = parameters.playbackRate ? parameters.playbackRate[0] : 1.0;
+    const step = Math.max(0.5, Math.min(1.5, rateParam * this.sourceScale));
+    const isBitExact =
+      Math.abs(step - 1.0) < 1e-6 &&
+      Math.abs(this.readFrac - Math.round(this.readFrac)) < 1e-6;
+
+    for (let i = 0; i < outL.length; i++) {
+      if (this.remainingDelaySamples > 0) {
+        this.remainingDelaySamples--;
+        outL[i] = 0;
+        if (outR) outR[i] = 0;
+        continue;
+      }
+
+      const i0 = Math.floor(this.readFrac);
+      const ahead = this.totalWritten - i0;
+      if (ahead <= 1) {
+        outL[i] = 0;
+        if (outR) outR[i] = 0;
+        if (this.eofReceived && !this.eofNotified) {
+          this.eofNotified = true;
+          this.port.postMessage({ type: 'eof', sourceFrame: this.totalWritten });
+        }
+        continue;
+      }
+
+      if (isBitExact) {
+        const idx = i0 & this.ringMask;
+        outL[i] = this.ringL[idx];
+        if (outR) outR[i] = this.ringR[idx];
+        this.readFrac += 1.0;
+      } else {
+        const t = this.readFrac - i0;
+        const im1 = (i0 > 0 ? i0 - 1 : i0) & this.ringMask;
+        const ic0 = i0 & this.ringMask;
+        const ic1 = (i0 + 1 < this.totalWritten ? i0 + 1 : i0) & this.ringMask;
+        const ic2 = (i0 + 2 < this.totalWritten ? i0 + 2 : i0 + 1 < this.totalWritten ? i0 + 1 : i0) & this.ringMask;
+        outL[i] = this.hermite4(
+          this.ringL[im1],
+          this.ringL[ic0],
+          this.ringL[ic1],
+          this.ringL[ic2],
+          t
+        );
+        if (outR) {
+          outR[i] = this.hermite4(
+            this.ringR[im1],
+            this.ringR[ic0],
+            this.ringR[ic1],
+            this.ringR[ic2],
+            t
+          );
+        }
+        this.readFrac += step;
+      }
+    }
+
+    const curFrame = Math.floor(this.readFrac);
+    const bufferedAhead = this.totalWritten - curFrame;
+    if (!this.eofReceived && !this.needChunkPending && bufferedAhead < 24576) {
+      this.needChunkPending = true;
+      this.port.postMessage({ type: 'need_chunk' });
+    }
+    if (curFrame >= this.nextProgressFrame) {
+      this.nextProgressFrame = curFrame + 4096;
+      this.port.postMessage({ type: 'progress', sourceFrame: curFrame });
+    }
+    return true;
+  }
+}
+
 registerProcessor('nootropic-crossfeed-processor', NootropicCrossfeedProcessor);
 registerProcessor('nootropic-lookahead-limiter', NootropicLookaheadLimiter);
 registerProcessor('nootropic-wsola-processor', NootropicWsolaProcessor);
@@ -1381,6 +1537,7 @@ registerProcessor('nootropic-env-flattener', NootropicEnvFlattener);
 registerProcessor('nootropic-zdf-tilt', NootropicZdfTilt);
 registerProcessor('nootropic-clinical-synth', NootropicClinicalSynth);
 registerProcessor('nootropic-huggins-processor', NootropicHugginsProcessor);
+registerProcessor('nootropic-stem-player', NootropicStemPlayerProcessor);
 `;
 
 const loadedWorkletContexts = new WeakMap<BaseAudioContext, Promise<boolean>>();

@@ -13,6 +13,10 @@ import type {
   ResolvedGenre,
 } from '../../shared/types';
 import {
+  computeDownbeatPhaseDelaySec,
+  pickPlaybackGridRate,
+} from '../../shared/subharmonicGrid';
+import {
   BUTTERWORTH_LP_HP_Q_DB,
   LIMITER_CEILING_LINEAR,
   computeExactAmGainPair,
@@ -38,6 +42,13 @@ export interface StudioTrackRef {
   lufs?: number;
   rootMidi?: number;
   keyLabel?: string;
+  opusUrl?: string;
+  aacUrl?: string;
+  subHarmonicBpm?: number;
+  alignedBandsHz?: number[];
+  downbeatOffsetMs?: number;
+  sampleRate?: number;
+  v7Remastered?: boolean;
 }
 
 export interface EngineTelemetry {
@@ -80,6 +91,8 @@ export interface EngineTelemetry {
   hugginsStatus: 'untested' | 'verified_stereo' | 'monaural_safe';
   bluetoothSafeActive: boolean;
   band2FlattenerActive: boolean;
+  stemCodecLabel: string | null;
+  stemSubHarmonicLocked: boolean;
 }
 
 /**
@@ -160,6 +173,7 @@ interface AmWaveBundle {
   min: number;
   max: number;
   rms: number;
+  peakPhaseFraction: number;
 }
 
 /**
@@ -186,6 +200,7 @@ function createNeuralSalienceWave(ctx: AudioContext, phaseDeg: number): AmWaveBu
     min: stats.min,
     max: stats.max,
     rms: stats.rms,
+    peakPhaseFraction: stats.peakPhaseFraction,
   };
 }
 
@@ -324,6 +339,9 @@ export class PsychoacousticEngine {
   private amSalienceWaveL: PeriodicWave | null = null;
   private amSalienceWaveR: PeriodicWave | null = null;
   private amUsesSalience = false;
+  private amLfoOriginSec = 0;
+  private amCrestFrac = 0.25;
+  private amSaliencePeakFrac = 0.23;
 
   // AudioWorklet DSP nodes (True Lookahead Limiter, Bauer/MS Crossfeed, Env Follower, Flattener, ZDF Tilt)
   private workletsReady = false;
@@ -373,6 +391,10 @@ export class PsychoacousticEngine {
   private activeStreamCrossfadeCheck: (() => void) | null = null;
   private activeWsolaNode: AudioWorkletNode | null = null;
   private activeWsolaMode: 'none' | 'ring' | 'buffer' = 'none';
+  private activeStemPlayerNode: AudioWorkletNode | null = null;
+  private activeStemCodecLabel: string | null = null;
+  private activeStemSubHarmonicLocked = false;
+  private opusSupported: boolean | null = null;
   private activeStudioGain: GainNode | null = null;
   private studioCrossfadeTimer: number | null = null;
   private studioDeckStartedAtCtx = 0;
@@ -822,6 +844,7 @@ export class PsychoacousticEngine {
     this.amUsesSalience = useNeuralSalience;
     const salienceBundleL = createNeuralSalienceWave(ctx, 0);
     this.amSalienceWaveL = salienceBundleL.wave;
+    this.amSaliencePeakFrac = salienceBundleL.peakPhaseFraction;
     this.amSalienceStats = {
       min: salienceBundleL.min,
       max: salienceBundleL.max,
@@ -833,6 +856,11 @@ export class PsychoacousticEngine {
     this.amWaveStats = startWithSalience
       ? { ...this.amSalienceStats }
       : { min: -1, max: 1, rms: Math.SQRT1_2 };
+    this.amCrestFrac = isRaisedCosine
+      ? 0.0
+      : startWithSalience
+        ? this.amSaliencePeakFrac
+        : 0.25;
     const initialAmGains = this.computeAmGainPair(initialDepth);
 
     const amLfoL = ctx.createOscillator();
@@ -882,7 +910,9 @@ export class PsychoacousticEngine {
     amLfoL.connect(amDepthGainL);
     amDepthGainL.connect(amGainL.gain);
     amLfoL.connect(amTiltDepthL);
-    amLfoL.start();
+    const amStartAt = ctx.currentTime;
+    amLfoL.start(amStartAt);
+    this.amLfoOriginSec = amStartAt;
 
     let midOutput: AudioNode = amTiltLNode;
     this.amTiltDepthL = amTiltDepthL;
@@ -1218,8 +1248,10 @@ export class PsychoacousticEngine {
 
   private syncAmWaveformForMonitorMode(pureOnly: boolean): void {
     if (!this.amLfoL) return;
+    const isRaisedCosine = this.studySpec?.entrainment.waveform === 'raised_cosine';
     const collapseStereo = this.hugginsStatus === 'monaural_safe';
     if (pureOnly || !this.amUsesSalience) {
+      this.amCrestFrac = isRaisedCosine ? 0.0 : 0.25;
       this.amWaveStats = { min: -1, max: 1, rms: Math.SQRT1_2 };
       if (this.amPureWaveL) {
         this.amLfoL.setPeriodicWave(this.amPureWaveL);
@@ -1231,6 +1263,7 @@ export class PsychoacousticEngine {
         if (waveR) this.amLfoR.setPeriodicWave(waveR);
       }
     } else {
+      this.amCrestFrac = this.amSaliencePeakFrac;
       this.amWaveStats = { ...this.amSalienceStats };
       if (this.amSalienceWaveL) {
         this.amLfoL.setPeriodicWave(this.amSalienceWaveL);
@@ -1324,6 +1357,8 @@ export class PsychoacousticEngine {
       this.activeTrackKey = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
+      this.activeStemCodecLabel = null;
+      this.activeStemSubHarmonicLocked = false;
       if (this.layerMonitorMode === 'science_only') {
         this.layerMonitorMode = 'full_mix';
       }
@@ -1345,6 +1380,8 @@ export class PsychoacousticEngine {
       this.activeTrackKey = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
+      this.activeStemCodecLabel = null;
+      this.activeStemSubHarmonicLocked = false;
       this.layerMonitorMode = 'science_only';
       this.musicAuditionGain?.gain.setTargetAtTime(0, now, 0.25);
       this.stimulusRack.setScienceMuted(false);
@@ -1423,6 +1460,8 @@ export class PsychoacousticEngine {
           this.activeTrackKey = null;
           this.activeTrackNativeBpm = 0;
           this.activeStudioAppliedBpm = 0;
+          this.activeStemCodecLabel = null;
+          this.activeStemSubHarmonicLocked = false;
           this.composer.setStandby(true);
           this.proceduralMaster.gain.setTargetAtTime(0, now, 0.85);
           this.cleanSubBus.gain.setTargetAtTime(0, now, 0.85);
@@ -1471,15 +1510,17 @@ export class PsychoacousticEngine {
     const prevStreamEl = this.activeStreamEl;
     const prevStreamSrc = this.activeStreamSource;
     const prevWsola = this.activeWsolaNode;
+    const prevStemPlayer = this.activeStemPlayerNode;
     const prevGain = this.activeStudioGain;
     this.activeStudioSource = null;
     this.activeStreamEl = null;
     this.activeStreamSource = null;
     this.activeWsolaNode = null;
     this.activeWsolaMode = 'none';
+    this.activeStemPlayerNode = null;
     this.activeStudioGain = null;
 
-    if (this.ctx && prevGain && (prevSrc || prevStreamEl || prevWsola)) {
+    if (this.ctx && prevGain && (prevSrc || prevStreamEl || prevWsola || prevStemPlayer)) {
       const now = this.ctx.currentTime;
       try {
         holdAndRampGain(prevGain.gain, 0.0001, now + fadeSec, now);
@@ -1498,6 +1539,11 @@ export class PsychoacousticEngine {
             prevWsola.port.postMessage({ type: 'stop' });
             prevWsola.port.onmessage = null;
             prevWsola.disconnect();
+          }
+          if (prevStemPlayer) {
+            prevStemPlayer.port.postMessage({ type: 'stop' });
+            prevStemPlayer.port.onmessage = null;
+            prevStemPlayer.disconnect();
           }
         } catch {
           // ignore
@@ -1525,6 +1571,11 @@ export class PsychoacousticEngine {
           prevWsola.port.postMessage({ type: 'stop' });
           prevWsola.port.onmessage = null;
           prevWsola.disconnect();
+        }
+        if (prevStemPlayer) {
+          prevStemPlayer.port.postMessage({ type: 'stop' });
+          prevStemPlayer.port.onmessage = null;
+          prevStemPlayer.disconnect();
         }
       } catch {
         // ignore
@@ -1903,29 +1954,235 @@ export class PsychoacousticEngine {
     return all;
   }
 
+  private getActiveTargetNeuralHz(): number {
+    const spec = this.studySpec;
+    if (!spec) return this.params?.modulationHz ?? 0;
+    const baseHz = spec.entrainment.frequencyHz ?? this.params?.modulationHz ?? 0;
+    if (baseHz >= 8 && baseHz <= 12 && this.alphaIafHz !== null) {
+      return this.alphaIafHz;
+    }
+    return baseHz;
+  }
+
+  private supportsOpusAudio(): boolean {
+    if (this.opusSupported !== null) return this.opusSupported;
+    try {
+      if (typeof document !== 'undefined') {
+        const probe = document.createElement('audio');
+        const support = probe.canPlayType('audio/ogg; codecs="opus"');
+        this.opusSupported = support === 'probably' || support === 'maybe';
+        return this.opusSupported;
+      }
+    } catch {
+      // ignore SSR / headless probes
+    }
+    this.opusSupported = true;
+    return true;
+  }
+
+  private async decodePreferredV7Stem(
+    track: StudioTrackRef
+  ): Promise<{ buffer: AudioBuffer; codec: 'opus' | 'aac' } | null> {
+    const tryOpusFirst = this.supportsOpusAudio() && Boolean(track.opusUrl);
+    if (tryOpusFirst && track.opusUrl) {
+      const opusBuf = await this.loadAudioBuffer(track.opusUrl);
+      if (opusBuf) return { buffer: opusBuf, codec: 'opus' };
+      this.opusSupported = false;
+    }
+    if (track.aacUrl) {
+      const aacBuf = await this.loadAudioBuffer(track.aacUrl);
+      if (aacBuf) return { buffer: aacBuf, codec: 'aac' };
+    }
+    return null;
+  }
+
+  private async playDirectWorkletStem(
+    track: StudioTrackRef,
+    targetGain: number,
+    token: number,
+    fadeSec: number,
+    onCrossfade: () => void,
+    nativeBpm: number
+  ): Promise<boolean> {
+    if (!this.ctx || !this.studioBus || !this.workletsReady || token !== this.studioLoadToken) {
+      return false;
+    }
+    const decoded = await this.decodePreferredV7Stem(track);
+    if (!decoded || token !== this.studioLoadToken || !this.ctx || !this.studioBus || !this.isPlaying) {
+      return false;
+    }
+
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const buffer = decoded.buffer;
+    const stemBpm = track.subHarmonicBpm && track.subHarmonicBpm > 0 ? track.subHarmonicBpm : nativeBpm;
+    const neuralHz = this.getActiveTargetNeuralHz();
+    const tune432Ratio = this.studySpec?.music.tuningA4Hz === 432 ? 432 / 440 : 1.0;
+    const gridRate = pickPlaybackGridRate(stemBpm, neuralHz, tune432Ratio);
+    const amActive =
+      this.studySpec?.entrainment.type === 'amplitude_modulation' && neuralHz > 0;
+    const delaySec =
+      amActive && typeof track.downbeatOffsetMs === 'number' && track.downbeatOffsetMs >= 0
+        ? computeDownbeatPhaseDelaySec({
+            amOriginSec: this.amLfoOriginSec,
+            scheduleStartSec: now,
+            downbeatOffsetMs: track.downbeatOffsetMs / Math.max(0.75, gridRate.totalRate),
+            neuralHz,
+            crestCycleFraction: this.amCrestFrac,
+          })
+        : 0;
+    const delaySamples = Math.max(0, Math.round(delaySec * ctx.sampleRate));
+
+    this.clearStudioDeck(fadeSec);
+    this.composer.setStandby(true);
+    if (this.proceduralMaster && this.cleanSubBus) {
+      this.proceduralMaster.gain.setTargetAtTime(0, now, 0.55);
+      this.cleanSubBus.gain.setTargetAtTime(0, now, 0.55);
+    }
+
+    const deckGain = ctx.createGain();
+    deckGain.gain.setValueAtTime(0.0001, now);
+    deckGain.gain.exponentialRampToValueAtTime(Math.max(0.1, targetGain), now + fadeSec);
+    deckGain.connect(this.studioBus);
+
+    const stemNode = new AudioWorkletNode(ctx, 'nootropic-stem-player', {
+      numberOfInputs: 0,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+      processorOptions: {
+        sourceSampleRate: buffer.sampleRate,
+        delaySamples,
+      },
+    });
+    stemNode.parameters.get('playbackRate')?.setValueAtTime(gridRate.totalRate, now);
+    stemNode.connect(deckGain);
+
+    const leftAll = buffer.getChannelData(0);
+    const rightAll = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : leftAll;
+    const totalFrames = buffer.length;
+    const CHUNK_FRAMES = 16384;
+    const crossfadeLeadSec = Math.min(7, Math.max(2.5, buffer.duration * 0.14));
+    let feedCursor = 0;
+    let endPosted = false;
+    let crossfadeTriggered = false;
+
+    const triggerCrossfadeOnce = () => {
+      if (crossfadeTriggered) return;
+      crossfadeTriggered = true;
+      if (this.studioCrossfadeTimer !== null) {
+        window.clearTimeout(this.studioCrossfadeTimer);
+        this.studioCrossfadeTimer = null;
+      }
+      onCrossfade();
+    };
+
+    const pumpChunks = (count: number) => {
+      for (let c = 0; c < count; c++) {
+        if (feedCursor >= totalFrames) {
+          if (!endPosted) {
+            endPosted = true;
+            stemNode.port.postMessage({ type: 'end' });
+          }
+          break;
+        }
+        const nextEnd = Math.min(totalFrames, feedCursor + CHUNK_FRAMES);
+        const leftSlice = leftAll.slice(feedCursor, nextEnd);
+        const rightSlice = rightAll.slice(feedCursor, nextEnd);
+        stemNode.port.postMessage(
+          { type: 'chunk', left: leftSlice, right: rightSlice },
+          [leftSlice.buffer, rightSlice.buffer]
+        );
+        feedCursor = nextEnd;
+      }
+      if (feedCursor >= totalFrames && !endPosted) {
+        endPosted = true;
+        stemNode.port.postMessage({ type: 'end' });
+      }
+    };
+
+    stemNode.port.onmessage = (evt) => {
+      if (token !== this.studioLoadToken || !evt.data) return;
+      if (evt.data.type === 'need_chunk') {
+        pumpChunks(1);
+      } else if (evt.data.type === 'progress') {
+        const sourceFrame = Number(evt.data.sourceFrame) || 0;
+        const remainingFrames = Math.max(0, totalFrames - sourceFrame);
+        const remainingSec = remainingFrames / (buffer.sampleRate * Math.max(0.75, gridRate.totalRate));
+        if (remainingSec <= crossfadeLeadSec) {
+          triggerCrossfadeOnce();
+        }
+      } else if (evt.data.type === 'eof') {
+        triggerCrossfadeOnce();
+      }
+    };
+
+    pumpChunks(2);
+
+    this.activeStudioSource = null;
+    this.activeWsolaNode = null;
+    this.activeWsolaMode = 'none';
+    this.activeStemPlayerNode = stemNode;
+    this.activeStudioGain = deckGain;
+    this.usingStudioAudio = true;
+    this.usingCustomTrack = false;
+    this.activeTrackName = track.name;
+    this.activeTrackKey = track.keyLabel ?? null;
+    this.activeTrackNativeBpm = stemBpm;
+    this.activeStudioAppliedBpm = gridRate.targetGridBpm > 0 ? Math.round(gridRate.targetGridBpm * tune432Ratio) : 0;
+    const codecTag = decoded.codec === 'opus' ? '48 kHz Opus' : '48 kHz AAC';
+    this.activeStemCodecLabel = gridRate.isSubHarmonicLocked
+      ? `${codecTag} · Phase-Locked`
+      : `${codecTag} · Studio`;
+    this.activeStemSubHarmonicLocked = gridRate.isSubHarmonicLocked;
+
+    const scheduledDelaySec = Math.max(
+      1.5,
+      delaySec + buffer.duration / Math.max(0.75, gridRate.totalRate) - crossfadeLeadSec
+    );
+    this.scheduleDeckCrossfade(scheduledDelaySec, triggerCrossfadeOnce);
+    return true;
+  }
+
   private async activateStudioForGenre(genre: ResolvedGenre, fadeSec = 1.8): Promise<void> {
     const token = ++this.studioLoadToken;
     this.usingCustomTrack = false;
     this.activeCustomTrack = null;
-    // Prefer all tracks in the genre (energy-matched + closest study BPM first) so 2-track genres always alternate smoothly!
+    // Prefer all tracks in the genre (sub-harmonic aligned + energy-matched + closest BPM first)
     const allGenreTracks = this.studioCatalog[genre] ?? [];
     const energyMatched = [...this.selectTracksForGenreAndEnergy(genre)];
     const remainingTracks = allGenreTracks.filter((t) => !energyMatched.some((e) => e.key === t.key));
 
     const targetBpm = this.getTargetStudyBpm();
-    if (targetBpm > 0) {
-      const scoreTrackBpmDistance = (track: StudioTrackRef): number => {
-        const nb = this.inferTrackNativeBpm(track, genre);
-        if (nb <= 0) return 999;
-        return Math.min(
-          Math.abs(nb - targetBpm),
-          Math.abs(nb * 0.5 - targetBpm),
-          Math.abs(nb * 2 - targetBpm)
-        );
-      };
-      energyMatched.sort((a, b) => scoreTrackBpmDistance(a) - scoreTrackBpmDistance(b));
-      remainingTracks.sort((a, b) => scoreTrackBpmDistance(a) - scoreTrackBpmDistance(b));
-    }
+    const activeNeuralHz = this.getActiveTargetNeuralHz();
+    const sortGenreStems = (list: StudioTrackRef[]) => {
+      list.sort((a, b) => {
+        const aAligned =
+          activeNeuralHz > 0 && Array.isArray(a.alignedBandsHz)
+            ? a.alignedBandsHz.some((hz) => Math.abs(hz - activeNeuralHz) < 0.25)
+            : false;
+        const bAligned =
+          activeNeuralHz > 0 && Array.isArray(b.alignedBandsHz)
+            ? b.alignedBandsHz.some((hz) => Math.abs(hz - activeNeuralHz) < 0.25)
+            : false;
+        if (aAligned !== bAligned) return aAligned ? -1 : 1;
+
+        if (targetBpm > 0) {
+          const score = (track: StudioTrackRef): number => {
+            const nb = track.subHarmonicBpm || this.inferTrackNativeBpm(track, genre);
+            if (nb <= 0) return 999;
+            return Math.min(
+              Math.abs(nb - targetBpm),
+              Math.abs(nb * 0.5 - targetBpm),
+              Math.abs(nb * 2 - targetBpm)
+            );
+          };
+          return score(a) - score(b);
+        }
+        return 0;
+      });
+    };
+    sortGenreStems(energyMatched);
+    sortGenreStems(remainingTracks);
 
     const tracks = energyMatched.length >= 2 ? energyMatched : [...energyMatched, ...remainingTracks];
 
@@ -1936,6 +2193,8 @@ export class PsychoacousticEngine {
       this.activeTrackKey = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
+      this.activeStemCodecLabel = null;
+      this.activeStemSubHarmonicLocked = false;
       if (this.ctx && this.proceduralMaster && this.cleanSubBus) {
         const now = this.ctx.currentTime;
         this.composer.setStandby(false);
@@ -1947,7 +2206,7 @@ export class PsychoacousticEngine {
 
     const chosenIdx = this.studioTrackIdx % tracks.length;
     const track = tracks[chosenIdx];
-    const nativeBpm = this.inferTrackNativeBpm(track, genre);
+    const nativeBpm = track.subHarmonicBpm || this.inferTrackNativeBpm(track, genre);
     const trackKeyLabel = track.keyLabel ?? null;
     // Calibrated EBU R128 (-14 LUFS) gain trim so all genres & engines stay volume-matched!
     const studioTargetGain = this.computeTrackLufsGain(track, genre);
@@ -1963,18 +2222,45 @@ export class PsychoacousticEngine {
       }
     };
 
-    // 1. Instant HTTP 206 Range streaming (<0.3s start) with smooth 4s Dual-Deck rotation across tracks!
+    const advanceToNextTrack = () => {
+      if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
+      this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
+      void this.activateStudioForGenre(genre, 4.0);
+    };
+
+    // 1. v7.0 Zero-WSOLA Sub-Harmonic Worklet Path: Decodes 48 kHz Opus/AAC directly into AudioWorklet
+    //    with sample-accurate AM crest phase lock (skipped only if continuous bpmRamp is active).
+    if (
+      this.workletsReady &&
+      !this.studySpec?.music.bpmRamp &&
+      track.v7Remastered &&
+      (track.opusUrl || track.aacUrl)
+    ) {
+      const workletOk = await this.playDirectWorkletStem(
+        track,
+        studioTargetGain,
+        token,
+        fadeSec,
+        advanceToNextTrack,
+        nativeBpm
+      );
+      if (workletOk) {
+        alignHarmonicRootToTrack();
+        return;
+      }
+      if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return;
+    }
+
+    // 2. HTTP 206 Range streaming fallback (e.g. continuous bpmRamp or un-remastered legacy stem)
+    this.activeStemCodecLabel = this.workletsReady ? 'WSOLA Stream' : 'HTTP Range Stream';
+    this.activeStemSubHarmonicLocked = false;
     const streamed = await this.playStreamingTrack(
       track.url,
       track.name,
       token,
       studioTargetGain,
       false,
-      () => {
-        if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
-        this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
-        void this.activateStudioForGenre(genre, 4.0);
-      },
+      advanceToNextTrack,
       fadeSec,
       nativeBpm,
       trackKeyLabel
@@ -1985,7 +2271,7 @@ export class PsychoacousticEngine {
     }
     if (token !== this.studioLoadToken || !this.ctx || !this.studioBus) return;
 
-    // 2. Fallback to decoded AudioBuffer
+    // 3. Fallback to decoded AudioBuffer
     const buffer = await this.loadAudioBuffer(track.url);
     if (token !== this.studioLoadToken || !this.ctx || !this.studioBus || !buffer) {
       return;
@@ -1997,11 +2283,7 @@ export class PsychoacousticEngine {
       track.name,
       token,
       studioTargetGain,
-      () => {
-        if (!this.isPlaying || token !== this.studioLoadToken || this.carrierMode !== 'studio_library') return;
-        this.studioTrackIdx = tracks.length > 1 ? (chosenIdx + 1) % tracks.length : 0;
-        void this.activateStudioForGenre(genre, 4.0);
-      },
+      advanceToNextTrack,
       nativeBpm,
       trackKeyLabel
     );
@@ -2323,28 +2605,40 @@ export class PsychoacousticEngine {
       !this.usingCustomTrack &&
       this.activeTrackNativeBpm > 0
     ) {
-      const alignment = this.computeStudioTempoAlignment(this.activeTrackNativeBpm, targetBpm, false);
-      this.activeStudioAppliedBpm = alignment.effectiveBpm;
       const now = this.ctx.currentTime;
-      if (this.activeWsolaNode && this.activeWsolaMode === 'ring' && this.activeStreamEl) {
-        if (Math.abs(this.activeStreamEl.playbackRate - alignment.tempoRate) >= 0.001) {
-          this.activeStreamEl.playbackRate = alignment.tempoRate;
-        }
-        const actualRate = Math.max(0.5, this.activeStreamEl.playbackRate || alignment.tempoRate);
-        const targetRingPitch = Math.max(
-          0.72,
-          Math.min(1.38, alignment.pitchRatio / actualRate)
+      if (this.activeStemPlayerNode && !spec?.music.bpmRamp) {
+        const tune432 = spec?.music.tuningA4Hz === 432 ? 432 / 440 : 1.0;
+        const gridRate = pickPlaybackGridRate(
+          this.activeTrackNativeBpm,
+          liveAmHz || this.getActiveTargetNeuralHz(),
+          tune432
         );
-        this.activeWsolaNode.parameters.get('pitchRatio')?.setTargetAtTime(targetRingPitch, now, 0.25);
-        this.activeWsolaNode.parameters.get('tempoRatio')?.setTargetAtTime(actualRate, now, 0.25);
-        // Keep bypass=0 so constant-delay unity crossfade inside NootropicWsolaProcessor prevents 80ms clicks
-        this.activeWsolaNode.parameters.get('bypass')?.setValueAtTime(0, now);
-      } else if (this.activeWsolaNode && this.activeWsolaMode === 'buffer') {
-        this.activeWsolaNode.parameters.get('tempoRatio')?.setTargetAtTime(alignment.tempoRate, now, 0.25);
-        this.activeWsolaNode.parameters.get('pitchRatio')?.setTargetAtTime(alignment.pitchRatio, now, 0.25);
-      } else if (this.activeStreamEl && spec?.music.tuningA4Hz !== 432) {
-        if (Math.abs(this.activeStreamEl.playbackRate - alignment.tempoRate) >= 0.004) {
-          this.activeStreamEl.playbackRate = alignment.tempoRate;
+        this.activeStemPlayerNode.parameters.get('playbackRate')?.setTargetAtTime(gridRate.totalRate, now, 0.25);
+        this.activeStudioAppliedBpm = gridRate.targetGridBpm > 0 ? Math.round(gridRate.targetGridBpm * tune432) : 0;
+        this.activeStemSubHarmonicLocked = gridRate.isSubHarmonicLocked;
+      } else {
+        const alignment = this.computeStudioTempoAlignment(this.activeTrackNativeBpm, targetBpm, false);
+        this.activeStudioAppliedBpm = alignment.effectiveBpm;
+        if (this.activeWsolaNode && this.activeWsolaMode === 'ring' && this.activeStreamEl) {
+          if (Math.abs(this.activeStreamEl.playbackRate - alignment.tempoRate) >= 0.001) {
+            this.activeStreamEl.playbackRate = alignment.tempoRate;
+          }
+          const actualRate = Math.max(0.5, this.activeStreamEl.playbackRate || alignment.tempoRate);
+          const targetRingPitch = Math.max(
+            0.72,
+            Math.min(1.38, alignment.pitchRatio / actualRate)
+          );
+          this.activeWsolaNode.parameters.get('pitchRatio')?.setTargetAtTime(targetRingPitch, now, 0.25);
+          this.activeWsolaNode.parameters.get('tempoRatio')?.setTargetAtTime(actualRate, now, 0.25);
+          // Keep bypass=0 so constant-delay unity crossfade inside NootropicWsolaProcessor prevents 80ms clicks
+          this.activeWsolaNode.parameters.get('bypass')?.setValueAtTime(0, now);
+        } else if (this.activeWsolaNode && this.activeWsolaMode === 'buffer') {
+          this.activeWsolaNode.parameters.get('tempoRatio')?.setTargetAtTime(alignment.tempoRate, now, 0.25);
+          this.activeWsolaNode.parameters.get('pitchRatio')?.setTargetAtTime(alignment.pitchRatio, now, 0.25);
+        } else if (this.activeStreamEl && spec?.music.tuningA4Hz !== 432) {
+          if (Math.abs(this.activeStreamEl.playbackRate - alignment.tempoRate) >= 0.004) {
+            this.activeStreamEl.playbackRate = alignment.tempoRate;
+          }
         }
       }
     }
@@ -2409,6 +2703,8 @@ export class PsychoacousticEngine {
       hugginsStatus: this.hugginsStatus,
       bluetoothSafeActive: this.bluetoothSafeActive,
       band2FlattenerActive: this.isBand2FlattenerActive(),
+      stemCodecLabel: this.usingStudioAudio ? this.activeStemCodecLabel : null,
+      stemSubHarmonicLocked: this.usingStudioAudio && this.activeStemSubHarmonicLocked,
     };
   }
 

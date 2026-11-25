@@ -1,4 +1,5 @@
 import { parseNaturalCheckIn } from '../shared/parser';
+import { STUDIO_STEM_V7_MANIFEST } from '../shared/studioStemManifest';
 import {
   composeScientificMusicPrompt,
   getGenreDisplayMeta,
@@ -633,6 +634,13 @@ interface StudioCatalogTrackItem {
   lufs: number;
   rootMidi: number;
   keyLabel: string;
+  opusUrl?: string;
+  aacUrl?: string;
+  subHarmonicBpm?: number;
+  alignedBandsHz?: number[];
+  downbeatOffsetMs?: number;
+  sampleRate?: number;
+  v7Remastered?: boolean;
 }
 
 const STUDIO_TRACK_ACOUSTIC_MAP: Record<
@@ -732,7 +740,7 @@ async function getCoreStudioCatalog(env: Env) {
         include: ['customMetadata'],
       });
       for (const obj of listed.objects) {
-        if (obj.key.startsWith('custom/')) continue;
+        if (obj.key.startsWith('custom/') || obj.key.startsWith('v7/')) continue;
         if (!/\.(mp3|ogg|opus|m4a|wav)$/i.test(obj.key)) continue;
         const segments = obj.key.split('/');
         const folder = segments[0];
@@ -764,6 +772,7 @@ async function getCoreStudioCatalog(env: Env) {
         const resolvedName = cleanName || 'Studio Track';
         const encodedPath = segments.map((s) => encodeURIComponent(s)).join('/');
         const known = STUDIO_TRACK_ACOUSTIC_MAP[obj.key];
+        const v7 = STUDIO_STEM_V7_MANIFEST[obj.key];
         const meta = obj.customMetadata ?? {};
         const metaBpm = Number(meta.bpm);
         const metaLufs = Number(meta.lufs);
@@ -781,6 +790,7 @@ async function getCoreStudioCatalog(env: Env) {
               ? Math.round(metaBpm)
               : inferStudioTrackBpm(genreKey, energy, resolvedName)),
           lufs:
+            v7?.lufs ??
             known?.lufs ??
             (Number.isFinite(metaLufs) && metaLufs >= -32 && metaLufs <= -4
               ? Number(metaLufs.toFixed(1))
@@ -791,6 +801,17 @@ async function getCoreStudioCatalog(env: Env) {
               ? Math.round(metaRoot)
               : 48),
           keyLabel: known?.keyLabel ?? (meta.keyLabel?.trim() || 'C min'),
+          ...(v7
+            ? {
+                opusUrl: v7.opusUrl,
+                aacUrl: v7.aacUrl,
+                subHarmonicBpm: v7.subHarmonicBpm,
+                alignedBandsHz: v7.alignedBandsHz,
+                downbeatOffsetMs: v7.downbeatOffsetMs,
+                sampleRate: v7.sampleRate,
+                v7Remastered: true,
+              }
+            : {}),
         });
       }
       if (!listed.truncated || !listed.cursor) break;
@@ -1435,7 +1456,8 @@ export default {
           headObj.writeHttpMetadata?.(headers);
           if (!headers.get('content-type')) {
             if (key.endsWith('.mp3')) headers.set('content-type', 'audio/mpeg');
-            else if (key.endsWith('.ogg') || key.endsWith('.opus')) headers.set('content-type', 'audio/ogg');
+            else if (key.endsWith('.opus')) headers.set('content-type', 'audio/ogg; codecs=opus');
+            else if (key.endsWith('.ogg')) headers.set('content-type', 'audio/ogg');
             else if (key.endsWith('.m4a')) headers.set('content-type', 'audio/mp4');
             else if (key.endsWith('.wav')) headers.set('content-type', 'audio/wav');
             else headers.set('content-type', 'application/octet-stream');
@@ -1470,7 +1492,8 @@ export default {
         object.writeHttpMetadata(headers);
         if (!headers.get('content-type')) {
           if (key.endsWith('.mp3')) headers.set('content-type', 'audio/mpeg');
-          else if (key.endsWith('.ogg') || key.endsWith('.opus')) headers.set('content-type', 'audio/ogg');
+          else if (key.endsWith('.opus')) headers.set('content-type', 'audio/ogg; codecs=opus');
+          else if (key.endsWith('.ogg')) headers.set('content-type', 'audio/ogg');
           else if (key.endsWith('.m4a')) headers.set('content-type', 'audio/mp4');
           else if (key.endsWith('.wav')) headers.set('content-type', 'audio/wav');
           else headers.set('content-type', 'application/octet-stream');

@@ -311,6 +311,13 @@ export const api = {
           lufs?: number;
           rootMidi?: number;
           keyLabel?: string;
+          opusUrl?: string;
+          aacUrl?: string;
+          subHarmonicBpm?: number;
+          alignedBandsHz?: number[];
+          downbeatOffsetMs?: number;
+          sampleRate?: number;
+          v7Remastered?: boolean;
         }>
       >;
       customTracks?: CustomTrackInfo[];

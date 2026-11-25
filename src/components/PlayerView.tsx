@@ -284,6 +284,8 @@ export function PlayerView({
     hugginsStatus: 'untested',
     bluetoothSafeActive: false,
     band2FlattenerActive: false,
+    stemCodecLabel: null,
+    stemSubHarmonicLocked: false,
   });
 
   const plannedSec = recommendation.plannedDurationMin * 60;
@@ -408,6 +410,8 @@ export function PlayerView({
               resolved[g] = tracksByGenre[g].map((t) => ({
                 ...t,
                 url: `${API_BASE}${t.url}`,
+                opusUrl: t.opusUrl ? `${API_BASE}${t.opusUrl}` : undefined,
+                aacUrl: t.aacUrl ? `${API_BASE}${t.aacUrl}` : undefined,
               }));
             });
             engineRef.current?.setStudioCatalog(resolved);
@@ -1984,6 +1988,11 @@ export function PlayerView({
               <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#F3F1EC]">
                 {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Beatless'}
               </div>
+              {telemetry.stemCodecLabel && telemetry.usingStudioAudio && (
+                <div className="mt-0.5 font-mono-tech text-[10px] text-[#34D399]">
+                  {telemetry.stemCodecLabel}
+                </div>
+              )}
               {recommendation.executableSpec?.music.bpmRamp && (
                 <div className="mt-0.5 font-mono-tech text-[10px] text-[#8E8E88]">
                   Ramp {recommendation.executableSpec.music.bpmRamp.start} →{' '}

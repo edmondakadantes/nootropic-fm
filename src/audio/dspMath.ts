@@ -73,7 +73,7 @@ export function computePeriodicWaveStats(
   amps: number[],
   phaseShifts: number[],
   samples = 1024
-): { min: number; max: number; rms: number; normPeak: number } {
+): { min: number; max: number; rms: number; normPeak: number; peakPhaseFraction: number } {
   const vals = new Float64Array(samples);
   let peak = 0;
   for (let i = 0; i < samples; i++) {
@@ -89,11 +89,15 @@ export function computePeriodicWaveStats(
   const scale = peak > 0 ? 1 / peak : 1;
   let min = Infinity;
   let max = -Infinity;
+  let maxIdx = 0;
   let sumSq = 0;
   for (let i = 0; i < samples; i++) {
     const s = vals[i] * scale;
     if (s < min) min = s;
-    if (s > max) max = s;
+    if (s > max) {
+      max = s;
+      maxIdx = i;
+    }
     sumSq += s * s;
   }
   return {
@@ -101,6 +105,7 @@ export function computePeriodicWaveStats(
     max,
     rms: Math.sqrt(sumSq / samples),
     normPeak: peak,
+    peakPhaseFraction: maxIdx / samples,
   };
 }
 
