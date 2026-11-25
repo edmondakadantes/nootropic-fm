@@ -229,7 +229,7 @@ function appendTokenHash(existingField: string, newHash: string): string {
     .map((s) => s.trim())
     .filter((h) => h.length > 0 && h !== newHash);
   hashes.push(newHash);
-  return hashes.slice(-3).join(',');
+  return hashes.slice(-8).join(',');
 }
 
 function isAuthorizedAdmin(request: Request, env: Env): boolean {
@@ -1658,7 +1658,7 @@ export default {
 
       // POST /api/identity/restore — Restore Passwordless Neural Identity on any device via NFM-XXXX-XXXX Sync Key
       if (url.pathname === '/api/identity/restore' && request.method === 'POST') {
-        const allowed = await checkDailyRateLimit(env.DB, request, 'identity_restore', 15);
+        const allowed = await checkDailyRateLimit(env.DB, request, 'identity_restore', 30);
         if (!allowed) {
           return json(
             { error: 'Too many restore attempts today. Please try again tomorrow.' },

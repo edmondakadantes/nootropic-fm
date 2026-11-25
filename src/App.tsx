@@ -926,6 +926,13 @@ export default function App() {
                 setAudioActive(false);
                 setScreen('checkin');
               }}
+              onReturnHome={() => {
+                setSelectedPreset(null);
+                setAudioActive(false);
+                setFieldMood('default');
+                setScreen('landing');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
               onPlayingChange={setAudioActive}
               onSessionClaimed={(claimed) => {
                 setProfile(claimed.profile);

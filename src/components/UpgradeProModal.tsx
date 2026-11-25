@@ -4,6 +4,7 @@ import {
   CreditCard,
   Crown,
   ExternalLink,
+  KeyRound,
   Loader2,
   ShieldCheck,
   X,
@@ -33,10 +34,31 @@ export function UpgradeProModal({
 }: UpgradeProModalProps) {
   const [plan, setPlan] = useState<'annual' | 'monthly'>('annual');
   const [email, setEmail] = useState('');
+  const [accessKey, setAccessKey] = useState('');
+  const [unlockingKey, setUnlockingKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isPro = profile?.planTier === 'pro';
+
+  const handleRedeemAccessKey = async () => {
+    if (!accessKey.trim()) return;
+    setError(null);
+    setUnlockingKey(true);
+    try {
+      const res = await api.restoreIdentity(accessKey.trim());
+      saveStoredProfileAuth(res.profile.id, res.profileToken, res.syncCode);
+      onProfileCreated?.(res.profile, res.syncCode);
+      setAccessKey('');
+      if (res.profile.planTier === 'pro') {
+        onClose();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid Sync / Access Key.');
+    } finally {
+      setUnlockingKey(false);
+    }
+  };
 
   const handleCheckout = async () => {
     setError(null);
@@ -243,6 +265,34 @@ export function UpgradeProModal({
             <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#8E8E88]">
               <ShieldCheck className="h-3.5 w-3.5 text-[#34D399]" />
               <span>Secured by Stripe · Tax included · Cancel anytime · Promo codes supported</span>
+            </div>
+
+            {/* Direct Sync / Access Key Unlock */}
+            <div className="space-y-2 border-t border-white/[0.08] pt-3.5">
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#D4D4CE]">
+                <KeyRound className="h-3 w-3 text-[#34D399]" />
+                Have a Pro / Lifetime Sync Key?
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={accessKey}
+                  onChange={(e) => setAccessKey(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleRedeemAccessKey();
+                  }}
+                  placeholder="NFM-XXXX-XXXX"
+                  className="font-mono-tech flex-1 rounded-xl border border-white/15 bg-[#0A0B0C] px-3 py-2 text-xs uppercase tracking-wider text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={unlockingKey || !accessKey.trim()}
+                  onClick={() => void handleRedeemAccessKey()}
+                  className="rounded-xl border border-emerald-400/45 bg-emerald-500/15 px-4 py-2 text-xs font-semibold text-[#34D399] transition hover:bg-emerald-500/25 disabled:opacity-50"
+                >
+                  {unlockingKey ? 'Unlocking...' : 'Unlock'}
+                </button>
+              </div>
             </div>
           </>
         )}

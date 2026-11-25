@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  ArrowLeft,
   BookOpen,
   Check,
   CheckCircle2,
@@ -12,6 +13,7 @@ import {
   ExternalLink,
   Headphones,
   HeartPulse,
+  KeyRound,
   Loader2,
   Lock,
   Music2,
@@ -118,6 +120,7 @@ interface PlayerViewProps {
   onUpgradePro?: () => void;
   onStartDirectCheckout?: (plan: 'annual' | 'monthly') => Promise<void>;
   onOpenCustomCheckIn?: () => void;
+  onReturnHome?: () => void;
   onPlayingChange?: (playing: boolean) => void;
   onSessionClaimed?: (claimed: {
     profile: UserProfile;
@@ -153,6 +156,7 @@ export function PlayerView({
   onUpgradePro,
   onStartDirectCheckout,
   onOpenCustomCheckIn,
+  onReturnHome,
   onPlayingChange,
   onSessionClaimed,
   onFinishToDebrief,
@@ -252,6 +256,8 @@ export function PlayerView({
   const [selectedPaywallPlan, setSelectedPaywallPlan] = useState<'annual' | 'monthly'>('annual');
   const [unlockingCheckout, setUnlockingCheckout] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [paywallSyncKey, setPaywallSyncKey] = useState('');
+  const [redeemingSyncKey, setRedeemingSyncKey] = useState(false);
   const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('tune');
 
   const effectiveFreeLimitSec = FREE_PREVIEW_LIMIT_SEC + shareBonusSec;
@@ -1200,6 +1206,34 @@ export function PlayerView({
       setUnlockError('Could not generate the share card right now — please try again.');
     } finally {
       setSharingForBonus(false);
+    }
+  };
+
+  const handleRedeemPaywallSyncKey = async () => {
+    if (!paywallSyncKey.trim()) return;
+    setUnlockError(null);
+    setRedeemingSyncKey(true);
+    try {
+      const res = await api.restoreIdentity(paywallSyncKey.trim());
+      saveStoredProfileAuth(res.profile.id, res.profileToken, res.syncCode);
+      onSessionClaimed?.({
+        profile: res.profile,
+        profileToken: res.profileToken,
+        syncCode: res.syncCode,
+        sessionId: liveSessionId,
+      });
+      setPaywallSyncKey('');
+      if (res.profile.planTier === 'pro') {
+        setPreviewLocked(false);
+        await engineRef.current?.resume();
+        setIsPlaying(true);
+      } else {
+        setUnlockError('Pass synced, but this pass is on the Free tier.');
+      }
+    } catch (err) {
+      setUnlockError(err instanceof Error ? err.message : 'Invalid Sync / Access Key.');
+    } finally {
+      setRedeemingSyncKey(false);
     }
   };
 
@@ -2232,6 +2266,26 @@ export function PlayerView({
       {previewLocked && !isPro && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/85 p-4 backdrop-blur-md">
           <div className="animate-step glass-stage my-auto w-full max-w-lg rounded-2xl border border-white/15 p-5 sm:p-7 space-y-5">
+            {onReturnHome && (
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    endedByUserRef.current = true;
+                    engineRef.current?.stop();
+                    setIsPlaying(false);
+                    onReturnHome();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-[#14161A] px-3 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:border-emerald-400/45 hover:text-[#F3F1EC]"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5 text-[#34D399]" />
+                  <span>Main Page</span>
+                </button>
+                <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
+                  nootropic.fm
+                </span>
+              </div>
+            )}
             <div className="space-y-2 text-center">
               <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-400/35 bg-emerald-500/10 px-2.5 py-1 font-mono-tech text-[10px] font-bold uppercase tracking-wider text-[#34D399]">
                 <Lock className="h-3 w-3" />
@@ -2391,6 +2445,34 @@ export function PlayerView({
                 </button>
               </div>
             )}
+
+            {/* Direct Pro / Lifetime Access Key Unlock right inside Paywall */}
+            <div className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3.5 space-y-2">
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                <KeyRound className="h-3.5 w-3.5 text-[#34D399]" />
+                <span>Have a Pro / Lifetime Sync Key?</span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={paywallSyncKey}
+                  onChange={(e) => setPaywallSyncKey(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleRedeemPaywallSyncKey();
+                  }}
+                  placeholder="NFM-XXXX-XXXX"
+                  className="font-mono-tech flex-1 rounded-xl border border-white/15 bg-[#121418] px-3 py-2 text-xs uppercase tracking-wider text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={redeemingSyncKey || !paywallSyncKey.trim()}
+                  onClick={() => void handleRedeemPaywallSyncKey()}
+                  className="rounded-xl border border-emerald-400/50 bg-emerald-500/15 px-4 py-2 text-xs font-semibold text-[#34D399] transition hover:bg-emerald-500/25 disabled:opacity-50"
+                >
+                  {redeemingSyncKey ? 'Unlocking...' : 'Unlock'}
+                </button>
+              </div>
+            </div>
 
             <div className="flex flex-col items-center gap-2 pt-0.5 text-center">
               <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#8E8E88]">
