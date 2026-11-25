@@ -710,6 +710,23 @@ export class PsychoacousticEngine {
       ctx.currentTime
     );
     musicAuditionGain.connect(spectralPocketNotch);
+
+    // v7.1 Gentle Anti-Habituation Spectral Rotation sits BEFORE LR4 split so all 3 crossover bands stay 0.000 dB phase-coherent!
+    const spectralRot = ctx.createBiquadFilter();
+    spectralRot.type = 'peaking';
+    spectralRot.frequency.setValueAtTime(950, ctx.currentTime);
+    spectralRot.Q.setValueAtTime(0.75, ctx.currentTime);
+    const amSpecActive =
+      this.studySpec.entrainment.type === 'amplitude_modulation' &&
+      this.studySpec.entrainment.frequencyHz > 0;
+    const allowInitRot =
+      amSpecActive &&
+      !this.isControlTrial &&
+      this.layerMonitorMode !== 'science_only' &&
+      this.carrierMode !== 'pure_stimulus';
+    spectralRot.gain.setValueAtTime(allowInitRot ? 1.5 : 0, ctx.currentTime);
+    this.band2SpectralRotNode = spectralRot;
+
     if (params.speakerSafeEQ) {
       // Driving/speaker safety notch sits BEFORE LR4 split so crossover summing remains 0.000 dB phase-coherent
       const safetyNotch = ctx.createBiquadFilter();
@@ -718,17 +735,23 @@ export class PsychoacousticEngine {
       safetyNotch.Q.value = 0.72;
       safetyNotch.gain.value = -5.5;
       spectralPocketNotch.connect(safetyNotch);
-      safetyNotch.connect(musicCompressor);
+      safetyNotch.connect(spectralRot);
     } else {
-      spectralPocketNotch.connect(musicCompressor);
+      spectralPocketNotch.connect(spectralRot);
     }
-    musicCompressor.connect(preHrvBus);
+    spectralRot.connect(preHrvBus);
     this.musicAuditionGain = musicAuditionGain;
+
+    // Gentle peak glue ONLY on procedural live synth (mastered -14 LUFS studio stems bypass WebAudio auto-makeup 100%!)
+    musicCompressor.threshold.value = -8;
+    musicCompressor.knee.value = 8;
+    musicCompressor.ratio.value = 1.65;
 
     const startWithMusic = this.carrierMode === 'generative_live';
     const proceduralMaster = ctx.createGain();
     proceduralMaster.gain.setValueAtTime(startWithMusic ? 0.94 : 0, ctx.currentTime);
-    proceduralMaster.connect(musicAuditionGain);
+    proceduralMaster.connect(musicCompressor);
+    musicCompressor.connect(musicAuditionGain);
     this.proceduralMaster = proceduralMaster;
 
     const studioBus = ctx.createGain();
@@ -997,24 +1020,10 @@ export class PsychoacousticEngine {
     }
 
     const eType = this.studySpec.entrainment.type;
-    // v7.1 Gentle Anti-Habituation Spectral Emphasis Rotation (300–1200 Hz <-> 1200–3500 Hz @ 0.0028 Hz)
-    const spectralRot = ctx.createBiquadFilter();
-    spectralRot.type = 'peaking';
-    spectralRot.frequency.setValueAtTime(950, ctx.currentTime);
-    spectralRot.Q.setValueAtTime(0.75, ctx.currentTime);
-    const allowRot =
-      amActiveForSpec &&
-      !this.isControlTrial &&
-      this.layerMonitorMode !== 'science_only' &&
-      this.carrierMode !== 'pure_stimulus';
-    spectralRot.gain.setValueAtTime(allowRot ? 1.8 : 0, ctx.currentTime);
-    midOutput.connect(spectralRot);
-    this.band2SpectralRotNode = spectralRot;
-
     if (eType === 'amplitude_modulation' || eType === 'hrv_breathing_swell' || eType === 'none') {
-      spectralRot.connect(scopeModAnalyser);
+      midOutput.connect(scopeModAnalyser);
     }
-    spectralRot.connect(masterSumBus);
+    midOutput.connect(masterSumBus);
 
     this.amGainL = amGainL;
     this.amLfoL = amLfoL;
@@ -2074,6 +2083,7 @@ export class PsychoacousticEngine {
 
       let knownTotalFrames = Infinity;
       let streamHandle: Awaited<ReturnType<typeof streamOpusIntoWorklet>> = null;
+      let latestConsumerFrame = 0;
       let crossfadeTriggered = false;
       const crossfadeLeadSec = 4.0;
 
@@ -2090,9 +2100,13 @@ export class PsychoacousticEngine {
       stemNode.port.onmessage = (evt) => {
         if (token !== this.studioLoadToken || !evt.data) return;
         if (evt.data.type === 'need_chunk') {
-          streamHandle?.requestChunk(1);
+          const sf = Number(evt.data.sourceFrame) || 0;
+          if (sf > latestConsumerFrame) latestConsumerFrame = sf;
+          streamHandle?.onConsumerFrame(latestConsumerFrame);
         } else if (evt.data.type === 'progress') {
           const sourceFrame = Number(evt.data.sourceFrame) || 0;
+          if (sourceFrame > latestConsumerFrame) latestConsumerFrame = sourceFrame;
+          streamHandle?.onConsumerFrame(latestConsumerFrame);
           if (Number.isFinite(knownTotalFrames)) {
             const remainingFrames = Math.max(0, knownTotalFrames - sourceFrame);
             const remainingSec = remainingFrames / (48000 * Math.max(0.75, gridRate.totalRate));
@@ -2124,6 +2138,7 @@ export class PsychoacousticEngine {
         this.studioBus &&
         this.isPlaying
       ) {
+        streamHandle.onConsumerFrame(latestConsumerFrame);
         const startNow = this.ctx.currentTime;
         this.clearStudioDeck(fadeSec);
         this.composer.setStandby(true);
@@ -2237,15 +2252,12 @@ export class PsychoacousticEngine {
       onCrossfade();
     };
 
-    const pumpChunks = (count: number) => {
-      for (let c = 0; c < count; c++) {
-        if (feedCursor >= totalFrames) {
-          if (!endPosted) {
-            endPosted = true;
-            stemNode.port.postMessage({ type: 'end' });
-          }
-          break;
-        }
+    const TARGET_RING_FRAMES = 147456; // ~3.07 s safely inside 262,144-frame ring buffer
+    const topUpChunks = (consumerFrame: number) => {
+      while (
+        feedCursor < totalFrames &&
+        feedCursor - consumerFrame + CHUNK_FRAMES <= TARGET_RING_FRAMES
+      ) {
         const nextEnd = Math.min(totalFrames, feedCursor + CHUNK_FRAMES);
         const leftSlice = leftAll.slice(feedCursor, nextEnd);
         const rightSlice = rightAll.slice(feedCursor, nextEnd);
@@ -2264,9 +2276,10 @@ export class PsychoacousticEngine {
     stemNode.port.onmessage = (evt) => {
       if (token !== this.studioLoadToken || !evt.data) return;
       if (evt.data.type === 'need_chunk') {
-        pumpChunks(1);
+        topUpChunks(Number(evt.data.sourceFrame) || 0);
       } else if (evt.data.type === 'progress') {
         const sourceFrame = Number(evt.data.sourceFrame) || 0;
+        topUpChunks(sourceFrame);
         const remainingFrames = Math.max(0, totalFrames - sourceFrame);
         const remainingSec = remainingFrames / (buffer.sampleRate * Math.max(0.75, gridRate.totalRate));
         if (remainingSec <= crossfadeLeadSec) {
@@ -2277,7 +2290,7 @@ export class PsychoacousticEngine {
       }
     };
 
-    pumpChunks(2);
+    topUpChunks(0);
 
     this.activeStudioSource = null;
     this.activeWsolaNode = null;

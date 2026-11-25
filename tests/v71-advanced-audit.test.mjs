@@ -20,6 +20,7 @@ import {
 } from '../shared/psychometrics.ts';
 import {
   extractOggOpusPackets,
+  getOpusPacketDurationUs,
   parseOggOpusPages,
 } from '../src/audio/ProgressiveStemDecoder.ts';
 
@@ -204,4 +205,94 @@ test('Biomarkers: 15s Continuation Tapping CV & BLE HRV RMSSD / 0.1 Hz LF Power 
     hrv.lfPowerRatio > 0.70,
     `0.10 Hz breathing should dominate 0.04–0.15 Hz LF band, got lfRatio=${hrv.lfPowerRatio}`
   );
+});
+
+test('10-second mobile jitter stress test: 5.46s StemPlayer ring + Opus TOC duration => 0 dropouts', () => {
+  const { registry } = loadWorkletProcessors(48000);
+  const StemPlayer = registry['nootropic-stem-player'];
+  const node = new StemPlayer({
+    processorOptions: { sourceSampleRate: 48000, delaySamples: 0 },
+  });
+
+  // 10.0 seconds stereo test wave @ 48 kHz (480,000 frames)
+  const totalFrames = 480000;
+  const CHUNK = 16384;
+  const srcL = new Float32Array(totalFrames);
+  const srcR = new Float32Array(totalFrames);
+  for (let i = 0; i < totalFrames; i++) {
+    srcL[i] = 0.45 * Math.sin((2 * Math.PI * 220 * i) / 48000);
+    srcR[i] = 0.45 * Math.cos((2 * Math.PI * 330 * i) / 48000);
+  }
+
+  let cursor = 0;
+  let endSent = false;
+  const TARGET_RING = 147456;
+  const topUp = (consumerFrame) => {
+    while (cursor < totalFrames && cursor - consumerFrame + CHUNK <= TARGET_RING) {
+      const end = Math.min(totalFrames, cursor + CHUNK);
+      node.port.onmessage({
+        data: { type: 'chunk', left: srcL.subarray(cursor, end), right: srcR.subarray(cursor, end) },
+      });
+      cursor = end;
+    }
+    if (cursor >= totalFrames && !endSent) {
+      endSent = true;
+      node.port.onmessage({ data: { type: 'end' } });
+    }
+  };
+
+  // Initial idempotent fill (~3.07 s)
+  topUp(0);
+
+  // Simulate severe 850 ms mobile main-thread stall before servicing `need_chunk`!
+  const stallBlocks = Math.floor((0.85 * 48000) / 128);
+  let latestSourceFrame = 0;
+  let stallCountdown = 0;
+  let maxErr = 0;
+  let zeroDropouts = 0;
+
+  const totalBlocks = Math.floor(totalFrames / 128);
+  for (let b = 0; b < totalBlocks; b++) {
+    const outL = new Float32Array(128);
+    const outR = new Float32Array(128);
+    node.process([], [[outL, outR]], { playbackRate: new Float32Array([1.0]) });
+
+    while (node._posted.length > 0) {
+      const m = node._posted.shift();
+      if (m.type === 'need_chunk' || m.type === 'progress') {
+        if (typeof m.sourceFrame === 'number' && m.sourceFrame > latestSourceFrame) {
+          latestSourceFrame = m.sourceFrame;
+        }
+        if (m.type === 'need_chunk' && stallCountdown === 0) {
+          stallCountdown = stallBlocks;
+        }
+      }
+    }
+
+    if (stallCountdown > 0) {
+      stallCountdown--;
+      if (stallCountdown === 0) {
+        topUp(latestSourceFrame);
+      }
+    }
+
+    for (let i = 0; i < 128; i++) {
+      const idx = b * 128 + i;
+      const err = Math.max(Math.abs(outL[i] - srcL[idx]), Math.abs(outR[i] - srcR[idx]));
+      if (err > maxErr) maxErr = err;
+      if (Math.abs(srcL[idx]) > 0.05 && Math.abs(outL[i]) < 1e-5) zeroDropouts++;
+    }
+  }
+
+  assert.equal(zeroDropouts, 0, `Expected 0 mobile stall dropouts across 10s, got ${zeroDropouts}`);
+  assert.ok(maxErr < 1e-6, `Expected bit-exact continuity under 850ms mobile stall, maxErr=${maxErr}`);
+
+  // Also verify RFC 6716 Opus packet duration parser on real v7 .opus packet
+  const realOpus = resolve(ROOT, 'audio-stems/_v7_out/lofi_keys/focus/dusty-rhodes-88-1.opus');
+  const bytes = new Uint8Array(readFileSync(realOpus).subarray(0, 131072));
+  const { pages } = parseOggOpusPages(bytes);
+  const { audioPackets } = extractOggOpusPackets(pages);
+  assert.ok(audioPackets.length > 5);
+  const durUs = getOpusPacketDurationUs(audioPackets[0]);
+  assert.ok(durUs >= 2500 && durUs <= 60000, `Unexpected Opus packet duration ${durUs} us`);
 });
