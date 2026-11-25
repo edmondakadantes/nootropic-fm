@@ -125,6 +125,8 @@ interface PlayerViewProps {
     liveAdjustments: LiveAdjustment[];
     pvtPreMs?: number | null;
     pvtLapsesPre?: number | null;
+    pvtPreInvRt?: number | null;
+    pvtTrialCount?: number | null;
     sessionIdOverride?: string;
     ephemeralOverride?: boolean;
   }) => void;
@@ -202,6 +204,8 @@ export function PlayerView({
   );
   const [pvtPreMs, setPvtPreMs] = useState<number | null>(null);
   const [pvtLapsesPre, setPvtLapsesPre] = useState<number | null>(null);
+  const [pvtPreInvRt, setPvtPreInvRt] = useState<number | null>(null);
+  const [pvtPreTrials, setPvtPreTrials] = useState<number | null>(null);
   const [previewLocked, setPreviewLocked] = useState<boolean>(() => {
     if (isPro) return false;
     const limit = FREE_PREVIEW_LIMIT_SEC + (hasClaimedShareBonusToday() ? SHARE_BONUS_SEC : 0);
@@ -291,9 +295,16 @@ export function PlayerView({
   const milestonesSentRef = useRef<Set<number>>(new Set());
   const endedByUserRef = useRef(false);
   const switchedAwayRef = useRef(false);
-  const pvtPreRef = useRef<{ medianMs: number | null; lapses: number | null }>({
+  const pvtPreRef = useRef<{
+    medianMs: number | null;
+    lapses: number | null;
+    meanInvRt: number | null;
+    trialCount: number | null;
+  }>({
     medianMs: null,
     lapses: null,
+    meanInvRt: null,
+    trialCount: null,
   });
   const dailyFreeUsedRef = useRef(dailyFreeUsedSec);
   const dailyLyriaUsedRef = useRef(dailyLyriaUsedSec);
@@ -302,7 +313,12 @@ export function PlayerView({
   elapsedRef.current = elapsedSec;
   adjustmentsRef.current = adjustments;
   audioStartedRef.current = audioStarted;
-  pvtPreRef.current = { medianMs: pvtPreMs, lapses: pvtLapsesPre };
+  pvtPreRef.current = {
+    medianMs: pvtPreMs,
+    lapses: pvtLapsesPre,
+    meanInvRt: pvtPreInvRt,
+    trialCount: pvtPreTrials,
+  };
   dailyFreeUsedRef.current = dailyFreeUsedSec;
   dailyLyriaUsedRef.current = dailyLyriaUsedSec;
   carrierModeRef.current = carrierMode;
@@ -680,6 +696,8 @@ export function PlayerView({
           liveAdjustments: adjustmentsRef.current,
           pvtPreMs: pvtPreRef.current.medianMs,
           pvtLapsesPre: pvtPreRef.current.lapses,
+          pvtPreInvRt: pvtPreRef.current.meanInvRt,
+          pvtTrialCount: pvtPreRef.current.trialCount,
           sessionIdOverride: liveSessionId,
           ephemeralOverride: isEphemeral,
         });
@@ -1126,6 +1144,8 @@ export function PlayerView({
       liveAdjustments: adjustmentsRef.current,
       pvtPreMs: pvtPreRef.current.medianMs,
       pvtLapsesPre: pvtPreRef.current.lapses,
+      pvtPreInvRt: pvtPreRef.current.meanInvRt,
+      pvtTrialCount: pvtPreRef.current.trialCount,
       sessionIdOverride: liveSessionId,
       ephemeralOverride: isEphemeral,
     });
@@ -1908,20 +1928,20 @@ export function PlayerView({
             )}
           </div>
 
-          {/* Optional 15-Second Reaction Speed Check */}
+          {/* Optional 20-Trial Visual 1/RT Reaction Speed Check */}
           {!recommendation.safetyMode && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#121417] px-4 py-3">
               <div className="space-y-0.5">
                 <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
                   <Zap className="h-3.5 w-3.5 text-[#34D399]" />
                   {pvtPreMs !== null
-                    ? `Baseline Recorded: ${pvtPreMs} ms`
-                    : 'Optional 15s Reaction Speed Test'}
+                    ? `Baseline Recorded: ${pvtPreInvRt !== null ? `${pvtPreInvRt.toFixed(2)} s⁻¹ · ` : ''}${pvtPreMs} ms`
+                    : '20-Trial Visual 1/RT Brain Benchmark'}
                 </div>
                 <p className="text-[11px] text-[#8E8E88]">
                   {pvtPreMs !== null
-                    ? 'Retest at the end to measure your millisecond shift.'
-                    : 'Tap 5 quick flashes to measure your speed before vs. after.'}
+                    ? 'Retest at debrief to measure your inverse reaction speed (1/RT) shift.'
+                    : 'Run 20 rAF-synced visual flashes (~75s) for psychometrically powered pre/post delta.'}
                 </p>
               </div>
               <button
@@ -1930,7 +1950,7 @@ export function PlayerView({
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#181A1F] px-3 py-1.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1E2128]"
               >
                 <Zap className="h-3.5 w-3.5 text-[#34D399]" />
-                {pvtPreMs !== null ? 'Retake' : 'Test Now (15s)'}
+                {pvtPreMs !== null ? 'Retake' : 'Run PVT (~75s)'}
               </button>
             </div>
           )}
@@ -2241,6 +2261,8 @@ export function PlayerView({
           onComplete={(res) => {
             setPvtPreMs(res.medianMs);
             setPvtLapsesPre(res.lapses);
+            setPvtPreInvRt(res.meanInvRt);
+            setPvtPreTrials(res.trialCount);
             setShowPrePvt(false);
             if (!isEphemeral && !liveSessionId.startsWith('eph_')) {
               void api
@@ -2249,6 +2271,10 @@ export function PlayerView({
                   phase: 'pre',
                   medianMs: res.medianMs,
                   lapses: res.lapses,
+                  meanInvRt: res.meanInvRt,
+                  trialCount: res.trialCount,
+                  refreshHz: res.refreshHz,
+                  decileSpreadMs: res.decileSpreadMs,
                 })
                 .catch(() => {});
             }

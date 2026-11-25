@@ -156,6 +156,8 @@ export default function App() {
     ephemeralMode?: boolean;
     pvtPreMs?: number | null;
     pvtLapsesPre?: number | null;
+    pvtPreInvRt?: number | null;
+    pvtTrialCount?: number | null;
     studySpecId?: string;
     studyTitle?: string;
     entrainmentType?: string;
@@ -471,6 +473,8 @@ export default function App() {
       liveAdjustments: LiveAdjustment[];
       pvtPreMs?: number | null;
       pvtLapsesPre?: number | null;
+      pvtPreInvRt?: number | null;
+      pvtTrialCount?: number | null;
       sessionIdOverride?: string;
       ephemeralOverride?: boolean;
     }) => {
@@ -490,6 +494,8 @@ export default function App() {
             : activeRec.ephemeralMode,
         pvtPreMs: stats.pvtPreMs ?? null,
         pvtLapsesPre: stats.pvtLapsesPre ?? null,
+        pvtPreInvRt: stats.pvtPreInvRt ?? null,
+        pvtTrialCount: stats.pvtTrialCount ?? null,
         studySpecId: spec?.id,
         studyTitle: spec?.shortLabel || spec?.studyRef.title,
         entrainmentType: spec?.entrainment.type,

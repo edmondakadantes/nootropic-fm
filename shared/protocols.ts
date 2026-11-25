@@ -6,6 +6,11 @@ import {
   sanitizeCustomVibe,
 } from './promptComposer';
 import { getStudiesByIds } from './studies';
+import {
+  assignStratifiedShamControl,
+  computeHierarchicalArmPosterior,
+  sampleHierarchicalThompson,
+} from './psychometrics';
 import { buildCheckInExecutableSpec } from './studyPresets';
 import { resolvedGenreToPalette } from './studySpec';
 import type {
@@ -295,6 +300,8 @@ export function computeSessionReward(input: {
   workedRating: WorkedRating;
   completionRatio: number;
   liveAdjustments: LiveAdjustment[];
+  pvtDeltaInvRt?: number | null;
+  pvtTrialCount?: number | null;
 }): { reward: number; delta: number } {
   const delta = input.postScore - input.baselineScore;
   const deltaSignal = Math.max(0, Math.min(1, 0.45 + delta * 0.18));
@@ -303,10 +310,21 @@ export function computeSessionReward(input: {
   const completionSignal = Math.max(0.15, Math.min(1, input.completionRatio));
   const adjustPenalty = Math.min(0.12, input.liveAdjustments.length * 0.02);
 
-  const reward = Math.max(
+  const subjReward = Math.max(
     0.05,
     Math.min(0.98, ratingSignal * 0.5 + deltaSignal * 0.35 + completionSignal * 0.15 - adjustPenalty)
   );
+
+  let reward = subjReward;
+  if (
+    (input.pvtTrialCount ?? 0) >= 15 &&
+    typeof input.pvtDeltaInvRt === 'number' &&
+    Number.isFinite(input.pvtDeltaInvRt)
+  ) {
+    const pvtSignal = Math.max(0.1, Math.min(0.95, 0.5 + input.pvtDeltaInvRt * 0.45));
+    reward = Math.max(0.05, Math.min(0.98, subjReward * 0.85 + pvtSignal * 0.15));
+  }
+
   return { reward: Number(reward.toFixed(3)), delta };
 }
 
@@ -702,6 +720,7 @@ export function selectProtocolRecommendation(input: {
   cohortGenreStats?: BanditStatRow[];
   profileGenreStats?: BanditStatRow[];
   cohortArmGenreStats?: BanditStatRow[];
+  recentControlFlags?: boolean[];
   allowControlTrial?: boolean;
   returnBonusAwarded?: boolean;
 }): ProtocolRecommendation {
@@ -729,26 +748,23 @@ export function selectProtocolRecommendation(input: {
     const c = cohortMap.get(arm.id);
     const p = profileMap.get(arm.id);
     const ag = armGenreMap.get(arm.id);
-    const agShrink = ag ? Math.min(1, ag.trials / 5) : 0;
-
-    const alpha =
-      arm.priorAlpha +
-      (c ? Math.max(0, c.alpha - arm.priorAlpha) : 0) +
-      (p ? Math.max(0, p.alpha - arm.priorAlpha) * 1.5 : 0) +
-      (ag ? Math.max(0, ag.alpha - arm.priorAlpha) * agShrink * 1.2 : 0);
-    const beta =
-      arm.priorBeta +
-      (c ? Math.max(0, c.beta - arm.priorBeta) : 0) +
-      (p ? Math.max(0, p.beta - arm.priorBeta) * 1.5 : 0) +
-      (ag ? Math.max(0, ag.beta - arm.priorBeta) * agShrink * 1.2 : 0);
-
-    const expectedMean = alpha / (alpha + beta);
-    const thompsonDraw = sampleBeta(alpha, beta);
+    const posterior = computeHierarchicalArmPosterior({
+      priorAlpha: arm.priorAlpha,
+      priorBeta: arm.priorBeta,
+      cohortAlpha: c?.alpha,
+      cohortBeta: c?.beta,
+      cohortTrials: c?.trials,
+      armGenreAlpha: ag?.alpha,
+      armGenreBeta: ag?.beta,
+      armGenreTrials: ag?.trials,
+      profileAlpha: p?.alpha,
+      profileBeta: p?.beta,
+      profileTrials: p?.trials,
+    });
+    const thompsonDraw = sampleHierarchicalThompson(posterior);
     return {
       arm,
-      alpha,
-      beta,
-      expectedMean,
+      expectedMean: posterior.mean,
       thompsonDraw,
       cohortTrials: c?.trials ?? 0,
       profileTrials: p?.trials ?? 0,
@@ -872,12 +888,14 @@ export function selectProtocolRecommendation(input: {
     }
   }
 
-  // Blind A/B Control strictly gated on explicit Research Consent (never runs in Local-Only mode)
-  const isControlTrial =
-    !input.ephemeralMode &&
-    input.allowControlTrial !== false &&
-    input.profile.researchConsent === true &&
-    Math.random() < 0.12;
+  // Stratified 25% Blind A/B Control strictly gated on explicit Research Consent (1 sham per 4-session block)
+  const isControlTrial = assignStratifiedShamControl({
+    recentControlFlags: input.recentControlFlags ?? [],
+    researchConsent: input.profile.researchConsent === true,
+    allowControlTrial: input.allowControlTrial,
+    ephemeralMode: Boolean(input.ephemeralMode),
+    blockSize: 4,
+  });
 
   const cohortKey = buildCohortKey(input.profile.ageBand, input.environment, effectiveTarget);
   const confidencePct = Math.round(chosen.expectedMean * 100);

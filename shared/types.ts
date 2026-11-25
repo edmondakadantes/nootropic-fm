@@ -302,6 +302,12 @@ export interface DebriefPayload {
   pvtPostMs?: number | null;
   pvtLapsesPre?: number | null;
   pvtLapsesPost?: number | null;
+  pvtPreInvRt?: number | null;
+  pvtPostInvRt?: number | null;
+  pvtTrialCount?: number | null;
+  pvtRefreshHz?: number | null;
+  pvtDecileSpreadMs?: number | null;
+  blindingGuess?: 'active' | 'control' | 'unsure' | null;
   studySpecId?: string;
   studyTitle?: string;
   entrainmentType?: string;

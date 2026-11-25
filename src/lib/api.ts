@@ -327,8 +327,12 @@ export const api = {
     phase: 'pre' | 'post';
     medianMs: number;
     lapses: number;
+    meanInvRt?: number;
+    trialCount?: number;
+    refreshHz?: number;
+    decileSpreadMs?: number;
   }) =>
-    apiFetch<{ ok: boolean; medianMs: number; lapses: number }>('/api/session/pvt', {
+    apiFetch<{ ok: boolean; medianMs: number; lapses: number; meanInvRt?: number | null }>('/api/session/pvt', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

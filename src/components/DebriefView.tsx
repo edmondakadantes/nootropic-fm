@@ -51,6 +51,8 @@ interface DebriefViewProps {
   ephemeralMode?: boolean;
   pvtPreMs?: number | null;
   pvtLapsesPre?: number | null;
+  pvtPreInvRt?: number | null;
+  pvtTrialCount?: number | null;
   studySpecId?: string;
   studyTitle?: string;
   entrainmentType?: string;
@@ -88,6 +90,8 @@ export function DebriefView({
   ephemeralMode = false,
   pvtPreMs = null,
   pvtLapsesPre = null,
+  pvtPreInvRt = null,
+  pvtTrialCount = null,
   studySpecId,
   studyTitle,
   entrainmentType,
@@ -110,6 +114,11 @@ export function DebriefView({
   const [showPostPvt, setShowPostPvt] = useState(false);
   const [pvtPostMs, setPvtPostMs] = useState<number | null>(null);
   const [pvtLapsesPost, setPvtLapsesPost] = useState<number | null>(null);
+  const [pvtPostInvRt, setPvtPostInvRt] = useState<number | null>(null);
+  const [pvtPostTrials, setPvtPostTrials] = useState<number | null>(pvtTrialCount);
+  const [pvtRefreshHz, setPvtRefreshHz] = useState<number | null>(null);
+  const [pvtDecileSpreadMs, setPvtDecileSpreadMs] = useState<number | null>(null);
+  const [blindingGuess, setBlindingGuess] = useState<'active' | 'control' | 'unsure' | null>(null);
   const [sharingCard, setSharingCard] = useState(false);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [learningUpdate, setLearningUpdate] = useState<DebriefLearningUpdate | null>(null);
@@ -176,6 +185,12 @@ export function DebriefView({
         pvtPostMs,
         pvtLapsesPre,
         pvtLapsesPost,
+        pvtPreInvRt,
+        pvtPostInvRt,
+        pvtTrialCount: pvtPostTrials ?? pvtTrialCount,
+        pvtRefreshHz,
+        pvtDecileSpreadMs,
+        blindingGuess,
         studySpecId,
         studyTitle,
         entrainmentType,
@@ -511,21 +526,21 @@ export function DebriefView({
           </div>
         </div>
 
-        {/* Optional 15-Second Objective Post-Session Cognitive Benchmark (PVT ms) */}
+        {/* Optional 20-Trial Visual 1/RT Post-Session Cognitive Benchmark */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#121417] px-4 py-3">
           <div className="space-y-0.5">
             <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
               <Zap className="h-3.5 w-3.5 text-[#34D399]" />
-              Objective 15s Post-Session Brain Check (PVT ms · optional)
+              20-Trial Visual 1/RT Brain Benchmark (optional)
             </div>
             <p className="text-[11px] text-[#8E8E88]">
               {pvtPostMs !== null
                 ? pvtDeltaMs !== null
-                  ? `Measured shift: ${pvtPreMs} ms → ${pvtPostMs} ms (${pvtDeltaMs < 0 ? `${Math.abs(pvtDeltaMs)} ms faster` : pvtDeltaMs === 0 ? 'steady' : `+${pvtDeltaMs} ms`}) · Lapses: ${pvtLapsesPost ?? 0}`
-                  : `Recorded post-session reaction speed: ${pvtPostMs} ms · Lapses: ${pvtLapsesPost ?? 0}`
+                  ? `Measured shift: ${pvtPreInvRt !== null && pvtPostInvRt !== null ? `${pvtPreInvRt.toFixed(2)}→${pvtPostInvRt.toFixed(2)} s⁻¹ · ` : ''}${pvtPreMs} ms → ${pvtPostMs} ms (${pvtDeltaMs < 0 ? `${Math.abs(pvtDeltaMs)} ms faster` : pvtDeltaMs === 0 ? 'steady' : `+${pvtDeltaMs} ms`}) · Lapses: ${pvtLapsesPost ?? 0}`
+                  : `Recorded post-session speed: ${pvtPostInvRt !== null ? `${pvtPostInvRt.toFixed(2)} s⁻¹ · ` : ''}${pvtPostMs} ms · Lapses: ${pvtLapsesPost ?? 0}`
                 : typeof pvtPreMs === 'number'
-                  ? `Pre-session baseline was ${pvtPreMs} ms. Run 5 quick flashes to measure your real ms shift.`
-                  : 'Run 5 quick visual-motor flashes to attach an objective ms reaction benchmark.'}
+                  ? `Pre-session baseline was ${pvtPreInvRt !== null ? `${pvtPreInvRt.toFixed(2)} s⁻¹ (${pvtPreMs} ms)` : `${pvtPreMs} ms`}. Run 20 visual flashes (~75s) for pre/post delta.`
+                  : 'Run 20 rAF-synced visual flashes (~75s) to attach a psychometrically powered 1/RT benchmark.'}
             </p>
           </div>
           <button
@@ -534,7 +549,7 @@ export function DebriefView({
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#181A1F] px-3.5 py-2 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50"
           >
             <Zap className="h-3.5 w-3.5 text-[#34D399]" />
-            {pvtPostMs !== null ? `Retake (${pvtPostMs} ms)` : 'Run 15s PVT Check'}
+            {pvtPostMs !== null ? `Retake (${pvtPostInvRt !== null ? `${pvtPostInvRt.toFixed(2)} s⁻¹` : `${pvtPostMs} ms`})` : 'Run 20-Trial PVT'}
           </button>
         </div>
 
@@ -608,6 +623,37 @@ export function DebriefView({
           </div>
         </div>
 
+        {/* Optional Blinding Integrity Check (validates 25% stratified sham masking) */}
+        {!ephemeralMode && !isStudyLabTrial && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-[#101114] px-4 py-3">
+            <span className="text-[11px] font-medium text-[#D4D4CE]">
+              Blind Check (optional): Did neural modulation feel active?
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: 'active' as const, label: 'Active Modulation' },
+                  { id: 'control' as const, label: 'Pure Control' },
+                  { id: 'unsure' as const, label: 'Not Sure' },
+                ]
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setBlindingGuess((prev) => (prev === opt.id ? null : opt.id))}
+                  className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                    blindingGuess === opt.id
+                      ? 'border-emerald-400/55 bg-emerald-500/15 text-[#34D399]'
+                      : 'border-white/10 bg-[#14161A] text-[#8E8E88] hover:text-[#F3F1EC]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <button
           type="button"
           disabled={submitting}
@@ -631,9 +677,14 @@ export function DebriefView({
         <PvtBenchmarkModal
           phase="post"
           baselineMs={pvtPreMs}
+          baselineInvRt={pvtPreInvRt}
           onComplete={(res) => {
             setPvtPostMs(res.medianMs);
             setPvtLapsesPost(res.lapses);
+            setPvtPostInvRt(res.meanInvRt);
+            setPvtPostTrials(res.trialCount);
+            setPvtRefreshHz(res.refreshHz);
+            setPvtDecileSpreadMs(res.decileSpreadMs);
             setShowPostPvt(false);
             if (!ephemeralMode && !sessionId.startsWith('eph_')) {
               void api
@@ -642,6 +693,10 @@ export function DebriefView({
                   phase: 'post',
                   medianMs: res.medianMs,
                   lapses: res.lapses,
+                  meanInvRt: res.meanInvRt,
+                  trialCount: res.trialCount,
+                  refreshHz: res.refreshHz,
+                  decileSpreadMs: res.decileSpreadMs,
                 })
                 .catch(() => {});
             }

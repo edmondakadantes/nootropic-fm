@@ -1885,6 +1885,7 @@ export default {
           livePubMedPapers,
           cachedCustom,
           usageRow,
+          recentShamRows,
         ] = await Promise.all([
           fetchBanditRows(env.DB, 'cohort', cohortKey),
           isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile', profile.id),
@@ -1900,7 +1901,18 @@ export default {
           env.DB.prepare('SELECT music_gen_calls FROM api_usage_daily WHERE day = ?')
             .bind(today)
             .first<{ music_gen_calls?: number }>(),
+          isEphemeral
+            ? Promise.resolve({ results: [] as Array<{ is_control_trial?: number }> })
+            : env.DB.prepare(
+                'SELECT is_control_trial FROM sessions WHERE profile_id = ? ORDER BY created_at DESC LIMIT 12'
+              )
+                .bind(profile.id)
+                .all<{ is_control_trial?: number }>(),
         ]);
+
+        const recentControlFlags = (recentShamRows.results ?? []).map(
+          (r) => Number(r.is_control_trial ?? 0) === 1
+        );
 
         const liveGenAvailable =
           Boolean(provider) && Number(usageRow?.music_gen_calls ?? 0) < dailyCapMax;
@@ -2023,6 +2035,7 @@ export default {
             cohortGenreStats,
             profileGenreStats,
             cohortArmGenreStats,
+            recentControlFlags,
             returnBonusAwarded,
           }),
           livePubMedPapers,
@@ -2821,7 +2834,7 @@ export default {
         return json({ profile, profileToken, syncCode, sessionId }, 200, request);
       }
 
-      // POST /api/session/pvt — Saves optional 15-second objective Psychomotor Vigilance Task (ms)
+      // POST /api/session/pvt — Saves objective visual 1/RT Psychomotor Vigilance Task metrics
       if (url.pathname === '/api/session/pvt' && request.method === 'POST') {
         const allowed = await checkDailyRateLimit(env.DB, request, 'session_pvt', 120);
         if (!allowed) return json({ error: 'Rate limit reached.' }, 429, request);
@@ -2831,37 +2844,108 @@ export default {
           phase?: 'pre' | 'post';
           medianMs?: number;
           lapses?: number;
+          meanInvRt?: number;
+          trialCount?: number;
+          refreshHz?: number;
+          decileSpreadMs?: number;
         };
         const medianMs = Number(body.medianMs);
-        if (!Number.isFinite(medianMs) || medianMs < 110 || medianMs > 3000) {
+        if (!Number.isFinite(medianMs) || medianMs < 100 || medianMs > 3000) {
           return json({ error: 'Invalid reaction time value.' }, 400, request);
         }
-        const lapses = Math.max(0, Math.min(20, Math.round(Number(body.lapses ?? 0))));
+        const lapses = Math.max(0, Math.min(60, Math.round(Number(body.lapses ?? 0))));
+        const meanInvRt =
+          typeof body.meanInvRt === 'number' &&
+          Number.isFinite(body.meanInvRt) &&
+          body.meanInvRt >= 0.3 &&
+          body.meanInvRt <= 10.0
+            ? Number(body.meanInvRt.toFixed(3))
+            : Number((1000 / medianMs).toFixed(3));
+        const trialCount =
+          typeof body.trialCount === 'number' && Number.isFinite(body.trialCount)
+            ? Math.max(1, Math.min(120, Math.round(body.trialCount)))
+            : null;
+        const refreshHz =
+          typeof body.refreshHz === 'number' &&
+          Number.isFinite(body.refreshHz) &&
+          body.refreshHz >= 30 &&
+          body.refreshHz <= 500
+            ? Math.round(body.refreshHz)
+            : null;
+        const decileSpreadMs =
+          typeof body.decileSpreadMs === 'number' && Number.isFinite(body.decileSpreadMs)
+            ? Math.max(0, Math.min(3000, Math.round(body.decileSpreadMs)))
+            : null;
+
         if (!body.sessionId || body.sessionId.startsWith('eph_')) {
-          return json({ ok: true, ephemeral: true, medianMs: Math.round(medianMs), lapses }, 200, request);
+          return json(
+            { ok: true, ephemeral: true, medianMs: Math.round(medianMs), lapses, meanInvRt },
+            200,
+            request
+          );
         }
 
         if (body.phase === 'pre') {
           await env.DB.prepare(
-            `UPDATE sessions SET pvt_pre_ms = ?, pvt_lapses_pre = ? WHERE id = ?`
+            `UPDATE sessions SET
+              pvt_pre_ms = ?,
+              pvt_lapses_pre = ?,
+              pvt_pre_inv_rt = ?,
+              pvt_trial_count = COALESCE(?, pvt_trial_count),
+              pvt_refresh_hz = COALESCE(?, pvt_refresh_hz),
+              pvt_decile_spread_ms = COALESCE(?, pvt_decile_spread_ms)
+             WHERE id = ?`
           )
-            .bind(Math.round(medianMs), lapses, body.sessionId)
+            .bind(
+              Math.round(medianMs),
+              lapses,
+              meanInvRt,
+              trialCount,
+              refreshHz,
+              decileSpreadMs,
+              body.sessionId
+            )
             .run();
         } else {
-          const prev = await env.DB.prepare('SELECT pvt_pre_ms FROM sessions WHERE id = ?')
+          const prev = await env.DB.prepare(
+            'SELECT pvt_pre_ms, pvt_pre_inv_rt FROM sessions WHERE id = ?'
+          )
             .bind(body.sessionId)
-            .first<{ pvt_pre_ms?: number | null }>();
+            .first<{ pvt_pre_ms?: number | null; pvt_pre_inv_rt?: number | null }>();
           const pvtDelta =
             prev?.pvt_pre_ms !== null && prev?.pvt_pre_ms !== undefined
               ? Math.round(medianMs - Number(prev.pvt_pre_ms))
               : null;
+          const pvtDeltaInvRt =
+            prev?.pvt_pre_inv_rt !== null && prev?.pvt_pre_inv_rt !== undefined
+              ? Number((meanInvRt - Number(prev.pvt_pre_inv_rt)).toFixed(3))
+              : null;
           await env.DB.prepare(
-            `UPDATE sessions SET pvt_post_ms = ?, pvt_lapses_post = ?, pvt_delta_ms = ? WHERE id = ?`
+            `UPDATE sessions SET
+              pvt_post_ms = ?,
+              pvt_lapses_post = ?,
+              pvt_delta_ms = ?,
+              pvt_post_inv_rt = ?,
+              pvt_delta_inv_rt = ?,
+              pvt_trial_count = COALESCE(?, pvt_trial_count),
+              pvt_refresh_hz = COALESCE(?, pvt_refresh_hz),
+              pvt_decile_spread_ms = COALESCE(?, pvt_decile_spread_ms)
+             WHERE id = ?`
           )
-            .bind(Math.round(medianMs), lapses, pvtDelta, body.sessionId)
+            .bind(
+              Math.round(medianMs),
+              lapses,
+              pvtDelta,
+              meanInvRt,
+              pvtDeltaInvRt,
+              trialCount,
+              refreshHz,
+              decileSpreadMs,
+              body.sessionId
+            )
             .run();
         }
-        return json({ ok: true, medianMs: Math.round(medianMs), lapses }, 200, request);
+        return json({ ok: true, medianMs: Math.round(medianMs), lapses, meanInvRt }, 200, request);
       }
 
       // POST /api/session/debrief — Explicit 10s Debrief (supersedes any prior implicit update via delta-replacement!)
@@ -2872,15 +2956,41 @@ export default {
         }
         const body = (await request.json()) as DebriefPayload;
         const cleanPvtPre =
-          typeof body.pvtPreMs === 'number' && Number.isFinite(body.pvtPreMs) && body.pvtPreMs >= 110 && body.pvtPreMs <= 3000
+          typeof body.pvtPreMs === 'number' && Number.isFinite(body.pvtPreMs) && body.pvtPreMs >= 100 && body.pvtPreMs <= 3000
             ? Math.round(body.pvtPreMs)
             : null;
         const cleanPvtPost =
-          typeof body.pvtPostMs === 'number' && Number.isFinite(body.pvtPostMs) && body.pvtPostMs >= 110 && body.pvtPostMs <= 3000
+          typeof body.pvtPostMs === 'number' && Number.isFinite(body.pvtPostMs) && body.pvtPostMs >= 100 && body.pvtPostMs <= 3000
             ? Math.round(body.pvtPostMs)
             : null;
         const cleanPvtDelta =
           cleanPvtPre !== null && cleanPvtPost !== null ? cleanPvtPost - cleanPvtPre : null;
+        const cleanPreInv =
+          typeof body.pvtPreInvRt === 'number' && Number.isFinite(body.pvtPreInvRt) && body.pvtPreInvRt >= 0.3 && body.pvtPreInvRt <= 10
+            ? Number(body.pvtPreInvRt.toFixed(3))
+            : null;
+        const cleanPostInv =
+          typeof body.pvtPostInvRt === 'number' && Number.isFinite(body.pvtPostInvRt) && body.pvtPostInvRt >= 0.3 && body.pvtPostInvRt <= 10
+            ? Number(body.pvtPostInvRt.toFixed(3))
+            : null;
+        const cleanTrialCount =
+          typeof body.pvtTrialCount === 'number' && Number.isFinite(body.pvtTrialCount)
+            ? Math.max(1, Math.min(120, Math.round(body.pvtTrialCount)))
+            : null;
+        const cleanRefreshHz =
+          typeof body.pvtRefreshHz === 'number' && Number.isFinite(body.pvtRefreshHz) && body.pvtRefreshHz >= 30 && body.pvtRefreshHz <= 500
+            ? Math.round(body.pvtRefreshHz)
+            : null;
+        const cleanDecileSpread =
+          typeof body.pvtDecileSpreadMs === 'number' && Number.isFinite(body.pvtDecileSpreadMs)
+            ? Math.max(0, Math.min(3000, Math.round(body.pvtDecileSpreadMs)))
+            : null;
+        const cleanBlindingGuess =
+          body.blindingGuess === 'active' ||
+          body.blindingGuess === 'control' ||
+          body.blindingGuess === 'unsure'
+            ? body.blindingGuess
+            : null;
 
         if (!body.sessionId || body.sessionId.startsWith('eph_')) {
           // Record completely anonymous aggregated Study Lab empirical rating (zero user PII!)
@@ -2951,12 +3061,25 @@ export default {
             ? body.liveAdjustments
             : session.liveAdjustments;
 
+        const finalPvtPreInv =
+          cleanPreInv ?? (row.pvt_pre_inv_rt !== null && row.pvt_pre_inv_rt !== undefined ? Number(row.pvt_pre_inv_rt) : null);
+        const finalPvtPostInv =
+          cleanPostInv ?? (row.pvt_post_inv_rt !== null && row.pvt_post_inv_rt !== undefined ? Number(row.pvt_post_inv_rt) : null);
+        const finalPvtDeltaInv =
+          finalPvtPreInv !== null && finalPvtPostInv !== null
+            ? Number((finalPvtPostInv - finalPvtPreInv).toFixed(3))
+            : null;
+        const finalPvtTrials =
+          cleanTrialCount ?? (row.pvt_trial_count !== null && row.pvt_trial_count !== undefined ? Number(row.pvt_trial_count) : null);
+
         const { reward, delta } = computeSessionReward({
           baselineScore: session.baselineScore,
           postScore,
           workedRating: body.workedRating,
           completionRatio,
           liveAdjustments,
+          pvtDeltaInvRt: finalPvtDeltaInv,
+          pvtTrialCount: finalPvtTrials,
         });
 
         const learningWeight = actualSec >= 60 ? 1.0 : 0.35;
@@ -3001,6 +3124,13 @@ export default {
             pvt_delta_ms = COALESCE(?, pvt_delta_ms),
             pvt_lapses_pre = COALESCE(?, pvt_lapses_pre),
             pvt_lapses_post = COALESCE(?, pvt_lapses_post),
+            pvt_pre_inv_rt = COALESCE(?, pvt_pre_inv_rt),
+            pvt_post_inv_rt = COALESCE(?, pvt_post_inv_rt),
+            pvt_delta_inv_rt = COALESCE(?, pvt_delta_inv_rt),
+            pvt_trial_count = COALESCE(?, pvt_trial_count),
+            pvt_refresh_hz = COALESCE(?, pvt_refresh_hz),
+            pvt_decile_spread_ms = COALESCE(?, pvt_decile_spread_ms),
+            blinding_guess = COALESCE(?, blinding_guess),
             notes = ?,
             completed_at = ?
            WHERE id = ?`
@@ -3021,6 +3151,13 @@ export default {
             finalPvtDelta,
             body.pvtLapsesPre ?? null,
             body.pvtLapsesPost ?? null,
+            finalPvtPreInv,
+            finalPvtPostInv,
+            finalPvtDeltaInv,
+            finalPvtTrials,
+            cleanRefreshHz,
+            cleanDecileSpread,
+            cleanBlindingGuess,
             (body.notes ?? '').slice(0, 500),
             now,
             body.sessionId
