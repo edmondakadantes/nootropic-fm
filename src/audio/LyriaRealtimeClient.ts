@@ -1,72 +1,8 @@
 import { buildLyriaRealtimeConfig, type ExecutableStudySpec } from '../../shared/studySpec';
 import type { ResolvedGenre } from '../../shared/types';
+import { ensureDspWorkletsLoaded } from './dspWorklets';
 
 export type LyriaRealtimeStatus = 'idle' | 'connecting' | 'streaming' | 'unavailable' | 'error';
-
-const WORKLET_PROCESSOR_CODE = `
-class LyriaPcmStreamProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.queue = [];
-    this.bufferedFrames = 0;
-    this.primed = false;
-    this.minPrimeFrames = 4800; // ~100ms jitter buffer at 48kHz
-    this.step = 48000 / sampleRate; // Smoothly resample 48kHz Lyria PCM to browser AudioContext rate
-    this.port.onmessage = (e) => {
-      if (e.data && e.data.type === 'pcm') {
-        this.queue.push({ left: e.data.left, right: e.data.right, offset: 0 });
-        this.bufferedFrames += e.data.left.length;
-        if (this.bufferedFrames >= this.minPrimeFrames) {
-          this.primed = true;
-        }
-      } else if (e.data && e.data.type === 'clear') {
-        this.queue = [];
-        this.bufferedFrames = 0;
-        this.primed = false;
-      }
-    };
-  }
-
-  process(_inputs, outputs) {
-    const out = outputs[0];
-    if (!out || out.length < 2) return true;
-    const outL = out[0];
-    const outR = out[1];
-
-    if (!this.primed || this.queue.length === 0) {
-      outL.fill(0);
-      outR.fill(0);
-      return true;
-    }
-
-    for (let i = 0; i < outL.length; i++) {
-      if (this.queue.length === 0) {
-        outL[i] = 0;
-        outR[i] = 0;
-        this.primed = false;
-      } else {
-        const chunk = this.queue[0];
-        const idx = Math.floor(chunk.offset);
-        const frac = chunk.offset - idx;
-        const nextIdx = Math.min(chunk.left.length - 1, idx + 1);
-        outL[i] = chunk.left[idx] + (chunk.left[nextIdx] - chunk.left[idx]) * frac;
-        outR[i] = chunk.right[idx] + (chunk.right[nextIdx] - chunk.right[idx]) * frac;
-        chunk.offset += this.step;
-        while (this.queue.length > 0 && this.queue[0].offset >= this.queue[0].left.length) {
-          const overflow = this.queue[0].offset - this.queue[0].left.length;
-          this.bufferedFrames = Math.max(0, this.bufferedFrames - this.queue[0].left.length);
-          this.queue.shift();
-          if (this.queue.length > 0) {
-            this.queue[0].offset += overflow;
-          }
-        }
-      }
-    }
-    return true;
-  }
-}
-registerProcessor('lyria-pcm-stream-processor', LyriaPcmStreamProcessor);
-`;
 
 function decodeBase64Pcm16Stereo(b64: string): { left: Float32Array; right: Float32Array } {
   const bin = atob(b64);
@@ -74,8 +10,8 @@ function decodeBase64Pcm16Stereo(b64: string): { left: Float32Array; right: Floa
   for (let i = 0; i < bin.length; i++) {
     bytes[i] = bin.charCodeAt(i);
   }
-  const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
-  const frames = Math.floor(int16.length / 2);
+  const frames = Math.floor(bytes.byteLength / 4);
+  const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, frames * 2);
   const left = new Float32Array(frames);
   const right = new Float32Array(frames);
   for (let i = 0, j = 0; i < frames; i++, j += 2) {
@@ -135,15 +71,13 @@ export class LyriaRealtimeClient {
     }
 
     try {
-      const blob = new Blob([WORKLET_PROCESSOR_CODE], { type: 'application/javascript' });
-      const blobUrl = URL.createObjectURL(blob);
-      try {
-        await opts.ctx.audioWorklet.addModule(blobUrl);
-      } finally {
-        URL.revokeObjectURL(blobUrl);
+      const loaded = await ensureDspWorkletsLoaded(opts.ctx);
+      if (!loaded || this.intentionalStop) {
+        this.setStatus('unavailable', 'AudioWorklet unsupported in this browser. Playing Studio Mix.');
+        return false;
       }
 
-      const workletNode = new AudioWorkletNode(opts.ctx, 'lyria-pcm-stream-processor', {
+      const workletNode = new AudioWorkletNode(opts.ctx, 'nootropic-lyria-stream-processor', {
         numberOfInputs: 0,
         numberOfOutputs: 1,
         outputChannelCount: [2],

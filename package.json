@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test:dsp": "node --test tests/dsp-audit.test.mjs",
     "preview": "vite preview",
     "db:migrate:local": "wrangler d1 migrations apply nootropic-fm-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply nootropic-fm-db --remote",

@@ -1,3 +1,5 @@
+import { BUTTERWORTH_LP_HP_Q_DB } from './dspMath';
+
 /**
  * Studio-Grade Physical Stereo Rainfall & Organic Raindrop Synthesizer (Web Audio API).
  * Ensures the "Soft Rain & Nature" genre ALWAYS delivers rich, unmistakable, cozy stereo rain
@@ -173,6 +175,7 @@ export class StereoRainBed {
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
     hp.frequency.value = 110;
+    hp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
     const deHarsh = ctx.createBiquadFilter();
     deHarsh.type = 'peaking';
@@ -183,6 +186,7 @@ export class StereoRainBed {
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
     lp.frequency.value = speakerSafe ? 2200 : 6400;
+    lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);

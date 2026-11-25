@@ -5,6 +5,7 @@ import {
   type StudyMusicSpec,
   type TonalMode,
 } from '../../shared/studySpec';
+import { BUTTERWORTH_LP_HP_Q_DB } from './dspMath';
 import { StudioSampler } from './StudioSampler';
 
 interface ChordDegree {
@@ -137,8 +138,10 @@ export class GenerativeComposer {
   private activePadOscs: OscillatorNode[] = [];
   private activePadGains: GainNode[] = [];
   private filterLfo: OscillatorNode | null = null;
-  private chordTimer: number | null = null;
   private stepTimer: number | null = null;
+  private clockWorker: Worker | null = null;
+  private clockWorkerUrl: string | null = null;
+  private chordCleanupTimers = new Set<number>();
   private sampler = new StudioSampler();
   private usingRealSamples = false;
 
@@ -150,6 +153,7 @@ export class GenerativeComposer {
   private chordIdx = 0;
   private prevVoicedMidis: number[] = [];
   private stepCount = 0;
+  private nextChordStep = 64;
   private nextStepTime = 0;
   private fractal = new PinkFractalWalk();
   private kickPattern: boolean[] = buildEuclideanPattern(16, 4);
@@ -230,20 +234,53 @@ export class GenerativeComposer {
     this.pulseBus = pulseBus;
 
     this.updateReverbSend();
-    this.spawnMarkovChord(0);
+    this.spawnMarkovChord(0, now);
+    this.nextChordStep = musicSpec.bpm === 0 || musicSpec.bpm <= 68 ? 32 : 64;
 
-    // Harmonic evolution timer (adapts to tempo: slower & spacious for calm/sleep, tighter for focus)
-    const chordIntervalMs =
-      musicSpec.bpm === 0 || musicSpec.bpm <= 68
-        ? 14500
-        : Math.max(7000, Math.round((60 / musicSpec.bpm) * 16 * 1000)); // 4 bars of 4/4
-    this.chordTimer = window.setInterval(() => {
-      if (!this.isPlaying || !this.musicSpec) return;
-      this.advanceMarkovChord();
-    }, chordIntervalMs);
+    this.nextStepTime = ctx.currentTime + 0.12;
+    this.startSchedulerClock();
+  }
 
-    this.nextStepTime = ctx.currentTime + 0.25;
+  private startSchedulerClock(): void {
+    this.stopSchedulerClock();
+    // Web Worker timer avoids browser 1000ms/60000ms background tab setInterval throttling
+    if (typeof Worker !== 'undefined') {
+      try {
+        const workerCode =
+          'let t=null;self.onmessage=function(e){if(e.data==="start"){if(t)clearInterval(t);t=setInterval(function(){self.postMessage("tick")},40);}else if(e.data==="stop"){if(t){clearInterval(t);t=null;}}};';
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        const url = URL.createObjectURL(blob);
+        const worker = new Worker(url);
+        worker.onmessage = () => this.scheduleLiveSteps();
+        worker.postMessage('start');
+        this.clockWorker = worker;
+        this.clockWorkerUrl = url;
+        return;
+      } catch {
+        // graceful fallback to window.setInterval below
+      }
+    }
     this.stepTimer = window.setInterval(() => this.scheduleLiveSteps(), 40);
+  }
+
+  private stopSchedulerClock(): void {
+    if (this.clockWorker) {
+      try {
+        this.clockWorker.postMessage('stop');
+        this.clockWorker.terminate();
+      } catch {
+        // ignore
+      }
+      this.clockWorker = null;
+    }
+    if (this.clockWorkerUrl) {
+      URL.revokeObjectURL(this.clockWorkerUrl);
+      this.clockWorkerUrl = null;
+    }
+    if (this.stepTimer !== null) {
+      window.clearInterval(this.stepTimer);
+      this.stepTimer = null;
+    }
   }
 
   private rebuildRhythmPatterns(perc: PercussionMode, density: number): void {
@@ -385,7 +422,7 @@ export class GenerativeComposer {
     return graph[this.chordIdx % graph.length];
   }
 
-  private advanceMarkovChord(): void {
+  private advanceMarkovChord(atTime?: number): void {
     const graph = this.getActiveGraph();
     const cur = graph[this.chordIdx % graph.length];
     let r = Math.random();
@@ -397,13 +434,13 @@ export class GenerativeComposer {
         break;
       }
     }
-    this.spawnMarkovChord(nextIdx);
+    this.spawnMarkovChord(nextIdx, atTime);
   }
 
-  private spawnMarkovChord(nextIdx: number): void {
+  private spawnMarkovChord(nextIdx: number, atTime?: number): void {
     if (!this.ctx || !this.padBus || !this.musicSpec) return;
     const ctx = this.ctx;
-    const now = ctx.currentTime;
+    const now = Math.max(ctx.currentTime, atTime ?? ctx.currentTime);
     this.chordIdx = nextIdx;
 
     const degree = this.getCurrentChord();
@@ -422,7 +459,9 @@ export class GenerativeComposer {
         // ignore
       }
     }
-    window.setTimeout(() => {
+    const stopDelayMs = Math.max(4500, Math.round((now - ctx.currentTime + 4.6) * 1000));
+    const cleanupId = window.setTimeout(() => {
+      this.chordCleanupTimers.delete(cleanupId);
       for (const osc of prevOscs) {
         try {
           osc.stop();
@@ -431,7 +470,8 @@ export class GenerativeComposer {
           // ignore
         }
       }
-    }, 4500);
+    }, stopDelayMs);
+    this.chordCleanupTimers.add(cleanupId);
 
     const nextOscs: OscillatorNode[] = [];
     const nextGains: GainNode[] = [];
@@ -516,10 +556,21 @@ export class GenerativeComposer {
     // In beatless mode (bpm === 0), drift notes slowly at an organic 56 BPM pulse with zero percussion
     const clockBpm = liveBpm > 0 ? liveBpm : 56;
     const eighthDur = 60 / clockBpm / 2;
-    const lookahead = 0.18;
+    const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const lookahead = isHidden ? 1.25 : 0.28;
+
+    // Prevent stacked-note burst if OS woke up after long hardware sleep
+    if (this.nextStepTime < ctx.currentTime - 0.12) {
+      this.nextStepTime = ctx.currentTime + 0.02;
+    }
 
     while (this.nextStepTime < ctx.currentTime + lookahead) {
       const step = this.stepCount % 16;
+      if (this.stepCount >= this.nextChordStep) {
+        const stepsPerChord = liveBpm === 0 || liveBpm <= 68 ? 32 : 64;
+        this.nextChordStep = this.stepCount + stepsPerChord;
+        this.advanceMarkovChord(Math.max(ctx.currentTime + 0.01, this.nextStepTime));
+      }
       const swing =
         step % 2 === 1
           ? this.palette === 'warm_rhodes'
@@ -887,6 +938,7 @@ export class GenerativeComposer {
     osc.frequency.setValueAtTime(freq, time);
     lp.type = 'lowpass';
     lp.frequency.value = 175;
+    lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
     gain.gain.setValueAtTime(0.0001, time);
     gain.gain.linearRampToValueAtTime(amp * this.intensityMult, time + 0.02);
@@ -923,14 +975,11 @@ export class GenerativeComposer {
 
   public stop(): void {
     this.isPlaying = false;
-    if (this.chordTimer !== null) {
-      window.clearInterval(this.chordTimer);
-      this.chordTimer = null;
+    this.stopSchedulerClock();
+    for (const id of this.chordCleanupTimers) {
+      window.clearTimeout(id);
     }
-    if (this.stepTimer !== null) {
-      window.clearInterval(this.stepTimer);
-      this.stepTimer = null;
-    }
+    this.chordCleanupTimers.clear();
     try {
       this.filterLfo?.stop();
       for (const osc of this.activePadOscs) osc.stop();

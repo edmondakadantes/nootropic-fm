@@ -5,6 +5,11 @@ import {
   type ExecutableStudySpec,
 } from '../../shared/studySpec';
 import type { NoiseColor } from '../../shared/types';
+import {
+  BUTTERWORTH_LP_HP_Q_DB,
+  NOISE_CALIBRATED_RMS,
+  normalizeStereoBufferRms,
+} from './dspMath';
 
 export interface StimulusTelemetry {
   entrainmentType: EntrainmentType;
@@ -18,7 +23,8 @@ export interface StimulusTelemetry {
 }
 
 /**
- * Generates seamless 6-second colored noise buffer supporting TRUE White, Pink, Brown, and Soft Rain.
+ * Generates seamless 6-second colored noise buffer supporting TRUE White, Pink, Brown, and Soft Rain
+ * with equal-power overlap-add loop seam (0.00 dB dip, 0 repeated samples) and calibrated RMS (-17.08 dBFS).
  */
 export function createCalibratedNoiseBuffer(
   ctx: AudioContext,
@@ -26,10 +32,13 @@ export function createCalibratedNoiseBuffer(
   durationSec = 6
 ): AudioBuffer {
   const sampleRate = ctx.sampleRate;
-  const length = sampleRate * durationSec;
+  const length = Math.max(1024, Math.round(sampleRate * durationSec));
+  const fade = Math.min(2048, Math.floor(length / 8));
+  const totalGen = length + fade;
   const buffer = ctx.createBuffer(2, length, sampleRate);
 
   for (let ch = 0; ch < 2; ch++) {
+    const raw = new Float32Array(totalGen);
     const out = buffer.getChannelData(ch);
     let b0 = 0,
       b1 = 0,
@@ -40,13 +49,13 @@ export function createCalibratedNoiseBuffer(
       b6 = 0;
     let lastBrown = 0;
 
-    for (let i = 0; i < length; i++) {
+    for (let i = 0; i < totalGen; i++) {
       const white = Math.random() * 2 - 1;
       if (color === 'white') {
-        out[i] = white * 0.24;
+        raw[i] = white * 0.24;
       } else if (color === 'brown') {
         lastBrown = (lastBrown + 0.02 * white) / 1.02;
-        out[i] = lastBrown * 3.1;
+        raw[i] = lastBrown * 3.1;
       } else {
         b0 = 0.99886 * b0 + white * 0.0555179;
         b1 = 0.99332 * b1 + white * 0.0750759;
@@ -56,24 +65,22 @@ export function createCalibratedNoiseBuffer(
         b5 = -0.7616 * b5 - white * 0.016898;
         const pink = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.045;
         b6 = white * 0.115926;
-        out[i] =
+        raw[i] =
           color === 'soft_rain'
-            ? pink * (0.72 + 0.28 * Math.sin(i / 18000 + ch * 1.4))
+            ? pink * (0.72 + 0.28 * Math.sin((2 * Math.PI * i) / length + ch * 1.4))
             : pink;
       }
     }
 
-    // Equal-power boundary crossfade for zero-click looping
-    const fade = Math.min(2048, Math.floor(length / 8));
+    // Copy main body and fold extra tail onto head with true equal-power sin/cos crossfade
+    out.set(raw.subarray(0, length));
     for (let i = 0; i < fade; i++) {
-      const t = i / fade;
-      const tailIdx = length - fade + i;
-      const blended = out[i] * t + out[tailIdx] * (1 - t);
-      out[i] = blended;
-      out[tailIdx] = blended;
+      const theta = (i / fade) * Math.PI * 0.5;
+      out[i] = raw[i] * Math.sin(theta) + raw[length + i] * Math.cos(theta);
     }
   }
 
+  normalizeStereoBufferRms(buffer.getChannelData(0), buffer.getChannelData(1), NOISE_CALIBRATED_RMS);
   return buffer;
 }
 
@@ -81,7 +88,7 @@ export function createCalibratedNoiseBuffer(
  * Sample-accurate 1-second looping AudioBuffer for 40 Hz GENUS raised-cosine tone bursts
  * OR trapezoidal Isochronic pulses (ZERO timer jitter, ZERO phase click!).
  */
-function createPeriodicPulseBuffer(
+export function createPeriodicPulseBuffer(
   ctx: AudioContext,
   opts: {
     pulseRateHz: number;
@@ -96,6 +103,7 @@ function createPeriodicPulseBuffer(
   const cycles = Math.max(1, Math.round(safeHz));
   const loopSec = cycles / safeHz;
   const totalSamples = Math.max(256, Math.round(loopSec * rate));
+  const actualLoopSec = totalSamples / rate;
   const buf = ctx.createBuffer(2, totalSamples, rate);
 
   const periodSamples = totalSamples / cycles;
@@ -103,9 +111,9 @@ function createPeriodicPulseBuffer(
   const pulseSamples = Math.max(8, periodSamples * duty);
   const rampSamples = Math.max(4, Math.min(pulseSamples * 0.22, rate * 0.004));
 
-  // Snap carrier frequency to an integer multiple of loop fundamental for zero phase jump
-  const carrierCycles = Math.max(1, Math.round(opts.carrierHz * loopSec));
-  const exactCarrierHz = carrierCycles / loopSec;
+  // Snap carrier frequency to exact integer multiple of ACTUAL buffer loop duration for 0.000 rad seam jump
+  const carrierCycles = Math.max(1, Math.round(opts.carrierHz * actualLoopSec));
+  const exactCarrierHz = carrierCycles / actualLoopSec;
 
   const left = buf.getChannelData(0);
   const right = buf.getChannelData(1);
@@ -170,6 +178,7 @@ export class MedicalStimulusRack {
   private stimulusGain: GainNode | null = null;
   private noiseGain: GainNode | null = null;
   private hrvCarrierGain: GainNode | null = null;
+  private hrvExtraGains: GainNode[] = [];
   private hrvDepthGain: GainNode | null = null;
   private hrvBaseDepth = 0;
   private beatOscL: OscillatorNode | null = null;
@@ -271,10 +280,11 @@ export class MedicalStimulusRack {
         src.buffer = buf;
         src.loop = true;
 
-        // Gentle warm lowpass around carrier so 40 Hz clicks sound crisp yet non-fatiguing
+        // Gentle warm Butterworth lowpass around carrier so 40 Hz clicks sound crisp yet non-fatiguing
         const lp = ctx.createBiquadFilter();
         lp.type = 'lowpass';
         lp.frequency.value = Math.min(3600, carrierHz * 4.5);
+        lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
         src.connect(lp);
         lp.connect(stimGain);
@@ -301,6 +311,7 @@ export class MedicalStimulusRack {
         const lp = ctx.createBiquadFilter();
         lp.type = 'lowpass';
         lp.frequency.value = speakerSafeEQ ? 720 : 1800;
+        lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
         src.connect(lp);
         lp.connect(stimGain);
@@ -339,7 +350,7 @@ export class MedicalStimulusRack {
         const warmLp = ctx.createBiquadFilter();
         warmLp.type = 'lowpass';
         warmLp.frequency.value = 1200;
-        warmLp.Q.value = 0.6;
+        warmLp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
         oscL.connect(panL);
         oscR.connect(panR);
@@ -380,7 +391,7 @@ export class MedicalStimulusRack {
         const warmLp = ctx.createBiquadFilter();
         warmLp.type = 'lowpass';
         warmLp.frequency.value = speakerSafeEQ ? 760 : 1200;
-        warmLp.Q.value = 0.6;
+        warmLp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
         osc1.connect(mix);
         osc2.connect(mix);
@@ -413,6 +424,7 @@ export class MedicalStimulusRack {
       const hp = ctx.createBiquadFilter();
       hp.type = 'highpass';
       hp.frequency.value = spec.noise.bandpassHz?.[0] ?? (spec.noise.color === 'brown' ? 40 : 100);
+      hp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
@@ -427,6 +439,7 @@ export class MedicalStimulusRack {
       lp.frequency.value = speakerSafeEQ
         ? Math.min(680, spec.noise.bandpassHz?.[1] ?? defaultLp)
         : spec.noise.bandpassHz?.[1] ?? defaultLp;
+      lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
 
       const nGain = ctx.createGain();
       const targetNoise = this.computeNoiseTargetGain();
@@ -467,13 +480,23 @@ export class MedicalStimulusRack {
     return Math.min(0.42, Math.max(0.0001, base * (0.68 + baseDepth * 0.95) * this.modMult * phaseScale * dynScale));
   }
 
+  public createHrvGainBranch(): GainNode | null {
+    if (!this.ctx || !this.hrvDepthGain) return null;
+    const branch = this.ctx.createGain();
+    const effHrv = this.computeEffectiveHrvDepth();
+    branch.gain.setValueAtTime(1 - effHrv / 2, this.ctx.currentTime);
+    this.hrvDepthGain.connect(branch.gain);
+    this.hrvExtraGains.push(branch);
+    return branch;
+  }
+
   public getPrimaryCarrierHz(): number | null {
     return this.primaryCarrierHz;
   }
 
   public setDynamicMusicEnvelope(scale: number): void {
     const clamped = Math.max(0.52, Math.min(1.28, scale));
-    if (Math.abs(clamped - this.dynamicMusicScale) < 0.025) return;
+    if (Math.abs(clamped - this.dynamicMusicScale) < 0.004) return;
     this.dynamicMusicScale = clamped;
     this.refreshLevels(0.22);
   }
@@ -583,6 +606,9 @@ export class MedicalStimulusRack {
     if (this.hrvCarrierGain && this.hrvDepthGain) {
       const effHrv = this.computeEffectiveHrvDepth();
       this.hrvCarrierGain.gain.setTargetAtTime(1 - effHrv / 2, now, 0.35);
+      for (const extra of this.hrvExtraGains) {
+        extra.gain.setTargetAtTime(1 - effHrv / 2, now, 0.35);
+      }
       this.hrvDepthGain.gain.setTargetAtTime(effHrv / 2, now, 0.35);
     }
   }
@@ -627,6 +653,7 @@ export class MedicalStimulusRack {
     this.stimulusGain = null;
     this.noiseGain = null;
     this.hrvCarrierGain = null;
+    this.hrvExtraGains = [];
     this.hrvDepthGain = null;
     this.hrvBaseDepth = 0;
     this.beatOscL = null;

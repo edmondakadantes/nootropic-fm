@@ -268,6 +268,8 @@ export function PlayerView({
 
   const plannedSec = recommendation.plannedDurationMin * 60;
   const elapsedRef = useRef(0);
+  const activeElapsedMsRef = useRef(0);
+  const lastCheckpointSecRef = useRef(0);
   const adjustmentsRef = useRef<LiveAdjustment[]>([]);
   const audioStartedRef = useRef(false);
   const milestonesSentRef = useRef<Set<number>>(new Set());
@@ -304,6 +306,10 @@ export function PlayerView({
     setUnlockError(null);
     setLayerMonitor(initialCarrier === 'pure_stimulus' ? 'science_only' : 'full_mix');
     milestonesSentRef.current = new Set();
+    elapsedRef.current = 0;
+    activeElapsedMsRef.current = 0;
+    lastCheckpointSecRef.current = 0;
+    setElapsedSec(0);
   }, [recommendation.sessionId, recommendation.ephemeralMode, initialCarrier, isPro]);
 
   useEffect(() => {
@@ -541,111 +547,141 @@ export function PlayerView({
     };
   }, [liveSessionId, isEphemeral]);
 
-  // Main 1-second session ticker + 90s progress checkpoint + 25/50/75/90% retention curve milestones
+  // Wall-clock active session ticker (immune to background timer throttling) + 90s checkpoint + retention milestones
   useEffect(() => {
     if (!isPlaying) return;
-    const id = window.setInterval(() => {
-      setElapsedSec((prev) => {
-        const next = prev + 1;
-        const tel = engineRef.current?.updateElapsed(next);
-        if (tel) setTelemetry(tel);
+    let lastWallMs = Date.now();
+    activeElapsedMsRef.current = Math.max(activeElapsedMsRef.current, elapsedRef.current * 1000);
+    let stopped = false;
 
-        // 4-point behavioral listening retention milestones (25% / 50% halfway / 75% deep / 90% full)
-        if (!isEphemeral && plannedSec > 0) {
-          const ratio = next / plannedSec;
-          const checkpoints: Array<{ pct: number; ratio: number; event: 'milestone_25' | 'milestone_50' | 'milestone_75' | 'milestone_90' }> = [
-            { pct: 25, ratio: 0.25, event: 'milestone_25' },
-            { pct: 50, ratio: 0.5, event: 'milestone_50' },
-            { pct: 75, ratio: 0.75, event: 'milestone_75' },
-            { pct: 90, ratio: 0.9, event: 'milestone_90' },
-          ];
-          for (const cp of checkpoints) {
-            if (ratio >= cp.ratio && !milestonesSentRef.current.has(cp.pct)) {
-              milestonesSentRef.current.add(cp.pct);
-              api.sendSessionBeacon({
-                sessionId: liveSessionId,
-                event: cp.event,
-                actualDurationSec: next,
-                audioStarted: audioStartedRef.current,
-                liveAdjustments: adjustmentsRef.current,
-              });
-            }
-          }
-        }
+    const advanceClock = () => {
+      if (stopped) return;
+      const nowMs = Date.now();
+      const wallDeltaMs = Math.max(0, Math.min(3_600_000, nowMs - lastWallMs));
+      lastWallMs = nowMs;
+      activeElapsedMsRef.current += wallDeltaMs;
 
-        // Periodic checkpoint every 90s (D1 free-tier write friendly)
-        if (!isEphemeral && next > 0 && next % 90 === 0) {
-          void api
-            .saveProgress({
+      const targetSec = Math.floor(activeElapsedMsRef.current / 1000);
+      const prev = elapsedRef.current;
+      if (targetSec <= prev) return;
+
+      const next = plannedSec > 0 ? Math.min(plannedSec, targetSec) : targetSec;
+      const deltaSec = Math.max(1, next - prev);
+      elapsedRef.current = next;
+      setElapsedSec(next);
+
+      const tel = engineRef.current?.updateElapsed(next);
+      if (tel) setTelemetry(tel);
+
+      // 4-point behavioral listening retention milestones (25% / 50% halfway / 75% deep / 90% full)
+      if (!isEphemeral && plannedSec > 0) {
+        const ratio = next / plannedSec;
+        const checkpoints: Array<{ pct: number; ratio: number; event: 'milestone_25' | 'milestone_50' | 'milestone_75' | 'milestone_90' }> = [
+          { pct: 25, ratio: 0.25, event: 'milestone_25' },
+          { pct: 50, ratio: 0.5, event: 'milestone_50' },
+          { pct: 75, ratio: 0.75, event: 'milestone_75' },
+          { pct: 90, ratio: 0.9, event: 'milestone_90' },
+        ];
+        for (const cp of checkpoints) {
+          if (ratio >= cp.ratio && !milestonesSentRef.current.has(cp.pct)) {
+            milestonesSentRef.current.add(cp.pct);
+            api.sendSessionBeacon({
               sessionId: liveSessionId,
+              event: cp.event,
               actualDurationSec: next,
+              audioStarted: audioStartedRef.current,
               liveAdjustments: adjustmentsRef.current,
-            })
-            .catch(() => {});
-        }
-
-        // Daily Free Quota + 90s Endless Stream Preview Gate for non-Pro listeners
-        if (!isPro) {
-          const nextDailyUsed = dailyFreeUsedRef.current + 1;
-          const isStreamingLyria = carrierModeRef.current === 'lyria_realtime';
-          const nextLyriaUsed = isStreamingLyria
-            ? dailyLyriaUsedRef.current + 1
-            : dailyLyriaUsedRef.current;
-
-          dailyFreeUsedRef.current = nextDailyUsed;
-          dailyLyriaUsedRef.current = nextLyriaUsed;
-          setDailyFreeUsedSec(nextDailyUsed);
-          if (isStreamingLyria) {
-            setDailyLyriaUsedSec(nextLyriaUsed);
-          }
-          writeDailyFreeUsage(nextDailyUsed, nextLyriaUsed);
-
-          if (isStreamingLyria && nextLyriaUsed >= FREE_LYRIA_PREVIEW_SEC) {
-            engineRef.current?.setCarrierMode('studio_library');
-            setCarrierMode('studio_library');
-            setAudioSource('studio_library');
-            setLyriaNotice(
-              '90s daily Endless Stream preview complete. Playing Studio Mix seamlessly (start your 7-Day Free Trial for unlimited Endless Stream).'
-            );
-          }
-
-          if (nextDailyUsed >= effectiveFreeLimitSec) {
-            window.clearInterval(id);
-            setIsPlaying(false);
-            setPreviewLocked(true);
-            void engineRef.current?.fadeOutAndPause(2.0);
-            if (!isEphemeral) {
-              void api
-                .saveProgress({
-                  sessionId: liveSessionId,
-                  actualDurationSec: next,
-                  liveAdjustments: adjustmentsRef.current,
-                })
-                .catch(() => {});
-            }
-            return next;
+            });
           }
         }
+      }
 
-        if (next >= plannedSec) {
-          window.clearInterval(id);
-          endedByUserRef.current = true;
-          engineRef.current?.stop();
-          setIsPlaying(false);
-          onFinishToDebrief({
+      // Periodic checkpoint every >=90s active playback (D1 free-tier write friendly)
+      if (!isEphemeral && next - lastCheckpointSecRef.current >= 90) {
+        lastCheckpointSecRef.current = next;
+        void api
+          .saveProgress({
+            sessionId: liveSessionId,
             actualDurationSec: next,
             liveAdjustments: adjustmentsRef.current,
-            pvtPreMs: pvtPreRef.current.medianMs,
-            pvtLapsesPre: pvtPreRef.current.lapses,
-            sessionIdOverride: liveSessionId,
-            ephemeralOverride: isEphemeral,
-          });
-        }
-        return next;
-      });
-    }, 1000);
+          })
+          .catch(() => {});
+      }
 
-    return () => window.clearInterval(id);
+      // Daily Free Quota + 90s Endless Stream Preview Gate for non-Pro listeners
+      if (!isPro) {
+        const nextDailyUsed = dailyFreeUsedRef.current + deltaSec;
+        const isStreamingLyria = carrierModeRef.current === 'lyria_realtime';
+        const nextLyriaUsed = isStreamingLyria
+          ? dailyLyriaUsedRef.current + deltaSec
+          : dailyLyriaUsedRef.current;
+
+        dailyFreeUsedRef.current = nextDailyUsed;
+        dailyLyriaUsedRef.current = nextLyriaUsed;
+        setDailyFreeUsedSec(nextDailyUsed);
+        if (isStreamingLyria) {
+          setDailyLyriaUsedSec(nextLyriaUsed);
+        }
+        writeDailyFreeUsage(nextDailyUsed, nextLyriaUsed);
+
+        if (isStreamingLyria && nextLyriaUsed >= FREE_LYRIA_PREVIEW_SEC) {
+          engineRef.current?.setCarrierMode('studio_library');
+          setCarrierMode('studio_library');
+          setAudioSource('studio_library');
+          setLyriaNotice(
+            '90s daily Endless Stream preview complete. Playing Studio Mix seamlessly (start your 7-Day Free Trial for unlimited Endless Stream).'
+          );
+        }
+
+        if (nextDailyUsed >= effectiveFreeLimitSec) {
+          stopped = true;
+          window.clearInterval(id);
+          setIsPlaying(false);
+          setPreviewLocked(true);
+          void engineRef.current?.fadeOutAndPause(2.0);
+          if (!isEphemeral) {
+            void api
+              .saveProgress({
+                sessionId: liveSessionId,
+                actualDurationSec: next,
+                liveAdjustments: adjustmentsRef.current,
+              })
+              .catch(() => {});
+          }
+          return;
+        }
+      }
+
+      if (plannedSec > 0 && next >= plannedSec) {
+        stopped = true;
+        window.clearInterval(id);
+        endedByUserRef.current = true;
+        engineRef.current?.stop();
+        setIsPlaying(false);
+        onFinishToDebrief({
+          actualDurationSec: next,
+          liveAdjustments: adjustmentsRef.current,
+          pvtPreMs: pvtPreRef.current.medianMs,
+          pvtLapsesPre: pvtPreRef.current.lapses,
+          sessionIdOverride: liveSessionId,
+          ephemeralOverride: isEphemeral,
+        });
+      }
+    };
+
+    const id = window.setInterval(advanceClock, 1000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        advanceClock();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [isPlaying, isPro, effectiveFreeLimitSec, plannedSec, liveSessionId, isEphemeral, onFinishToDebrief]);
 
   const togglePlay = async () => {

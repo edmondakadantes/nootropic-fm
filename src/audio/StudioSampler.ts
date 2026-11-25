@@ -1,4 +1,5 @@
 import type { InstrumentPalette } from '../../shared/studySpec';
+import { BUTTERWORTH_LP_HP_Q_DB } from './dspMath';
 
 /**
  * Exact MIDI notes uploaded permanently to Cloudflare R2 (`samples/<palette>/<midi>.mp3`):
@@ -118,7 +119,8 @@ export class StudioSampler {
 
     const env = ctx.createGain();
     const atk = Math.max(0.005, opts.attackSec ?? (opts.palette === 'cinematic_strings' ? 1.1 : 0.015));
-    const dur = Math.max(atk + 0.15, Math.min(buf.duration / Math.max(0.5, src.playbackRate.value), opts.durationSec));
+    const maxBufPlayDur = Math.max(atk + 0.08, buf.duration / Math.max(0.5, src.playbackRate.value) - 0.03);
+    const dur = Math.max(atk + 0.12, Math.min(maxBufPlayDur, opts.durationSec));
     const peak = Math.max(0.005, Math.min(0.65, opts.gain));
 
     env.gain.setValueAtTime(0.0001, opts.time);
@@ -133,7 +135,7 @@ export class StudioSampler {
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
       lp.frequency.setValueAtTime(opts.cutoffHz, opts.time);
-      lp.Q.value = 0.65;
+      lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
       src.connect(lp);
       lp.connect(env);
     } else {
@@ -144,7 +146,7 @@ export class StudioSampler {
     panner.connect(opts.destination);
 
     src.start(opts.time);
-    src.stop(opts.time + dur + 0.08);
+    src.stop(opts.time + dur + 0.04);
     return true;
   }
 
