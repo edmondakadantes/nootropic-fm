@@ -2122,6 +2122,7 @@ export default {
                 openAlexTerm: preset.openAlexTerm,
                 isOpenCustomTopic: false,
                 rawTopicQuery: undefined,
+                topicWords: undefined,
               };
             })();
 
@@ -2342,6 +2343,7 @@ export default {
                   slug: openGoal.slug,
                   pubmedQuery: openGoal.pubmedQuery,
                   openAlexTerm: openGoal.openAlexTerm,
+                  topicWords: openGoal.topicWords,
                 }
               : null
           ),
@@ -2350,6 +2352,7 @@ export default {
                 queryOrText: openGoal.rawTopicQuery,
                 device: body.device,
                 environment: body.environment,
+                skipNcbiDirect: !env.NCBI_API_KEY,
               })
                 .then((r) => r.spec)
                 .catch(() => null)

@@ -2267,3 +2267,286 @@ test('P1 #8 & P2 #11 (Deep Worker Edge Cases): /api/session/dismiss penalizes <2
     globalThis.fetch = origFetch;
   }
 });
+
+// ============================================================================
+// Deep Regression #18 — Live OpenAlex + PubMed Literature on Open Custom & Curated Goals
+// ============================================================================
+test('P1 #7 (Live OpenAlex + PubMed Literature Regression): resolves open custom & curated goals with valid OpenAlex + PubMed papers while rejecting animal/non-auditory studies', async () => {
+  const {
+    resolveOpenGoalIntent,
+    CURATED_GOAL_PRESETS,
+  } = await import('../shared/openGoals.ts');
+  const { fetchVerifiedLiveLiterature } = await import('../worker/literature.ts');
+  const { searchLiveMedicalStudies } = await import('../worker/studyCompiler.ts');
+
+  // 1. Edge cases & intent resolution hygiene
+  assert.equal(resolveOpenGoalIntent(''), null);
+  assert.equal(resolveOpenGoalIntent('   '), null);
+  assert.equal(resolveOpenGoalIntent('ab'), null);
+
+  const creativeFlow = resolveOpenGoalIntent('creative flow');
+  assert.ok(creativeFlow && creativeFlow.slug === 'creative_ideation' && !creativeFlow.isOpenCustomTopic);
+
+  const sharpFocus = resolveOpenGoalIntent('sharp focus');
+  assert.ok(sharpFocus && sharpFocus.slug === 'alert_focus' && !sharpFocus.isOpenCustomTopic);
+
+  const pubSpeaking = resolveOpenGoalIntent('public speaking confidence');
+  assert.ok(pubSpeaking && pubSpeaking.isOpenCustomTopic);
+  assert.equal(pubSpeaking.slug, 'custom:public_speaking_confidence');
+  assert.deepEqual(pubSpeaking.topicWords, ['public', 'speaking', 'confidence']);
+  assert.ok(!/\bhuman\b/i.test(pubSpeaking.openAlexTerm), 'openAlexTerm must not stuff literal "human" token');
+  assert.match(pubSpeaking.pubmedQuery, /"public speaking"\[Title\/Abstract\]/i);
+
+  const postWorkout = resolveOpenGoalIntent('post-workout recovery');
+  assert.ok(postWorkout && postWorkout.isOpenCustomTopic);
+  assert.match(postWorkout.pubmedQuery, /exercise\[Title\/Abstract\]/i);
+
+  // Verify every curated preset openAlexTerm has balanced parentheses & no commas
+  for (const preset of CURATED_GOAL_PRESETS) {
+    assert.ok(!preset.openAlexTerm.includes(','), `Preset ${preset.slug} openAlexTerm must not contain commas`);
+    let depth = 0;
+    for (const ch of preset.openAlexTerm) {
+      if (ch === '(') depth++;
+      if (ch === ')') depth--;
+      assert.ok(depth >= 0, `Unbalanced ')' in ${preset.slug}`);
+    }
+    assert.equal(depth, 0, `Unbalanced '(' in ${preset.slug}`);
+  }
+
+  // 2. Deterministic offline verification: NCBI 429 fallback to Europe PMC SRC:MED + batched efetch + legacy "human" relaxation guard
+  const dbMock = createInMemoryD1();
+  const origFetch = globalThis.fetch;
+  try {
+    const seenUrls = [];
+    globalThis.fetch = async (input) => {
+      const u = typeof input === 'string' ? input : input.url;
+      seenUrls.push(u);
+      if (u.includes('eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi')) {
+        if (u.includes('batched_check')) {
+          return new Response(
+            JSON.stringify({ esearchresult: { idlist: ['111111', '222222', '333333'] } }),
+            { status: 200 }
+          );
+        }
+        return new Response('Too Many Requests', { status: 429 });
+      }
+      if (u.includes('eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi')) {
+        return new Response(
+          `<PubmedArticleSet>
+            <PubmedArticle><MedlineCitation><PMID>111111</PMID><Article><ArticleTitle>Music listening reduces speech anxiety in human adults.</ArticleTitle><Abstract><AbstractText>Healthy adult participants listened to instrumental music for 20 minutes before public speaking.</AbstractText></Abstract><Journal><Title>Journal of Music Therapy</Title><JournalIssue><PubDate><Year>2024</Year></PubDate></JournalIssue></Journal><AuthorList><Author><LastName>carter</LastName></Author></AuthorList></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType="doi">10.1000/jmt.111</ArticleId></ArticleIdList></PubmedData></PubmedArticle>
+            <PubmedArticle><MedlineCitation><PMID>222222</PMID><Article><ArticleTitle>40 Hz optogenetic stimulation in 5xFAD mice.</ArticleTitle><Abstract><AbstractText>Adult male mice were sacrificed.</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle>
+          </PubmedArticleSet>`,
+          { status: 200 }
+        );
+      }
+      if (u.includes('ebi.ac.uk/europepmc/webservices/rest/search')) {
+        return new Response(
+          JSON.stringify({
+            resultList: {
+              result: [
+                {
+                  pmid: '99887766',
+                  title: 'Optogenetic stimulation in C57BL mice cortex',
+                  abstractText: 'Mice were implanted with optical fibers.',
+                  authorString: 'Rodent A',
+                  journalTitle: 'Preclinical J',
+                  pubYear: '2024',
+                },
+                {
+                  pmid: '42307797',
+                  doi: '10.1016/j.psyneuen.2026.107001',
+                  title: 'Effects of binaural beats on acute stress recovery in public speaking anxiety',
+                  abstractText: 'Healthy human volunteers completed a randomized controlled trial of 10 Hz auditory stimulation.',
+                  authorString: 'Silva M, Gomez R',
+                  journalTitle: 'Psychoneuroendocrinology',
+                  pubYear: '2026',
+                },
+              ],
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      if (u.includes('api.openalex.org/works')) {
+        // Return empty on primary legacy query to force relaxation path, then return valid DOI on relaxed `tinnitus` query
+        if (decodeURIComponent(u).includes('impossible_xyz_token')) {
+          return new Response(JSON.stringify({ results: [] }), { status: 200 });
+        }
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: 'https://openalex.org/W111',
+                doi: 'https://doi.org/10.1000/rodent.1',
+                title: 'Auditory cortex plasticity in anesthetized Wistar rats',
+                publication_year: 2023,
+              },
+              {
+                id: 'https://openalex.org/W222',
+                doi: 'https://doi.org/10.3766/jaaa.18027',
+                title: 'Sound therapy clinical trial for tinnitus relief in human listeners',
+                publication_year: 2024,
+                authorships: [{ author: { display_name: ' Tyler R' } }, { author: { display_name: ' Owen G' } }],
+                primary_location: { source: { display_name: 'J Am Acad Audiol' } },
+              },
+            ],
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ studies: [] }), { status: 200 });
+    };
+
+    // Verify batched efetch (1 single efetch call for 3 PMIDs!) & animal rejection
+    const studyHits = await searchLiveMedicalStudies({ DB: dbMock }, 'batched_check music');
+    const efetchCalls = seenUrls.filter((u) => u.includes('efetch.fcgi'));
+    assert.equal(efetchCalls.length, 1, `Expected 1 batched efetch call, got ${efetchCalls.length}`);
+    assert.ok(efetchCalls[0].includes('111111,222222,333333'));
+    assert.ok(studyHits.every((h) => !isNonAuditoryOrAnimalStudy(h.title, h.abstractText)));
+
+    // Verify legacy "music auditory stimulation human ..." relaxation strips "human" & recovers via Europe PMC + OpenAlex
+    seenUrls.length = 0;
+    const recovered = await fetchVerifiedLiveLiterature(
+      { DB: dbMock },
+      'calm_reset',
+      'home_relax',
+      undefined,
+      {
+        slug: 'custom:tinnitus_impossible',
+        pubmedQuery: 'music[Title/Abstract] AND impossible_xyz_token[Title/Abstract]',
+        openAlexTerm: 'music auditory stimulation human tinnitus impossible_xyz_token',
+      }
+    );
+    assert.ok(recovered.some((p) => p.source === 'pubmed' && p.pmid === '42307797'));
+    assert.ok(recovered.some((p) => p.source === 'openalex' && p.url === 'https://doi.org/10.3766/jaaa.18027'));
+    assert.ok(recovered.every((p) => !isNonAuditoryOrAnimalStudy(p.title)));
+    const oaRelaxCalls = seenUrls.filter((u) => u.includes('api.openalex.org/works'));
+    assert.ok(
+      !oaRelaxCalls.some((u) => /\bAND\s+human\b/i.test(decodeURIComponent(u))),
+      'Relaxed OpenAlex query must never relax to literal "human"'
+    );
+
+    // Verify Cloudflare shared-IP OpenAlex 429 recovery via $0-credit `/works/https://doi.org/{doi}` single-work lookup
+    globalThis.fetch = async (input) => {
+      const u = typeof input === 'string' ? input : input.url;
+      if (u.includes('esearch.fcgi')) {
+        return new Response(JSON.stringify({ esearchresult: { idlist: ['10001', '10002', '10003'] } }), { status: 200 });
+      }
+      if (u.includes('esummary.fcgi')) {
+        return new Response(
+          JSON.stringify({
+            result: {
+              '10001': { title: 'Music listening lowers speaking stress.', pubdate: '2025', authors: [{ name: 'Lee A' }] },
+              '10002': { title: 'Binaural beats support attention.', pubdate: '2024', authors: [{ name: 'Kim B' }] },
+              '10003': {
+                title: 'Happy creativity: Listening to happy music facilitates divergent thinking.',
+                pubdate: '2017',
+                authors: [{ name: 'Ritter S' }],
+                articleids: [{ idtype: 'doi', value: '10.1371/journal.pone.0182210' }],
+              },
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      if (u.includes('api.openalex.org/works?filter=')) {
+        return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), { status: 429 });
+      }
+      if (u.includes('api.openalex.org/works/https%3A%2F%2Fdoi.org%2F')) {
+        return new Response(
+          JSON.stringify({
+            id: 'https://openalex.org/W2753403062',
+            doi: 'https://doi.org/10.1371/journal.pone.0182210',
+            title: 'Happy creativity: Listening to happy music facilitates divergent thinking',
+            publication_year: 2017,
+            authorships: [{ author: { display_name: 'Simone M. Ritter' } }],
+            primary_location: { source: { display_name: 'PLoS ONE' } },
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response(JSON.stringify({ message: { items: [] } }), { status: 200 });
+    };
+    const sharedIpRecovered = await fetchVerifiedLiveLiterature({ DB: dbMock }, 'deep_flow', 'study');
+    assert.ok(sharedIpRecovered.some((p) => p.source === 'pubmed' && p.pmid === '10001'));
+    assert.ok(
+      sharedIpRecovered.some(
+        (p) =>
+          p.source === 'openalex' &&
+          p.pmid === 'OA:W2753403062' &&
+          p.url === 'https://doi.org/10.1371/journal.pone.0182210'
+      ),
+      'Must recover canonical OA:W... work via $0-credit single-DOI OpenAlex lookup when /works?filter= returns 429'
+    );
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+
+  // 3. Real Live Upstream Verification through POST /api/protocol/start (NIH PubMed + OpenAlex live HTTP)
+  const liveDb = createInMemoryD1();
+  const liveEnv = { DB: liveDb };
+  const liveCtx = createExecCtx();
+  const liveCases = [
+    { label: 'public speaking confidence', ip: '198.51.100.41' },
+    { label: 'creative flow', ip: '198.51.100.42' },
+    { label: 'sharp focus', ip: '198.51.100.43' },
+  ];
+
+  for (const [idx, c] of liveCases.entries()) {
+    if (idx > 0) {
+      // Respect OpenAlex unkeyed 1 req/sec polite spacing during consecutive cold-cache live checks
+      await new Promise((r) => setTimeout(r, 1100));
+    }
+    const res = await worker.fetch(
+      new Request('https://www.nootropic.fm/api/protocol/start', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          origin: 'https://www.nootropic.fm',
+          'cf-connecting-ip': c.ip,
+        },
+        body: JSON.stringify({
+          ephemeralMode: true,
+          rawInputText: c.label,
+          customGoalText: c.label,
+          currentState: 'stressed',
+          baselineScore: 2,
+          targetState: 'alert_focus',
+          environment: 'office',
+          device: 'headphones',
+          durationMin: 25,
+        }),
+      }),
+      liveEnv,
+      liveCtx
+    );
+    assert.equal(res.status, 200, `POST /api/protocol/start failed for "${c.label}"`);
+    const { recommendation } = await res.json();
+    const papers = recommendation?.livePubMedPapers ?? [];
+    assert.ok(
+      papers.length >= 2,
+      `Expected >=2 verified livePubMedPapers for "${c.label}", got ${papers.length}`
+    );
+    const hasPubMed = papers.some(
+      (p) => p.source === 'pubmed' && /^https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/\d+\/$/.test(p.url)
+    );
+    const hasOpenAlex = papers.some(
+      (p) => p.source === 'openalex' && /^https:\/\/doi\.org\/10\./i.test(p.url)
+    );
+    assert.ok(
+      hasPubMed,
+      `Expected verified PubMed paper for "${c.label}", got: ${JSON.stringify(papers)}`
+    );
+    assert.ok(
+      hasOpenAlex,
+      `Expected verified OpenAlex DOI paper for "${c.label}", got: ${JSON.stringify(papers)}`
+    );
+    for (const p of papers) {
+      assert.equal(
+        isNonAuditoryOrAnimalStudy(p.title),
+        false,
+        `Returned live paper failed human-auditory P1 #7 guard on "${c.label}": "${p.title}"`
+      );
+    }
+  }
+});

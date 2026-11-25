@@ -32,6 +32,8 @@ export interface OpenGoalResolution {
   isOpenCustomTopic: boolean;
   /** Cleaned English topic phrase for Europe PMC / Study Compiler when isOpenCustomTopic is true */
   rawTopicQuery?: string;
+  /** Extracted domain topic tokens when isOpenCustomTopic is true */
+  topicWords?: string[];
 }
 
 export interface CuratedGoalPreset {
@@ -74,7 +76,7 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
     ],
     pubmedQuery:
       'music[Title/Abstract] AND (tempo[Title/Abstract] OR arousal[Title/Abstract]) AND (fatigue[Title/Abstract] OR alertness[Title/Abstract])',
-    openAlexTerm: 'musical tempo arousal alertness fatigue vigilance',
+    openAlexTerm: 'music AND (tempo OR arousal) AND (fatigue OR alertness OR vigilance)',
   },
   {
     slug: 'alert_focus',
@@ -92,6 +94,7 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
       'concentration',
       'attention',
       'attentive',
+      'alert',
       'sharp',
       'clarity',
       'productive',
@@ -101,7 +104,8 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
     ],
     pubmedQuery:
       '("amplitude modulation"[Title/Abstract] OR "background music"[Title/Abstract]) AND ("sustained attention"[Title/Abstract] OR "cognitive performance"[Title/Abstract])',
-    openAlexTerm: 'rapid amplitude modulation music sustained attention beta',
+    openAlexTerm:
+      '("amplitude modulation" OR "background music") AND ("sustained attention" OR "cognitive performance")',
   },
   {
     slug: 'deep_flow',
@@ -115,7 +119,8 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
     keywords: ['flow', 'immersed', 'immersion', 'coding', 'programming', 'deepwork', 'lockedin'],
     pubmedQuery:
       'music[Title/Abstract] AND ("flow state"[Title/Abstract] OR "sustained attention"[Title/Abstract]) AND instrumental[Title/Abstract]',
-    openAlexTerm: 'instrumental music flow state sustained cognitive performance',
+    openAlexTerm:
+      '"background music" AND ("flow state" OR "sustained attention" OR "cognitive performance")',
   },
   {
     slug: 'creative_ideation',
@@ -154,7 +159,8 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
     },
     pubmedQuery:
       '(music[Title/Abstract] OR "auditory stimulation"[Title/Abstract] OR alpha[Title/Abstract]) AND ("divergent thinking"[Title/Abstract] OR creativity[Title/Abstract] OR ideation[Title/Abstract])',
-    openAlexTerm: 'music alpha oscillations divergent thinking creativity ideation',
+    openAlexTerm:
+      '(music OR "auditory stimulation") AND ("divergent thinking" OR creativity)',
   },
   {
     slug: 'memory_learning',
@@ -174,6 +180,7 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
       'recall',
       'learning',
       'learn',
+      'study',
       'studying',
       'exam',
       'flashcards',
@@ -191,7 +198,8 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
     },
     pubmedQuery:
       '("auditory stimulation"[Title/Abstract] OR binaural[Title/Abstract] OR gamma[Title/Abstract] OR music[Title/Abstract]) AND ("working memory"[Title/Abstract] OR "memory consolidation"[Title/Abstract] OR recall[Title/Abstract])',
-    openAlexTerm: 'auditory stimulation working memory retention recall learning',
+    openAlexTerm:
+      '(music OR "auditory stimulation" OR "binaural") AND ("working memory" OR "memory consolidation" OR recall)',
   },
   {
     slug: 'mood_dopamine',
@@ -231,7 +239,7 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
     },
     pubmedQuery:
       'music[Title/Abstract] AND (dopamine[Title/Abstract] OR "positive affect"[Title/Abstract] OR mood[Title/Abstract]) AND (arousal[Title/Abstract] OR reward[Title/Abstract])',
-    openAlexTerm: 'instrumental music striatal dopamine mood elevation positive affect',
+    openAlexTerm: 'music AND (dopamine OR "positive affect" OR mood) AND (reward OR emotion)',
   },
   {
     slug: 'calm_reset',
@@ -261,7 +269,8 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
     ],
     pubmedQuery:
       'music[Title/Abstract] AND (cortisol[Title/Abstract] OR autonomic[Title/Abstract] OR "stress recovery"[Title/Abstract] OR "heart rate variability"[Title/Abstract])',
-    openAlexTerm: 'music stress recovery autonomic cortisol heart rate variability',
+    openAlexTerm:
+      'music AND (cortisol OR "heart rate variability" OR "stress recovery" OR autonomic)',
   },
   {
     slug: 'sleep_winddown',
@@ -275,7 +284,7 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
     keywords: ['sleep', 'sleeping', 'asleep', 'bedtime', 'insomnia', 'nap', 'rest', 'slumber'],
     pubmedQuery:
       'music[Title/Abstract] AND ("sleep quality"[Title/Abstract] OR insomnia[Title/Abstract] OR "sleep onset"[Title/Abstract])',
-    openAlexTerm: 'music sleep quality insomnia relaxation theta',
+    openAlexTerm: 'music AND ("sleep quality" OR insomnia)',
   },
 ];
 
@@ -474,9 +483,22 @@ export function resolveOpenGoalIntent(
     return false;
   };
 
+  // Companion framing nouns from our own preset titles (e.g. "creative flow", "energy lift",
+  // "calm reset", "sleep wind-down") should not disqualify an already-matched curated preset,
+  // while distinct domain nouns ("public speaking confidence", "tinnitus calm") MUST remain open custom searches.
+  const CURATED_COMPANION_WORDS = new Set([
+    'flow',
+    'lift',
+    'reset',
+    'wind',
+    'down',
+    'wind-down',
+    'winddown',
+  ]);
+
   // Match against curated presets ONLY when there are no distinct domain words outside that preset
-  // (so "I want to feel creaitve" -> creative_ideation, whereas "public speaking confidence" or
-  // "tinnitus calm" preserves its specific scientific domain as an Open Custom Science Search!)
+  // (so "I want to feel creaitve" or "creative flow" -> creative_ideation, whereas
+  // "public speaking confidence" or "tinnitus calm" preserves its specific scientific domain!)
   for (const allowFuzzy of [false, true]) {
     for (const preset of orderedPresets) {
       const matchedTokens = topicTokens.filter((tok) =>
@@ -484,7 +506,8 @@ export function resolveOpenGoalIntent(
       );
       if (matchedTokens.length === 0) continue;
       const unmatchedSpecific = topicTokens.filter(
-        (tok) => tok.length >= 4 && !matchedTokens.includes(tok)
+        (tok) =>
+          tok.length >= 4 && !matchedTokens.includes(tok) && !CURATED_COMPANION_WORDS.has(tok)
       );
       if (unmatchedSpecific.length > 0) {
         continue;
@@ -544,11 +567,7 @@ export function resolveOpenGoalIntent(
       ? { energy: 80, clarity: 86 }
       : { energy: 62, clarity: 89 };
 
-  const pubmedTerms = topicWords.map((w) => `${w}[Title/Abstract]`).join(' AND ');
-  const pubmedQuery = appendPubMedHumanAuditoryGuard(
-    `(music[Title/Abstract] OR "auditory stimulation"[Title/Abstract] OR acoustic[Title/Abstract]) AND (${pubmedTerms})`
-  );
-  const openAlexTerm = `music auditory stimulation human ${topicPhrase}`;
+  const { pubmedQuery, openAlexTerm, rawTopicQuery } = buildOpenTopicLiteratureQueries(topicWords);
 
   return {
     slug: `custom:${slugSuffix}`,
@@ -560,6 +579,118 @@ export function resolveOpenGoalIntent(
     pubmedQuery,
     openAlexTerm,
     isOpenCustomTopic: true,
-    rawTopicQuery: `music auditory stimulation ${topicPhrase}`,
+    rawTopicQuery,
+    topicWords,
   };
+}
+
+const GENERIC_GOAL_OUTCOME_MODIFIERS = new Set([
+  'confidence',
+  'confident',
+  'relief',
+  'relieve',
+  'comfort',
+  'comfortable',
+  'ease',
+  'support',
+  'aid',
+  'control',
+  'mastery',
+  'wellness',
+  'balance',
+  'balanced',
+  'clarity',
+  'clear',
+  'calm',
+  'calming',
+  'focus',
+  'focused',
+  'energy',
+  'energize',
+  'soothe',
+  'soothing',
+  'gentle',
+  'precision',
+  'prep',
+  'preparation',
+  'routine',
+]);
+
+const BIOMEDICAL_COLLOQUIAL_SYNONYMS: Record<string, string[]> = {
+  workout: ['exercise'],
+  'post-workout': ['post-exercise', 'exercise'],
+  'pre-workout': ['pre-exercise', 'exercise'],
+  gym: ['exercise', 'resistance training'],
+  cardio: ['aerobic exercise'],
+  math: ['arithmetic', 'mathematics'],
+};
+
+function formatPubMedWordTerm(word: string): string {
+  const syns = BIOMEDICAL_COLLOQUIAL_SYNONYMS[word];
+  const base = word.includes('-') ? `"${word}"[Title/Abstract]` : `${word}[Title/Abstract]`;
+  if (!syns || syns.length === 0) return base;
+  const synParts = syns.map((s) =>
+    s.includes(' ') || s.includes('-') ? `"${s}"[Title/Abstract]` : `${s}[Title/Abstract]`
+  );
+  return `(${[base, ...synParts].join(' OR ')})`;
+}
+
+function formatOpenAlexWordTerm(word: string): string {
+  const syns = BIOMEDICAL_COLLOQUIAL_SYNONYMS[word];
+  const base = word.includes('-') ? `"${word}"` : word;
+  if (!syns || syns.length === 0) return base;
+  const synParts = syns.map((s) => (s.includes(' ') || s.includes('-') ? `"${s}"` : s));
+  return `(${[base, ...synParts].join(' OR ')})`;
+}
+
+export function buildOpenTopicLiteratureQueries(topicWords: string[]): {
+  pubmedQuery: string;
+  openAlexTerm: string;
+  rawTopicQuery: string;
+} {
+  const fullPm = topicWords.map(formatPubMedWordTerm).join(' AND ');
+  const fullOa = topicWords.map(formatOpenAlexWordTerm).join(' AND ');
+
+  const coreWords = topicWords.filter((w) => !GENERIC_GOAL_OUTCOME_MODIFIERS.has(w));
+  const pmBranches: string[] = [`(${fullPm})`];
+  const oaBranches: string[] = [`(${fullOa})`];
+
+  if (coreWords.length >= 1 && coreWords.length < topicWords.length) {
+    if (coreWords.length === 1) {
+      pmBranches.push(formatPubMedWordTerm(coreWords[0]));
+      oaBranches.push(formatOpenAlexWordTerm(coreWords[0]));
+    } else {
+      const corePhrase = coreWords.join(' ');
+      pmBranches.push(
+        `"${corePhrase}"[Title/Abstract]`,
+        `(${coreWords.map(formatPubMedWordTerm).join(' AND ')})`
+      );
+      oaBranches.push(`"${corePhrase}"`, `(${coreWords.map(formatOpenAlexWordTerm).join(' AND ')})`);
+    }
+  } else if (topicWords.length >= 3) {
+    const firstPair = `${topicWords[0]} ${topicWords[1]}`;
+    const lastPair = `${topicWords[topicWords.length - 2]} ${topicWords[topicWords.length - 1]}`;
+    pmBranches.push(`"${firstPair}"[Title/Abstract]`, `"${lastPair}"[Title/Abstract]`);
+    oaBranches.push(`"${firstPair}"`, `"${lastPair}"`);
+    if (firstPair === 'jet lag' || lastPair === 'jet lag') {
+      pmBranches.push('circadian[Title/Abstract]');
+      oaBranches.push('circadian');
+    }
+  }
+
+  const pmTopicClause = pmBranches.length === 1 ? pmBranches[0] : `(${pmBranches.join(' OR ')})`;
+  const oaTopicClause = oaBranches.length === 1 ? oaBranches[0] : `(${oaBranches.join(' OR ')})`;
+
+  const pubmedQuery = appendPubMedHumanAuditoryGuard(
+    `(music[Title/Abstract] OR "auditory stimulation"[Title/Abstract] OR binaural[Title/Abstract] OR "sound therapy"[Title/Abstract]) AND ${pmTopicClause}`
+  );
+  const openAlexTerm = `(music OR "auditory stimulation" OR "binaural" OR "sound therapy") AND ${oaTopicClause}`;
+
+  const effectiveDomainWords = coreWords.length >= 1 ? coreWords : topicWords;
+  const rawDomainPhrase = effectiveDomainWords
+    .map((w) => BIOMEDICAL_COLLOQUIAL_SYNONYMS[w]?.[0] ?? w)
+    .join(' ');
+  const rawTopicQuery = `music auditory ${rawDomainPhrase}`;
+
+  return { pubmedQuery, openAlexTerm, rawTopicQuery };
 }

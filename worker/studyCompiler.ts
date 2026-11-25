@@ -326,7 +326,8 @@ async function searchClinicalTrials(query: string, limit = 2): Promise<LiveStudy
 }
 
 /**
- * Fast NIH PubMed search (esearch -> efetch XML) returning full titles, abstracts, journals & DOIs.
+ * Fast NIH PubMed search (esearch -> single batched efetch XML) returning full titles, abstracts, journals & DOIs
+ * without bursting NCBI's 3 req/sec unkeyed rate limit.
  */
 async function searchPubMedDirect(env: Env, query: string, maxResults = 3): Promise<LiveStudySearchResult[]> {
   const apiKeyParam = env.NCBI_API_KEY ? `&api_key=${encodeURIComponent(env.NCBI_API_KEY)}` : '';
@@ -340,26 +341,62 @@ async function searchPubMedDirect(env: Env, query: string, maxResults = 3): Prom
     );
     if (!searchRes.ok) return [];
     const searchData = (await searchRes.json()) as { esearchresult?: { idlist?: string[] } };
-    const ids = (searchData.esearchresult?.idlist ?? []).slice(0, maxResults);
-    if (ids.length === 0) return [];
+    const cleanIds = (searchData.esearchresult?.idlist ?? [])
+      .map((id) => id.replace(/[^0-9]/g, ''))
+      .filter(Boolean)
+      .slice(0, maxResults);
+    if (cleanIds.length === 0) return [];
 
-    const fetched = await Promise.all(ids.map((id) => fetchPubMedFullByPmid(env, id)));
+    const efetchRes = await fetch(
+      `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${cleanIds.join(',')}&retmode=xml${apiKeyParam}`,
+      {
+        signal: AbortSignal.timeout(4500),
+        headers: { 'user-agent': 'nootropic.fm/3.0 (mailto:music@nootropic.fm)' },
+      }
+    );
+    if (!efetchRes.ok) return [];
+    const batchXml = await efetchRes.text();
+    const articleBlocks = batchXml.match(/<PubmedArticle>[\s\S]*?<\/PubmedArticle>/gi) ?? [batchXml];
+
     const out: LiveStudySearchResult[] = [];
-    for (const item of fetched) {
-      if (!item) continue;
+    for (const xml of articleBlocks) {
+      const title = extractXmlTag(xml, 'ArticleTitle').replace(/\.$/, '');
+      if (!title) continue;
+      const pmid = extractXmlTag(xml, 'PMID') || undefined;
+      const abstractText = extractAllXmlTags(xml, 'AbstractText').join(' ');
+      const journal =
+        extractXmlTag(xml, 'Title') ||
+        extractXmlTag(xml, 'ISOAbbreviation') ||
+        'PubMed Indexed Journal';
+      const yearMatch =
+        xml.match(/<PubDate>[\s\S]*?<Year>(\d{4})<\/Year>/i) || xml.match(/<Year>(\d{4})<\/Year>/i);
+      const year = yearMatch ? yearMatch[1] : 'Peer-Reviewed';
+      const lastNames = extractAllXmlTags(xml, 'LastName');
+      const authors =
+        lastNames.length > 1 ? `${lastNames[0]} et al.` : lastNames[0] || 'Research Team';
+      const doiMatch = xml.match(/<ArticleId\s+IdType="doi"[^>]*>([^<]+)<\/ArticleId>/i);
+      const pmcMatch = xml.match(/<ArticleId\s+IdType="pmc"[^>]*>([^<]+)<\/ArticleId>/i);
+      const doi = doiMatch ? doiMatch[1].trim() : undefined;
+      const pmcid = pmcMatch ? pmcMatch[1].trim() : undefined;
+      const url = doi
+        ? `https://doi.org/${doi}`
+        : pmid
+          ? `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`
+          : 'https://pubmed.ncbi.nlm.nih.gov/';
+
       out.push({
-        id: item.ref.pmid ? `pmid:${item.ref.pmid}` : `pm:${item.ref.title.slice(0, 24)}`,
+        id: pmid ? `pmid:${pmid}` : `pm:${title.slice(0, 24)}`,
         source: 'pubmed',
-        title: item.ref.title,
-        authors: item.ref.authors,
-        journal: item.ref.journal,
-        year: item.ref.year,
-        url: item.ref.url,
-        doi: item.ref.doi,
-        pmid: item.ref.pmid,
-        pmcid: item.ref.pmcid,
-        abstractText: item.fullText,
-        hasFullAbstract: item.fullText.length > 60,
+        title,
+        authors,
+        journal,
+        year,
+        url,
+        doi,
+        pmid,
+        pmcid,
+        abstractText,
+        hasFullAbstract: abstractText.length > 60,
       });
     }
     return out;
@@ -373,7 +410,8 @@ async function searchPubMedDirect(env: Env, query: string, maxResults = 3): Prom
  */
 export async function searchLiveMedicalStudies(
   env: Env,
-  rawQuery: string
+  rawQuery: string,
+  opts?: { skipNcbiDirect?: boolean }
 ): Promise<LiveStudySearchResult[]> {
   const q = rawQuery.trim();
   if (!q) return [];
@@ -385,7 +423,7 @@ export async function searchLiveMedicalStudies(
 
   const [epmc, pubmed, trials] = await Promise.all([
     fetchEuropePmcByQuery(epmcQuery, 8),
-    searchPubMedDirect(env, pubmedQuery, 5),
+    opts?.skipNcbiDirect ? Promise.resolve([] as LiveStudySearchResult[]) : searchPubMedDirect(env, pubmedQuery, 5),
     searchClinicalTrials(cleanQuery, 3),
   ]);
 
@@ -524,6 +562,7 @@ export async function compileMedicalStudy(
     device?: OutputDevice;
     environment?: SessionEnvironment;
     preferredGenre?: ResolvedGenre;
+    skipNcbiDirect?: boolean;
   }
 ): Promise<{ spec: ExecutableStudySpec; fromCache: boolean }> {
   const raw = (input.queryOrText ?? '').trim();
@@ -626,7 +665,9 @@ export async function compileMedicalStudy(
     Boolean(input.abstractOverride) || raw.length >= 165 || raw.split(/[.!?]/).filter((s) => s.trim().length > 15).length >= 2;
 
   if (!resolvedRef && !looksLikePastedAbstract && raw.length >= 3) {
-    const hits = await searchLiveMedicalStudies(env, raw);
+    const hits = await searchLiveMedicalStudies(env, raw, {
+      skipNcbiDirect: input.skipNcbiDirect,
+    });
     const best = hits.find((h) => h.hasFullAbstract) ?? hits[0];
     if (best) {
       let methodsExtra = '';
