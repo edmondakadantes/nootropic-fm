@@ -26,6 +26,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
+import { NEURAL_EFFECT_MULT, pickSmartInitialEffectTier } from '../../shared/protocols';
 import {
   ENTRAINMENT_LABELS,
   type CarrierEngineMode,
@@ -170,12 +171,21 @@ export function PlayerView({
         ? 'studio_library'
         : 'generative_live';
 
+  const smartEffectInit = pickSmartInitialEffectTier({
+    currentState: recommendation.currentState,
+    targetState: recommendation.targetState,
+    safetyMode: recommendation.safetyMode,
+    noiseSensitivity: profile?.noiseSensitivity,
+    preferredModMult: profile?.preferredModMult,
+  });
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioStarted, setAudioStarted] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [volume, setVolume] = useState(0.74);
   const [intensityMult, setIntensityMult] = useState(1.0);
-  const [modMult, setModMult] = useState(1.0);
+  const [modMult, setModMult] = useState<number>(smartEffectInit.modMult);
+  const [effectAutoTag, setEffectAutoTag] = useState<string | null>(smartEffectInit.autoReason);
   const [adjustments, setAdjustments] = useState<LiveAdjustment[]>([]);
   const [genre, setGenre] = useState<ResolvedGenre>(
     recommendation.params.genre ?? 'deep_electronic'
@@ -324,6 +334,8 @@ export function PlayerView({
   const dailyFreeUsedRef = useRef(dailyFreeUsedSec);
   const dailyLyriaUsedRef = useRef(dailyLyriaUsedSec);
   const carrierModeRef = useRef<CarrierEngineMode>(carrierMode);
+  const modMultRef = useRef<number>(modMult);
+  modMultRef.current = modMult;
 
   elapsedRef.current = elapsedSec;
   adjustmentsRef.current = adjustments;
@@ -352,6 +364,16 @@ export function PlayerView({
     setPreviewLocked(!isPro && readDailyFreeUsage().usedSec >= limit);
     setUnlockError(null);
     setLayerMonitor(initialCarrier === 'pure_stimulus' ? 'science_only' : 'full_mix');
+    const nextSmartEffect = pickSmartInitialEffectTier({
+      currentState: recommendation.currentState,
+      targetState: recommendation.targetState,
+      safetyMode: recommendation.safetyMode,
+      noiseSensitivity: profile?.noiseSensitivity,
+      preferredModMult: profile?.preferredModMult,
+    });
+    setModMult(nextSmartEffect.modMult);
+    modMultRef.current = nextSmartEffect.modMult;
+    setEffectAutoTag(nextSmartEffect.autoReason);
     milestonesSentRef.current = new Set();
     elapsedRef.current = 0;
     activeElapsedMsRef.current = 0;
@@ -452,6 +474,10 @@ export function PlayerView({
 
         if (!mounted) return;
         engineRef.current?.setAlphaIafHz(alphaIafHz);
+        engineRef.current?.adjustModDepth(modMultRef.current);
+        if (engineRef.current) {
+          setTelemetry(engineRef.current.updateElapsed(0));
+        }
         setIsPlaying(true);
         setAudioStarted(true);
         if (engineRef.current) {
@@ -1044,9 +1070,11 @@ export function PlayerView({
   };
 
   const setDirectModDepth = (targetMult: number) => {
-    const clamped = Number(Math.max(0.3, Math.min(1.55, targetMult)).toFixed(2));
+    const clamped = Number(Math.max(0.3, Math.min(1.6, targetMult)).toFixed(2));
     const delta = Number((clamped - modMult).toFixed(2));
     setModMult(clamped);
+    modMultRef.current = clamped;
+    setEffectAutoTag(null);
     engineRef.current?.setControlTrial(false);
     if (layerMonitor === 'music_only') {
       setLayerMonitor('full_mix');
@@ -1648,10 +1676,10 @@ export function PlayerView({
           </div>
         </div>
 
-        {/* Direct Hardware Modulation Depth Selector (Subtle / Standard / Deep) */}
+        {/* Smart Calibrated Neural Effect Selector (Min Effect ~35% / Standard ~65% / Max Effect ~94%) */}
         <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/[0.08] bg-[#0B0C0E] px-3.5 py-2.5">
           <div className="flex flex-wrap items-center gap-2 font-mono-tech text-[10px]">
-            <span className="uppercase tracking-[0.14em] text-[#8E8E88]">Modulation Depth</span>
+            <span className="uppercase tracking-[0.14em] text-[#8E8E88]">Neural Effect</span>
             {layerMonitor === 'music_only' ? (
               <span className="text-[#8E8E88]">Bypassed · 0%</span>
             ) : (
@@ -1660,18 +1688,27 @@ export function PlayerView({
                 {Math.round(telemetry.currentModDepth * 100)}%
               </span>
             )}
+            {effectAutoTag && layerMonitor !== 'music_only' && (
+              <span className="rounded border border-emerald-400/25 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-200/90">
+                {effectAutoTag}
+              </span>
+            )}
           </div>
           <div className="inline-flex rounded-lg border border-white/12 bg-[#141518] p-0.5 text-[11px] font-semibold">
             {[
-              { label: 'Subtle', val: 0.65, active: modMult <= 0.78 },
-              { label: 'Standard', val: 1.0, active: modMult > 0.78 && modMult < 1.18 },
-              { label: 'Deep', val: 1.38, active: modMult >= 1.18 },
+              { label: 'Min Effect', val: NEURAL_EFFECT_MULT.min, active: modMult <= 0.78 },
+              {
+                label: 'Standard',
+                val: NEURAL_EFFECT_MULT.standard,
+                active: modMult > 0.78 && modMult < 1.24,
+              },
+              { label: 'Max Effect', val: NEURAL_EFFECT_MULT.max, active: modMult >= 1.24 },
             ].map((tier) => (
               <button
                 key={tier.label}
                 type="button"
                 onClick={() => setDirectModDepth(tier.val)}
-                className={`rounded-md px-3 py-1 transition ${
+                className={`rounded-md px-2.5 py-1 transition sm:px-3 ${
                   tier.active
                     ? 'bg-[#22252A] text-[#F3F1EC] ring-1 ring-white/15'
                     : 'text-[#8E8E88] hover:text-[#D4D4CE]'

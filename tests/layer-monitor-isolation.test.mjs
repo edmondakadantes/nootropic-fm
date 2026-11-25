@@ -268,3 +268,57 @@ test('2. 3-Way Audio Layer Monitor DSP: true isolation in Science Only & Plain M
     `Science -> Plain transition must decay >45 dB within 350 ms (got ${db(residualAfter350ms).toFixed(1)} dB)`
   );
 });
+
+test('3. Smart Neural Effect Selector: auto-picks Min / Standard / Max from cognitive state & scales calibrated % cleanly (~36% -> ~65% -> ~95%)', async () => {
+  const { NEURAL_EFFECT_MULT, pickSmartInitialEffectTier } = await import('../shared/psychometrics.ts');
+
+  // Fatigued -> Energy Lift auto-selects Max Effect
+  const rescue = pickSmartInitialEffectTier({
+    currentState: 'fatigued',
+    targetState: 'energy_lift',
+    safetyMode: false,
+    noiseSensitivity: 'medium',
+  });
+  assert.equal(rescue.tier, 'max');
+  assert.equal(rescue.modMult, NEURAL_EFFECT_MULT.max);
+
+  // Sleep Wind-Down or Driving Safety auto-selects Min Effect
+  const sleep = pickSmartInitialEffectTier({
+    currentState: 'stressed',
+    targetState: 'sleep_winddown',
+  });
+  assert.equal(sleep.tier, 'min');
+  const road = pickSmartInitialEffectTier({
+    currentState: 'fatigued',
+    targetState: 'alert_focus',
+    safetyMode: true,
+  });
+  assert.equal(road.tier, 'min');
+
+  // Normal Deep Flow auto-selects Standard
+  const flow = pickSmartInitialEffectTier({
+    currentState: 'calm',
+    targetState: 'deep_flow',
+  });
+  assert.equal(flow.tier, 'standard');
+
+  // Saved personal preference overrides default
+  const savedMax = pickSmartInitialEffectTier({
+    currentState: 'calm',
+    targetState: 'deep_flow',
+    preferredModMult: 1.4,
+  });
+  assert.equal(savedMax.tier, 'max');
+
+  // Verify calibrated plateau percentage progression (~36% Min, ~65% Standard, ~95% Max)
+  const calcPct = (mult) => {
+    const normBase = 0.88 + 0.3 * 0.38; // 0.994
+    return Math.round(Math.min(0.95, Math.max(0.15, 0.65 * mult * normBase)) * 100);
+  };
+  const minPct = calcPct(NEURAL_EFFECT_MULT.min);
+  const stdPct = calcPct(NEURAL_EFFECT_MULT.standard);
+  const maxPct = calcPct(NEURAL_EFFECT_MULT.max);
+  assert.ok(minPct >= 34 && minPct <= 38, `Expected ~36% Min Effect, got ${minPct}%`);
+  assert.ok(stdPct >= 63 && stdPct <= 67, `Expected ~65% Standard Effect, got ${stdPct}%`);
+  assert.ok(maxPct >= 92 && maxPct <= 95, `Expected ~94% Max Effect, got ${maxPct}%`);
+});

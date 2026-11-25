@@ -755,7 +755,11 @@ export class PsychoacousticEngine {
 
     const musicAuditionGain = ctx.createGain();
     musicAuditionGain.gain.setValueAtTime(
-      initMonitorMode === 'science_only' ? 0 : initMonitorMode === 'music_only' ? 1.0 : 0.9,
+      initMonitorMode === 'science_only'
+        ? 0
+        : initMonitorMode === 'music_only'
+          ? 1.0
+          : this.computeFullMixMusicPocketGain(),
       ctx.currentTime
     );
     musicAuditionGain.connect(spectralPocketNotch);
@@ -1345,13 +1349,34 @@ export class PsychoacousticEngine {
     );
   }
 
+  private computeFullMixMusicPocketGain(): number {
+    // Dynamically carves -0.4 dB (Min) / -1.1 dB (Standard) / -2.4 dB (Max) headroom in Nootropic Mix
+    // so Layer 1 scales cleanly from ~35% -> ~65% -> ~94% without brickwall limiter compression
+    if (this.isControlTrial) return 1.0;
+    const duck = Math.max(0.76, Math.min(0.96, 1.04 - 0.17 * this.modDepthMultiplier));
+    return Number(duck.toFixed(3));
+  }
+
+  private computeCalibratedEffectPct(
+    activePhaseFactor = 1.0,
+    antiHabFactor = 1.0
+  ): number {
+    const spec = this.studySpec;
+    if (!spec || spec.entrainment.type === 'none') return 0;
+    const baseDepth = Math.max(0.2, Math.min(0.6, spec.entrainment.modulationDepth || 0.38));
+    const normBase = 0.88 + 0.3 * baseDepth; // ~0.994 on 0.38 focus protocols, ~0.952 on 0.24 calm protocols
+    const raw = 0.65 * this.modDepthMultiplier * normBase * activePhaseFactor * antiHabFactor;
+    const cap = this.params?.speakerSafeEQ ? 0.68 : 0.95;
+    return Math.min(cap, Math.max(0.15, raw));
+  }
+
   private computeAmPulseModPair(): { bias: number; swing: number } {
     if (this.layerMonitorMode === 'music_only') {
       return { bias: 0, swing: 0 };
     }
     const pulseDepth = Math.min(
-      0.96,
-      Math.max(0.78, 0.9 * (0.76 + 0.24 * this.modDepthMultiplier))
+      0.97,
+      Math.max(0.76, 0.88 * (0.72 + 0.28 * this.modDepthMultiplier))
     );
     const span = Math.max(0.5, this.amWaveStats.max - this.amWaveStats.min);
     const swing = Number((pulseDepth / span).toFixed(4));
@@ -1373,21 +1398,21 @@ export class PsychoacousticEngine {
     if (this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus') {
       // Matched ~ -16.0 LUFS isolated neural reference chord + band-limited pink carrier
       return Number(
-        Math.min(0.52, Math.max(0.32, 0.44 * (0.82 + 0.18 * this.modDepthMultiplier))).toFixed(4)
+        Math.min(0.54, Math.max(0.32, 0.44 * (0.8 + 0.2 * this.modDepthMultiplier))).toFixed(4)
       );
     }
     if (this.isControlTrial) {
       return 0;
     }
-    // In Nootropic Mix (full_mix), blend 94%-pulsed key-locked open-fifth harmonic AM carrier underneath music
-    // so Layer 1 + Layer 2 clearly overlap and remain unmistakably audible even across sparse bass/pluck bars
-    const baseDepth = Math.max(0.18, Math.min(0.65, this.studySpec.entrainment.modulationDepth || 0.36));
-    const speakerScale = this.params?.speakerSafeEQ ? 0.78 : 1.0;
-    const raw = 0.27 * (0.6 + baseDepth) * this.modDepthMultiplier * activePhaseFactor * speakerScale;
-    return Number(Math.min(0.38, Math.max(0, raw)).toFixed(4));
+    // Scales smoothly across Min (~0.14 = 35% effect) -> Standard (~0.27 = 65% effect) -> Max (~0.42 = 94% effect)
+    const baseDepth = Math.max(0.2, Math.min(0.65, this.studySpec.entrainment.modulationDepth || 0.38));
+    const speakerScale = this.params?.speakerSafeEQ ? 0.72 : 1.0;
+    const tierCurve = Math.pow(Math.max(0.3, this.modDepthMultiplier), 1.15);
+    const raw = 0.27 * (0.62 + baseDepth) * tierCurve * activePhaseFactor * speakerScale;
+    return Number(Math.min(0.44, Math.max(0, raw)).toFixed(4));
   }
 
-  private computeActiveAmGainPair(nominalDepth: number): { bias: number; swing: number } {
+  private computeActiveAmGainPair(calibratedEffectDepth: number): { bias: number; swing: number } {
     const amActive =
       this.studySpec?.entrainment.type === 'amplitude_modulation' &&
       this.studySpec.entrainment.frequencyHz > 0;
@@ -1395,10 +1420,9 @@ export class PsychoacousticEngine {
       return { bias: 1.0, swing: 0 };
     }
     if (this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus') {
-      // Deep, crisp isolated pulse (76%..95% peak-to-trough depth) on pure [-1, +1] sine/cosine wave
       const isoDepth = Math.min(
-        0.95,
-        Math.max(0.74, 0.86 * (0.72 + 0.28 * this.modDepthMultiplier))
+        0.96,
+        Math.max(0.76, 0.88 * (0.72 + 0.28 * this.modDepthMultiplier))
       );
       const swing = Number((0.5 * isoDepth).toFixed(4));
       const bias = Number((1.0 - swing).toFixed(4));
@@ -1407,7 +1431,8 @@ export class PsychoacousticEngine {
     if (this.isControlTrial) {
       return { bias: 1.0, swing: 0 };
     }
-    const mixDriveDepth = Math.min(0.75, Math.max(0, nominalDepth * 1.32));
+    // Maps 35%..94% calibrated effect onto safe 0.34..0.75 Band-2 music VCA depth
+    const mixDriveDepth = Math.min(0.75, Math.max(0, calibratedEffectDepth * 0.82));
     return this.computeAmGainPair(mixDriveDepth);
   }
 
@@ -1559,7 +1584,11 @@ export class PsychoacousticEngine {
     const muteMusic = mode === 'science_only' || this.carrierMode === 'pure_stimulus';
     const muteScience = mode === 'music_only';
 
-    const targetMusicGain = muteMusic ? 0 : muteScience ? 1.0 : 0.9;
+    const targetMusicGain = muteMusic
+      ? 0
+      : muteScience
+        ? 1.0
+        : this.computeFullMixMusicPocketGain();
     smoothSetParam(this.musicAuditionGain?.gain, targetMusicGain, now, 0.065);
     if (this.cleanSubBus) {
       const wantSub = this.carrierMode === 'generative_live' && !muteMusic;
@@ -3004,11 +3033,7 @@ export class PsychoacousticEngine {
         ? 1.0
         : 0.92 + 0.08 * Math.cos(2 * Math.PI * 0.004 * elapsedSec);
     const amActive = spec?.entrainment.type === 'amplitude_modulation' && spec.entrainment.frequencyHz > 0;
-    const baseDepth = amActive ? spec.entrainment.modulationDepth : 0;
-    const nominalDepth = Math.min(
-      0.75,
-      Math.max(0, baseDepth * this.modDepthMultiplier * activePhaseFactor * antiHabFactor)
-    );
+    const nominalDepth = this.computeCalibratedEffectPct(activePhaseFactor, antiHabFactor);
     const effectiveDepth =
       scienceMuted || (this.isControlTrial && !isIsolatedScience) ? 0 : nominalDepth;
 
@@ -3167,11 +3192,9 @@ export class PsychoacousticEngine {
         ? 0
         : isIsolatedScience && amActive
           ? Number(
-              Math.min(0.95, Math.max(0.74, 0.86 * (0.72 + 0.28 * this.modDepthMultiplier))).toFixed(2)
+              Math.min(0.96, Math.max(0.76, 0.88 * (0.72 + 0.28 * this.modDepthMultiplier))).toFixed(2)
             )
-          : Number(
-              (amActive ? nominalDepth : (spec?.entrainment.modulationDepth ?? 0) * this.modDepthMultiplier).toFixed(2)
-            ),
+          : Number(nominalDepth.toFixed(2)),
       crossoverHz: spec?.entrainment.modulationBandHz[0] ?? this.params?.crossoverHz ?? 190,
       upperCrossoverHz: spec?.entrainment.modulationBandHz[1] ?? this.params?.upperCrossoverHz ?? 4500,
       stereoAmActive: Boolean(this.amGainR),
@@ -3249,6 +3272,14 @@ export class PsychoacousticEngine {
   public adjustModDepth(multiplier: number): void {
     this.modDepthMultiplier = Math.max(0.0, Math.min(1.65, multiplier));
     this.stimulusRack.setModMultiplier(this.modDepthMultiplier);
+    if (this.ctx && this.musicAuditionGain && this.layerMonitorMode === 'full_mix') {
+      smoothSetParam(
+        this.musicAuditionGain.gain,
+        this.computeFullMixMusicPocketGain(),
+        this.ctx.currentTime,
+        0.08
+      );
+    }
     if (this.isPlaying) {
       this.updateElapsed(this.elapsedSec, 0.08);
     }

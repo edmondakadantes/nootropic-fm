@@ -354,3 +354,49 @@ export function computeHrvMetricsFromRrMs(rrIntervalsMs: number[]): HrvBiomarker
     lfPowerRatio: Number(lfPowerRatio.toFixed(3)),
   };
 }
+
+export type NeuralEffectTier = 'min' | 'standard' | 'max';
+
+export const NEURAL_EFFECT_MULT: Record<NeuralEffectTier, number> = {
+  min: 0.56,
+  standard: 1.0,
+  max: 1.48,
+};
+
+/**
+ * Smartly auto-selects the initial Neural Effect tier (Min ~35% / Standard ~65% / Max ~94%)
+ * from the listener's learned Bandit preference, current cognitive deficit, target state,
+ * noise sensitivity, and road-safety context.
+ */
+export function pickSmartInitialEffectTier(input: {
+  currentState: string;
+  targetState: string;
+  safetyMode?: boolean;
+  noiseSensitivity?: 'low' | 'medium' | 'high';
+  preferredModMult?: number | null;
+}): { tier: NeuralEffectTier; modMult: number; autoReason: string } {
+  if (input.safetyMode) {
+    return { tier: 'min', modMult: NEURAL_EFFECT_MULT.min, autoReason: 'Auto · Road-safe' };
+  }
+  if (typeof input.preferredModMult === 'number' && Number.isFinite(input.preferredModMult)) {
+    if (input.preferredModMult >= 1.18) {
+      return { tier: 'max', modMult: NEURAL_EFFECT_MULT.max, autoReason: 'Auto · Saved pref' };
+    }
+    if (input.preferredModMult <= 0.78) {
+      return { tier: 'min', modMult: NEURAL_EFFECT_MULT.min, autoReason: 'Auto · Saved pref' };
+    }
+  }
+  if (input.targetState === 'sleep_winddown') {
+    return { tier: 'min', modMult: NEURAL_EFFECT_MULT.min, autoReason: 'Auto · Sleep gentle' };
+  }
+  if (input.noiseSensitivity === 'high' || input.currentState === 'anxious') {
+    return { tier: 'min', modMult: NEURAL_EFFECT_MULT.min, autoReason: 'Auto · Gentle comfort' };
+  }
+  if (
+    (input.currentState === 'fatigued' || input.currentState === 'scattered') &&
+    (input.targetState === 'energy_lift' || input.targetState === 'alert_focus')
+  ) {
+    return { tier: 'max', modMult: NEURAL_EFFECT_MULT.max, autoReason: 'Auto · Focus boost' };
+  }
+  return { tier: 'standard', modMult: NEURAL_EFFECT_MULT.standard, autoReason: 'Auto · Balanced' };
+}

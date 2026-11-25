@@ -7,10 +7,15 @@ import {
 } from './promptComposer';
 import { getStudiesByIds } from './studies';
 import {
+  NEURAL_EFFECT_MULT,
   assignStratifiedShamControl,
   computeHierarchicalArmPosterior,
+  pickSmartInitialEffectTier,
   sampleHierarchicalThompson,
+  type NeuralEffectTier,
 } from './psychometrics';
+
+export { NEURAL_EFFECT_MULT, pickSmartInitialEffectTier, type NeuralEffectTier };
 import { buildCheckInExecutableSpec } from './studyPresets';
 import { resolvedGenreToPalette } from './studySpec';
 import type {

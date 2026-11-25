@@ -649,7 +649,7 @@ export class MedicalStimulusRack {
     }
     const phaseScale = this.pureStimulusMode ? 1.0 : this.phaseModFactor;
     const dynScale = this.pureStimulusMode ? 1.0 : this.dynamicMusicScale;
-    return Math.min(0.42, Math.max(0.0001, base * (0.68 + baseDepth * 0.95) * this.modMult * phaseScale * dynScale));
+    return Math.min(0.48, Math.max(0.0001, base * (0.72 + baseDepth * 0.98) * this.modMult * phaseScale * dynScale));
   }
 
   public setGammaMode(mode: GammaStimulusMode): void {
