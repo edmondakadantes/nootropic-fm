@@ -1,0 +1,66 @@
+# nootropic.fm — Complete Technical, Scientific & Hardware Reference
+
+URL: https://www.nootropic.fm/
+Category: Cognitive Wellness Audio & Closed-Loop Acoustic Neuro-Regulation (Adults 18+)
+Disclaimer: nootropic.fm provides psychoacoustic wellness, focus, relaxation, and sleep wind-down audio. It is not a medical device and is not intended to diagnose, treat, cure, or prevent any medical condition.
+
+---
+
+## 1. Acoustic Engine & Dual-Layer 48 kHz DSP Architecture
+All signal synthesis and modulation execute locally in the listener's browser or mobile WebView using custom 48 kHz `AudioWorklet` processors (`~$0` server audio compute per listener).
+
+- **Layer 1 (Clinical Entrainment Bus — Amplitude Invariant)**:
+  - Routed onto a dedicated `masterSumBus` isolated downstream from Layer-2 musical dynamics and compressors via a dedicated Layer-2 pre-limiter (`musicPreLimiter` at `-3.35 dBTP`), ensuring musical transients never duck or distort Layer-1 cortical stimuli (`<0.01 dB` variance).
+  - **3-Band Linkwitz-Riley (LR4) Phase-Coherent Cortical AM Matrix**: Splits Layer-2 music at `190 Hz` and `4,500 Hz`. Only the cortical mid-band (`190–4,500 Hz`) receives targeted amplitude modulation (`6–40 Hz`), leaving sub-bass warmth (`<190 Hz`) and upper air (`>4.5 kHz`) clean and fatiguing resonances absent.
+  - **ITU-R BS.1770-4 K-Weighted Dynamic Envelope Follower**: Continuously measures Layer-2 musical loudness in real time on the audio thread so Layer-1 entrainment stays calibrated at exact study Signal-to-Noise Ratio (`-20 dB` to `-16 dB`).
+  - **40 Hz Gamma-MBI & Isochronic Paradigms**: Supports `40.000 Hz` Music-Based Intervention bursts and gentle `0.10 Hz` (6 breaths/minute) autonomic HRV baroreflex swells.
+  - **Dichotic Huggins Pitch Calibration (`600 Hz`)**: Interactive headphone phase check verifying left/right isolation and clean stereo delivery before falling back automatically to monaural-safe envelopes if speakers or mono Bluetooth are detected.
+  - **Circadian Daylight & Night Audio Conditioning**: Daylight Mode (`07:00–19:00`, warm `#F4F1EA` alabaster lab UI) keeps full daytime clarity; Night Mode (`19:00–07:00`, `#0A0B0C` obsidian UI) engages a gentle `-2.8 dB` high-shelf filter above `3.2 kHz` exclusively on Layer-2 music while leaving Layer-1 clinical waves untouched.
+
+- **Standalone Flagship: NootropicFM Signature Mode (`6 Hz × 40 Hz CFC`)**:
+  - Separated from the 10 standard Studio Mix genres on its own dedicated card in Check-In, Reveal, and Player.
+  - Combines **6 Hz Theta** enveloping nested with **40 Hz Gamma** bursts (Theta-Gamma Cross-Frequency Coupling) phase-locked to **120.000 BPM** (`2.000 Hz` integer sub-harmonic grid) polyrhythmic stems and a `0.10 Hz` Mayer-wave mono-invariant spatial orbit.
+  - Runs at full active depth with `0%` sham dilution when locked.
+
+- **Layer 2 (Music Carriers + Studio Voice Concierge)**:
+  - **10 Studio Mix Genres**: Lo-Fi Beats, Deep Electronic, Classical & Strings, Late-Night Jazz, Acoustic Guitar, Soft Rain & Nature, Dub Reggae, Ambient & Space, Solo Felt Piano, and Bossa Nova (mastered to `-15.5 LUFS` / `-2.0 dBTP`).
+  - **Endless Stream**: Live continuous AI music synthesis via Google Lyria RealTime proxied securely with Catmull-Rom `48->44.1 kHz` cubic resampling and underrun crossfade protection.
+  - **Studio Voice Concierge**: Two-part (`greeting` + `state/science bridge`) personalized voice welcome and soft-landing cue synthesized via neural TTS (`@cf/deepgram/aura-2-en`), permanently cached in Cloudflare R2, and mixed with smooth `-6.7 dB` sidechain ducking on Layer-2 music only.
+
+---
+
+## 2. Empirical Research Brain & Closed-Loop Biomarkers
+- **Hierarchical Thompson Sampling Contextual Bandit**: Learns optimal acoustic protocols across `(Age Band × Profession × 2D Arousal/Clarity Micro-State × Target Goal × Listening Device)`.
+- **Built-In Objective Measures**:
+  - **Psychomotor Vigilance Task (PVT)**: Pre- and post-session reaction-time measurement in milliseconds and attentional lapses.
+  - **Motor Rhythm Tapping CV**: 15-second continuation tapping variability biomarker.
+  - **Live Web Bluetooth HRV**: Streams heart rate, RMSSD, and `0.10 Hz` LF power ratio from compatible chest/arm/ear BLE sensors.
+  - **Stratified 25% Blind Aperiodic Sham Control**: On consented research sessions (excluding explicit Signature Mode locks), 1 in 4 trials uses an RMS-matched aperiodic sham stimulus to measure real delta over placebo.
+- **Live Literature Compiler (Study Lab)**: Searches NIH PubMed, Europe PMC, OpenAlex, and ClinicalTrials.gov in real time and translates acoustic parameters into executable WebAudio specs.
+
+---
+
+## 3. Peer-Reviewed Scientific Foundations
+1. **Woods, K. J. P., Sampaio, G., James, T., Morillon, B., & Loui, P. (2024)**. *Rapid modulation in music supports attention in listeners with attentional difficulties*. Communications Biology (Nature Portfolio). DOI: `10.1038/s42003-024-07026-3` — Basis for rapid beta-band (`16 Hz`) mid-band amplitude modulation in music.
+2. **Lisman, J. E., & Jensen, O. (2013)**. *The theta-gamma neural code*. Neuron. DOI: `10.1016/j.neuron.2013.03.007` — Theoretical foundation for `6 Hz Theta × 40 Hz Gamma` cross-frequency coupling in NootropicFM Signature Mode.
+3. **Iaccarino, H. F., Singer, A. C., Martorell, A. J., Rudenko, A., Gao, F., Gillingham, T. Z., ... & Tsai, L.-H. (2016)**. *Gamma frequency entrainment attenuates amyloid load and modifies microglia*. Nature. DOI: `10.1038/nature20587` — Auditory/sensory `40 Hz` gamma synchronization paradigm.
+4. **Lehrer, P. M., & Gevirtz, R. (2014)**. *Heart rate variability biofeedback: how and why does it work?* Frontiers in Psychology. DOI: `10.3389/fpsyg.2014.00756` — Resonance frequency breathing (`0.10 Hz`, ~6 breaths/min) supporting autonomic down-regulation.
+5. **Jespersen, K. V., Pando-Naude, V., Koenig, J., Jennum, P., & Vuust, P. (2022)**. *Listening to music for insomnia in adults*. Cochrane Database of Systematic Reviews. DOI: `10.1002/14651858.CD010459.pub3` — Slow beatless evening wind-down acoustics.
+6. **Husain, G., Thompson, W. F., & Schellenberg, E. G. (2002)**. *Effects of musical tempo and mode on arousal, mood, and spatial abilities*. Music Perception. DOI: `10.1525/mp.2002.20.2.151` — Major-mode tempo pacing for daytime energy and mood lift.
+
+---
+
+## 4. Physical Standard: Engineered Exclusively for In-Ear Buds & Hardware Lineup
+Open desk speakers introduce `~0.26 ms` inter-aural acoustic crosstalk (`1,914.8 Hz` comb-filter notch and `56.4 deg` phase error at `600 Hz`), canceling dichotic brainstem locking. Standard Bluetooth earbuds apply V-curve bass EQ and lossy AAC/SBC psychoacoustic masking that compresses `-20 dBc` to `-26 dBc` neural sidebands inside critical auditory bands (ERB). **nootropic.fm therefore explicitly recommends sealed In-Ear Buds** (except during Driving Safety Mode, where vehicle speakers remain open for traffic sirens/horns at `800–3,500 Hz`).
+
+**NOOTROPIC FM SOUND SYSTEMS (Hardware Ecosystem Waitlist Live In-App):**
+- **Drop 01 — NootropicFM Earbuds 01 (Wired USB-C Lossless Reference IEM)**: Hybrid 10 mm dynamic + balanced armature mid-band driver coupled to a `24-bit / 48 kHz` lossless USB-C DAC/DSP with passive memory-seal tips (no battery degradation, zero Bluetooth compression). Founding waitlist target bundle: `$129` (`$119` early pre-order) including 12 months of NootropicFM Pro.
+- **Drop 02 — NootropicFM Earbuds Pro (Wireless Lossless/LC3 + In-Ear PPG HRV)**: Optical concha/tragus PPG heart-rate variability sensor + 3-axis accelerometer feeding real-time RMSSD telemetry back into the NootropicFM DSP for closed-loop autonomous regulation.
+- **Drop 03 — NootropicFM Sound System 01**: Architectural nearfield crosstalk-canceled desk and bedside circadian acoustic + `1800K–480nm` light instrument.
+
+---
+
+## 5. Plans, Pricing & Privacy
+- **Free Calibration Tier**: 5 minutes daily full-DSP access (`+30 minutes` unlocked when sharing a public 1-of-1 Neural Fingerprint Card) + 90s daily Endless Stream preview.
+- **NootropicFM Pro**: 7-day free trial, then `$9/month` or `$59/year` (`$4.92/month` billed annually) for unlimited sessions, unlimited Endless Stream, Study Lab compiler, and full biometric Insights.
+- **Passwordless Privacy Architecture**: No email or password required for web sessions; uses an anonymous local identity + optional scannable QR Sync Key (`NFM-XXXX-XXXX`), zero third-party ad trackers, self-hosted fonts on Cloudflare edge, and genuine EEA/UK/CH/GPC opt-in consent.

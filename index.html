@@ -4,10 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0A0B0C" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
     <meta
       name="description"
-      content="The adaptive psychoacoustic platform that blends study-backed sound waves into music you love, helping you achieve your best focus, calm, and flow."
+      content="nootropic.fm is a 48 kHz psychoacoustic audio platform blending study-backed neural waves (6x40 Hz NootropicFM Signature Mode, 40 Hz Gamma-MBI, 16 Hz Beta, 0.10 Hz HRV breathing) into lyric-free music. Engineered exclusively for in-ear buds."
     />
+    <link rel="canonical" href="https://www.nootropic.fm/" />
+    <link rel="alternate" type="text/plain" title="LLMs Documentation" href="https://www.nootropic.fm/llms.txt" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://www.nootropic.fm/" />
     <meta property="og:title" content="nootropic.fm · Tune Your Mind · Study-Backed Psychoacoustic Music" />
@@ -26,12 +29,145 @@
     />
     <meta name="twitter:image" content="https://www.nootropic.fm/brand/og-banner.png" />
     <title>nootropic.fm · Tune Your Mind · Study-Backed Psychoacoustic Audio</title>
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/brand/stripe-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://www.nootropic.fm/#org",
+            "name": "nootropic.fm",
+            "alternateName": "NOOTROPIC FM SOUND SYSTEMS",
+            "url": "https://www.nootropic.fm/",
+            "logo": "https://www.nootropic.fm/brand/icon-512.png",
+            "description": "Adaptive 48 kHz psychoacoustic wellness audio platform and in-ear acoustic hardware lab built around peer-reviewed modulation science and closed-loop cognitive biomarkers."
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://www.nootropic.fm/#website",
+            "url": "https://www.nootropic.fm/",
+            "name": "nootropic.fm",
+            "publisher": { "@id": "https://www.nootropic.fm/#org" }
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://www.nootropic.fm/#app",
+            "name": "nootropic.fm Psychoacoustic Studio",
+            "url": "https://www.nootropic.fm/",
+            "applicationCategory": "HealthApplication",
+            "operatingSystem": "Web, Android, iOS",
+            "browserRequirements": "Requires Web Audio API and AudioWorklet support; engineered exclusively for sealed in-ear buds (excluding Driving Safety Mode).",
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Free Daily Calibration",
+                "price": "0",
+                "priceCurrency": "USD"
+              },
+              {
+                "@type": "Offer",
+                "name": "NootropicFM Pro Monthly",
+                "price": "9.00",
+                "priceCurrency": "USD"
+              },
+              {
+                "@type": "Offer",
+                "name": "NootropicFM Pro Annual",
+                "price": "59.00",
+                "priceCurrency": "USD"
+              }
+            ],
+            "featureList": [
+              "Standalone NootropicFM Signature Mode (6 Hz Theta x 40 Hz Gamma Cross-Frequency Coupling locked to 120 BPM stems)",
+              "3-Band Linkwitz-Riley (LR4) Phase-Coherent Cortical Amplitude Modulation (190-4,500 Hz)",
+              "ITU-R BS.1770-4 K-Weighted Dynamic Signal-to-Noise Follower",
+              "Built-in Psychomotor Vigilance Task (PVT), 15s Motor Tapping CV, Web Bluetooth HRV, and 25% Blind Sham Control",
+              "Circadian Daylight and Night Modes with nocturnal high-frequency silk filtering",
+              "Zero-cost R2-cached personalized Studio Voice Concierge with sidechain ducking"
+            ]
+          },
+          {
+            "@type": "Product",
+            "@id": "https://www.nootropic.fm/#earbuds01",
+            "name": "NootropicFM Earbuds 01 (Wired USB-C Lossless Reference IEM)",
+            "brand": { "@type": "Brand", "name": "NOOTROPIC FM SOUND SYSTEMS" },
+            "description": "Hybrid dynamic + balanced armature USB-C 24-bit/48 kHz lossless reference in-ear monitors with passive memory-seal isolation engineered to preserve subtle 40 Hz and 6 Hz neural modulations without Bluetooth lossy compression.",
+            "offers": {
+              "@type": "Offer",
+              "price": "129.00",
+              "priceCurrency": "USD",
+              "availability": "https://schema.org/PreOrder",
+              "url": "https://www.nootropic.fm/"
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "What is nootropic.fm and is it a medical device?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "nootropic.fm is a psychoacoustic cognitive wellness platform for adults 18+ that blends peer-reviewed amplitude modulation, paced breathing swells, and objective reaction-time feedback into lyric-free music for focus, deep flow, relaxation, and sleep wind-down. It is not a medical device and is not intended to diagnose, treat, cure, or prevent any disease."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Why is nootropic.fm engineered exclusively for in-ear buds?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Open desk speakers introduce ~0.26 ms inter-aural acoustic crosstalk that cancels brainstem dichotic phase-locking, while standard lossy Bluetooth codecs can smear -20 dBc to -26 dBc neural modulation sidebands inside critical auditory bands. Sealed in-ear buds preserve phase lock and signal fidelity (except during Driving Safety Mode, which uses vehicle speakers for road awareness)."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What is NootropicFM Signature Mode?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "NootropicFM Signature Mode is a standalone deep-flow engine pairing 6 Hz Theta envelopes with nested 40 Hz Gamma bursts (Theta-Gamma Cross-Frequency Coupling) phase-locked to 120.000 BPM polyrhythmic stems and a 0.10 Hz Mayer-wave spatial orbit."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body class="bg-[#0A0B0C] text-[#F3F1EC] antialiased selection:bg-emerald-400/25 selection:text-emerald-100">
-    <div id="root"></div>
+    <div id="root">
+      <main style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0">
+        <article>
+          <h1>nootropic.fm — Adaptive 48 kHz Psychoacoustic Wellness Studio &amp; NOOTROPIC FM SOUND SYSTEMS</h1>
+          <p>
+            nootropic.fm blends peer-reviewed cortical amplitude modulation (6 Hz Theta, 10 Hz Alpha, 16-18 Hz Beta, 40 Hz Gamma-MBI),
+            0.10 Hz HRV paced breathing resonance, and closed-loop cognitive telemetry into lyric-free studio music and live infinite soundscapes.
+            Designed for adults 18+ to support deep focus, flow state, daytime calm reset, evening sleep wind-down, and road-safe alertness.
+            Psychoacoustic cognitive wellness audio only — not a medical device and not intended to diagnose, treat, cure, or prevent any medical condition.
+          </p>
+          <h2>Core Psychoacoustic Architecture</h2>
+          <ul>
+            <li><strong>Standalone NootropicFM Signature Mode (6x40 Hz):</strong> 6 Hz Theta x 40 Hz Gamma Cross-Frequency Coupling (Lisman &amp; Jensen, 2013) phase-locked to 120.000 BPM stems and a 0.10 Hz Mayer-wave stereo orbit.</li>
+            <li><strong>3-Band Linkwitz-Riley (LR4) Cortical AM Matrix:</strong> Modulates only the 190-4,500 Hz cortical band while leaving sub-bass warmth and upper air unmodulated, stabilized by an ITU-R BS.1770-4 K-weighted dynamic envelope follower.</li>
+            <li><strong>Research Brain Closed-Loop Validation:</strong> Hierarchical Thompson Sampling Contextual Bandit combining pre/post Psychomotor Vigilance Task (PVT reaction time ms), 15s tapping CV, Web Bluetooth HRV (RMSSD / 0.10 Hz LF ratio), live NIH PubMed / OpenAlex study compilation, and 25% blind Aperiodic Acoustic Sham Control trials.</li>
+            <li><strong>10 Curated Studio Mix Genres + Endless Stream + Studio Voice Concierge:</strong> Lo-Fi Beats, Deep Electronic, Classical &amp; Strings, Late-Night Jazz, Acoustic Guitar, Soft Rain &amp; Nature, Dub Reggae, Ambient &amp; Space, Solo Felt Piano, and Bossa Nova, paired with Google Lyria RealTime streaming, Circadian Daylight and Night modes, and R2-cached Studio Voice Concierge intros.</li>
+          </ul>
+          <h2>Engineered Exclusively for In-Ear Buds &amp; NOOTROPIC FM SOUND SYSTEMS</h2>
+          <p>
+            Desk speakers create ~0.26 ms inter-aural crosstalk and comb filtering inside the 190-4,500 Hz cortical band, while lossy Bluetooth codecs mask subtle -20 dBc neural sidebands.
+            NOOTROPIC FM SOUND SYSTEMS hardware roadmap: Drop 01 NootropicFM Earbuds 01 (wired USB-C 24-bit/48 kHz lossless reference IEM waitlist),
+            Drop 02 NootropicFM Earbuds Pro (wireless lossless/LC3 with in-ear optical PPG HRV sensor), and Drop 03 NootropicFM Sound System 01 (nearfield crosstalk-canceled desk and bedside circadian instrument).
+          </p>
+          <p>
+            Free daily 5-minute calibration (+30 minutes via Neural Fingerprint Card share) or NootropicFM Pro ($9/month or $59/year after 7-day free trial).
+            Documentation: <a href="/llms.txt">llms.txt</a> | <a href="/llms-full.txt">llms-full.txt</a> | <a href="/privacy/">Privacy Policy</a> | <a href="/terms/">Terms</a>.
+          </p>
+        </article>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

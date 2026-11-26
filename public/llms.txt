@@ -1,0 +1,18 @@
+# nootropic.fm
+
+> Adaptive 48 kHz WebAudio psychoacoustic wellness platform blending peer-reviewed cortical modulation, autonomic paced breathing, and objective cognitive feedback into lyric-free music. Engineered exclusively for in-ear buds.
+
+nootropic.fm runs client-side 48 kHz AudioWorklet DSP (`~$0` marginal compute) paired with a closed-loop Bayesian Research Brain and an acoustic hardware roadmap (**NOOTROPIC FM SOUND SYSTEMS**). Intended for cognitive wellness, deep work, flow state, stress down-regulation, sleep wind-down, and daytime road alertness in adults 18+. Not a medical device; not intended to diagnose, treat, cure, or prevent any disease.
+
+## Core Documentation
+- [Full Technical & Scientific Reference](https://www.nootropic.fm/llms-full.txt): Complete DSP specifications, NootropicFM Signature Mode, peer-reviewed DOI citations, Research Brain telemetry, In-Ear Buds physics rationale, hardware roadmap, and pricing.
+- [Main Platform](https://www.nootropic.fm/): Live interactive 5-step psychoacoustic studio, Study Lab, and Research Brain.
+- [Privacy Policy](https://www.nootropic.fm/privacy/): Zero-tracker, opt-in EEA/UK/CH privacy architecture and passwordless Neural Sync Pass details.
+- [Terms & Wellness Disclaimer](https://www.nootropic.fm/terms/): General wellness positioning, safe listening limits, and Driving Safety Mode boundaries.
+
+## Key Capabilities
+- **Dual-Layer 48 kHz WebAudio Engine**: Layer 1 scientific entrainment (`40 Hz` Gamma-MBI, 3-Band Linkwitz-Riley LR4 `190–4,500 Hz` cortical amplitude modulation, `0.10 Hz` HRV paced breathing, `600 Hz` Huggins dichotic headphone verification, ITU-R BS.1770-4 dynamic SNR follower) fused live into Layer 2 music.
+- **NootropicFM Signature Mode (`6×40 Hz`)**: Standalone flagship protocol locking `6 Hz` Theta × `40 Hz` Gamma Cross-Frequency Coupling onto `120.000 BPM` phase-aligned sub-harmonic stems with a `0.10 Hz` Mayer-wave spatial orbit (zero sham dilution).
+- **10 Studio Mix Genres + Endless Stream**: Remastered `-15.5 LUFS` stems, real-time procedural synthesis, Google Lyria RealTime infinite streaming, Circadian Daylight/Night modes, and R2-cached Studio Voice Concierge with sidechain ducking.
+- **Research Brain (Closed-Loop Optimization)**: Hierarchical Thompson Sampling across user context, pre/post Psychomotor Vigilance Task (PVT reaction time ms & lapses), 15s motor tapping CV, Web Bluetooth HRV (RMSSD / LF ratio), and 25% blind Aperiodic Acoustic Sham controls on consented sessions.
+- **NOOTROPIC FM SOUND SYSTEMS**: `Earbuds 01` (Wired USB-C 24-bit/48 kHz lossless reference IEM waitlist), `Earbuds Pro` (wireless LC3 + in-ear optical PPG HRV planned), and `Sound System 01` (nearfield crosstalk-canceled circadian desk/sleep system planned).

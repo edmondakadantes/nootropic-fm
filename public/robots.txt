@@ -1,0 +1,68 @@
+# nootropic.fm — Crawler & AI Search Indexing Policy
+# Open indexing for search engines and AI assistants across public pages.
+
+User-agent: *
+Allow: /
+Disallow: /api/
+
+User-agent: Googlebot
+Allow: /
+Disallow: /api/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /api/
+
+User-agent: GoogleOther
+Allow: /
+Disallow: /api/
+
+User-agent: GPTBot
+Allow: /
+Disallow: /api/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /api/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /api/
+
+User-agent: Claude-Web
+Allow: /
+Disallow: /api/
+
+User-agent: anthropic-ai
+Allow: /
+Disallow: /api/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /api/
+
+User-agent: Perplexity-User
+Allow: /
+Disallow: /api/
+
+User-agent: Applebot
+Allow: /
+Disallow: /api/
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /api/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /api/
+
+User-agent: DuckAssistBot
+Allow: /
+Disallow: /api/
+
+Sitemap: https://www.nootropic.fm/sitemap.xml
