@@ -89,48 +89,30 @@ const HARDWARE_DROPS: Array<{
   acousticRationale: string;
 }> = [
   {
-    code: 'earbuds_01_usb_c',
-    series: 'DROP 01 · REFERENCE USB-C IEM',
-    name: 'NootropicFM Earbuds 01',
-    price: '$129',
-    subPrice: '$119 Pre-Order · Includes 1 Yr Pro ($59 value)',
-    statusBadge: 'Founding Batch · Zero Batteries',
-    image: '/brand/hardware/earbuds-01-hero.png',
-    imageAlt:
-      'NootropicFM Earbuds 01 matte obsidian CNC Orbital Phase-Ring in-ear monitors with braided cable and 24-bit 48 kHz USB-C DAC monolith engraved with nootropic.fm logo',
-    specs: [
-      '10 mm LCP/Beryllium Dynamic Driver + Knowles/Sonion Balanced Armature (190–4,500 Hz)',
-      'Integrated 24-bit / 48 kHz USB-C DAC/DSP (CS43131 class) with EEPROM Hardware Auto-ID',
-      '±1 dB L/R Channel Match · 0.0° Phase Smear · Memory-Foam Passive Seal Tips',
-    ],
-    acousticRationale:
-      'Eliminates Bluetooth AAC/SBC psychoacoustic erasing of -20 to -26 dBc neural sidebands and eliminates battery wear.',
-  },
-  {
     code: 'earbuds_pro_hrv',
-    series: 'DROP 02 · CLOSED-LOOP BIOMETRIC',
+    series: 'FLAGSHIP WIRELESS · CLOSED-LOOP BIOMETRIC',
     name: 'NootropicFM Earbuds Pro',
     price: '$249',
-    subPrice: 'Includes 1 Yr Biometric Pro · Closed-Loop HRV',
-    statusBadge: 'Phase 3 R&D · In-Ear PPG',
+    subPrice: '100% Cordless · Includes 1 Yr Biometric Pro',
+    statusBadge: 'Flagship Wireless · In-Ear PPG',
     image: '/brand/hardware/earbuds-pro-hrv.png',
     imageAlt:
       'NootropicFM Earbuds Pro cordless CNC Orbital Phase-Ring earbuds showing inner optical PPG HRV sensor window and aluminum charging case branded nootropic.fm',
     specs: [
-      'Dual-Mode Bluetooth LE Audio LC3 (20 ms) + aptX Lossless Reference Path',
+      'True Wireless Bluetooth LE Audio LC3 (20 ms) + aptX Lossless Reference Path',
       'Concha Optical PPG Multi-Wavelength Sensor + NTC Thermal + 3-Axis Motion Compensation',
-      'Live Ear-Canal RMSSD & 0.10 Hz Mayer Biofeedback Adapting Modulation in Real Time',
+      'Live Ear-Canal RMSSD & 0.10 Hz Mayer Biofeedback Adapting AI Tuning in Real Time',
     ],
     acousticRationale:
-      'Measures autonomic HRV cleanly at the stable ear concha without wrist typing artifacts, closing the loop automatically.',
+      'Zero cables and lab-grade HRV telemetry from inside the ear concha — continuously teaching the AI how your nervous system reacts.',
   },
   {
     code: 'sound_system_01',
-    series: 'DROP 03 · ARCHITECTURAL DESK & SLEEP',
+    series: 'ARCHITECTURAL DESK & SLEEP',
     name: 'NootropicFM Sound System 01',
     price: '$549',
     subPrice: 'Halo Architectural Nearfield Instrument',
-    statusBadge: 'Phase 4 Concept · Nearfield XTC',
+    statusBadge: 'Nearfield XTC · No Wearable Needed',
     image: '/brand/hardware/sound-system-01.png',
     imageAlt:
       'NootropicFM Sound System 01 bead-blasted dark anodized aluminum desktop nearfield crosstalk-canceled speaker with rotary CNC dial and nootropic.fm logo',
@@ -141,6 +123,24 @@ const HARDWARE_DROPS: Array<{
     ],
     acousticRationale:
       'Reconstructs dichotic binaural phase isolation at your desk or bedside without wearing anything in your ears.',
+  },
+  {
+    code: 'earbuds_01_usb_c',
+    series: 'STUDIO REFERENCE EDITION · OPTIONAL WIRED',
+    name: 'NootropicFM Earbuds 01 (Wired USB-C)',
+    price: '$129',
+    subPrice: '$119 Pre-Order · Zero-Battery Desk Reference',
+    statusBadge: 'Optional Wired Studio Variant',
+    image: '/brand/hardware/earbuds-01-hero.png',
+    imageAlt:
+      'NootropicFM Earbuds 01 matte obsidian CNC Orbital Phase-Ring in-ear monitors with braided cable and 24-bit 48 kHz USB-C DAC monolith engraved with nootropic.fm logo',
+    specs: [
+      '10 mm LCP/Beryllium Dynamic Driver + Knowles/Sonion Balanced Armature (190–4,500 Hz)',
+      'Integrated 24-bit / 48 kHz USB-C DAC/DSP (CS43131 class) with EEPROM Hardware Auto-ID',
+      'Zero Li-Ion Battery Degradation · ±1 dB L/R Match · Memory-Foam Passive Seal',
+    ],
+    acousticRationale:
+      'Optional pure USB-C wired monitor for purists wanting zero RF and zero battery aging at fixed desks.',
   },
 ];
 
@@ -205,7 +205,7 @@ export function FlagshipShowcaseView({
   const [demoError, setDemoError] = useState<string | null>(null);
 
   const [selectedProduct, setSelectedProduct] =
-    useState<SoundSystemProductCode>('earbuds_01_usb_c');
+    useState<SoundSystemProductCode>('earbuds_pro_hrv');
   const [waitlistEmail, setWaitlistEmail] = useState('');
   const [waitlistBusy, setWaitlistBusy] = useState(false);
   const [waitlistError, setWaitlistError] = useState<string | null>(null);
@@ -576,20 +576,20 @@ export function FlagshipShowcaseView({
                 </a>
                 <button
                   type="button"
-                  onClick={() => scrollToWaitlistWithProduct('earbuds_01_usb_c')}
+                  onClick={() => scrollToWaitlistWithProduct('earbuds_pro_hrv')}
                   className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-[#131518] px-4 py-3 text-sm font-semibold text-[#F3F1EC] transition hover:border-white/30 hover:bg-[#1B1E24]"
                 >
-                  <span>Reserve Earbuds 01 ($129)</span>
+                  <span>Reserve Earbuds Pro ($249)</span>
                 </button>
               </div>
 
               <div className="grid grid-cols-1 gap-2.5 pt-2 sm:grid-cols-3">
                 <div className="rounded-xl border border-white/10 bg-[#0B0C0E] px-3 py-2.5">
                   <div className="font-mono-tech text-[10px] font-bold uppercase tracking-wider text-[#34D399]">
-                    24-bit / 48 kHz DAC
+                    Cordless LC3 + HRV
                   </div>
                   <div className="mt-0.5 text-[11px] text-[#A3A39E]">
-                    0.0° Phase Smear · Lossless USB-C
+                    Zero Wires · Live In-Ear PPG
                   </div>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-[#0B0C0E] px-3 py-2.5">
@@ -616,16 +616,16 @@ export function FlagshipShowcaseView({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="font-mono-tech text-[10px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
-                    ORBITAL PHASE-RING ARCHITECTURE · DROP 01
+                    ORBITAL PHASE-RING WIRELESS · IN-EAR HRV
                   </div>
                   <div className="text-xs font-semibold text-[#F3F1EC]">
-                    Unmistakable Stemless CNC Torus + Sapphire Wave Core
+                    100% Cordless CNC Torus + Sapphire Wave Core &amp; Optical PPG
                   </div>
                 </div>
 
                 <div
                   role="group"
-                  aria-label="Earbuds 01 Inspection Mode"
+                  aria-label="Earbuds Pro Inspection Mode"
                   className="inline-flex rounded-lg border border-white/15 bg-[#131518] p-0.5 text-[11px] font-semibold"
                 >
                   <button
@@ -659,16 +659,16 @@ export function FlagshipShowcaseView({
                 {heroView === 'photo' ? (
                   <div className="relative">
                     <img
-                      src="/brand/hardware/earbuds-01-hero.png"
-                      alt="NootropicFM Earbuds 01 Orbital Phase-Ring wired USB-C reference monitors engraved with nootropic.fm"
+                      src="/brand/hardware/earbuds-pro-hrv.png"
+                      alt="NootropicFM Earbuds Pro cordless Orbital Phase-Ring wireless earbuds with in-ear optical PPG HRV sensor and aluminum case engraved with nootropic.fm"
                       className="aspect-[16/9] w-full object-cover"
                     />
                     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 bg-[#121417] px-3.5 py-2.5 text-[11px]">
                       <span className="font-mono-tech font-semibold text-[#F3F1EC]">
-                        CNC 6063 Aluminum · Laser-Etched <span className="text-[#34D399]">nootropic.fm</span> Bridge &amp; USB-C DAC
+                        Cordless Aluminum Case · <span className="text-[#34D399]">nootropic.fm</span> Etched Ring &amp; Inner PPG Window
                       </span>
                       <span className="rounded border border-emerald-400/35 bg-emerald-500/10 px-2 py-0.5 font-mono-tech text-[10px] font-bold text-[#34D399]">
-                        1DD + 1BA · ±1 dB
+                        LC3 LOSSLESS · PPG HRV
                       </span>
                     </div>
                   </div>
@@ -679,7 +679,7 @@ export function FlagshipShowcaseView({
                         viewBox="0 0 640 330"
                         className="w-full h-auto"
                         role="img"
-                        aria-label="Acoustic CAD X-Ray Cross-Section of NootropicFM Earbuds 01"
+                        aria-label="Acoustic CAD X-Ray Cross-Section of NootropicFM Earbuds Pro Wireless"
                       >
                         {/* Blueprint Grid */}
                         <defs>
@@ -694,6 +694,12 @@ export function FlagshipShowcaseView({
                           </pattern>
                         </defs>
                         <rect width="640" height="330" fill="url(#nfmCadGrid)" />
+
+                        {/* Cordless Wireless SoC Core (inside Ring housing — zero cable!) */}
+                        <rect x="28" y="138" width="66" height="54" rx="10" fill="#1E293B" stroke="#38BDF8" strokeWidth="1.8" />
+                        <text x="61" y="162" textAnchor="middle" fill="#FFFFFF" fontSize="9.5" fontWeight="700" fontFamily="monospace">LC3 SoC</text>
+                        <text x="61" y="176" textAnchor="middle" fill="#6EE7B7" fontSize="8.5" fontFamily="monospace">PPG · HRV</text>
+                        <line x1="94" y1="165" x2="123" y2="165" stroke={isDay ? '#1E40AF' : '#38BDF8'} strokeWidth="2" strokeDasharray="4 3" />
 
                         {/* Outer Orbital CNC Ring */}
                         <circle
@@ -744,17 +750,10 @@ export function FlagshipShowcaseView({
                           strokeWidth="1.5"
                         />
 
-                        {/* USB-C DAC Monolith Block */}
-                        <rect x="28" y="138" width="66" height="54" rx="8" fill="#1E293B" stroke="#38BDF8" strokeWidth="1.8" />
-                        <rect x="8" y="151" width="20" height="28" rx="3" fill="#475569" stroke="#CBD5E1" strokeWidth="1.2" />
-                        <line x1="94" y1="165" x2="123" y2="165" stroke={isDay ? '#047857' : '#34D399'} strokeWidth="3" />
-                        <text x="61" y="162" textAnchor="middle" fill="#FFFFFF" fontSize="9.5" fontWeight="700" fontFamily="monospace">24-BIT</text>
-                        <text x="61" y="176" textAnchor="middle" fill="#6EE7B7" fontSize="8.5" fontFamily="monospace">CS43131</text>
-
                         {/* Leader Callouts */}
                         <line x1="225" y1="63" x2="275" y2="34" stroke={isDay ? '#047857' : '#34D399'} strokeWidth="1.2" />
                         <text x="282" y="38" fill={isDay ? '#0F172A' : '#F3F1EC'} fontSize="11" fontWeight="600" fontFamily="Inter, sans-serif">
-                          5-Axis CNC Orbital 6063 Torus + Sapphire ((•)) Core
+                          Cordless CNC Orbital Torus + Sapphire ((•)) Core
                         </text>
 
                         <line x1="333" y1="141" x2="385" y2="82" stroke={isDay ? '#047857' : '#34D399'} strokeWidth="1.2" />
@@ -774,7 +773,7 @@ export function FlagshipShowcaseView({
 
                         <line x1="61" y1="192" x2="88" y2="275" stroke={isDay ? '#1E40AF' : '#38BDF8'} strokeWidth="1.2" />
                         <text x="95" y="279" fill={isDay ? '#0F172A' : '#F3F1EC'} fontSize="11" fontWeight="600" fontFamily="Inter, sans-serif">
-                          USB-C 24-bit/48 kHz DAC + EEPROM Auto-Detect
+                          Wireless LC3 / Lossless SoC + Concha PPG HRV
                         </text>
                       </svg>
                     </div>
@@ -1301,22 +1300,23 @@ export function FlagshipShowcaseView({
             <div className="glass-card flex flex-col justify-between rounded-3xl p-6 space-y-4">
               <div className="space-y-2">
                 <div className="font-mono-tech text-[10.5px] font-bold uppercase tracking-wider text-[#34D399]">
-                  EARBUDS 01 BUNDLE
+                  EARBUDS PRO WIRELESS BUNDLE
                 </div>
                 <div className="font-display text-3xl font-bold text-[#F3F1EC]">
-                  $129 <span className="text-sm font-medium text-[#A3A39E]">($119 pre-order)</span>
+                  $249 <span className="text-sm font-medium text-[#A3A39E]">(wireless + 1 Yr Pro)</span>
                 </div>
                 <p className="text-xs text-[#A3A39E]">
-                  USB-C 24-bit/48 kHz Orbital Phase-Ring IEM + 12 months NootropicFM Pro included.
+                  100% Cordless Orbital Phase-Ring IEM with In-Ear PPG HRV + 12 months NootropicFM
+                  Biometric Pro. (Optional $129 USB-C wired edition also in waitlist.)
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => scrollToWaitlistWithProduct('earbuds_01_usb_c')}
+                onClick={() => scrollToWaitlistWithProduct('earbuds_pro_hrv')}
                 className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-[#131518] px-4 py-2.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-white/30"
               >
                 <Headphones className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
-                <span>Reserve Earbuds 01</span>
+                <span>Reserve Earbuds Pro</span>
               </button>
             </div>
           </div>

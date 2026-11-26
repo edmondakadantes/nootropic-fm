@@ -31,37 +31,37 @@ const HARDWARE_LINEUP: Array<{
   description: string;
 }> = [
   {
-    code: 'earbuds_01_usb_c',
-    series: 'DROP 01 · REFERENCE IEM',
-    name: 'NootropicFM Earbuds 01 (Lossless USB-C)',
-    badge: 'First Batch · Includes 1 Yr Pro',
-    specLine: '24-bit / 48 kHz Integrated DAC · 0.0° Phase Smear · Memory-Seal Tips',
-    description:
-      'Zero Bluetooth compression and zero consumer V-curve bass bloat. Engineered specifically so -20 dB 40 Hz Gamma bursts and 6 Hz Theta envelopes reach the eardrum intact.',
-  },
-  {
     code: 'earbuds_pro_hrv',
-    series: 'DROP 02 · CLOSED-LOOP BIOMETRIC',
-    name: 'NootropicFM Earbuds Pro (In-Ear HRV)',
-    badge: 'R&D Prototype',
-    specLine: 'Concha Optical PPG Sensor · Live RMSSD Biofeedback · Neural-Safe Passive Seal',
+    series: 'FLAGSHIP WIRELESS · CLOSED-LOOP BIOMETRIC',
+    name: 'NootropicFM Earbuds Pro (Wireless In-Ear HRV)',
+    badge: 'Flagship Cordless · Priority',
+    specLine: '100% Wireless LC3/Lossless · Concha Optical PPG · Live RMSSD Biofeedback',
     description:
-      'Streams real-time heart-rate variability directly from your ear canal into the NootropicFM engine, automatically adapting modulation Hz to your nervous system.',
+      'Cordless Orbital Phase-Ring earbuds that stream real-time heart-rate variability directly from your ear canal so our AI adapts modulation Hz to your nervous system.',
   },
   {
     code: 'sound_system_01',
-    series: 'DROP 03 · ARCHITECTURAL AUDIO',
+    series: 'ARCHITECTURAL AUDIO',
     name: 'NootropicFM Sound System 01',
-    badge: 'Future Concept',
+    badge: 'Desk & Sleep Concept',
     specLine: 'Nearfield Crosstalk-Canceled Array · Warm Circadian Amber/Daylight Optics',
     description:
       'Precision desk and bedside acoustic instrument pairing phase-aligned nearfield drivers with automatic Daylight & Nocturnal circadian calibration.',
+  },
+  {
+    code: 'earbuds_01_usb_c',
+    series: 'OPTIONAL WIRED EDITION · REFERENCE IEM',
+    name: 'NootropicFM Earbuds 01 (Wired USB-C)',
+    badge: 'Zero-Battery Studio Option',
+    specLine: '24-bit / 48 kHz Integrated DAC · 0.0° Phase Smear · Memory-Seal Tips',
+    description:
+      'Optional USB-C wired monitor with zero Bluetooth compression and zero battery wear for dedicated fixed-desk sessions.',
   },
 ];
 
 export function SoundSystemsModal({ profileId, onClose }: SoundSystemsModalProps) {
   const [selectedProduct, setSelectedProduct] =
-    useState<SoundSystemProductCode>('earbuds_01_usb_c');
+    useState<SoundSystemProductCode>('earbuds_pro_hrv');
   const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

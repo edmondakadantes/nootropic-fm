@@ -514,7 +514,7 @@ test('Headless Edge: Flagship Showcase renders branded hardware, CAD X-Ray, WCAG
     // 1. Open Flagship Showcase via ?surface=showcase
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=showcase` });
     await waitUntil(
-      `document.body.innerText.includes('ORBITAL PHASE-RING ARCHITECTURE')`,
+      `Boolean(document.body && document.body.innerText && document.body.innerText.includes('ORBITAL PHASE-RING WIRELESS'))`,
       8000,
       'FlagshipShowcaseView mount'
     );
@@ -561,7 +561,7 @@ test('Headless Edge: Flagship Showcase renders branded hardware, CAD X-Ray, WCAG
     // 2. Verify entering Audio Studio opens the full original CheckInView onboarding (NOT skipping straight to PlayerView)
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio` });
     await waitUntil(
-      `document.body.innerText.includes('Study Lab') && !document.body.innerText.includes('ORBITAL PHASE-RING ARCHITECTURE') && Boolean(document.querySelector('input, textarea'))`,
+      `Boolean(document.body && document.body.innerText && document.body.innerText.includes('Study Lab') && !document.body.innerText.includes('ORBITAL PHASE-RING') && document.querySelector('input, textarea'))`,
       8000,
       'Full original CheckInView onboarding rendered on Studio entry'
     );
