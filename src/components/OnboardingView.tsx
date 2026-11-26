@@ -15,6 +15,7 @@ import { SonicOrb } from './SonicOrb';
 
 interface OnboardingViewProps {
   initialProfile?: UserProfile | null;
+  themeMode?: 'daylight' | 'night';
   onComplete: (profileData: Partial<UserProfile>) => Promise<void>;
   onCancel?: () => void;
   onMoodChange?: (mood: FieldMood) => void;
@@ -22,6 +23,7 @@ interface OnboardingViewProps {
 
 export function OnboardingView({
   initialProfile,
+  themeMode = 'night',
   onComplete,
   onCancel,
 }: OnboardingViewProps) {
@@ -71,7 +73,7 @@ export function OnboardingView({
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center space-y-6">
       <div className="animate-rise flex flex-col items-center text-center">
-        <SonicOrb mood="focus" size="sm" label="Neural Identity" />
+        <SonicOrb mood="focus" size="sm" label="Neural Identity" themeMode={themeMode} />
         <h1 className="mt-4 text-2xl font-bold tracking-tight text-[#F3F1EC] sm:text-3xl">
           Refine your <span className="text-[#34D399]">Neural Identity</span>
         </h1>

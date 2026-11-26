@@ -8,7 +8,7 @@ import {
 
 export type VoiceCueType = 'intro_full' | 'intro_short' | 'outro_landing';
 
-export const DEFAULT_ELEVENLABS_VOICE_ID = 'pysCEvZRsl1S0ifPp4IM'; // Serene Presence - Calm & Grounded
+export const DEFAULT_ELEVENLABS_VOICE_ID = 'gYGXjks6FzTWwNQ6X7hC'; // Monique - Empathetic, Calm & Nurturing
 
 export interface ConciergeVoiceOption {
   voiceId: string;

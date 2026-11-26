@@ -63,7 +63,7 @@ const VALID_GENRES = new Set<string>(Object.keys(GENRE_META));
 const EXCLUDED_VOICE_RX =
   /\b(horror|crime|thriller|excited|hype|screaming|shout|advertisement|announcer|characters_animation|monster|villain)\b/i;
 const CALM_VOICE_RX =
-  /\b(meditat|serene|calm|gentle|smooth|velvet|sooth|whisper|soft|warm|relax|grounded)\b/i;
+  /\b(meditat|serene|calm|gentle|smooth|velvet|sooth|whisper|soft|warm|relax|grounded|empathetic|nurturing)\b/i;
 
 const VOICE_CATALOG_TTL_MS = 10 * 60 * 1000;
 let cachedCatalog: {
@@ -198,8 +198,10 @@ export async function listAvailableConciergeVoices(
       if (EXCLUDED_VOICE_RX.test(metaBlob)) continue;
 
       let score = 0;
-      if (voiceId === preferredVoiceId || /\bserene\b/i.test(rawName)) {
-        score += 1000;
+      if (voiceId === preferredVoiceId || /\bmonique\b/i.test(rawName)) {
+        score += 2000;
+      } else if (/\bserene\b/i.test(rawName)) {
+        score += 500;
       }
       const isPremade = (v.category ?? '').toLowerCase() === 'premade';
       if (!isPremade) {

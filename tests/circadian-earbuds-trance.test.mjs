@@ -412,6 +412,14 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     };
 
     const assertContrastClean = async (stageLabel) => {
+      await evalJs(`new Promise((resolve) => {
+        for (const anim of document.getAnimations()) {
+          if (typeof CSSTransition !== 'undefined' && anim instanceof CSSTransition) {
+            try { anim.finish(); } catch {}
+          }
+        }
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+      })`);
       const violations = await evalJs(`(() => {
         const parseRgb = (str) => {
           const m = str.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/);
@@ -425,30 +433,49 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
           };
           return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
         };
+        const blend = (fg, bg) => ({
+          r: fg.r * fg.a + bg.r * (1 - fg.a),
+          g: fg.g * fg.a + bg.g * (1 - fg.a),
+          b: fg.b * fg.a + bg.b * (1 - fg.a),
+          a: 1,
+        });
         const effectiveBg = (el) => {
+          const layers = [];
           let cur = el;
-          while (cur) {
+          while (cur && cur.nodeType === 1) {
             const c = parseRgb(getComputedStyle(cur).backgroundColor);
-            if (c && c.a > 0.35) return c;
+            if (c && c.a > 0) layers.push(c);
             cur = cur.parentElement;
           }
-          return parseRgb(getComputedStyle(document.body).backgroundColor);
+          let res = parseRgb(getComputedStyle(document.body).backgroundColor) || { r: 226, g: 232, b: 240, a: 1 };
+          res.a = 1;
+          for (let i = layers.length - 1; i >= 0; i--) res = blend(layers[i], res);
+          return res;
         };
         const bad = [];
-        for (const el of document.querySelectorAll('button, h1, h2, h3, label')) {
+        for (const el of document.querySelectorAll('button, h1, h2, h3, label, p, span, a, code, kbd, strong')) {
           const rect = el.getBoundingClientRect();
-          if (rect.width < 12 || rect.height < 12) continue;
+          if (rect.width < 8 || rect.height < 8) continue;
           const st = getComputedStyle(el);
           if (st.visibility === 'hidden' || Number(st.opacity) < 0.45) continue;
+          if (el.closest('[aria-hidden="true"]')) continue;
+          // Only check leaf-ish elements with direct text nodes so parent wrappers don't double-report
+          const hasDirectText = Array.from(el.childNodes).some(
+            (n) => n.nodeType === 3 && (n.textContent || '').trim().length > 0
+          );
+          if (!hasDirectText && el.tagName !== 'BUTTON') continue;
           if (!(el.innerText || '').trim()) continue;
-          const fg = parseRgb(st.color);
+          const fgRaw = parseRgb(st.color);
           const bg = effectiveBg(el);
-          if (!fg || !bg) continue;
+          if (!fgRaw || !bg) continue;
+          const fg = fgRaw.a < 1 ? blend(fgRaw, bg) : fgRaw;
           const l1 = Math.max(relLum(fg), relLum(bg));
           const l2 = Math.min(relLum(fg), relLum(bg));
           const ratio = (l1 + 0.05) / (l2 + 0.05);
-          if (ratio < 2.8) {
-            bad.push({ tag: el.tagName, text: (el.innerText || '').trim().slice(0, 32), ratio: Number(ratio.toFixed(2)), color: st.color, bg: 'rgb(' + bg.r + ',' + bg.g + ',' + bg.b + ')' });
+          const fontSize = parseFloat(st.fontSize) || 14;
+          const minReq = fontSize >= 18 ? 3.0 : 4.5;
+          if (ratio < minReq) {
+            bad.push({ tag: el.tagName, text: (el.innerText || '').trim().slice(0, 32), ratio: Number(ratio.toFixed(2)), minReq, color: st.color, bg: 'rgb(' + Math.round(bg.r) + ',' + Math.round(bg.g) + ',' + Math.round(bg.b) + ')' });
           }
         }
         return bad;
@@ -490,7 +517,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     })`);
     assert.equal(dayState.theme, 'daylight');
     assert.equal(dayState.hasDark, false);
-    assert.equal(dayState.bg, 'rgb(243, 239, 230)');
+    assert.equal(dayState.bg, 'rgb(226, 232, 240)');
     assert.equal(dayState.stored, 'daylight');
 
     await sendCdp('Page.reload', {});
@@ -516,7 +543,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /continue:\\s*current state/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'))`, 5000, 'Beat 2');
     const gridStroke = await evalJs(`getComputedStyle(document.querySelector('.studio-grid-strong')).stroke`);
-    assert.match(gridStroke, /rgba?\(20,\s*22,\s*25/);
+    assert.match(gridStroke, /rgba?\(15,\s*23,\s*42/);
     await assertContrastClean('Daylight Beat 2 Brain Map');
 
     // Walk to Beat 3 -> Beat 4 -> Reveal -> PlayerView
@@ -553,7 +580,71 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
 
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || '')))`, 8000, 'PlayerView');
+    await new Promise((r) => setTimeout(r, 250));
     await assertContrastClean('Daylight PlayerView');
+
+    // Verify both Oscillator & Spectrum Bar canvases switched to Daylight lab surface (#E8EFF7 -> r>=224,g>=232,b>=240)
+    const canvasAudit = await evalJs(`(() => {
+      const canvases = Array.from(document.querySelectorAll('main canvas'));
+      return canvases.map((c) => {
+        const ctx = c.getContext('2d');
+        const p = ctx ? ctx.getImageData(4, 4, 1, 1).data : [0, 0, 0, 0];
+        return {
+          aria: c.getAttribute('aria-label') || '',
+          bg: getComputedStyle(c).backgroundColor,
+          r: p[0],
+          g: p[1],
+          b: p[2],
+        };
+      });
+    })()`);
+    assert.ok(canvasAudit.length >= 2, `Expected >=2 instrument canvases in PlayerView, got ${canvasAudit.length}`);
+    for (const c of canvasAudit) {
+      assert.ok(c.r >= 224 && c.g >= 232 && c.b >= 240, `Canvas stayed dark in Daylight Mode: ${JSON.stringify(c)}`);
+    }
+
+    // Verify X/Y Lissajous toggle & Verified Science drawer in Daylight Mode (wait >150ms CSS transition)
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /X\\/Y Lissajous/i.test(b.textContent || ''))?.click()`);
+    await new Promise((r) => setTimeout(r, 260));
+    await assertContrastClean('Daylight PlayerView X/Y Lissajous');
+
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Verified Science/i.test(b.textContent || ''))?.click()`);
+    await new Promise((r) => setTimeout(r, 260));
+    await assertContrastClean('Daylight PlayerView Science Drawer');
+
+    // Verify Plain Music layer monitor active contrast + dot visibility
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Plain Music/i.test(b.textContent || ''))?.click()`);
+    await new Promise((r) => setTimeout(r, 260));
+    await assertContrastClean('Daylight PlayerView Plain Music');
+
+    // Verify Sound Systems & Go Pro modals in Daylight Mode
+    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`/Acoustic Hardware Lab/i.test(document.body.innerText)`, 4000, 'SoundSystemsModal');
+    await assertContrastClean('Daylight SoundSystemsModal');
+    await evalJs(`document.querySelector('button[aria-label="Close Sound Systems modal"]')?.click()`);
+    await new Promise((r) => setTimeout(r, 100));
+
+    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /PRO|Go Pro/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`/Pro Subscription|Unlock Full Sessions/i.test(document.body.innerText)`, 4000, 'UpgradeProModal');
+    await assertContrastClean('Daylight UpgradeProModal');
+    await evalJs(`document.querySelector('div.fixed button')?.click()`);
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Verify Study Lab & Research Brain contrast in Daylight Mode too
+    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Turn Published'))`, 5000, 'StudyLabView');
+    await assertContrastClean('Daylight StudyLabView');
+
+    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Research/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Research Brain') || document.body.innerText.includes('Unable to load'))`, 5000, 'InsightsView');
+    await assertContrastClean('Daylight InsightsView');
+
+    // Return to active PlayerView -> End & Rate -> verify DebriefView contrast
+    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Session/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || '')))`, 4000, 'Return to PlayerView');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('How did your mind'))`, 5000, 'DebriefView');
+    await assertContrastClean('Daylight DebriefView');
 
     ws.close();
   } finally {

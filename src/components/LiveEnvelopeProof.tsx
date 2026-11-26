@@ -13,6 +13,7 @@ interface LiveEnvelopeProofProps {
   tuningA4Hz: 440 | 432;
   layerMode?: 'full_mix' | 'science_only' | 'music_only';
   isPureWave?: boolean;
+  themeMode?: 'daylight' | 'night';
   onTogglePureWave?: () => void;
 }
 
@@ -41,6 +42,7 @@ export function LiveEnvelopeProof({
   tuningA4Hz,
   layerMode = 'full_mix',
   isPureWave = false,
+  themeMode = 'night',
   onTogglePureWave,
 }: LiveEnvelopeProofProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -60,6 +62,7 @@ export function LiveEnvelopeProof({
     depth,
     layerMode,
     isPureWave,
+    themeMode,
   });
   livePropsRef.current = {
     entrainmentType,
@@ -67,6 +70,7 @@ export function LiveEnvelopeProof({
     depth,
     layerMode,
     isPureWave,
+    themeMode,
   };
 
   useEffect(() => {
@@ -107,7 +111,9 @@ export function LiveEnvelopeProof({
         depth: curDepth,
         layerMode: curLayerMode,
         isPureWave: curPureWave,
+        themeMode: curThemeMode,
       } = livePropsRef.current;
+      const isDay = curThemeMode === 'daylight';
       const slowBreath = curFreqHz > 0 && curFreqHz <= 1.5;
       const isMusicBypassed = curLayerMode === 'music_only';
       const isIsolated = curPureWave || curLayerMode === 'science_only';
@@ -116,12 +122,12 @@ export function LiveEnvelopeProof({
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, w, h);
 
-      // Recessed dark-phosphor CRT surface with subtle center vignette glow
-      ctx.fillStyle = '#030706';
+      // CRT surface (Night) or Crisp Lab Strip-Chart Surface (Daylight)
+      ctx.fillStyle = isDay ? '#E8EFF7' : '#030706';
       ctx.fillRect(0, 0, w, h);
       const bgGlow = ctx.createRadialGradient(w * 0.5, h * 0.45, 10, w * 0.5, h * 0.5, w * 0.65);
-      bgGlow.addColorStop(0, 'rgba(52, 211, 153, 0.05)');
-      bgGlow.addColorStop(1, 'rgba(3, 7, 6, 0)');
+      bgGlow.addColorStop(0, isDay ? 'rgba(4, 120, 87, 0.05)' : 'rgba(52, 211, 153, 0.05)');
+      bgGlow.addColorStop(1, isDay ? 'rgba(232, 239, 247, 0)' : 'rgba(3, 7, 6, 0)');
       ctx.fillStyle = bgGlow;
       ctx.fillRect(0, 0, w, h);
 
@@ -209,8 +215,8 @@ export function LiveEnvelopeProof({
       }
 
       if (scopeMode === 'dual_trace') {
-        // Laboratory CRT graticule grid (8 vertical x 4 horizontal divisions)
-        ctx.strokeStyle = 'rgba(52, 211, 153, 0.14)';
+        // Laboratory graticule grid (8 vertical x 4 horizontal divisions)
+        ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.13)' : 'rgba(52, 211, 153, 0.14)';
         ctx.lineWidth = 1;
         for (let gx = 1; gx < 8; gx++) {
           const x = Math.round((gx / 8) * w) + 0.5;
@@ -229,7 +235,7 @@ export function LiveEnvelopeProof({
 
         // Upper Lane (CH1 Master Waveform): 0% .. 53% height
         const ch1MidY = Math.round(h * 0.3) + 0.5;
-        ctx.strokeStyle = 'rgba(52, 211, 153, 0.24)';
+        ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.28)' : 'rgba(52, 211, 153, 0.24)';
         ctx.beginPath();
         ctx.moveTo(0, ch1MidY);
         ctx.lineTo(w, ch1MidY);
@@ -246,7 +252,7 @@ export function LiveEnvelopeProof({
         const divY = Math.round(h * 0.55) + 0.5;
         ctx.save();
         ctx.setLineDash([4, 4]);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.26)' : 'rgba(255, 255, 255, 0.12)';
         ctx.beginPath();
         ctx.moveTo(0, divY);
         ctx.lineTo(w, divY);
@@ -256,6 +262,23 @@ export function LiveEnvelopeProof({
         // Lower Lane (CH2 Measured Cortical Envelope): 57% .. 100% height
         const ch2BaseY = h - 8;
         const ch2SpanH = h * 0.36;
+
+        const ch1Core = isDay ? '#047857' : '#34D399';
+        const ch1Halo = isDay ? 'rgba(4, 120, 87, 0.18)' : 'rgba(52, 211, 153, 0.26)';
+        const ch2Core = isMusicBypassed
+          ? isDay
+            ? '#64748B'
+            : '#94A3B8'
+          : isDay
+            ? '#0369A1'
+            : '#FBBF24';
+        const ch2Halo = isMusicBypassed
+          ? isDay
+            ? 'rgba(100, 116, 139, 0.16)'
+            : 'rgba(148, 163, 184, 0.16)'
+          : isDay
+            ? 'rgba(3, 105, 161, 0.18)'
+            : 'rgba(251, 191, 36, 0.24)';
 
         if (hasWave) {
           // Rising zero-crossing trigger stabilization (like a hardware Tektronix scope)
@@ -272,7 +295,7 @@ export function LiveEnvelopeProof({
           const visualGain =
             peakAbs > 0.004 ? Math.min(4.8, 0.44 / Math.max(0.08, peakAbs)) : 1.0;
 
-          // TRACE 1 (Phosphor Green): Outer bloom halo + crisp core beam
+          // TRACE 1 (Emerald): Outer halo + crisp core beam
           ctx.beginPath();
           for (let i = 0; i < displaySamples; i++) {
             const x = (i / (displaySamples - 1)) * w;
@@ -281,15 +304,15 @@ export function LiveEnvelopeProof({
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           }
-          ctx.strokeStyle = 'rgba(52, 211, 153, 0.26)';
+          ctx.strokeStyle = ch1Halo;
           ctx.lineWidth = 5;
           ctx.lineJoin = 'round';
           ctx.stroke();
-          ctx.strokeStyle = '#34D399';
+          ctx.strokeStyle = ch1Core;
           ctx.lineWidth = 2.1;
           ctx.stroke();
 
-          // TRACE 2 (Tungsten Amber / Muted Slate on Bypass): Measured Sub-Window Envelope
+          // TRACE 2 (Cobalt Blue in Daylight / Tungsten Amber in Night / Slate on Bypass)
           let maxEnv = 0.025;
           for (let i = 0; i < envHistoryLen; i++) {
             if (envHistory[i] > maxEnv) maxEnv = envHistory[i];
@@ -299,8 +322,11 @@ export function LiveEnvelopeProof({
           // Subtle filled envelope area under CH2 trace
           const envGrad = ctx.createLinearGradient(0, ch2BaseY - ch2SpanH, 0, ch2BaseY);
           if (isMusicBypassed) {
-            envGrad.addColorStop(0, 'rgba(148, 163, 184, 0.08)');
-            envGrad.addColorStop(1, 'rgba(148, 163, 184, 0.01)');
+            envGrad.addColorStop(0, isDay ? 'rgba(100, 116, 139, 0.14)' : 'rgba(148, 163, 184, 0.08)');
+            envGrad.addColorStop(1, isDay ? 'rgba(100, 116, 139, 0.01)' : 'rgba(148, 163, 184, 0.01)');
+          } else if (isDay) {
+            envGrad.addColorStop(0, 'rgba(3, 105, 161, 0.16)');
+            envGrad.addColorStop(1, 'rgba(3, 105, 161, 0.01)');
           } else {
             envGrad.addColorStop(0, 'rgba(245, 158, 11, 0.16)');
             envGrad.addColorStop(1, 'rgba(245, 158, 11, 0.01)');
@@ -315,13 +341,11 @@ export function LiveEnvelopeProof({
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           }
-          ctx.strokeStyle = isMusicBypassed
-            ? 'rgba(148, 163, 184, 0.16)'
-            : 'rgba(251, 191, 36, 0.24)';
+          ctx.strokeStyle = ch2Halo;
           ctx.lineWidth = 4.5;
           ctx.lineJoin = 'round';
           ctx.stroke();
-          ctx.strokeStyle = isMusicBypassed ? '#94A3B8' : '#FBBF24';
+          ctx.strokeStyle = ch2Core;
           ctx.lineWidth = 2.1;
           ctx.stroke();
 
@@ -331,15 +355,15 @@ export function LiveEnvelopeProof({
           ctx.fillStyle = envGrad;
           ctx.fill();
         } else {
-          // Steady CRT standby zero lines when paused
-          ctx.strokeStyle = 'rgba(52, 211, 153, 0.35)';
+          // Steady standby zero lines when paused
+          ctx.strokeStyle = isDay ? 'rgba(4, 120, 87, 0.55)' : 'rgba(52, 211, 153, 0.35)';
           ctx.lineWidth = 1.6;
           ctx.beginPath();
           ctx.moveTo(0, ch1MidY);
           ctx.lineTo(w, ch1MidY);
           ctx.stroke();
 
-          ctx.strokeStyle = 'rgba(251, 191, 36, 0.28)';
+          ctx.strokeStyle = isDay ? 'rgba(3, 105, 161, 0.48)' : 'rgba(251, 191, 36, 0.28)';
           ctx.lineWidth = 1.5;
           ctx.beginPath();
           ctx.moveTo(0, ch2BaseY);
@@ -347,14 +371,14 @@ export function LiveEnvelopeProof({
           ctx.stroke();
         }
 
-        // In-Screen CRT HUD Overlay Labels
+        // In-Screen HUD Overlay Labels
         ctx.font = '600 9.5px "JetBrains Mono", monospace';
         ctx.textBaseline = 'top';
         ctx.textAlign = 'left';
-        ctx.fillStyle = '#34D399';
+        ctx.fillStyle = ch1Core;
         ctx.fillText('CH1 WAVEFORM', 10, 10);
 
-        ctx.fillStyle = isMusicBypassed ? '#94A3B8' : '#FBBF24';
+        ctx.fillStyle = ch2Core;
         ctx.fillText(
           isMusicBypassed
             ? 'CH2 RAW DYNAMICS (0% SCIENCE)'
@@ -367,16 +391,16 @@ export function LiveEnvelopeProof({
         let statusHud = '';
         if (!isPlaying) {
           statusHud = 'STANDBY';
-          ctx.fillStyle = 'rgba(148, 163, 184, 0.85)';
+          ctx.fillStyle = isDay ? '#475569' : 'rgba(148, 163, 184, 0.85)';
         } else if (isMusicBypassed) {
           statusHud = 'SCIENCE BYPASSED · 0%';
-          ctx.fillStyle = '#94A3B8';
+          ctx.fillStyle = isDay ? '#475569' : '#94A3B8';
         } else if (isIsolated) {
           statusHud = `SCIENCE ISOLATED · ${curFreqHz > 0 ? `${curFreqHz} HZ · ` : ''}${Math.round(curDepth * 100)}%`;
-          ctx.fillStyle = '#FBBF24';
+          ctx.fillStyle = isDay ? '#0369A1' : '#FBBF24';
         } else {
           statusHud = `${curFreqHz > 0 ? `${curFreqHz} HZ · ` : ''}${Math.round(curDepth * 100)}% DEPTH`;
-          ctx.fillStyle = '#34D399';
+          ctx.fillStyle = ch1Core;
         }
         ctx.fillText(statusHud, w - 10, 10);
       } else {
@@ -385,7 +409,7 @@ export function LiveEnvelopeProof({
         const cy = h / 2;
         const radius = Math.min(w, h) * 0.42;
 
-        ctx.strokeStyle = 'rgba(52, 211, 153, 0.17)';
+        ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.16)' : 'rgba(52, 211, 153, 0.17)';
         ctx.lineWidth = 1;
         // Outer & 50% polar rings
         ctx.beginPath();
@@ -409,7 +433,7 @@ export function LiveEnvelopeProof({
         ctx.stroke();
 
         ctx.font = '600 10px "JetBrains Mono", monospace';
-        ctx.fillStyle = 'rgba(163, 163, 158, 0.78)';
+        ctx.fillStyle = isDay ? '#475569' : 'rgba(163, 163, 158, 0.78)';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('L', cx - radius - 16, cy);
@@ -428,16 +452,22 @@ export function LiveEnvelopeProof({
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           }
-          ctx.strokeStyle = 'rgba(52, 211, 153, 0.24)';
+          ctx.strokeStyle = isDay ? 'rgba(4, 120, 87, 0.22)' : 'rgba(52, 211, 153, 0.24)';
           ctx.lineWidth = 4.5;
           ctx.lineJoin = 'round';
           ctx.stroke();
-          ctx.strokeStyle = '#34D399';
+          ctx.strokeStyle = isDay ? '#047857' : '#34D399';
           ctx.lineWidth = 1.9;
           ctx.stroke();
         } else {
-          // Stationary CRT electron beam dot when paused or near-silent
-          ctx.fillStyle = isPlaying ? '#34D399' : '#F3F1EC';
+          // Stationary electron beam dot when paused or near-silent
+          ctx.fillStyle = isPlaying
+            ? isDay
+              ? '#047857'
+              : '#34D399'
+            : isDay
+              ? '#0F172A'
+              : '#F3F1EC';
           ctx.beginPath();
           ctx.arc(cx, cy, 3, 0, Math.PI * 2);
           ctx.fill();
@@ -446,10 +476,16 @@ export function LiveEnvelopeProof({
         ctx.font = '600 9.5px "JetBrains Mono", monospace';
         ctx.textBaseline = 'top';
         ctx.textAlign = 'left';
-        ctx.fillStyle = '#34D399';
+        ctx.fillStyle = isDay ? '#047857' : '#34D399';
         ctx.fillText('X/Y VECTORSCOPE', 10, 10);
         ctx.textAlign = 'right';
-        ctx.fillStyle = isPlaying ? '#34D399' : 'rgba(148, 163, 184, 0.85)';
+        ctx.fillStyle = isPlaying
+          ? isDay
+            ? '#047857'
+            : '#34D399'
+          : isDay
+            ? '#475569'
+            : 'rgba(148, 163, 184, 0.85)';
         ctx.fillText(isPlaying ? `CORR ${corrStr}` : 'STANDBY', w - 10, 10);
       }
 
@@ -477,8 +513,9 @@ export function LiveEnvelopeProof({
 
     raf = window.requestAnimationFrame(draw);
     return () => window.cancelAnimationFrame(raf);
-  }, [engine, isPlaying, scopeMode]);
+  }, [engine, isPlaying, scopeMode, themeMode]);
 
+  const isDay = themeMode === 'daylight';
   const isSlowBreath = frequencyHz > 0 && frequencyHz <= 1.5;
   const isMusicOnly = layerMode === 'music_only';
   const ch2WindowLabel = isSlowBreath ? '5.0s' : '750 ms';
@@ -488,17 +525,23 @@ export function LiveEnvelopeProof({
   }${isMusicOnly ? ' (Bypassed · 0%)' : depth > 0 ? ` (${Math.round(depth * 100)}% depth)` : ''} · ${carrierLabel} · A=${tuningA4Hz} Hz`;
 
   return (
-    <div className="rounded-2xl border border-emerald-400/30 bg-[#080B0A] p-4 sm:p-5 shadow-[0_0_32px_rgba(16,185,129,0.07),inset_0_1px_0_rgba(52,211,153,0.14)] space-y-3">
+    <div
+      className={
+        isDay
+          ? 'rounded-2xl border border-slate-300 bg-[#DDE5EE] p-4 sm:p-5 shadow-sm space-y-3'
+          : 'rounded-2xl border border-emerald-400/30 bg-[#080B0A] p-4 sm:p-5 shadow-[0_0_32px_rgba(16,185,129,0.07),inset_0_1px_0_rgba(52,211,153,0.14)] space-y-3'
+      }
+    >
       {/* Scope Header + Y(t) / X-Y Toggle + 1-Tap Pure Signal Audition (zero CLS across narrow mobile viewports) */}
       <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-center gap-2 overflow-hidden font-mono-tech text-[10px]">
+          <div className="flex flex-wrap items-center gap-2 font-mono-tech text-[10px]">
             <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-semibold uppercase tracking-wider text-[#F3F1EC]">
               <Activity className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
               Oscilloscope · {scopeMode === 'dual_trace' ? 'Dual Trace' : 'X/Y Vector'}
             </span>
-            <span className="truncate whitespace-nowrap rounded border border-emerald-400/35 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#34D399]">
-              Live Measured · Zero Sim
+            <span className="whitespace-nowrap rounded border border-emerald-400/35 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#34D399]">
+              Live Measured
             </span>
           </div>
           <div
@@ -514,7 +557,7 @@ export function LiveEnvelopeProof({
             <button
               type="button"
               onClick={() => setScopeMode('dual_trace')}
-              className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold transition ${
+              className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold ${
                 scopeMode === 'dual_trace'
                   ? 'bg-[#22252A] text-[#F3F1EC]'
                   : 'text-[#8E8E88] hover:text-[#D4D4CE]'
@@ -525,7 +568,7 @@ export function LiveEnvelopeProof({
             <button
               type="button"
               onClick={() => setScopeMode('xy_lissajous')}
-              className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold transition ${
+              className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold ${
                 scopeMode === 'xy_lissajous'
                   ? 'bg-[#22252A] text-[#34D399]'
                   : 'text-[#8E8E88] hover:text-[#D4D4CE]'
@@ -557,7 +600,9 @@ export function LiveEnvelopeProof({
         ref={canvasRef}
         width={640}
         height={192}
-        className="h-44 sm:h-52 w-full rounded-xl border border-emerald-400/25 bg-[#030706]"
+        className={`h-44 sm:h-52 w-full rounded-xl border ${
+          isDay ? 'border-slate-300 bg-[#E8EFF7]' : 'border-emerald-400/25 bg-[#030706]'
+        }`}
       />
 
       {/* Fixed Single-Line Legend + Fixed 4-Column Hardware Readouts (0 px vertical shift on digit updates) */}
@@ -566,13 +611,23 @@ export function LiveEnvelopeProof({
           {scopeMode === 'dual_trace' ? (
             <>
               <span className="inline-flex shrink-0 items-center gap-1.5">
-                <span className="h-2 w-2 shrink-0 rounded-full bg-[#34D399]" />
+                <span className={`h-2 w-2 shrink-0 rounded-full ${isDay ? 'bg-[#047857]' : 'bg-[#34D399]'}`} />
                 <span>
                   CH1<span className="hidden sm:inline"> Waveform</span> ({readout.windowMs} ms)
                 </span>
               </span>
               <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${isMusicOnly ? 'bg-[#94A3B8]' : 'bg-[#FBBF24]'}`} />
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    isMusicOnly
+                      ? isDay
+                        ? 'bg-[#64748B]'
+                        : 'bg-[#94A3B8]'
+                      : isDay
+                        ? 'bg-[#0369A1]'
+                        : 'bg-[#FBBF24]'
+                  }`}
+                />
                 <span className="truncate">
                   {isMusicOnly ? (
                     <>
@@ -597,7 +652,13 @@ export function LiveEnvelopeProof({
           )}
         </div>
 
-        <div className="grid grid-cols-4 gap-1 rounded-lg border border-white/[0.06] bg-[#050706] px-2.5 py-1.5 font-mono-tech text-[10px] tabular-nums text-[#D4D4CE]">
+        <div
+          className={`grid grid-cols-4 gap-1 rounded-lg border px-2.5 py-1.5 font-mono-tech text-[10px] tabular-nums ${
+            isDay
+              ? 'border-slate-300 bg-white text-[#1E293B]'
+              : 'border-white/[0.06] bg-[#050706] text-[#D4D4CE]'
+          }`}
+        >
           <span className="truncate text-left">{readout.sampleRateKhz} kHz</span>
           <span className="truncate text-center">RMS {readout.rmsDbfs}</span>
           <span className="truncate text-center">PK {readout.peakDbfs}</span>

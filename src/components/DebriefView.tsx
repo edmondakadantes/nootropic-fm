@@ -60,6 +60,7 @@ interface DebriefViewProps {
   profile?: UserProfile | null;
   syncCode?: string | null;
   isPro?: boolean;
+  themeMode?: 'daylight' | 'night';
   onUpgradePro?: () => void;
   onLearningApplied?: (update: DebriefLearningUpdate) => void;
   onStartNew: () => void;
@@ -99,6 +100,7 @@ export function DebriefView({
   profile = null,
   syncCode = null,
   isPro = false,
+  themeMode = 'night',
   onUpgradePro,
   onLearningApplied,
   onStartNew,
@@ -216,7 +218,7 @@ export function DebriefView({
     return (
       <div className="mx-auto max-w-2xl">
         <div className="animate-rise glass-stage rounded-3xl p-6 sm:p-9 space-y-6 text-center">
-          <SonicOrb mood="calm" size="md" label="Session Complete" />
+          <SonicOrb mood="calm" size="md" label="Session Complete" themeMode={themeMode} />
           <div>
             <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
               <ShieldCheck className="h-3.5 w-3.5" />
@@ -314,7 +316,7 @@ export function DebriefView({
     return (
       <div className="mx-auto max-w-2xl">
         <div className="animate-rise glass-stage rounded-2xl p-6 sm:p-9 space-y-6 text-center">
-          <SonicOrb mood="calm" size="md" label="Synapse Updated" />
+          <SonicOrb mood="calm" size="md" label="Synapse Updated" themeMode={themeMode} />
 
           <div>
             <h2 className="text-2xl font-semibold text-[#F3F1EC] sm:text-3xl">

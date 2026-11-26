@@ -52,7 +52,7 @@ export function AmbientField({
 
       const isDay = themeRef.current === 'daylight';
 
-      // Subtle warm top-center overhead studio wash
+      // Subtle cool-neutral overhead studio wash
       const wash = ctx.createRadialGradient(
         width * 0.5,
         0,
@@ -61,14 +61,14 @@ export function AmbientField({
         0,
         Math.max(width, height) * 0.62
       );
-      wash.addColorStop(0, isDay ? 'rgba(4, 120, 87, 0.035)' : 'rgba(243, 241, 236, 0.025)');
-      wash.addColorStop(1, isDay ? 'rgba(244, 241, 234, 0)' : 'rgba(10, 11, 12, 0)');
+      wash.addColorStop(0, isDay ? 'rgba(4, 120, 87, 0.03)' : 'rgba(243, 241, 236, 0.025)');
+      wash.addColorStop(1, isDay ? 'rgba(226, 232, 240, 0)' : 'rgba(10, 11, 12, 0)');
       ctx.fillStyle = wash;
       ctx.fillRect(0, 0, width, height);
 
       // Crisp 48px studio calibration drafting grid (subtle precision ticks)
       const spacing = 48;
-      const tickColor = isDay ? 'rgba(20, 22, 25, 0.055)' : 'rgba(255, 255, 255, 0.03)';
+      const tickColor = isDay ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255, 255, 255, 0.03)';
       ctx.fillStyle = tickColor;
       ctx.strokeStyle = tickColor;
       ctx.lineWidth = 1;
@@ -93,7 +93,7 @@ export function AmbientField({
         const traceRgb =
           moodRef.current === 'driving'
             ? isDay
-              ? '180, 83, 9'
+              ? '29, 78, 216'
               : '245, 158, 11'
             : isDay
               ? '4, 120, 87'

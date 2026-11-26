@@ -39,6 +39,7 @@ interface ProtocolRevealViewProps {
   recommendation: ProtocolRecommendation | null;
   profile?: UserProfile | null;
   mood: FieldMood;
+  themeMode?: 'daylight' | 'night';
   customLiveGenAvailable?: boolean;
   onSwapGenre: (genre: ResolvedGenre) => void;
   onSwapCustomVibe: (customLabel: string) => void | Promise<void>;
@@ -87,11 +88,14 @@ function SoundWavePreview({
   modulationHz,
   modulationDepth,
   safetyMode,
+  themeMode = 'night',
 }: {
   modulationHz: number;
   modulationDepth: number;
   safetyMode: boolean;
+  themeMode?: 'daylight' | 'night';
 }) {
+  const isDay = themeMode === 'daylight';
   const cycles = Math.max(4, Math.min(18, Math.round(modulationHz)));
   const amp = Math.max(8, Math.min(20, Math.round(modulationDepth * 42)));
   const points: string[] = [];
@@ -103,10 +107,20 @@ function SoundWavePreview({
     const y = 26 + Math.sin(t * Math.PI * 2 * cycles) * amp * (0.45 + 0.55 * envelope);
     points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
   }
-  const strokeColor = safetyMode ? '#F59E0B' : '#34D399';
+  const strokeColor = safetyMode
+    ? isDay
+      ? '#1E40AF'
+      : '#F59E0B'
+    : isDay
+      ? '#047857'
+      : '#34D399';
 
   return (
-    <div className="rounded-xl border border-white/10 bg-[#070809] px-3 py-2">
+    <div
+      className={`rounded-xl border px-3 py-2 ${
+        isDay ? 'border-slate-300 bg-[#E8EFF7]' : 'border-white/10 bg-[#070809]'
+      }`}
+    >
       <div className="mb-1 flex items-center justify-between font-mono-tech text-[10px] text-[#8E8E88]">
         <span className="inline-flex items-center gap-1 text-[#34D399]">
           <Activity className="h-3 w-3" />
@@ -136,6 +150,7 @@ export function ProtocolRevealView({
   recommendation,
   profile,
   mood,
+  themeMode = 'night',
   onSwapGenre,
   onLaunchAudio,
   onOpenSoundSystems,
@@ -251,7 +266,7 @@ export function ProtocolRevealView({
     return (
       <div className="mx-auto flex max-w-xl flex-col items-center py-6 sm:py-10 space-y-6">
         <div className="flex flex-col items-center text-center">
-          <SonicOrb mood={mood} size="lg" label="Matching Acoustic Studies" />
+          <SonicOrb mood={mood} size="lg" label="Matching Acoustic Studies" themeMode={themeMode} />
           <div className="mt-4 inline-flex items-center gap-2 font-mono-tech text-[11px] uppercase tracking-[0.14em] text-[#8E8E88]">
             <Search className="h-3.5 w-3.5 text-[#34D399]" />
             Searching Scientific Protocols
@@ -582,6 +597,7 @@ export function ProtocolRevealView({
             modulationHz={recommendation.params.modulationHz}
             modulationDepth={recommendation.params.modulationDepth}
             safetyMode={recommendation.safetyMode}
+            themeMode={themeMode}
           />
 
           {/* Exact Sound Parameter Pills */}

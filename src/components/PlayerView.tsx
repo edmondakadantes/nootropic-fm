@@ -80,7 +80,7 @@ const SHARE_BONUS_SEC = 1800; // +30 minutes free when sharing your 1-of-1 Neura
 const SHARE_BONUS_DAY_KEY = 'nootropic_fm_share_bonus_day_v1';
 const FREE_USAGE_STORAGE_KEY = 'nootropic_fm_free_usage_v1';
 const VOICE_GUIDE_STORAGE_KEY = 'nootropic_fm_voice_guide_v1';
-const VOICE_ID_STORAGE_KEY = 'nootropic_fm_voice_id_v2';
+const VOICE_ID_STORAGE_KEY = 'nootropic_fm_voice_id_v3';
 const VOICE_DAY_COUNT_KEY = 'nootropic_fm_voice_day_v1';
 
 function readSavedVoiceId(): string | null {
@@ -468,7 +468,6 @@ export function PlayerView({
             : catalog.defaultVoiceId || catalog.voices[0].voiceId;
         selectedVoiceIdRef.current = resolvedId;
         setSelectedVoiceId(resolvedId);
-        writeSavedVoiceId(resolvedId);
       })
       .catch(() => {});
     return () => {
@@ -1763,6 +1762,7 @@ export function PlayerView({
           tuningA4Hz={telemetry.tuningA4Hz}
           layerMode={layerMonitor}
           isPureWave={layerMonitor === 'science_only'}
+          themeMode={themeMode}
           onTogglePureWave={() =>
             void handleLayerMonitorChange(
               layerMonitor === 'science_only' ? 'full_mix' : 'science_only'
@@ -1776,6 +1776,7 @@ export function PlayerView({
           isPlaying={isPlaying}
           safetyMode={recommendation.safetyMode}
           modulationHz={telemetry.currentModHz}
+          themeMode={themeMode}
         />
 
         {/* Synchronized 0.1 Hz HRV Breathing Guide (only shown on calm breathing protocols) */}
@@ -1975,7 +1976,9 @@ export function PlayerView({
                 onClick={() => void handleCarrierSwitch('studio_library')}
                 className={`group relative flex flex-col justify-between rounded-xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
                   carrierMode === 'studio_library'
-                    ? 'border-white/35 bg-[#17191E] text-[#F3F1EC]'
+                    ? themeMode === 'daylight'
+                      ? 'border-emerald-400/75 bg-emerald-500/[0.11] text-[#F3F1EC] shadow-sm'
+                      : 'border-white/35 bg-[#17191E] text-[#F3F1EC]'
                     : 'border-white/[0.08] bg-[#0F1013] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
                 }`}
               >
@@ -2119,11 +2122,20 @@ export function PlayerView({
                   title: 'Plain Music',
                   sub: 'Layer 2 · Raw',
                   dot: 'bg-[#D4D4CE]',
-                  activeCls: 'border-white/35 bg-[#191C22] text-[#F3F1EC]',
+                  activeCls:
+                    themeMode === 'daylight'
+                      ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                      : 'border-white/35 bg-[#191C22] text-[#F3F1EC]',
                 },
               ]
             ).map((opt) => {
               const active = layerMonitor === opt.mode;
+              const activeDotCls =
+                active && opt.mode === 'music_only' && themeMode === 'daylight'
+                  ? 'bg-emerald-300/60'
+                  : active
+                    ? opt.dot
+                    : 'bg-white/25';
               return (
                 <button
                   key={opt.mode}
@@ -2136,10 +2148,18 @@ export function PlayerView({
                   }`}
                 >
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight">
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? opt.dot : 'bg-white/25'}`} />
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${activeDotCls}`} />
                     <span className="truncate">{opt.title}</span>
                   </div>
-                  <div className="mt-0.5 truncate font-mono-tech text-[9px] text-[#7E7E78]">{opt.sub}</div>
+                  <div
+                    className={`mt-0.5 truncate font-mono-tech text-[9px] ${
+                      active && opt.mode === 'music_only' && themeMode === 'daylight'
+                        ? 'text-white/80'
+                        : 'text-[#7E7E78]'
+                    }`}
+                  >
+                    {opt.sub}
+                  </div>
                 </button>
               );
             })}
@@ -2268,11 +2288,17 @@ export function PlayerView({
           onClick={() => setOpenDrawer((prev) => (prev === 'tune' ? 'none' : 'tune'))}
           className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-semibold transition ${
             openDrawer === 'tune'
-              ? 'border-white/30 bg-[#181A1F] text-[#F3F1EC]'
+              ? themeMode === 'daylight'
+                ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                : 'border-white/30 bg-[#181A1F] text-[#F3F1EC]'
               : 'border-white/10 bg-[#111215] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
           }`}
         >
-          <Sliders className="h-3.5 w-3.5 text-[#34D399]" />
+          <Sliders
+            className={`h-3.5 w-3.5 ${
+              openDrawer === 'tune' && themeMode === 'daylight' ? 'text-white' : 'text-[#34D399]'
+            }`}
+          />
           <span>Tune Sound &amp; Music</span>
           {openDrawer === 'tune' ? (
             <ChevronUp className="h-3.5 w-3.5 opacity-75" />
@@ -2286,11 +2312,17 @@ export function PlayerView({
           onClick={() => setOpenDrawer((prev) => (prev === 'science' ? 'none' : 'science'))}
           className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-semibold transition ${
             openDrawer === 'science'
-              ? 'border-white/30 bg-[#181A1F] text-[#F3F1EC]'
+              ? themeMode === 'daylight'
+                ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                : 'border-white/30 bg-[#181A1F] text-[#F3F1EC]'
               : 'border-white/10 bg-[#111215] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
           }`}
         >
-          <BookOpen className="h-3.5 w-3.5 text-[#34D399]" />
+          <BookOpen
+            className={`h-3.5 w-3.5 ${
+              openDrawer === 'science' && themeMode === 'daylight' ? 'text-white' : 'text-[#34D399]'
+            }`}
+          />
           <span>Verified Science &amp; Studies</span>
           {openDrawer === 'science' ? (
             <ChevronUp className="h-3.5 w-3.5 opacity-75" />

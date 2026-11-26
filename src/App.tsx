@@ -790,7 +790,9 @@ export default function App() {
                 onClick={() => setScreen(activeRec ? 'player' : 'checkin')}
                 className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
                   screen === 'checkin' || screen === 'reveal' || screen === 'player' || screen === 'debrief'
-                    ? 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
+                    ? themeMode === 'daylight'
+                      ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                      : 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
                     : 'border-transparent text-[#A3A39E] hover:bg-white/[0.05] hover:text-[#F3F1EC]'
                 }`}
                 title="Active Session"
@@ -808,7 +810,9 @@ export default function App() {
               }}
               className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
                 screen === 'studylab'
-                  ? 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
+                  ? themeMode === 'daylight'
+                    ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                    : 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
                   : 'border-transparent text-[#A3A39E] hover:bg-white/[0.05] hover:text-[#F3F1EC]'
               }`}
               title="Browse & play published science studies"
@@ -825,7 +829,9 @@ export default function App() {
               }}
               className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
                 screen === 'insights'
-                  ? 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
+                  ? themeMode === 'daylight'
+                    ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                    : 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
                   : 'border-transparent text-[#A3A39E] hover:bg-white/[0.05] hover:text-[#F3F1EC]'
               }`}
               title="Research Brain & Live Outcomes"
@@ -856,10 +862,10 @@ export default function App() {
                 onClick={() => handleSetCircadianTheme('daylight')}
                 aria-pressed={themeMode === 'daylight'}
                 aria-label="Daylight Mode"
-                title="Daylight Mode: warm alabaster acoustic lab + full daytime clarity"
+                title="Daylight Mode: crisp cool-slate acoustic lab + full daytime clarity"
                 className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 transition ${
                   themeMode === 'daylight'
-                    ? 'bg-emerald-500/15 text-[#34D399]'
+                    ? 'bg-[#22252A] text-[#F3F1EC]'
                     : 'text-[#8E8E88] hover:text-[#F3F1EC]'
                 }`}
               >
@@ -967,6 +973,7 @@ export default function App() {
             isPro={profile?.planTier === 'pro'}
             hasProfile={Boolean(profile)}
             profile={profile}
+            themeMode={themeMode}
             onInstantPlay={handleInstantHeroPlay}
             onLaunchStateGoal={handleLaunchStateGoal}
             onDiscoverProtocol={handleDiscoverFromHero}
@@ -993,6 +1000,7 @@ export default function App() {
           >
             <OnboardingView
               initialProfile={profile}
+              themeMode={themeMode}
               onComplete={handleSaveProfile}
               onCancel={() => setScreen('checkin')}
               onMoodChange={setFieldMood}
@@ -1006,6 +1014,7 @@ export default function App() {
             runtimeConfig={runtimeConfig}
             pendingDebrief={pendingDebrief}
             initialPreset={selectedPreset}
+            themeMode={themeMode}
             onClearPreset={() => setSelectedPreset(null)}
             onOpenPendingDebrief={handleOpenPendingDebrief}
             onDismissPending={() => void handleDismissPending()}
@@ -1052,6 +1061,7 @@ export default function App() {
               recommendation={activeRec}
               profile={profile}
               mood={fieldMood}
+              themeMode={themeMode}
               customLiveGenAvailable={runtimeConfig?.customLiveGenAvailable}
               onSwapGenre={handleSwapRevealGenre}
               onSwapCustomVibe={(label) => handleSwapCustomVibe(label)}
@@ -1119,6 +1129,7 @@ export default function App() {
               profile={profile}
               syncCode={syncCode}
               isPro={profile?.planTier === 'pro'}
+              themeMode={themeMode}
               onUpgradePro={() => setShowProModal(true)}
               onLearningApplied={(update) => {
                 setProfile((prev) => {

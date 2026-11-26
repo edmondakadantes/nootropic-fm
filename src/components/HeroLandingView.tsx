@@ -32,6 +32,7 @@ interface HeroLandingViewProps {
   isPro?: boolean;
   hasProfile?: boolean;
   profile?: UserProfile | null;
+  themeMode?: 'daylight' | 'night';
   onInstantPlay: (id: QuickTryId) => void;
   onLaunchStateGoal: (feelingId: QuickFeelingId, targetState: TargetState) => void;
   onDiscoverProtocol?: (
@@ -85,8 +86,15 @@ const GOAL_CARDS: Array<{
 
 const DURATION_CHOICES = [15, 25, 45, 60];
 
-function HeroScopeStrip({ onStart }: { onStart: () => void }) {
+function HeroScopeStrip({
+  onStart,
+  themeMode = 'night',
+}: {
+  onStart: () => void;
+  themeMode?: 'daylight' | 'night';
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDay = themeMode === 'daylight';
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -114,10 +122,10 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, w, h);
 
-      ctx.fillStyle = '#030706';
+      ctx.fillStyle = isDay ? '#E8EFF7' : '#030706';
       ctx.fillRect(0, 0, w, h);
 
-      ctx.strokeStyle = 'rgba(52, 211, 153, 0.13)';
+      ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.13)' : 'rgba(52, 211, 153, 0.13)';
       ctx.lineWidth = 1;
       for (let gx = 1; gx < 8; gx++) {
         const x = Math.round((gx / 8) * w) + 0.5;
@@ -135,7 +143,7 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
       }
 
       const ch1MidY = h * 0.31;
-      ctx.strokeStyle = 'rgba(52, 211, 153, 0.2)';
+      ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.20)' : 'rgba(52, 211, 153, 0.2)';
       ctx.beginPath();
       ctx.moveTo(0, Math.round(ch1MidY) + 0.5);
       ctx.lineTo(w, Math.round(ch1MidY) + 0.5);
@@ -151,18 +159,18 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
-      ctx.strokeStyle = 'rgba(52, 211, 153, 0.24)';
+      ctx.strokeStyle = isDay ? 'rgba(4, 120, 87, 0.18)' : 'rgba(52, 211, 153, 0.24)';
       ctx.lineWidth = 4.2;
       ctx.lineJoin = 'round';
       ctx.stroke();
-      ctx.strokeStyle = '#34D399';
+      ctx.strokeStyle = isDay ? '#047857' : '#34D399';
       ctx.lineWidth = 1.9;
       ctx.stroke();
 
       const divY = Math.round(h * 0.55) + 0.5;
       ctx.save();
       ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.18)' : 'rgba(255, 255, 255, 0.12)';
       ctx.beginPath();
       ctx.moveTo(0, divY);
       ctx.lineTo(w, divY);
@@ -172,8 +180,8 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
       const ch2BaseY = h - 6;
       const ch2SpanH = h * 0.34;
       const grad = ctx.createLinearGradient(0, ch2BaseY - ch2SpanH, 0, ch2BaseY);
-      grad.addColorStop(0, 'rgba(245, 158, 11, 0.18)');
-      grad.addColorStop(1, 'rgba(245, 158, 11, 0.01)');
+      grad.addColorStop(0, isDay ? 'rgba(3, 105, 161, 0.16)' : 'rgba(245, 158, 11, 0.18)');
+      grad.addColorStop(1, isDay ? 'rgba(3, 105, 161, 0.01)' : 'rgba(245, 158, 11, 0.01)');
 
       ctx.beginPath();
       for (let i = 0; i <= 180; i++) {
@@ -184,11 +192,11 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
-      ctx.strokeStyle = 'rgba(251, 191, 36, 0.24)';
+      ctx.strokeStyle = isDay ? 'rgba(3, 105, 161, 0.18)' : 'rgba(251, 191, 36, 0.24)';
       ctx.lineWidth = 4;
       ctx.lineJoin = 'round';
       ctx.stroke();
-      ctx.strokeStyle = '#FBBF24';
+      ctx.strokeStyle = isDay ? '#0369A1' : '#FBBF24';
       ctx.lineWidth = 1.9;
       ctx.stroke();
 
@@ -201,12 +209,12 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
       ctx.font = '600 9px "JetBrains Mono", monospace';
       ctx.textBaseline = 'top';
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#34D399';
+      ctx.fillStyle = isDay ? '#047857' : '#34D399';
       ctx.fillText('CH1 LAYER 1 + 2 MIX', 8, 5);
-      ctx.fillStyle = '#FBBF24';
+      ctx.fillStyle = isDay ? '#0369A1' : '#FBBF24';
       ctx.fillText('CH2 NEURAL ENVELOPE', 8, divY + 4);
       ctx.textAlign = 'right';
-      ctx.fillStyle = 'rgba(243, 241, 236, 0.78)';
+      ctx.fillStyle = isDay ? '#334155' : 'rgba(243, 241, 236, 0.78)';
       ctx.fillText('DEMO ENGINE', w - 8, 5);
 
       ctx.restore();
@@ -219,13 +227,17 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
 
     rafId = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [isDay]);
 
   return (
     <button
       type="button"
       onClick={onStart}
-      className="group w-full rounded-2xl border border-emerald-400/25 bg-[#080B0A] px-4 py-3 text-left transition hover:border-emerald-400/50 shadow-[0_0_24px_rgba(16,185,129,0.06)]"
+      className={`group w-full rounded-2xl border px-4 py-3 text-left transition ${
+        isDay
+          ? 'border-slate-300 bg-[#DDE5EE] hover:border-emerald-700/60 shadow-sm'
+          : 'border-emerald-400/25 bg-[#080B0A] hover:border-emerald-400/50 shadow-[0_0_24px_rgba(16,185,129,0.06)]'
+      }`}
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 font-mono-tech text-[10px]">
         <div className="flex flex-wrap items-center gap-3 text-[#A3A39E]">
@@ -233,8 +245,8 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
             <Activity className="h-3 w-3" />
             48.0 KHZ 3-BAND LR4 ENGINE
           </span>
-          <span className="inline-flex items-center gap-1.5 text-[#FBBF24]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#FBBF24]" />
+          <span className={`inline-flex items-center gap-1.5 ${isDay ? 'text-[#0369A1]' : 'text-[#FBBF24]'}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${isDay ? 'bg-[#0369A1]' : 'bg-[#FBBF24]'}`} />
             REAL-TIME OSCILLOSCOPE PROOF
           </span>
         </div>
@@ -247,7 +259,9 @@ function HeroScopeStrip({ onStart }: { onStart: () => void }) {
         ref={canvasRef}
         width={620}
         height={88}
-        className="h-20 w-full rounded-xl border border-emerald-400/25 bg-[#030706]"
+        className={`h-20 w-full rounded-xl border ${
+          isDay ? 'border-slate-300 bg-[#E8EFF7]' : 'border-emerald-400/25 bg-[#030706]'
+        }`}
       />
     </button>
   );
@@ -257,6 +271,7 @@ export function HeroLandingView({
   isPro = false,
   hasProfile = false,
   profile = null,
+  themeMode = 'night',
   onInstantPlay,
   onDiscoverProtocol,
   onStartCustomize,
@@ -358,8 +373,15 @@ export function HeroLandingView({
   const mx = wp ? wp.clarity : (x1 + x2) / 2;
   const my = wp ? 100 - wp.energy : Math.max(10, Math.min(90, (y1 + y2) / 2 - 12));
 
+  const isDay = themeMode === 'daylight';
   const cursorColor =
-    coords && coords.clarity < 48 && coords.energy >= 55 ? '#F59E0B' : '#34D399';
+    coords && coords.clarity < 48 && coords.energy >= 55
+      ? isDay
+        ? '#1D4ED8'
+        : '#F59E0B'
+      : isDay
+        ? '#047857'
+        : '#34D399';
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center space-y-6 py-2 sm:space-y-8 sm:py-5">
@@ -440,22 +462,22 @@ export function HeroLandingView({
                 <defs>
                   <linearGradient id="heroBrainVec" x1="0%" y1="0%" x2="100%" y2="0%">
                     <stop offset="0%" stopColor={cursorColor} stopOpacity="0.95" />
-                    <stop offset="100%" stopColor="#34D399" stopOpacity="1" />
+                    <stop offset="100%" stopColor={themeMode === 'daylight' ? '#047857' : '#34D399'} stopOpacity="1" />
                   </linearGradient>
                   <radialGradient id="heroBrainGlow" cx="50%" cy="50%" r="55%">
-                    <stop offset="0%" stopColor="rgba(52,211,153,0.07)" />
-                    <stop offset="100%" stopColor="rgba(7,9,11,0)" />
+                    <stop offset="0%" stopColor={themeMode === 'daylight' ? 'rgba(4,120,87,0.05)' : 'rgba(52,211,153,0.07)'} />
+                    <stop offset="100%" stopColor={themeMode === 'daylight' ? 'rgba(228,234,241,0)' : 'rgba(7,9,11,0)'} />
                   </radialGradient>
                 </defs>
                 <rect x="0" y="0" width="100" height="100" fill="url(#heroBrainGlow)" />
-                <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.035)" strokeWidth="0.25" />
-                <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.035)" strokeWidth="0.25" />
-                <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.035)" strokeWidth="0.25" />
-                <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.035)" strokeWidth="0.25" />
-                <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.10)" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
-                <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.10)" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
-                <circle cx="50" cy="50" r="18" fill="none" stroke="rgba(52,211,153,0.09)" strokeWidth="0.3" />
-                <circle cx="50" cy="50" r="36" fill="none" stroke="rgba(52,211,153,0.06)" strokeWidth="0.3" />
+                <line x1="25" y1="0" x2="25" y2="100" className="studio-grid-faint" strokeWidth="0.25" />
+                <line x1="75" y1="0" x2="75" y2="100" className="studio-grid-faint" strokeWidth="0.25" />
+                <line x1="0" y1="25" x2="100" y2="25" className="studio-grid-faint" strokeWidth="0.25" />
+                <line x1="0" y1="75" x2="100" y2="75" className="studio-grid-faint" strokeWidth="0.25" />
+                <line x1="50" y1="0" x2="50" y2="100" className="studio-grid-strong" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
+                <line x1="0" y1="50" x2="100" y2="50" className="studio-grid-strong" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
+                <circle cx="50" cy="50" r="18" fill="none" className="studio-grid-strong" strokeWidth="0.3" />
+                <circle cx="50" cy="50" r="36" fill="none" className="studio-grid-faint" strokeWidth="0.3" />
 
                 {/* Crosshair projection ONLY after Step 1 is selected */}
                 {coords && (
@@ -480,8 +502,8 @@ export function HeroLandingView({
                         cx={wp.clarity}
                         cy={100 - wp.energy}
                         r="1.3"
-                        fill="#FBBF24"
-                        stroke="#0A0B0C"
+                        fill={isDay ? '#1D4ED8' : '#FBBF24'}
+                        stroke={isDay ? '#FFFFFF' : '#0A0B0C'}
                         strokeWidth="0.4"
                       />
                     )}
@@ -569,10 +591,12 @@ export function HeroLandingView({
                   className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
                 >
                   <span
-                    className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#F3F1EC] shadow-[0_0_14px_rgba(0,0,0,0.7)]"
+                    className={`flex h-7 w-7 items-center justify-center rounded-full border-2 shadow-[0_0_14px_rgba(0,0,0,0.45)] ${
+                      isDay ? 'border-white' : 'border-[#F3F1EC]'
+                    }`}
                     style={{ backgroundColor: cursorColor }}
                   >
-                    <Crosshair className="h-3.5 w-3.5 text-[#0A0B0C]" />
+                    <Crosshair className={`h-3.5 w-3.5 ${isDay ? 'text-white' : 'text-[#0A0B0C]'}`} />
                   </span>
                 </div>
               )}
@@ -813,7 +837,7 @@ export function HeroLandingView({
       </section>
 
       {/* Live Dual-Trace Oscilloscope Demo Strip */}
-      <HeroScopeStrip onStart={() => onInstantPlay('focus_lofi')} />
+      <HeroScopeStrip onStart={() => onInstantPlay('focus_lofi')} themeMode={themeMode} />
 
       {/* 3-Column Instrument Spec Grid */}
       <section className="animate-rise delay-150 grid w-full grid-cols-1 divide-y divide-white/[0.08] rounded-2xl border border-white/10 bg-[#0E0F12] sm:grid-cols-3 sm:divide-x sm:divide-y-0">

@@ -222,64 +222,68 @@ input[type='range'] {
 }
 
 html[data-theme='daylight'] .studio-grid-faint {
-  stroke: rgba(20, 22, 25, 0.07);
+  stroke: rgba(15, 23, 42, 0.08);
 }
 
 html[data-theme='daylight'] .studio-grid-strong {
-  stroke: rgba(20, 22, 25, 0.16);
+  stroke: rgba(15, 23, 42, 0.20);
 }
 
 /* ============================================================================
- * CIRCADIAN DAYLIGHT MODE — 4-Tier Architectural Alabaster Acoustic Lab
- * Tier 0 (#F3EFE6): Page canvas & sticky header
- * Tier 1 (#FCFBF8 -> #F7F4EC / #FAF8F3): Main stage cards
- * Tier 2 (#EAE5DA): Recessed input wells & compass/progress tracks
- * Tier 3 (#FFFFFF): Elevated interactive buttons, selectable cards & keycaps
- * Note: #030706 & #060807 OLED oscilloscope & CRT micro-windows stay deep dark!
+ * CIRCADIAN DAYLIGHT MODE — Crisp Architectural Acoustic Lab (Zero Yellow/Orange Cast)
+ * Tier 0 (#E2E8F0): Cool slate-200 page canvas & tinted header
+ * Tier 1 (#FFFFFF / #F8FAFC): Elevated stage cards with crisp slate borders & depth
+ * Tier 2 (#E6ECF2): Recessed input wells, telemetry trays, 2D map & instrument bezels
+ * Tier 3 (#F1F5F9): Tactile slate-100 interactive buttons & cards (clear separation on #FFFFFF)
+ * Active Pill (#0F172A / #DDF3EA): High-contrast ink or deep-emerald active states
  * ============================================================================ */
 html[data-theme='daylight'] body {
-  background-color: #F3EFE6;
-  color: #141619;
+  background-color: #E2E8F0;
+  color: #0F172A;
+}
+
+html[data-theme='daylight'] .text-aurora {
+  color: #047857 !important;
 }
 
 /* Tier 0: Page & Sticky Header */
 html[data-theme='daylight'] .bg-\[\#0A0B0C\] {
-  background-color: #F3EFE6 !important;
+  background-color: #E2E8F0 !important;
 }
 
 html[data-theme='daylight'] .bg-\[\#0A0B0C\]\/90 {
-  background-color: rgba(243, 239, 230, 0.92) !important;
+  background-color: rgba(241, 245, 249, 0.94) !important;
 }
 
 html[data-theme='daylight'] .bg-\[\#0A0B0C\]\/45 {
-  background-color: rgba(243, 239, 230, 0.72) !important;
+  background-color: rgba(226, 232, 240, 0.84) !important;
 }
 
 /* Tier 1: Main Stage Cards */
 html[data-theme='daylight'] .glass-stage {
-  background: linear-gradient(180deg, #FCFBF8 0%, #F7F4EC 100%);
-  border: 1px solid rgba(20, 22, 25, 0.12);
+  background: #FFFFFF;
+  border: 1px solid rgba(15, 23, 42, 0.16);
   box-shadow:
-    0 20px 48px -24px rgba(20, 22, 25, 0.12),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.92);
+    0 18px 42px -22px rgba(15, 23, 42, 0.18),
+    0 2px 6px rgba(15, 23, 42, 0.06);
 }
 
 html[data-theme='daylight'] .glass-card {
-  background: #FAF8F3;
-  border: 1px solid rgba(20, 22, 25, 0.10);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.85);
+  background: #F8FAFC;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  box-shadow: 0 4px 16px -10px rgba(15, 23, 42, 0.12);
 }
 
 html[data-theme='daylight'] .glow-input-wrap {
-  background: rgba(20, 22, 25, 0.14);
+  background: rgba(15, 23, 42, 0.25);
 }
 
 html[data-theme='daylight'] .glow-input-wrap:focus-within {
-  background: rgba(4, 120, 87, 0.65);
-  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.14);
+  background: #047857;
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.16);
 }
 
-/* Tier 2: Recessed Wells & Sub-Panels */
+/* Tier 2: Recessed Wells, Input Surfaces & Sub-Panels */
 html[data-theme='daylight'] .bg-\[\#050706\],
 html[data-theme='daylight'] .bg-\[\#070809\],
 html[data-theme='daylight'] .bg-\[\#07090B\],
@@ -294,13 +298,24 @@ html[data-theme='daylight'] .bg-\[\#0D110F\],
 html[data-theme='daylight'] .bg-\[\#0E0F12\],
 html[data-theme='daylight'] .bg-\[\#0E1014\],
 html[data-theme='daylight'] .bg-\[\#0F1013\] {
-  background-color: #EAE5DA !important;
+  background-color: #E6ECF2 !important;
 }
 
-/* Tier 3: Elevated Interactive Cards, Buttons & Keycaps */
+/* SonicOrb micro-window surface */
+html[data-theme='daylight'] .bg-\[\#060807\] {
+  background-color: #FFFFFF !important;
+  border-color: rgba(15, 23, 42, 0.24) !important;
+}
+
+/* Tier 3A: Outer Section Containers (#101114 / #101216) */
 html[data-theme='daylight'] .bg-\[\#101114\],
+html[data-theme='daylight'] .bg-\[\#101216\] {
+  background-color: #F8FAFC !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+/* Tier 3B: Tactile Slate-100 Interactive Cards, Buttons & Keycaps (clearly separated from #FFFFFF stage!) */
 html[data-theme='daylight'] .bg-\[\#101215\],
-html[data-theme='daylight'] .bg-\[\#101216\],
 html[data-theme='daylight'] .bg-\[\#111215\],
 html[data-theme='daylight'] .bg-\[\#121316\],
 html[data-theme='daylight'] .bg-\[\#121417\],
@@ -315,13 +330,23 @@ html[data-theme='daylight'] .bg-\[\#14171C\],
 html[data-theme='daylight'] .bg-\[\#15171B\],
 html[data-theme='daylight'] .bg-\[\#15181E\],
 html[data-theme='daylight'] .bg-\[\#16181C\],
-html[data-theme='daylight'] .bg-\[\#16231E\],
 html[data-theme='daylight'] .bg-\[\#17191E\],
+html[data-theme='daylight'] .bg-\[\#171B20\],
 html[data-theme='daylight'] .bg-\[\#181A1F\],
+html[data-theme='daylight'] .bg-\[\#191B1F\],
+html[data-theme='daylight'] .bg-\[\#191C21\],
 html[data-theme='daylight'] .bg-\[\#191C22\],
-html[data-theme='daylight'] .bg-\[\#22252A\] {
-  background-color: #FFFFFF !important;
-  box-shadow: 0 1px 2px rgba(20, 22, 25, 0.05);
+html[data-theme='daylight'] .bg-\[\#1B1E24\],
+html[data-theme='daylight'] .bg-\[\#1C1F24\],
+html[data-theme='daylight'] .bg-\[\#1E2128\] {
+  background-color: #F1F5F9 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.07);
+}
+
+/* Active Selected Goal Card (#16231E) */
+html[data-theme='daylight'] .bg-\[\#16231E\] {
+  background-color: #DDF3EA !important;
+  box-shadow: 0 2px 10px rgba(4, 120, 87, 0.14);
 }
 
 /* Translucent Floating Labels & Badges inside Maps/Cards */
@@ -334,29 +359,30 @@ html[data-theme='daylight'] .bg-\[\#101417\]\/95,
 html[data-theme='daylight'] .bg-\[\#121316\]\/95,
 html[data-theme='daylight'] .bg-\[\#121417\]\/95,
 html[data-theme='daylight'] .bg-\[\#15171B\]\/95 {
-  background-color: rgba(252, 251, 248, 0.94) !important;
-  box-shadow: 0 1px 3px rgba(20, 22, 25, 0.08);
+  background-color: rgba(255, 255, 255, 0.96) !important;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.10);
 }
 
 /* Modal Backdrops */
 html[data-theme='daylight'] .bg-black\/75,
 html[data-theme='daylight'] .bg-black\/80,
 html[data-theme='daylight'] .bg-black\/85 {
-  background-color: rgba(20, 22, 25, 0.48) !important;
+  background-color: rgba(15, 23, 42, 0.56) !important;
 }
 
 /* Tier 4: Interactive Chips, Hover Surfaces & Progress Rails */
 html[data-theme='daylight'] .subtle-chip {
-  background: #FFFFFF;
-  border: 1px solid rgba(20, 22, 25, 0.14);
-  color: #34383F;
-  box-shadow: 0 1px 2px rgba(20, 22, 25, 0.04);
+  background: #F1F5F9;
+  border: 1px solid rgba(15, 23, 42, 0.22);
+  color: #1E293B;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
 html[data-theme='daylight'] .subtle-chip:hover {
-  background: #E2DDD0;
-  border-color: rgba(20, 22, 25, 0.28);
-  color: #141619;
+  background: #DCE4EE;
+  border-color: rgba(15, 23, 42, 0.38);
+  color: #0F172A;
 }
 
 html[data-theme='daylight'] .hover\:bg-\[\#171B20\]:hover,
@@ -370,7 +396,7 @@ html[data-theme='daylight'] .hover\:bg-white\/\[0\.05\]:hover,
 html[data-theme='daylight'] .hover\:bg-white\/\[0\.06\]:hover,
 html[data-theme='daylight'] .group:hover .group-hover\:bg-\[\#141518\],
 html[data-theme='daylight'] .group:hover .group-hover\:bg-\[\#14171C\] {
-  background-color: #E2DDD0 !important;
+  background-color: #DCE4EE !important;
 }
 
 html[data-theme='daylight'] .bg-white\/10,
@@ -380,10 +406,20 @@ html[data-theme='daylight'] .bg-white\/25,
 html[data-theme='daylight'] .bg-white\/\[0\.05\],
 html[data-theme='daylight'] .bg-white\/\[0\.06\],
 html[data-theme='daylight'] .bg-white\/\[0\.07\] {
-  background-color: rgba(20, 22, 25, 0.09) !important;
+  background-color: rgba(15, 23, 42, 0.16) !important;
 }
 
-/* Primary, Secondary & Muted Optical Charcoal Typography */
+html[data-theme='daylight'] .bg-\[\#D4D4CE\],
+html[data-theme='daylight'] .bg-\[\#A3A39E\],
+html[data-theme='daylight'] .bg-\[\#8E8E88\] {
+  background-color: #475569 !important;
+}
+
+html[data-theme='daylight'] .group:hover .group-hover\:bg-\[\#34D399\] {
+  background-color: #047857 !important;
+}
+
+/* Primary, Secondary & Muted Cool Slate Typography */
 html[data-theme='daylight'] .text-\[\#F3F1EC\],
 html[data-theme='daylight'] .text-\[\#E8E6DF\],
 html[data-theme='daylight'] .text-white,
@@ -391,12 +427,12 @@ html[data-theme='daylight'] .hover\:text-\[\#F3F1EC\]:hover,
 html[data-theme='daylight'] .hover\:text-white:hover,
 html[data-theme='daylight'] .group:hover .group-hover\:text-\[\#F3F1EC\],
 html[data-theme='daylight'] .group:hover .group-hover\:text-white {
-  color: #141619 !important;
+  color: #0F172A !important;
 }
 
 html[data-theme='daylight'] .text-\[\#D4D4CE\],
 html[data-theme='daylight'] .hover\:text-\[\#D4D4CE\]:hover {
-  color: #2A2E35 !important;
+  color: #1E293B !important;
 }
 
 html[data-theme='daylight'] .text-\[\#A3A39E\],
@@ -406,43 +442,84 @@ html[data-theme='daylight'] .text-\[\#7E7E78\],
 html[data-theme='daylight'] .text-\[\#6E6E68\],
 html[data-theme='daylight'] .text-\[\#555550\],
 html[data-theme='daylight'] .hover\:text-\[\#A3A39E\]:hover {
-  color: #525760 !important;
+  color: #475569 !important;
 }
 
 html[data-theme='daylight'] .text-white\/20,
 html[data-theme='daylight'] .text-white\/25 {
-  color: rgba(20, 22, 25, 0.35) !important;
+  color: rgba(15, 23, 42, 0.45) !important;
 }
 
 html[data-theme='daylight'] input::placeholder,
 html[data-theme='daylight'] textarea::placeholder {
-  color: #787D86 !important;
+  color: #475569 !important;
 }
 
-/* Optical Forest Emerald, Amber & Rose Semantic Accents */
+/* Optical Deep Emerald Semantic Accents */
 html[data-theme='daylight'] .text-\[\#34D399\],
 html[data-theme='daylight'] .text-\[\#34D399\]\/85,
 html[data-theme='daylight'] .hover\:text-\[\#34D399\]:hover,
 html[data-theme='daylight'] .group:hover .group-hover\:text-\[\#34D399\],
+html[data-theme='daylight'] .text-emerald-100,
+html[data-theme='daylight'] .text-emerald-100\/80,
+html[data-theme='daylight'] .text-emerald-100\/90,
 html[data-theme='daylight'] .text-emerald-200,
+html[data-theme='daylight'] .text-emerald-200\/70,
+html[data-theme='daylight'] .text-emerald-200\/80,
+html[data-theme='daylight'] .text-emerald-200\/90,
 html[data-theme='daylight'] .text-emerald-300,
+html[data-theme='daylight'] .hover\:text-emerald-200:hover,
 html[data-theme='daylight'] .hover\:text-emerald-300:hover,
 html[data-theme='daylight'] .text-\[\#D9F3E7\]\/95 {
-  color: #047857 !important;
+  color: #065F46 !important;
 }
 
+html[data-theme='daylight'] .fill-\[\#34D399\] {
+  fill: #065F46 !important;
+}
+
+html[data-theme='daylight'] .bg-\[\#34D399\],
+html[data-theme='daylight'] .bg-emerald-400\/50,
+html[data-theme='daylight'] .hover\:bg-emerald-400\/80:hover {
+  background-color: #047857 !important;
+}
+
+html[data-theme='daylight'] .bg-emerald-300\/60 {
+  background-color: rgba(4, 120, 87, 0.45) !important;
+}
+
+html[data-theme='daylight'] .bg-\[\#34D399\].text-\[\#0A0B0C\] {
+  color: #FFFFFF !important;
+}
+
+html[data-theme='daylight'] .border-\[\#34D399\],
+html[data-theme='daylight'] .border-emerald-300,
+html[data-theme='daylight'] .border-emerald-400,
+html[data-theme='daylight'] .border-emerald-400\/20,
 html[data-theme='daylight'] .border-emerald-400\/25,
 html[data-theme='daylight'] .border-emerald-400\/30,
 html[data-theme='daylight'] .border-emerald-400\/35,
 html[data-theme='daylight'] .border-emerald-400\/40,
+html[data-theme='daylight'] .border-emerald-400\/45,
 html[data-theme='daylight'] .border-emerald-400\/50,
+html[data-theme='daylight'] .border-emerald-400\/55,
 html[data-theme='daylight'] .border-emerald-400\/60,
 html[data-theme='daylight'] .border-emerald-400\/65,
+html[data-theme='daylight'] .border-emerald-400\/70,
 html[data-theme='daylight'] .border-emerald-400\/75,
-html[data-theme='daylight'] .border-emerald-400\/80 {
-  border-color: rgba(4, 120, 87, 0.45) !important;
+html[data-theme='daylight'] .border-emerald-400\/80,
+html[data-theme='daylight'] .hover\:border-emerald-400:hover,
+html[data-theme='daylight'] .hover\:border-emerald-400\/40:hover,
+html[data-theme='daylight'] .hover\:border-emerald-400\/45:hover,
+html[data-theme='daylight'] .hover\:border-emerald-400\/50:hover,
+html[data-theme='daylight'] .hover\:border-emerald-400\/60:hover,
+html[data-theme='daylight'] .hover\:border-emerald-400\/65:hover,
+html[data-theme='daylight'] .hover\:border-emerald-400\/70:hover {
+  border-color: rgba(4, 120, 87, 0.58) !important;
 }
 
+html[data-theme='daylight'] .bg-emerald-500\/\[0\.04\],
+html[data-theme='daylight'] .bg-emerald-500\/\[0\.05\],
 html[data-theme='daylight'] .bg-emerald-500\/\[0\.06\],
 html[data-theme='daylight'] .bg-emerald-500\/\[0\.07\],
 html[data-theme='daylight'] .bg-emerald-500\/\[0\.08\],
@@ -452,80 +529,234 @@ html[data-theme='daylight'] .bg-emerald-500\/\[0\.11\],
 html[data-theme='daylight'] .bg-emerald-500\/10,
 html[data-theme='daylight'] .bg-emerald-500\/12,
 html[data-theme='daylight'] .bg-emerald-500\/15,
+html[data-theme='daylight'] .bg-emerald-500\/20,
+html[data-theme='daylight'] .bg-emerald-500\/25,
 html[data-theme='daylight'] .bg-emerald-400\/10,
 html[data-theme='daylight'] .bg-emerald-400\/12,
 html[data-theme='daylight'] .bg-emerald-400\/15,
 html[data-theme='daylight'] .bg-emerald-400\/16,
 html[data-theme='daylight'] .bg-emerald-400\/18,
-html[data-theme='daylight'] .bg-emerald-400\/20 {
-  background-color: rgba(4, 120, 87, 0.11) !important;
+html[data-theme='daylight'] .bg-emerald-400\/20,
+html[data-theme='daylight'] .bg-emerald-400\/22,
+html[data-theme='daylight'] .bg-emerald-400\/25 {
+  background-color: #DDF3EA !important;
 }
 
+html[data-theme='daylight'] .hover\:bg-emerald-400\/16:hover,
+html[data-theme='daylight'] .hover\:bg-emerald-400\/20:hover,
+html[data-theme='daylight'] .hover\:bg-emerald-400\/22:hover,
+html[data-theme='daylight'] .hover\:bg-emerald-400\/25:hover,
+html[data-theme='daylight'] .hover\:bg-emerald-500\/\[0\.06\]:hover,
+html[data-theme='daylight'] .hover\:bg-emerald-500\/10:hover,
+html[data-theme='daylight'] .hover\:bg-emerald-500\/15:hover,
+html[data-theme='daylight'] .hover\:bg-emerald-500\/20:hover,
+html[data-theme='daylight'] .hover\:bg-emerald-500\/25:hover {
+  background-color: #C7EBD9 !important;
+}
+
+/* Crisp Cobalt / Indigo Semantic Accents (ZERO Yellow, ZERO Peach/Orange Wash in Daylight) */
 html[data-theme='daylight'] .text-amber-100,
+html[data-theme='daylight'] .text-amber-100\/80,
 html[data-theme='daylight'] .text-amber-100\/90,
 html[data-theme='daylight'] .text-amber-200,
-html[data-theme='daylight'] .text-amber-300 {
-  color: #92400E !important;
+html[data-theme='daylight'] .text-amber-200\/70,
+html[data-theme='daylight'] .text-amber-200\/80,
+html[data-theme='daylight'] .text-amber-200\/90,
+html[data-theme='daylight'] .text-amber-300,
+html[data-theme='daylight'] .text-amber-300\/80,
+html[data-theme='daylight'] .text-amber-400\/70,
+html[data-theme='daylight'] .hover\:text-amber-200:hover,
+html[data-theme='daylight'] .text-\[\#F59E0B\],
+html[data-theme='daylight'] .text-\[\#FBBF24\] {
+  color: #1E40AF !important;
+}
+
+html[data-theme='daylight'] .bg-amber-400\/\[0\.06\],
+html[data-theme='daylight'] .bg-amber-400\/\[0\.08\],
+html[data-theme='daylight'] .bg-amber-400\/\[0\.12\],
+html[data-theme='daylight'] .bg-amber-400\/10,
+html[data-theme='daylight'] .bg-amber-400\/12,
+html[data-theme='daylight'] .bg-amber-400\/15,
+html[data-theme='daylight'] .bg-amber-400\/18,
+html[data-theme='daylight'] .bg-amber-400\/20,
+html[data-theme='daylight'] .bg-amber-400\/25,
+html[data-theme='daylight'] .bg-amber-500\/\[0\.06\],
+html[data-theme='daylight'] .bg-amber-500\/\[0\.07\],
+html[data-theme='daylight'] .bg-amber-500\/\[0\.08\],
+html[data-theme='daylight'] .bg-amber-500\/10,
+html[data-theme='daylight'] .bg-amber-500\/12,
+html[data-theme='daylight'] .bg-amber-500\/15,
+html[data-theme='daylight'] .bg-amber-500\/20 {
+  background-color: #E0ECFF !important;
+}
+
+html[data-theme='daylight'] .hover\:bg-amber-400\/15:hover,
+html[data-theme='daylight'] .hover\:bg-amber-400\/20:hover,
+html[data-theme='daylight'] .hover\:bg-amber-500\/20:hover {
+  background-color: #C7DCFF !important;
+}
+
+html[data-theme='daylight'] .border-amber-400\/25,
+html[data-theme='daylight'] .border-amber-400\/30,
+html[data-theme='daylight'] .border-amber-400\/35,
+html[data-theme='daylight'] .border-amber-400\/40,
+html[data-theme='daylight'] .border-amber-400\/45,
+html[data-theme='daylight'] .border-amber-400\/60,
+html[data-theme='daylight'] .border-amber-400\/65,
+html[data-theme='daylight'] .border-amber-400\/70,
+html[data-theme='daylight'] .hover\:border-amber-400\/45:hover {
+  border-color: rgba(30, 64, 175, 0.42) !important;
+}
+
+html[data-theme='daylight'] .bg-amber-400 {
+  background-color: #0F172A !important;
+  color: #FFFFFF !important;
+}
+
+html[data-theme='daylight'] .bg-amber-400:hover,
+html[data-theme='daylight'] .hover\:bg-amber-300:hover {
+  background-color: #1E293B !important;
+}
+
+html[data-theme='daylight'] .bg-\[\#F59E0B\],
+html[data-theme='daylight'] .bg-\[\#FBBF24\] {
+  background-color: #1D4ED8 !important;
+}
+
+html[data-theme='daylight'] .text-sky-200 {
+  color: #0369A1 !important;
+}
+
+html[data-theme='daylight'] .bg-sky-500\/10 {
+  background-color: #E0F2FE !important;
+}
+
+html[data-theme='daylight'] .border-sky-400\/35 {
+  border-color: rgba(3, 105, 161, 0.45) !important;
 }
 
 html[data-theme='daylight'] .text-rose-100,
 html[data-theme='daylight'] .text-rose-200,
 html[data-theme='daylight'] .text-rose-300 {
-  color: #BE123C !important;
+  color: #B91C1C !important;
 }
 
-/* Graphite Hairline Borders & Dividers */
+html[data-theme='daylight'] .bg-rose-500\/10,
+html[data-theme='daylight'] .bg-rose-500\/12,
+html[data-theme='daylight'] .bg-rose-500\/15,
+html[data-theme='daylight'] .bg-rose-500\/20 {
+  background-color: #FEE2E2 !important;
+}
+
+html[data-theme='daylight'] .hover\:bg-rose-500\/25:hover {
+  background-color: #FECACA !important;
+}
+
+html[data-theme='daylight'] .border-rose-400,
+html[data-theme='daylight'] .border-rose-400\/35,
+html[data-theme='daylight'] .border-rose-400\/70,
+html[data-theme='daylight'] .border-rose-500\/30,
+html[data-theme='daylight'] .border-rose-500\/35,
+html[data-theme='daylight'] .border-rose-500\/40,
+html[data-theme='daylight'] .border-rose-500\/45 {
+  border-color: rgba(185, 28, 28, 0.48) !important;
+}
+
+/* Crisp Slate Hairline Borders & Dividers */
 html[data-theme='daylight'] .border-white\/10,
 html[data-theme='daylight'] .border-white\/12,
 html[data-theme='daylight'] .border-white\/15,
 html[data-theme='daylight'] .border-white\/20,
 html[data-theme='daylight'] .border-white\/25,
-html[data-theme='daylight'] .border-white\/30,
-html[data-theme='daylight'] .border-white\/35,
 html[data-theme='daylight'] .border-white\/\[0\.06\],
 html[data-theme='daylight'] .border-white\/\[0\.07\],
 html[data-theme='daylight'] .border-white\/\[0\.08\],
-html[data-theme='daylight'] .divide-white\/\[0\.06\] > :not([hidden]) ~ :not([hidden]) {
-  border-color: rgba(20, 22, 25, 0.14) !important;
+html[data-theme='daylight'] .divide-white\/\[0\.06\] > :not([hidden]) ~ :not([hidden]),
+html[data-theme='daylight'] .divide-white\/\[0\.08\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(15, 23, 42, 0.22) !important;
+}
+
+html[data-theme='daylight'] .border-white\/30,
+html[data-theme='daylight'] .border-white\/35 {
+  border-color: rgba(15, 23, 42, 0.56) !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12) !important;
+}
+
+html[data-theme='daylight'] .border-\[\#F3F1EC\] {
+  border-color: #0F172A !important;
 }
 
 html[data-theme='daylight'] .hover\:border-white\/20:hover,
 html[data-theme='daylight'] .hover\:border-white\/25:hover,
 html[data-theme='daylight'] .hover\:border-white\/30:hover,
 html[data-theme='daylight'] .group:hover .group-hover\:border-white\/30 {
-  border-color: rgba(20, 22, 25, 0.30) !important;
+  border-color: rgba(15, 23, 42, 0.42) !important;
+}
+
+html[data-theme='daylight'] .ring-white\/15,
+html[data-theme='daylight'] .ring-white\/25 {
+  --tw-ring-color: rgba(15, 23, 42, 0.34) !important;
+}
+
+html[data-theme='daylight'] .ring-emerald-400\/30,
+html[data-theme='daylight'] .ring-emerald-400\/45 {
+  --tw-ring-color: rgba(4, 120, 87, 0.48) !important;
+}
+
+html[data-theme='daylight'] .accent-emerald-400 {
+  accent-color: #047857;
+}
+
+/* Active Segmented Pills (#22252A) — Must stay AFTER text overrides! */
+html[data-theme='daylight'] .bg-\[\#22252A\] {
+  background-color: #0F172A !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+}
+
+html[data-theme='daylight'] .bg-\[\#22252A\] * {
+  color: inherit !important;
+}
+
+html[data-theme='daylight'] .bg-\[\#22252A\].text-\[\#F3F1EC\] {
+  color: #FFFFFF !important;
+}
+
+html[data-theme='daylight'] .bg-\[\#22252A\].text-\[\#34D399\] {
+  color: #6EE7B7 !important;
 }
 
 /* Primary High-Contrast CTA Button (.btn-aurora) — Must stay AFTER text overrides! */
 html[data-theme='daylight'] .btn-aurora {
-  background: #141619;
-  color: #FAF8F3 !important;
-  border: 1px solid #141619;
+  background: #0F172A;
+  color: #FFFFFF !important;
+  border: 1px solid #0F172A;
   box-shadow:
-    0 2px 0 rgba(20, 22, 25, 0.25),
-    0 10px 22px -8px rgba(20, 22, 25, 0.28);
+    0 2px 0 rgba(15, 23, 42, 0.22),
+    0 10px 22px -8px rgba(15, 23, 42, 0.28);
+}
+
+html[data-theme='daylight'] .btn-aurora:disabled {
+  opacity: 1 !important;
+  background: #475569 !important;
+  border-color: #475569 !important;
+  color: #FFFFFF !important;
 }
 
 html[data-theme='daylight'] .btn-aurora,
 html[data-theme='daylight'] .btn-aurora *,
 html[data-theme='daylight'] .btn-aurora:hover:not(:disabled),
 html[data-theme='daylight'] .btn-aurora:hover:not(:disabled) * {
-  color: #FAF8F3 !important;
+  color: #FFFFFF !important;
 }
 
 html[data-theme='daylight'] .btn-aurora:hover:not(:disabled) {
-  background: #23272D;
+  background: #1E293B;
 }
 
 html[data-theme='daylight'] .btn-aurora svg.fill-\[\#0A0B0C\],
 html[data-theme='daylight'] .btn-aurora svg[class*='fill-'] {
-  fill: #FAF8F3 !important;
-}
-
-/* Keep micro-CRT oscilloscope window text crisp inside dark OLED panels */
-html[data-theme='daylight'] .bg-\[\#030706\] .text-\[\#F3F1EC\],
-html[data-theme='daylight'] .bg-\[\#060807\] .text-\[\#F3F1EC\] {
-  color: #F3F1EC !important;
+  fill: #FFFFFF !important;
 }
 
 html[data-theme='daylight'] input[type='range'] {
@@ -533,14 +764,14 @@ html[data-theme='daylight'] input[type='range'] {
 }
 
 html[data-theme='daylight'] select {
-  background-color: #FFFFFF !important;
-  color: #141619 !important;
-  border-color: rgba(20, 22, 25, 0.16) !important;
+  background-color: #F1F5F9 !important;
+  color: #0F172A !important;
+  border-color: rgba(15, 23, 42, 0.24) !important;
 }
 
 html[data-theme='daylight'] select option {
   background-color: #FFFFFF !important;
-  color: #141619 !important;
+  color: #0F172A !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

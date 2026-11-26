@@ -14,6 +14,7 @@ interface NeuralCompassSelectorProps {
   coords: NeuralCoords | null;
   selectedState: NeuralMicroState | null;
   baselineScore: number;
+  themeMode?: 'daylight' | 'night';
   onChangeCoords: (next: NeuralCoords) => void;
   onSelectMicroState: (state: NeuralMicroState) => void;
   onChangeBaseline: (score: number) => void;
@@ -23,6 +24,7 @@ export function NeuralCompassSelector({
   coords,
   selectedState,
   baselineScore,
+  themeMode = 'night',
   onChangeCoords,
   onSelectMicroState,
   onChangeBaseline,
@@ -79,12 +81,19 @@ export function NeuralCompassSelector({
   const cursorLeft = coords ? `${coords.clarity}%` : '50%';
   const cursorTop = coords ? `${100 - coords.energy}%` : '50%';
 
-  // Dynamic studio crosshair accent (amber only for stressed/high-tension quadrant, phosphor emerald otherwise)
+  const isDay = themeMode === 'daylight';
+  // Dynamic studio crosshair accent (Cobalt Blue for stressed/high-tension quadrant in Daylight / Amber in Night, Emerald otherwise)
   const cursorColor = !coords
-    ? '#34D399'
+    ? isDay
+      ? '#047857'
+      : '#34D399'
     : coords.clarity < 48 && coords.energy >= 55
-      ? '#F59E0B'
-      : '#34D399';
+      ? isDay
+        ? '#1D4ED8'
+        : '#F59E0B'
+      : isDay
+        ? '#047857'
+        : '#34D399';
 
   return (
     <div className="space-y-3">
@@ -207,10 +216,12 @@ export function NeuralCompassSelector({
             className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
           >
             <span
-              className="relative flex h-7 w-7 items-center justify-center rounded-full border-2 border-[#F3F1EC]"
+              className={`relative flex h-7 w-7 items-center justify-center rounded-full border-2 ${
+                isDay ? 'border-white shadow-md' : 'border-[#F3F1EC]'
+              }`}
               style={{ backgroundColor: cursorColor }}
             >
-              <Crosshair className="h-3.5 w-3.5 text-[#0A0B0C]" />
+              <Crosshair className={`h-3.5 w-3.5 ${isDay ? 'text-white' : 'text-[#0A0B0C]'}`} />
             </span>
           </div>
         ) : (
@@ -331,6 +342,7 @@ interface NeuralTrajectoryPreviewProps {
   durationMin: number;
   effectTierLabel?: string | null;
   isoBridgeLabel?: string | null;
+  themeMode?: 'daylight' | 'night';
 }
 
 /**
@@ -347,7 +359,9 @@ export function NeuralTrajectoryPreview({
   durationMin,
   effectTierLabel = null,
   isoBridgeLabel = null,
+  themeMode = 'night',
 }: NeuralTrajectoryPreviewProps) {
+  const isDay = themeMode === 'daylight';
   const baseDest = targetState ? TARGET_COORDS[targetState] : null;
   const dest =
     customDestCoords && customDestLabel
@@ -378,8 +392,8 @@ export function NeuralTrajectoryPreview({
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
           <defs>
             <linearGradient id="nfmVectorGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#A3A39E" />
-              <stop offset="100%" stopColor="#34D399" />
+              <stop offset="0%" stopColor={isDay ? '#475569' : '#A3A39E'} />
+              <stop offset="100%" stopColor={isDay ? '#047857' : '#34D399'} />
             </linearGradient>
           </defs>
           <line x1="50" y1="0" x2="50" y2="100" className="studio-grid-strong" strokeWidth="0.4" />
@@ -398,8 +412,8 @@ export function NeuralTrajectoryPreview({
                   cx={mx}
                   cy={my}
                   r="1.6"
-                  fill="#FBBF24"
-                  stroke="#0A0B0C"
+                  fill={isDay ? '#1D4ED8' : '#FBBF24'}
+                  stroke={isDay ? '#FFFFFF' : '#0A0B0C'}
                   strokeWidth="0.45"
                 />
               )}
@@ -410,9 +424,11 @@ export function NeuralTrajectoryPreview({
         {/* Start Point */}
         <div
           style={{ left: `${x1}%`, top: `${y1}%` }}
-          className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1"
+          className={`absolute -translate-y-1/2 flex items-center gap-1 ${
+            x1 > 60 ? '-translate-x-[calc(100%-6px)] flex-row-reverse' : '-translate-x-1.5'
+          }`}
         >
-          <span className="h-2.5 w-2.5 rounded-full border border-[#F3F1EC] bg-[#A3A39E]" />
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-[#F3F1EC] bg-[#A3A39E]" />
           <span className="whitespace-nowrap rounded bg-[#121316]/95 px-1.5 py-0.5 text-[9px] font-medium text-[#D4D4CE]">
             Now: {fromLabel}
           </span>
@@ -422,9 +438,11 @@ export function NeuralTrajectoryPreview({
         {dest ? (
           <div
             style={{ left: `${x2}%`, top: `${y2}%` }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1"
+            className={`absolute -translate-y-1/2 flex items-center gap-1 ${
+              x2 > 58 ? '-translate-x-[calc(100%-6px)] flex-row-reverse' : '-translate-x-1.5'
+            }`}
           >
-            <span className="h-3 w-3 rounded-full border-2 border-[#F3F1EC] bg-[#34D399]" />
+            <span className="h-3 w-3 shrink-0 rounded-full border-2 border-[#F3F1EC] bg-[#34D399]" />
             <span className="whitespace-nowrap rounded bg-[#121316]/95 px-1.5 py-0.5 text-[9px] font-semibold text-[#34D399]">
               Goal: {dest.label}
             </span>

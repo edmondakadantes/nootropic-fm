@@ -4,25 +4,34 @@ interface SonicOrbProps {
   mood?: FieldMood;
   size?: 'sm' | 'md' | 'lg';
   label?: string;
+  themeMode?: 'daylight' | 'night';
 }
 
 /**
- * Compact Studio Signal Calibration Badge (replaces glowing chatbot orb).
- * Renders a crisp 36x16 dark CRT micro-window + engraved monospace hardware readout.
+ * Compact Studio Signal Calibration Badge.
+ * Renders a crisp 36x16 CRT micro-window (Night) or Daylight lab window + engraved monospace hardware readout.
  */
-export function SonicOrb({ mood = 'default', label }: SonicOrbProps) {
-  const waveColor = mood === 'driving' ? '#F59E0B' : '#34D399';
+export function SonicOrb({ mood = 'default', label, themeMode = 'night' }: SonicOrbProps) {
+  const isDay = themeMode === 'daylight';
+  const waveColor =
+    mood === 'driving'
+      ? isDay
+        ? '#1D4ED8'
+        : '#F59E0B'
+      : isDay
+        ? '#047857'
+        : '#34D399';
   const displayLabel = (label && label.trim()) || '48.0 KHZ · STUDIO DSP';
 
   return (
     <div className="inline-flex items-center gap-2.5 rounded-lg border border-white/10 bg-[#0F1013] px-3 py-1.5 select-none">
       <div className="flex h-4 w-9 shrink-0 items-center justify-center rounded border border-white/10 bg-[#060807] px-1">
         <svg viewBox="0 0 32 12" className="h-3 w-full" fill="none" aria-hidden="true">
-          <line x1="0" y1="6" x2="32" y2="6" stroke="rgba(255,255,255,0.12)" strokeWidth="0.6" />
+          <line x1="0" y1="6" x2="32" y2="6" className="studio-grid-strong" strokeWidth="0.6" />
           <path
             d="M 1 6 Q 5 1 8.5 6 T 16 6 T 23.5 6 T 31 6"
             stroke={waveColor}
-            strokeWidth="1.35"
+            strokeWidth="1.45"
             strokeLinecap="round"
             strokeLinejoin="round"
           />

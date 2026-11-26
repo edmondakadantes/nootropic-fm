@@ -1518,6 +1518,8 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
       res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
       res.end(JSON.stringify({
         config: {
+          regionRequiresOptIn: false,
+          countryCode: 'US',
           hasLiveMusicGen: false,
           freeTrialSeconds: 300,
           referralBonusSeconds: 1800,
@@ -1896,6 +1898,16 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
 
     await waitUntil(
       `(() => {
+        if (document.querySelector('[aria-label="Interactive 2D Neural State Compass"]')) return true;
+        const ageInput = document.querySelector('input[type="number"]');
+        if (ageInput && ageInput.value !== '30') {
+          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+          if (ageInput._valueTracker) ageInput._valueTracker.setValue('');
+          nativeSetter.call(ageInput, '30');
+          ageInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        const cb = document.querySelector('input[type="checkbox"]');
+        if (cb && !cb.checked) cb.click();
         const nextBtn = Array.from(document.querySelectorAll('button')).find((b) => /continue:\\s*current state/i.test(b.textContent || ''));
         if (nextBtn) nextBtn.click();
         return Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'));

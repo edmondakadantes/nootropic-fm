@@ -84,6 +84,7 @@ interface CheckInViewProps {
   runtimeConfig: AppRuntimeConfig | null;
   pendingDebrief: SessionRecord | null;
   initialPreset?: MoodPresetSelection | null;
+  themeMode?: 'daylight' | 'night';
   onClearPreset?: () => void;
   onOpenPendingDebrief: () => void;
   onDismissPending: () => void;
@@ -143,6 +144,7 @@ export function CheckInView({
   runtimeConfig,
   pendingDebrief,
   initialPreset = null,
+  themeMode = 'night',
   onClearPreset,
   onOpenPendingDebrief,
   onDismissPending,
@@ -767,6 +769,7 @@ export function CheckInView({
           mood={activeMood}
           size={beat === 1 || (!isFirstVisit && beat === 2) ? 'lg' : 'sm'}
           label={`Step ${visibleStepNum} of ${totalBeats} · Acoustic Calibration`}
+          themeMode={themeMode}
         />
 
         {beat === 1 && (
@@ -1169,6 +1172,7 @@ export function CheckInView({
             coords={neuralCoords}
             selectedState={selectedMicroState}
             baselineScore={baselineScore}
+            themeMode={themeMode}
             onChangeCoords={handleCompassCoordsChange}
             onSelectMicroState={(st) => applyMicroState(st, true)}
             onChangeBaseline={setBaselineScore}
@@ -1273,6 +1277,7 @@ export function CheckInView({
                 durationMin={durationMin}
                 effectTierLabel={effectTierLabel}
                 isoBridgeLabel={isoBridgeLabel}
+                themeMode={themeMode}
               />
             );
           })()}

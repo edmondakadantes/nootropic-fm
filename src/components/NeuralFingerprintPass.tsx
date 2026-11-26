@@ -4,11 +4,11 @@ import QRCode from 'qrcode';
 import { formatProfileSummary, type UserProfile } from '../../shared/types';
 
 const PALETTES: Array<[string, string, string]> = [
-  ['#22d3ee', '#818cf8', '#34d399'], // Cyan · Indigo · Emerald
-  ['#a78bfa', '#22d3ee', '#f472b6'], // Violet · Cyan · Rose
-  ['#34d399', '#22d3ee', '#60a5fa'], // Emerald · Cyan · Sky
-  ['#f59e0b', '#22d3ee', '#a78bfa'], // Amber · Cyan · Violet
-  ['#38bdf8', '#c084fc', '#2dd4bf'], // Sky · Purple · Teal
+  ['#0891b2', '#4f46e5', '#059669'], // Cyan · Indigo · Emerald
+  ['#7c3aed', '#0891b2', '#db2777'], // Violet · Cyan · Rose
+  ['#059669', '#0891b2', '#2563eb'], // Emerald · Cyan · Royal Blue
+  ['#0284c7', '#0891b2', '#6366f1'], // Cobalt · Cyan · Indigo
+  ['#0284c7', '#7c3aed', '#0d9488'], // Sky · Purple · Teal
 ];
 
 function hashSeed(input: string): number {
@@ -142,7 +142,7 @@ export function NeuralFingerprintSigil({
       width={size}
       height={size}
       viewBox="0 0 200 200"
-      className={`shrink-0 ${className}`}
+      className={`shrink-0 text-white ${className}`}
       aria-label={`Neural acoustic fingerprint ${spec.hexTag}`}
     >
       <defs>
@@ -189,11 +189,11 @@ export function NeuralFingerprintSigil({
       ))}
 
       {spec.nodes.map((n, idx) => (
-        <circle key={idx} cx={n.x} cy={n.y} r={n.r} fill="#ffffff" stroke={n.color} strokeWidth="1.2" />
+        <circle key={idx} cx={n.x} cy={n.y} r={n.r} fill="currentColor" stroke={n.color} strokeWidth="1.4" />
       ))}
 
       <circle cx="100" cy="100" r="6" fill={spec.palette[0]} fillOpacity="0.35" />
-      <circle cx="100" cy="100" r="2.8" fill="#ffffff" />
+      <circle cx="100" cy="100" r="2.8" fill="currentColor" />
     </svg>
   );
 }

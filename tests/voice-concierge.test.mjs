@@ -342,7 +342,7 @@ test('sanitizeVoiceRequestPayload + vocal headroom math strictly preserve Layer-
 });
 
 
-test('listAvailableConciergeVoices prioritizes Serene Presence, keeps calm English voices, and filters horror/non-English', async () => {
+test('listAvailableConciergeVoices prioritizes Monique, keeps calm English voices, and filters horror/non-English', async () => {
   clearVoiceCatalogCacheForTests();
   const origFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
@@ -370,10 +370,16 @@ test('listAvailableConciergeVoices prioritizes Serene Presence, keeps calm Engli
             labels: { language: 'en', gender: 'female', descriptive: 'calm', use_case: 'narrative_story' },
           },
           {
-            voice_id: DEFAULT_ELEVENLABS_VOICE_ID,
+            voice_id: 'pysCEvZRsl1S0ifPp4IM',
             name: 'Serene Presence -  Calm & Grounded',
             category: 'professional',
             labels: { language: 'en', gender: 'female', descriptive: 'meditative', use_case: 'narrative_story' },
+          },
+          {
+            voice_id: DEFAULT_ELEVENLABS_VOICE_ID,
+            name: 'Monique - Empathetic, Calm & Nurturing',
+            category: 'professional',
+            labels: { language: 'en', gender: 'female', descriptive: 'calm', use_case: 'conversational' },
           },
         ],
       }),
@@ -386,9 +392,10 @@ test('listAvailableConciergeVoices prioritizes Serene Presence, keeps calm Engli
     assert.equal(catalog.available, true);
     assert.equal(catalog.provider, 'elevenlabs');
     assert.equal(catalog.defaultVoiceId, DEFAULT_ELEVENLABS_VOICE_ID);
-    assert.equal(catalog.voices.length, 2);
+    assert.equal(catalog.voices.length, 3);
     assert.equal(catalog.voices[0].voiceId, DEFAULT_ELEVENLABS_VOICE_ID);
-    assert.match(catalog.voices[0].shortLabel, /Serene Presence/);
+    assert.match(catalog.voices[0].shortLabel, /Monique/);
+    assert.equal(catalog.voices[1].voiceId, 'pysCEvZRsl1S0ifPp4IM');
     assert.ok(!catalog.voices.some((v) => v.voiceId === 'ro_dj_01' || v.voiceId === 'horror_01'));
   } finally {
     clearVoiceCatalogCacheForTests();
@@ -413,9 +420,9 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache p
           voices: [
             {
               voice_id: DEFAULT_ELEVENLABS_VOICE_ID,
-              name: 'Serene Presence - Calm & Grounded',
+              name: 'Monique - Empathetic, Calm & Nurturing',
               category: 'professional',
-              labels: { language: 'en', descriptive: 'meditative' },
+              labels: { language: 'en', descriptive: 'calm' },
             },
           ],
         }),
