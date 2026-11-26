@@ -1387,11 +1387,13 @@ export default {
         const providedToken = extractProfileTokenFromRequest(request);
         if (providedToken) {
           const tokenHash = await sha256Hex(providedToken);
+          // Cloudflare D1 caps LIKE patterns at 50 bytes (SQLITE_MAX_LIKE_PATTERN_LENGTH), whereas
+          // SHA-256 hex is 64 chars. Use instr(token_hash, ?) > 0 + constant-time tokenHashMatches().
           const proRow = await env.DB.prepare(
             `SELECT plan_tier, pro_until, token_hash FROM profiles
-             WHERE plan_tier = 'pro' AND token_hash LIKE ? LIMIT 5`
+             WHERE plan_tier = 'pro' AND instr(token_hash, ?) > 0 LIMIT 5`
           )
-            .bind(`%${tokenHash}%`)
+            .bind(tokenHash)
             .all<Record<string, unknown>>();
           for (const row of proRow.results) {
             const stored = String(row.token_hash ?? '');

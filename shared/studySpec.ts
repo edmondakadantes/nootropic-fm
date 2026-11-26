@@ -321,8 +321,8 @@ export const GENRE_LYRIA_PROMPTS: Record<
   },
   deep_electronic: {
     prompts: [
-      { text: 'Instrumental deep minimal electronic focus music, warm analog synth arpeggios, hypnotic clean bassline, no vocals', weight: 1.0 },
-      { text: 'Steady productive flow, smooth warm filters, zero harsh drops, strictly instrumental', weight: 0.5 },
+      { text: 'Crisp melodic deep electronic focus music, articulate warm analog synth arpeggios, tight clean sub-bass, subtle soft four-on-the-floor pulse and brushed hi-hats, clear studio separation, no vocals', weight: 1.0 },
+      { text: 'Clean modern progressive melodic electronic instrumental, balanced high-frequency clarity, zero muddy drone, zero harsh drops, strictly instrumental', weight: 0.6 },
     ],
   },
   cinematic_strings: {
@@ -383,6 +383,23 @@ export const GENRE_LYRIA_PROMPTS: Record<
  * Generates exact Google Lyria RealTime WebSocket parameters from an ExecutableStudySpec
  * and the listener's active curated genre.
  */
+const RHYTHMIC_LYRIA_GENRES: ReadonlySet<ResolvedGenre> = new Set([
+  'deep_electronic',
+  'lofi_keys',
+  'dub_reggae',
+  'bossa_nova',
+  'jazz_rhodes',
+]);
+
+const DEFAULT_GENRE_BPM: Partial<Record<ResolvedGenre, number>> = {
+  deep_electronic: 96,
+  lofi_keys: 80,
+  dub_reggae: 84,
+  bossa_nova: 90,
+  jazz_rhodes: 86,
+  acoustic_pluck: 88,
+};
+
 export function buildLyriaRealtimeConfig(
   spec: ExecutableStudySpec,
   genreOverride?: ResolvedGenre,
@@ -399,7 +416,15 @@ export function buildLyriaRealtimeConfig(
     guidance: number;
   };
 } {
-  const rawBpm = bpmOverride ?? spec.music.bpmRamp?.start ?? spec.music.bpm ?? 82;
+  const isSleep = spec.protocol.targetState === 'sleep_winddown';
+  const isExplicitRhythmicGenre = Boolean(
+    genreOverride && RHYTHMIC_LYRIA_GENRES.has(genreOverride) && !isSleep
+  );
+  const specBpm = spec.music.bpmRamp?.start ?? spec.music.bpm;
+  const fallbackGenreBpm = (genreOverride && DEFAULT_GENRE_BPM[genreOverride]) ?? 82;
+  const rawBpm =
+    bpmOverride ??
+    (specBpm && specBpm > 0 ? specBpm : isExplicitRhythmicGenre ? fallbackGenreBpm : 64);
   const bpm = Math.max(60, Math.min(160, Math.round(rawBpm > 0 ? rawBpm : 64)));
   const genrePreset = genreOverride ? GENRE_LYRIA_PROMPTS[genreOverride] : undefined;
   const weightedPrompts =
@@ -413,20 +438,32 @@ export function buildLyriaRealtimeConfig(
           },
         ]);
 
+  const minBrightness =
+    !isSleep &&
+    (genreOverride === 'deep_electronic' ||
+      genreOverride === 'bossa_nova' ||
+      genreOverride === 'acoustic_pluck' ||
+      genreOverride === 'jazz_rhodes')
+      ? 0.44
+      : 0.18;
+  const minDensity = isExplicitRhythmicGenre ? 0.34 : 0.15;
+
   return {
     weightedPrompts,
     config: {
       bpm,
-      density: Number(Math.max(0.15, Math.min(0.88, spec.music.density)).toFixed(2)),
-      brightness: Number(Math.max(0.18, Math.min(0.88, spec.music.brightness)).toFixed(2)),
+      density: Number(Math.max(minDensity, Math.min(0.88, spec.music.density)).toFixed(2)),
+      brightness: Number(Math.max(minBrightness, Math.min(0.88, spec.music.brightness)).toFixed(2)),
       scale: tonalModeToLyriaScale(spec.music.tonalMode, spec.music.rootMidi),
       muteBass:
-        (spec.music.tonalMode === 'drone' && spec.music.density < 0.25) ||
-        genreOverride === 'solo_piano',
+        !isExplicitRhythmicGenre &&
+        ((spec.music.tonalMode === 'drone' && spec.music.density < 0.25) ||
+          genreOverride === 'solo_piano'),
       muteDrums: Boolean(
-        spec.music.percussion === 'none' ||
-          (spec.music.bpm === 0 && !spec.music.bpmRamp) ||
-          genrePreset?.muteDrums
+        genrePreset?.muteDrums ||
+          isSleep ||
+          (!isExplicitRhythmicGenre &&
+            (spec.music.percussion === 'none' || (spec.music.bpm === 0 && !spec.music.bpmRamp)))
       ),
       guidance: 4.2,
     },

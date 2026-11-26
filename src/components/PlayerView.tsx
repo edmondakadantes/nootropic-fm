@@ -959,18 +959,18 @@ export function PlayerView({
     if (nextMode === 'lyria_realtime') {
       if (!isPro && dailyLyriaUsedRef.current >= FREE_LYRIA_PREVIEW_SEC) {
         setLyriaNotice(
-          "Today's 90s HD AI preview is complete — continuing on Live Non-Looping Synth. Start your 7-Day Free Trial ($0 today) for unlimited HD AI streaming."
+          "Today's 90s Endless Stream preview is complete — playing Studio Mix seamlessly. Start your 7-Day Free Trial ($0 today) for unlimited Endless Stream."
         );
         if (!audioStarted) {
-          setCarrierMode('generative_live');
-          setAudioSource('procedural_fallback');
+          setCarrierMode('studio_library');
+          setAudioSource('studio_library');
           await engineRef.current?.start(
             recommendation.params,
             recommendation.plannedDurationMin,
             recommendation.arm.name,
             recommendation.isControlTrial,
             recommendation.executableSpec,
-            'generative_live',
+            'studio_library',
             API_BASE
           );
           setAudioStarted(true);
@@ -981,9 +981,9 @@ export function PlayerView({
           await engineRef.current?.resume();
           setIsPlaying(true);
         }
-        setCarrierMode('generative_live');
-        setAudioSource('procedural_fallback');
-        engineRef.current?.setCarrierMode('generative_live');
+        setCarrierMode('studio_library');
+        setAudioSource('studio_library');
+        engineRef.current?.setCarrierMode('studio_library');
         return;
       }
       if (connectingLyria) return;
@@ -996,7 +996,7 @@ export function PlayerView({
             recommendation.arm.name,
             isPro ? false : recommendation.isControlTrial,
             recommendation.executableSpec,
-            'lyria_realtime',
+            'studio_library',
             API_BASE
           );
           setAudioStarted(true);
@@ -1008,10 +1008,12 @@ export function PlayerView({
 
         const res = await api.getLyriaRealtimeToken();
         if (!res.available || !res.token) {
-          setLyriaNotice(null);
-          setCarrierMode('generative_live');
-          setAudioSource('procedural_fallback');
-          engineRef.current?.setCarrierMode('generative_live');
+          setLyriaNotice(
+            res.reason ?? 'Endless Stream is temporarily unavailable — continuing smoothly on Studio Mix.'
+          );
+          setCarrierMode('studio_library');
+          setAudioSource('studio_library');
+          engineRef.current?.setCarrierMode('studio_library');
           setConnectingLyria(false);
           return;
         }
@@ -1024,10 +1026,12 @@ export function PlayerView({
               setCarrierMode('lyria_realtime');
               setAudioSource('lyria_realtime');
             } else if (status === 'error' || status === 'unavailable') {
-              if (note && !note.includes('Studio Mix')) setLyriaNotice(null);
-              setCarrierMode('generative_live');
-              setAudioSource('procedural_fallback');
-              engineRef.current?.setCarrierMode('generative_live');
+              setLyriaNotice(
+                note ?? 'Endless Stream connection interrupted — continuing seamlessly on Studio Mix.'
+              );
+              setCarrierMode('studio_library');
+              setAudioSource('studio_library');
+              engineRef.current?.setCarrierMode('studio_library');
             }
           },
           async () => {
@@ -1045,16 +1049,20 @@ export function PlayerView({
           setCarrierMode('lyria_realtime');
           setAudioSource('lyria_realtime');
         } else {
-          setLyriaNotice(null);
-          setCarrierMode('generative_live');
-          setAudioSource('procedural_fallback');
-          engineRef.current?.setCarrierMode('generative_live');
+          setLyriaNotice((prev) =>
+            prev ?? 'Endless Stream could not connect right now — continuing smoothly on Studio Mix.'
+          );
+          setCarrierMode('studio_library');
+          setAudioSource('studio_library');
+          engineRef.current?.setCarrierMode('studio_library');
         }
       } catch {
-        setLyriaNotice(null);
-        setCarrierMode('generative_live');
-        setAudioSource('procedural_fallback');
-        engineRef.current?.setCarrierMode('generative_live');
+        setLyriaNotice(
+          'Endless Stream could not connect right now — continuing smoothly on Studio Mix.'
+        );
+        setCarrierMode('studio_library');
+        setAudioSource('studio_library');
+        engineRef.current?.setCarrierMode('studio_library');
       } finally {
         setConnectingLyria(false);
       }
@@ -1121,7 +1129,7 @@ export function PlayerView({
     setActiveCustomLabel(null);
     setCustomGenState('idle');
     setCustomGenNotice(null);
-    const keepEndless = carrierMode === 'lyria_realtime' || carrierMode === 'generative_live';
+    const keepEndless = carrierMode === 'lyria_realtime';
     if (!keepEndless && carrierMode !== 'studio_library') {
       setCarrierMode('studio_library');
       setAudioSource('studio_library');
@@ -1621,7 +1629,7 @@ export function PlayerView({
                 disabled={connectingLyria}
                 onClick={() => void handleCarrierSwitch('lyria_realtime')}
                 className={`group relative flex flex-col justify-between rounded-xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
-                  carrierMode === 'lyria_realtime' || carrierMode === 'generative_live'
+                  carrierMode === 'lyria_realtime'
                     ? 'border-emerald-400/55 bg-emerald-500/[0.09] text-[#F3F1EC]'
                     : connectingLyria
                       ? 'border-emerald-400/40 bg-emerald-500/[0.06] text-[#F3F1EC]'
@@ -1635,7 +1643,7 @@ export function PlayerView({
                     ) : (
                       <Radio
                         className={`h-4 w-4 shrink-0 ${
-                          carrierMode === 'lyria_realtime' || carrierMode === 'generative_live'
+                          carrierMode === 'lyria_realtime'
                             ? 'text-[#34D399]'
                             : 'text-[#8E8E88] group-hover:text-[#34D399]'
                         }`}
@@ -1647,10 +1655,10 @@ export function PlayerView({
                     <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#34D399]">
                       Syncing…
                     </span>
-                  ) : carrierMode === 'lyria_realtime' || carrierMode === 'generative_live' ? (
+                  ) : carrierMode === 'lyria_realtime' ? (
                     <span className="inline-flex items-center gap-1 rounded border border-emerald-400/45 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-emerald-200">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#34D399] animate-pulse" />
-                      {!isPro && carrierMode === 'lyria_realtime'
+                      {!isPro
                         ? `Live · ${Math.max(0, FREE_LYRIA_PREVIEW_SEC - dailyLyriaUsedSec)}s`
                         : 'Live'}
                     </span>
@@ -1666,14 +1674,14 @@ export function PlayerView({
                 </div>
                 <p
                   className={`mt-1.5 text-[11px] leading-snug ${
-                    carrierMode === 'lyria_realtime' || carrierMode === 'generative_live'
+                    carrierMode === 'lyria_realtime'
                       ? 'text-[#D4D4CE]'
                       : 'text-[#7E7E78]'
                   }`}
                 >
                   {connectingLyria
                     ? 'Connecting live stream…'
-                    : carrierMode === 'lyria_realtime' || carrierMode === 'generative_live'
+                    : carrierMode === 'lyria_realtime'
                       ? 'Streaming live · Never repeats'
                       : 'Generated live · Never repeats'}
                 </p>

@@ -41,10 +41,26 @@ const WRANGLER_JS = join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js')
 const args = new Set(process.argv.slice(2));
 const SKIP_UPLOAD = args.has('--skip-upload');
 const FORCE_RERENDER = args.has('--force');
+const REUSE_PRENORM = args.has('--reuse-prenorm');
+const onlyIdx = process.argv.indexOf('--only');
+const ONLY_FILTERS =
+  onlyIdx >= 0 && process.argv[onlyIdx + 1]
+    ? process.argv[onlyIdx + 1].split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
 const limitIdx = process.argv.indexOf('--limit');
 const LIMIT = limitIdx >= 0 ? Math.max(1, Number(process.argv[limitIdx + 1]) || 26) : 999;
 const RENDER_CONCURRENCY = 4;
-const UPLOAD_CONCURRENCY = 3;
+const UPLOAD_CONCURRENCY = 4;
+const CACHE_BUST_REV = 'r=5';
+
+const WINGET_FFMPEG_DIR =
+  'C:\\Users\\Lenovo\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.1-full_build\\bin';
+const FFMPEG_BIN = existsSync(join(WINGET_FFMPEG_DIR, 'ffmpeg.exe'))
+  ? join(WINGET_FFMPEG_DIR, 'ffmpeg.exe')
+  : 'ffmpeg';
+const FFPROBE_BIN = existsSync(join(WINGET_FFMPEG_DIR, 'ffprobe.exe'))
+  ? join(WINGET_FFMPEG_DIR, 'ffprobe.exe')
+  : 'ffprobe';
 
 const BASE_CDN = process.env.NOOTROPIC_ORIGIN || 'https://www.nootropic.fm';
 
@@ -111,20 +127,84 @@ function spawnAsync(cmd, cmdArgs, opts = {}) {
 }
 
 async function runFfmpeg(ffmpegArgs) {
-  const { stderr } = await spawnAsync('ffmpeg', ['-hide_banner', '-y', ...ffmpegArgs]);
+  const { stderr } = await spawnAsync(FFMPEG_BIN, ['-hide_banner', '-nostats', '-y', ...ffmpegArgs]);
   return stderr;
 }
 
 /**
- * Parses ITU-R BS.1770-4 integrated LUFS and true-peak dBFS from `ffmpeg -af ebur128=peak=true`.
+ * Genre-calibrated mastering EQ chain (tames sub-bass mud on deep_electronic & groove stems
+ * and restores articulate synth/Rhodes/nylon/piano presence without harshness).
+ */
+function buildGenreMasteringEq(sourceKey) {
+  const genre = sourceKey.split('/')[0];
+  const preTrim = [];
+  if (sourceKey.includes('stellar-focus-pulse-84-1')) {
+    preTrim.push('atrim=start=5.5,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.35:curve=qsin');
+  } else if (sourceKey.includes('celestial-drift-64-2')) {
+    preTrim.push('atrim=start=2.0,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.35:curve=qsin');
+  } else if (sourceKey.includes('evening-felt-rhodes-68-1')) {
+    preTrim.push('atrim=start=0.92,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.12:curve=qsin');
+  } else if (sourceKey.includes('felt-piano-flow-86-2')) {
+    preTrim.push('atrim=start=0.95,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.12:curve=qsin');
+  }
+
+  let eq;
+  if (genre === 'deep_electronic') {
+    eq = [
+      'highpass=f=30:poles=2',
+      'lowshelf=f=110:g=-3.4:w=0.7',
+      'equalizer=f=240:t=q:w=1.1:g=-1.8',
+      'equalizer=f=2600:t=q:w=0.9:g=4.6',
+      'highshelf=f=6200:g=4.8:w=0.7',
+    ].join(',');
+  } else if (
+    genre === 'lofi_keys' ||
+    genre === 'jazz_rhodes' ||
+    genre === 'bossa_nova' ||
+    genre === 'dub_reggae'
+  ) {
+    eq = [
+      'highpass=f=28:poles=2',
+      'lowshelf=f=115:g=-1.8:w=0.75',
+      'equalizer=f=3000:t=q:w=1.0:g=2.4',
+      'highshelf=f=7000:g=2.5:w=0.75',
+    ].join(',');
+  } else if (genre === 'nature_rain') {
+    eq = 'highpass=f=35:poles=2';
+  } else {
+    eq = [
+      'highpass=f=26:poles=2',
+      'equalizer=f=2800:t=q:w=1.0:g=1.4',
+      'highshelf=f=7500:g=1.6:w=0.75',
+    ].join(',');
+  }
+  return [...preTrim, eq].join(',');
+}
+
+/**
+ * Parses ITU-R BS.1770-4 integrated LUFS and true-peak dBFS from the final `Summary:` block of `ebur128=peak=true`.
  */
 function parseEbur128Summary(stderr) {
-  const iMatch = stderr.match(/Integrated loudness:[\s\S]*?I:\s*(-?\d+(?:\.\d+)?)\s*LUFS/);
-  const tpMatch = stderr.match(/True peak:[\s\S]*?Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS/);
-  const spMatch = stderr.match(/Sample peak:[\s\S]*?Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS/);
-  const lufs = iMatch ? Number(iMatch[1]) : -14.0;
-  const peak = tpMatch ? Number(tpMatch[1]) : spMatch ? Number(spMatch[1]) : -1.5;
+  const tail = stderr.slice(-2400);
+  const iMatch = tail.match(/Summary:[\s\S]*?Integrated loudness:[\s\S]*?I:\s*(-?\d+(?:\.\d+)?)\s*LUFS/);
+  const tpMatch = tail.match(/True peak:[\s\S]*?Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS/);
+  const spMatch = tail.match(/Sample peak:[\s\S]*?Peak:\s*(-?\d+(?:\.\d+)?)\s*dBFS/);
+  const lufs = iMatch ? Number(iMatch[1]) : -15.5;
+  const peak = tpMatch ? Number(tpMatch[1]) : spMatch ? Number(spMatch[1]) : -2.0;
   return { lufs, peak };
+}
+
+/**
+ * Parses FFmpeg `loudnorm=print_format=json` pass-1 JSON payload.
+ */
+function parseLoudnormJson(stderr) {
+  const m = stderr.match(/\{[\s\S]*?"input_i"[\s\S]*?\}/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[0]);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -208,7 +288,7 @@ function measureDownbeatOffsetMs(wavPath, bpm) {
 }
 
 async function getWavDurationSec(wavPath) {
-  const { stdout } = await spawnAsync('ffprobe', [
+  const { stdout } = await spawnAsync(FFPROBE_BIN, [
     '-v',
     'error',
     '-show_entries',
@@ -294,61 +374,88 @@ async function renderStem(item, index, total) {
     existsSync(outAac) &&
     statSync(outAac).size > 16384;
 
-  let measuredLufs = -14.0;
-  let measuredTp = -1.5;
+  let measuredLufs = -15.5;
+  let measuredTp = -2.0;
 
   if (!alreadyRendered) {
-    const srcFile = await downloadSourceStem(item.key);
+    const canReusePreNorm =
+      REUSE_PRENORM && existsSync(tmpPreNormWav) && statSync(tmpPreNormWav).size > 65536;
 
-    // 1. RubberBand R3 "finer" engine (0x20000000) + phase-coherent stereo `channels=together` (0x10000000)
-    //    -> eliminates R2 phasiness & L/R image smearing on percussive electronic material
-    //    + LibSOXR 28-bit 48 kHz WAV
-    const filterSteps = [];
-    if (item.nativeBpm > 0 && Math.abs(tempoRatio - 1) > 1e-4) {
-      filterSteps.push(
-        `rubberband=tempo=${tempoRatio.toFixed(6)}:pitch=1.0:transients=crisp:detector=compound:phase=laminar:window=standard:formant=preserved:pitchq=quality:channels=805306368`
-      );
+    if (!canReusePreNorm) {
+      const srcFile = await downloadSourceStem(item.key);
+
+      // 1. RubberBand R3 "finer" engine (0x20000000) + phase-coherent stereo `channels=together` (0x10000000)
+      //    -> eliminates R2 phasiness & L/R image smearing on percussive electronic material
+      //    + LibSOXR 28-bit 48 kHz WAV
+      const filterSteps = [];
+      if (item.nativeBpm > 0 && Math.abs(tempoRatio - 1) > 1e-4) {
+        filterSteps.push(
+          `rubberband=tempo=${tempoRatio.toFixed(6)}:pitch=1.0:transients=crisp:detector=compound:phase=laminar:window=standard:formant=preserved:pitchq=quality:channels=805306368`
+        );
+      }
+      filterSteps.push('aresample=48000:resampler=soxr:precision=28:dither_method=shibata');
+      await runFfmpeg([
+        '-i',
+        srcFile,
+        '-af',
+        filterSteps.join(','),
+        '-ar',
+        '48000',
+        '-ac',
+        '2',
+        '-c:a',
+        'pcm_s16le',
+        tmpPreNormWav,
+      ]);
     }
-    filterSteps.push('aresample=48000:resampler=soxr:precision=28:dither_method=shibata');
-    await runFfmpeg([
-      '-i',
-      srcFile,
-      '-af',
-      filterSteps.join(','),
-      '-ar',
-      '48000',
-      '-ac',
-      '2',
-      '-c:a',
-      'pcm_s16le',
-      tmpPreNormWav,
-    ]);
 
-    // 2. Fast ITU-R BS.1770-4 measurement (~0.8s)
-    const ebuStderr = await runFfmpeg([
+    const eqChain = buildGenreMasteringEq(item.key);
+
+    // 2. Pass-1 ITU-R BS.1770-4 loudnorm analysis after genre EQ
+    const pass1Stderr = await runFfmpeg([
       '-i',
       tmpPreNormWav,
       '-af',
-      'ebur128=peak=true',
+      `${eqChain},loudnorm=I=-15.5:TP=-2.2:LRA=6.5:print_format=json`,
       '-f',
       'null',
       '-',
     ]);
-    const stats = parseEbur128Summary(ebuStderr);
-    const gainDb = Math.max(-12, Math.min(12, -14.0 - stats.lufs));
-    const projectedPeakDb = stats.peak + gainDb;
+    const ln = parseLoudnormJson(pass1Stderr);
 
-    // 3. Linear gain normalization + -1.5 dBTP ceiling protection (no dynamic pumping!)
-    const normFilter =
-      projectedPeakDb <= -1.55
-        ? `volume=${gainDb.toFixed(3)}dB`
-        : `volume=${gainDb.toFixed(3)}dB,alimiter=level_in=1:level_out=1:limit=0.841395:attack=5:release=80`;
+    // 3. Pass-2 exact EBU R128 loudness & LRA leveling + strict level=disabled -2.0 dBFS brickwall guard
+    //    (level=disabled prevents FFmpeg alimiter from re-boosting peaks back to 0 dBFS!)
+    let normChain;
+    const needsDynamicLra = item.key.includes('celestial-drift-64-2');
+    if (
+      !needsDynamicLra &&
+      ln &&
+      Number.isFinite(Number(ln.input_i)) &&
+      Number.isFinite(Number(ln.input_tp)) &&
+      Number.isFinite(Number(ln.input_lra)) &&
+      Number.isFinite(Number(ln.input_thresh)) &&
+      Number.isFinite(Number(ln.target_offset))
+    ) {
+      normChain = [
+        eqChain,
+        `loudnorm=I=-15.5:TP=-2.2:LRA=6.5:measured_I=${ln.input_i}:measured_TP=${ln.input_tp}:measured_LRA=${ln.input_lra}:measured_thresh=${ln.input_thresh}:offset=${ln.target_offset}:linear=true`,
+        'aresample=48000:resampler=soxr:precision=28',
+        'alimiter=level_in=1:level_out=1:limit=0.794328:attack=5:release=60:level=disabled',
+      ].join(',');
+    } else {
+      normChain = [
+        eqChain,
+        'loudnorm=I=-15.5:TP=-2.2:LRA=5.5',
+        'aresample=48000:resampler=soxr:precision=28',
+        'alimiter=level_in=1:level_out=1:limit=0.794328:attack=5:release=60:level=disabled',
+      ].join(',');
+    }
 
     await runFfmpeg([
       '-i',
       tmpPreNormWav,
       '-af',
-      normFilter,
+      normChain,
       '-ar',
       '48000',
       '-ac',
@@ -357,9 +464,6 @@ async function renderStem(item, index, total) {
       'pcm_s16le',
       masterWav,
     ]);
-
-    measuredLufs = Number((-14.0).toFixed(2));
-    measuredTp = Number(Math.min(-1.5, projectedPeakDb).toFixed(2));
 
     // 4. Encode both 256 kbps 48 kHz Opus & AAC-LC concurrently
     await Promise.all([
@@ -399,6 +503,20 @@ async function renderStem(item, index, total) {
       ]),
     ]);
   }
+
+  // Always verify actual post-encode Opus integrated LUFS & True Peak!
+  const verifyStderr = await runFfmpeg([
+    '-i',
+    outOpus,
+    '-af',
+    'ebur128=peak=true',
+    '-f',
+    'null',
+    '-',
+  ]);
+  const postStats = parseEbur128Summary(verifyStderr);
+  measuredLufs = Number(postStats.lufs.toFixed(2));
+  measuredTp = Number(postStats.peak.toFixed(2));
 
   const downbeatOffsetMs = measureDownbeatOffsetMs(masterWav, subHarmonicBpm);
   const durationSec = await getWavDurationSec(masterWav);
@@ -443,7 +561,9 @@ async function main() {
   mkdirSync(CACHE_SRC, { recursive: true });
   mkdirSync(CACHE_OUT, { recursive: true });
 
-  const queue = CORE_STEMS.slice(0, LIMIT);
+  const queue = CORE_STEMS.filter((it) =>
+    ONLY_FILTERS.length === 0 ? true : ONLY_FILTERS.some((f) => it.key.includes(f))
+  ).slice(0, LIMIT);
   console.log(
     `\n[v7 Remaster] Rendering ${queue.length} core stems (concurrency=${RENDER_CONCURRENCY}, upload=${!SKIP_UPLOAD})...\n`
   );
@@ -464,13 +584,22 @@ async function main() {
   }
 
   const manifestEntries = {};
+  if (ONLY_FILTERS.length > 0 && existsSync(MANIFEST_PATH)) {
+    const prevRaw = readFileSync(MANIFEST_PATH, 'utf8');
+    const jsonStart = prevRaw.indexOf('{', prevRaw.indexOf('STUDIO_STEM_V7_MANIFEST'));
+    const jsonEnd = prevRaw.lastIndexOf('}');
+    if (jsonStart > 0 && jsonEnd > jsonStart) {
+      Object.assign(manifestEntries, JSON.parse(prevRaw.slice(jsonStart, jsonEnd + 1)));
+    }
+  }
+  const revTag = ONLY_FILTERS.length > 0 ? 'r=6' : CACHE_BUST_REV;
   for (const r of rendered) {
     manifestEntries[r.item.key] = {
       sourceKey: r.item.key,
       opusKey: r.opusKey,
       aacKey: r.aacKey,
-      opusUrl: `/api/audio/stream/${r.opusKey.split('/').map((s) => encodeURIComponent(s)).join('/')}?r=3`,
-      aacUrl: `/api/audio/stream/${r.aacKey.split('/').map((s) => encodeURIComponent(s)).join('/')}?r=3`,
+      opusUrl: `/api/audio/stream/${r.opusKey.split('/').map((s) => encodeURIComponent(s)).join('/')}?${revTag}`,
+      aacUrl: `/api/audio/stream/${r.aacKey.split('/').map((s) => encodeURIComponent(s)).join('/')}?${revTag}`,
       opusBytes: r.opusBytes,
       aacBytes: r.aacBytes,
       nativeBpm: r.item.nativeBpm,

@@ -1877,7 +1877,12 @@ export class PsychoacousticEngine {
 
   private syncBand2Flattener(): void {
     if (!this.ctx || !this.band2FlattenerNode) return;
-    const gamma = this.isBand2FlattenerActive() ? 0.5 : 0;
+    const isSustainedPadGenre =
+      this.genre === 'ambient_space' ||
+      this.genre === 'nature_rain' ||
+      this.genre === 'cinematic_strings';
+    const activeGamma = isSustainedPadGenre ? 0.34 : 0.18;
+    const gamma = this.isBand2FlattenerActive() ? activeGamma : 0;
     this.band2FlattenerNode.parameters.get('gamma')?.setValueAtTime(gamma, this.ctx.currentTime);
   }
 
@@ -1949,9 +1954,11 @@ export class PsychoacousticEngine {
   }
 
   private computeTrackLufsGain(track: StudioTrackRef | null, genre: ResolvedGenre): number {
-    const base = genre === 'nature_rain' ? 0.84 : 0.94;
+    // Target -15.5 LUFS across all 10 genres so peaks (-2.0 dBTP) stay cleanly below musicPreLimiter (-3.35 dBTP);
+    // broadband rain stems measure ~3 dB higher K-weighted LUFS than mid-band instruments at equal perceived RMS.
+    const base = genre === 'nature_rain' ? 1.15 : 0.92;
     if (track && typeof track.lufs === 'number' && Number.isFinite(track.lufs)) {
-      const trimDb = Math.max(-6.0, Math.min(4.0, -14.0 - track.lufs));
+      const trimDb = Math.max(-6.0, Math.min(5.0, -15.5 - track.lufs));
       return Number(Math.max(0.28, Math.min(1.35, base * Math.pow(10, trimDb / 20))).toFixed(3));
     }
     return base;
@@ -2263,7 +2270,9 @@ export class PsychoacousticEngine {
           smoothSetParam(this.cleanSubBus.gain, 0, now, 0.65);
           this.syncRainBed();
         } else if ((st === 'error' || st === 'unavailable') && this.carrierMode === 'lyria_realtime') {
-          this.setCarrierMode('generative_live');
+          this.setCarrierMode(
+            Object.keys(this.studioCatalog).length > 0 ? 'studio_library' : 'generative_live'
+          );
         }
       },
     });

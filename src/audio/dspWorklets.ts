@@ -1127,10 +1127,12 @@ class NootropicEnvFlattener extends AudioWorkletProcessor {
     this.z1 = 0;
     this.z2 = 0;
 
-    // 0.35 Hz slow macro-mean tracker + 1 ms gain smoothing
+    // 0.35 Hz slow macro-mean tracker + asymmetric click-free attack/release gain smoothing
     this.alphaDc = 1 - Math.exp((-2 * Math.PI * 0.35) / sampleRate);
     this.eDc = 0.08;
-    this.gainSlew = 1 - Math.exp(-1 / (0.001 * sampleRate));
+    this.slewDown = 1 - Math.exp(-1 / (0.006 * sampleRate));
+    this.slewUp = 1 - Math.exp(-1 / (0.014 * sampleRate));
+    this.gammaSlew = 1 - Math.exp(-1 / (0.005 * sampleRate));
     this.curGain = 1.0;
     this.targetG = 1.0;
     this.decim = 0;
@@ -1154,7 +1156,7 @@ class NootropicEnvFlattener extends AudioWorkletProcessor {
     const targetGamma = parameters.gamma[0];
 
     for (let i = 0; i < outL.length; i++) {
-      this.gammaSmooth += (targetGamma - this.gammaSmooth) * this.gainSlew;
+      this.gammaSmooth += (targetGamma - this.gammaSmooth) * this.gammaSlew;
       const l = inL[i];
       const r = inR[i];
       const envIn = 0.5 * (Math.abs(l) + Math.abs(r));
@@ -1169,19 +1171,25 @@ class NootropicEnvFlattener extends AudioWorkletProcessor {
       // Update power-law gain at 6 kHz control rate (every 8 samples — >400x above 14 Hz bandwidth!)
       if ((this.decim & 7) === 0) {
         if (this.gammaSmooth > 0.001 && this.eDc > 1e-5) {
-          const floor = 0.2 * this.eDc;
-          const denom = e10 > floor ? e10 : floor;
-          let tg = Math.pow(this.eDc / denom, this.gammaSmooth);
-          if (tg < 0.35) tg = 0.35;
-          else if (tg > 2.5) tg = 2.5;
-          this.targetG = tg;
+          // Guard true inter-note rests (<22% of macro mean) from inverse-gate reverb pumping
+          if (e10 < 0.22 * this.eDc) {
+            this.targetG = 1.0;
+          } else {
+            const floor = 0.35 * this.eDc;
+            const denom = e10 > floor ? e10 : floor;
+            let tg = Math.pow(this.eDc / denom, this.gammaSmooth);
+            if (tg < 0.62) tg = 0.62;
+            else if (tg > 1.58) tg = 1.58;
+            this.targetG = tg;
+          }
         } else {
           this.targetG = 1.0;
         }
       }
       this.decim = (this.decim + 1) & 7;
 
-      this.curGain += (this.targetG - this.curGain) * this.gainSlew;
+      const slew = this.targetG < this.curGain ? this.slewDown : this.slewUp;
+      this.curGain += (this.targetG - this.curGain) * slew;
       outL[i] = l * this.curGain;
       if (outR) outR[i] = r * this.curGain;
     }

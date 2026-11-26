@@ -939,9 +939,9 @@ export function selectProtocolRecommendation(input: {
   }
 
   if (genreResolution.mode === 'iso_adapted' && params.genre === 'deep_electronic') {
-    params.bpm = effectiveTarget === 'sleep_winddown' ? 0 : 68;
-    params.pulseIntensity = effectiveTarget === 'sleep_winddown' ? 0 : 0.16;
-    params.filterCutoffHz = Math.min(params.filterCutoffHz, 860);
+    params.bpm = effectiveTarget === 'sleep_winddown' ? 0 : 75;
+    params.pulseIntensity = effectiveTarget === 'sleep_winddown' ? 0 : 0.28;
+    params.filterCutoffHz = Math.min(params.filterCutoffHz, 1650);
   }
 
   const safetyWarnings: string[] = [];

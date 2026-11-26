@@ -166,13 +166,21 @@ export class GenerativeComposer {
   private kickPattern: boolean[] = buildEuclideanPattern(16, 4);
   private hatPattern: boolean[] = buildEuclideanPattern(16, 6);
 
+  private getSamplePadScale(palette: InstrumentPalette = this.palette): number {
+    return palette === 'cinematic_strings' || palette === 'ambient_water' ? 0.78 : 0.58;
+  }
+
   private ensurePalettePreloaded(palette: InstrumentPalette): void {
     this.usingRealSamples = this.sampler.isPaletteReady(palette);
     void this.sampler.preloadPalette(palette).then((ready) => {
       if (ready && this.isPlaying && !this.standby && this.palette === palette) {
         this.usingRealSamples = true;
         if (this.ctx && this.padBus) {
-          this.padBus.gain.setTargetAtTime(this.getPalettePadGain() * 0.32, this.ctx.currentTime, 0.8);
+          this.padBus.gain.setTargetAtTime(
+            this.getPalettePadGain() * this.getSamplePadScale(palette),
+            this.ctx.currentTime,
+            0.6
+          );
         }
       }
     });
@@ -464,12 +472,12 @@ export class GenerativeComposer {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     this.padBus?.gain.setTargetAtTime(
-      this.getPalettePadGain() * (this.usingRealSamples ? 0.32 : 1.0),
+      this.getPalettePadGain() * (this.usingRealSamples ? this.getSamplePadScale(palette) : 1.0),
       now,
-      0.45
+      0.35
     );
-    this.pulseBus?.gain.setTargetAtTime(this.getPalettePulseGain(), now, 0.35);
-    this.padFilter?.frequency.setTargetAtTime(this.computeCutoffHz(), now, 0.45);
+    this.pulseBus?.gain.setTargetAtTime(this.getPalettePulseGain(), now, 0.25);
+    this.padFilter?.frequency.setTargetAtTime(this.computeCutoffHz(), now, 0.35);
     this.updateReverbSend();
     if (!this.standby) {
       this.spawnMarkovChord(this.chordIdx);
@@ -505,9 +513,10 @@ export class GenerativeComposer {
     const nyqMax = this.ctx ? this.ctx.sampleRate * 0.44 : 4800;
     const base = this.musicSpec?.spectralLowPassHz ?? 1650;
     let cutoff = base;
-    if (this.palette === 'felt_piano') cutoff = Math.min(base, 1450);
-    else if (this.palette === 'warm_rhodes') cutoff = Math.min(base, 1650);
-    else if (this.palette === 'cinematic_strings') cutoff = Math.min(base * 1.08, 2200);
+    if (this.palette === 'felt_piano') cutoff = Math.min(base, 1550);
+    else if (this.palette === 'warm_rhodes') cutoff = Math.min(Math.max(base, 1400), 1850);
+    else if (this.palette === 'deep_electronic') cutoff = Math.min(Math.max(base, 1950), 2800);
+    else if (this.palette === 'cinematic_strings') cutoff = Math.min(Math.max(base * 1.12, 1800), 2600);
     return Math.min(nyqMax, cutoff);
   }
 
@@ -591,12 +600,12 @@ export class GenerativeComposer {
           p.cancelScheduledValues(now);
           p.setValueAtTime(Math.max(0.0001, p.value), now);
         }
-        p.exponentialRampToValueAtTime(0.0001, now + 4.2);
+        p.setTargetAtTime(0.0001, now, 0.55);
       } catch {
         // ignore
       }
     }
-    const stopDelayMs = Math.max(4500, Math.round((now - ctx.currentTime + 4.6) * 1000));
+    const stopDelayMs = Math.max(3200, Math.round((now - ctx.currentTime + 3.0) * 1000));
     const cleanupId = window.setTimeout(() => {
       this.chordCleanupTimers.delete(cleanupId);
       for (const osc of prevOscs) {
@@ -659,9 +668,9 @@ export class GenerativeComposer {
         osc.detune.setValueAtTime(detune, now);
 
         const gain = ctx.createGain();
-        const amp = voiceIdx === 0 ? 0.19 : isStrings ? 0.032 : 0.062;
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(amp, now + (isStrings ? 4.8 : 3.4));
+        const amp = voiceIdx === 0 ? 0.19 : isStrings ? 0.045 : 0.064;
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(amp, now + (isStrings ? 1.05 : 0.72));
 
         const pan = ctx.createStereoPanner();
         pan.pan.value =
@@ -730,8 +739,18 @@ export class GenerativeComposer {
         this.genre === 'ambient_space' ||
         this.genre === 'solo_piano' ||
         this.genre === 'cinematic_strings';
+      const genreWantsGroove =
+        this.genre === 'deep_electronic' ||
+        this.genre === 'lofi_keys' ||
+        this.genre === 'dub_reggae' ||
+        this.genre === 'bossa_nova' ||
+        this.genre === 'jazz_rhodes';
       const perc: PercussionMode =
-        liveBpm === 0 || genreSuppressesDrums ? 'none' : this.musicSpec.percussion;
+        liveBpm === 0 || genreSuppressesDrums
+          ? 'none'
+          : this.musicSpec.percussion === 'none' && genreWantsGroove
+            ? 'minimal_soft'
+            : this.musicSpec.percussion;
       const metricAccent = step === 0 || step === 8 ? 1.0 : step === 4 || step === 12 ? 0.84 : 0.64;
       const phraseBreath = 0.88 + 0.18 * Math.sin((this.stepCount / 16) * Math.PI);
       const phraseAccent = metricAccent * phraseBreath;

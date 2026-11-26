@@ -86,7 +86,7 @@ test('STUDIO_STEM_V7_MANIFEST covers all 26 stems on exact sub-harmonic grids & 
     assert.ok(entry.aacKey.startsWith('v7/') && entry.aacKey.endsWith('.m4a'));
     assert.ok(entry.opusBytes > 16384, `${entry.sourceKey} opusBytes too small`);
     assert.ok(entry.aacBytes > 16384, `${entry.sourceKey} aacBytes too small`);
-    assert.ok(entry.lufs >= -15.0 && entry.lufs <= -13.0, `${entry.sourceKey} LUFS=${entry.lufs}`);
+    assert.ok(entry.lufs >= -16.5 && entry.lufs <= -13.0, `${entry.sourceKey} LUFS=${entry.lufs}`);
     assert.ok(entry.truePeakDbtp <= -1.4, `${entry.sourceKey} TP=${entry.truePeakDbtp}`);
     assert.ok(entry.durationSec >= 20, `${entry.sourceKey} duration=${entry.durationSec}`);
 
