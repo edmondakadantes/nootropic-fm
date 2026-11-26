@@ -92,6 +92,8 @@ export interface Env {
   MUSIC_PROVIDER?: string;
   MUSIC_GEN_DAILY_CAP?: string;
   ELEVENLABS_API_KEY?: string;
+  ELEVENLABS_VOICE_ID?: string;
+  ELEVENLABS_MODEL_ID?: string;
   ELEVENLABS_ENTERPRISE_APPROVED?: string;
   NCBI_API_KEY?: string;
   OPENALEX_API_KEY?: string;

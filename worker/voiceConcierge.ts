@@ -1,5 +1,7 @@
 import {
+  DEFAULT_ELEVENLABS_VOICE_ID,
   buildVoiceConciergePlan,
+  type ConciergeVoiceOption,
   type VoiceConciergePlan,
   type VoiceConciergeRequest,
   type VoiceCueType,
@@ -23,6 +25,14 @@ export interface VoiceConciergeResponse {
   transcript: string;
   fromCache?: boolean;
   provider?: string;
+  voiceId?: string;
+}
+
+export interface ConciergeVoiceCatalogResponse {
+  available: boolean;
+  provider: string;
+  defaultVoiceId: string;
+  voices: ConciergeVoiceOption[];
 }
 
 const VALID_CUES = new Set<VoiceCueType>(['intro_full', 'intro_short', 'outro_landing']);
@@ -49,6 +59,22 @@ const VALID_TIME_BUCKETS = new Set<TimeOfDayBucket>([
   'night',
 ]);
 const VALID_GENRES = new Set<string>(Object.keys(GENRE_META));
+
+const EXCLUDED_VOICE_RX =
+  /\b(horror|crime|thriller|excited|hype|screaming|shout|advertisement|announcer|characters_animation|monster|villain)\b/i;
+const CALM_VOICE_RX =
+  /\b(meditat|serene|calm|gentle|smooth|velvet|sooth|whisper|soft|warm|relax|grounded)\b/i;
+
+const VOICE_CATALOG_TTL_MS = 10 * 60 * 1000;
+let cachedCatalog: {
+  keyHash: string;
+  expiresAt: number;
+  data: ConciergeVoiceCatalogResponse;
+} | null = null;
+
+export function clearVoiceCatalogCacheForTests(): void {
+  cachedCatalog = null;
+}
 
 async function sha256Short(text: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -88,6 +114,216 @@ function detectAudioFormat(bytes: Uint8Array): { ext: 'mp3' | 'wav' | 'ogg'; con
     return { ext: 'ogg', contentType: 'audio/ogg' };
   }
   return { ext: 'mp3', contentType: 'audio/mpeg' };
+}
+
+export function formatCleanVoiceShortLabel(rawName: string, descriptive?: string): string {
+  const collapsed = rawName.replace(/\s+/g, ' ').trim();
+  const baseRaw = collapsed.split(/\s+[-–—]\s+/)[0]?.trim() || collapsed;
+  const cleanedBase = baseRaw.replace(/\bGentle Meditation\b/i, 'Meditation').trim();
+  const shortBase =
+    cleanedBase.length > 22 ? `${cleanedBase.slice(0, 21).trim()}…` : cleanedBase;
+
+  const tagRaw = (descriptive || '').trim();
+  if (tagRaw) {
+    const cleanTag = tagRaw.charAt(0).toUpperCase() + tagRaw.slice(1).toLowerCase();
+    if (!shortBase.toLowerCase().includes(cleanTag.toLowerCase())) {
+      return `${shortBase} · ${cleanTag}`;
+    }
+  }
+  return shortBase;
+}
+
+interface RawElevenLabsVoice {
+  voice_id?: string;
+  name?: string;
+  category?: string;
+  labels?: Record<string, string | undefined>;
+}
+
+const FALLBACK_CATALOG: ConciergeVoiceCatalogResponse = {
+  available: true,
+  provider: 'workers_ai',
+  defaultVoiceId: 'aura_luna',
+  voices: [
+    {
+      voiceId: 'aura_luna',
+      name: 'Luna (Studio)',
+      shortLabel: 'Luna · Calm',
+      category: 'fallback',
+      gender: 'female',
+      accent: 'american',
+      descriptive: 'calm',
+    },
+  ],
+};
+
+export async function listAvailableConciergeVoices(
+  env: Env
+): Promise<ConciergeVoiceCatalogResponse> {
+  const apiKey = env.ELEVENLABS_API_KEY?.trim();
+  if (!apiKey) {
+    return FALLBACK_CATALOG;
+  }
+
+  const keyHash = await sha256Short(apiKey);
+  const preferredVoiceId = env.ELEVENLABS_VOICE_ID?.trim() || DEFAULT_ELEVENLABS_VOICE_ID;
+  const cacheKey = `${keyHash}|${preferredVoiceId}`;
+  const now = Date.now();
+  if (cachedCatalog && cachedCatalog.keyHash === cacheKey && cachedCatalog.expiresAt > now) {
+    return cachedCatalog.data;
+  }
+
+  try {
+    const res = await fetch('https://api.elevenlabs.io/v1/voices', {
+      headers: { 'xi-api-key': apiKey },
+    });
+    if (!res.ok) {
+      return FALLBACK_CATALOG;
+    }
+
+    const payload = (await res.json()) as { voices?: RawElevenLabsVoice[] };
+    const rawVoices = Array.isArray(payload.voices) ? payload.voices : [];
+
+    const scored: Array<{ score: number; option: ConciergeVoiceOption }> = [];
+    for (const v of rawVoices) {
+      const voiceId = typeof v.voice_id === 'string' ? v.voice_id.trim() : '';
+      const rawName = typeof v.name === 'string' ? v.name.replace(/\s+/g, ' ').trim() : '';
+      if (!voiceId || !rawName) continue;
+
+      const labels = v.labels ?? {};
+      const lang = (labels.language ?? '').trim().toLowerCase();
+      if (lang && !lang.startsWith('en')) continue;
+
+      const metaBlob = `${rawName} ${labels.descriptive ?? ''} ${labels.use_case ?? ''}`;
+      if (EXCLUDED_VOICE_RX.test(metaBlob)) continue;
+
+      let score = 0;
+      if (voiceId === preferredVoiceId || /\bserene\b/i.test(rawName)) {
+        score += 1000;
+      }
+      const isPremade = (v.category ?? '').toLowerCase() === 'premade';
+      if (!isPremade) {
+        score += 200;
+      }
+      if (CALM_VOICE_RX.test(metaBlob)) {
+        score += 80;
+      }
+      if (labels.use_case === 'narrative_story' || labels.use_case === 'conversational') {
+        score += 20;
+      }
+
+      scored.push({
+        score,
+        option: {
+          voiceId,
+          name: rawName,
+          shortLabel: formatCleanVoiceShortLabel(rawName, labels.descriptive),
+          category: isPremade ? 'premade' : 'custom',
+          gender: labels.gender,
+          accent: labels.accent,
+          descriptive: labels.descriptive,
+        },
+      });
+    }
+
+    scored.sort((a, b) => b.score - a.score || a.option.name.localeCompare(b.option.name));
+    const curated = scored.slice(0, 10).map((item) => item.option);
+
+    if (curated.length === 0) {
+      return FALLBACK_CATALOG;
+    }
+
+    const defaultVoiceId = curated.some((v) => v.voiceId === preferredVoiceId)
+      ? preferredVoiceId
+      : curated[0].voiceId;
+
+    const catalog: ConciergeVoiceCatalogResponse = {
+      available: true,
+      provider: 'elevenlabs',
+      defaultVoiceId,
+      voices: curated,
+    };
+
+    cachedCatalog = {
+      keyHash: cacheKey,
+      expiresAt: now + VOICE_CATALOG_TTL_MS,
+      data: catalog,
+    };
+    return catalog;
+  } catch {
+    return FALLBACK_CATALOG;
+  }
+}
+
+async function resolveDefaultElevenLabsVoiceId(env: Env): Promise<string> {
+  if (env.ELEVENLABS_VOICE_ID?.trim()) {
+    return env.ELEVENLABS_VOICE_ID.trim();
+  }
+  const catalog = await listAvailableConciergeVoices(env);
+  if (catalog.provider === 'elevenlabs' && catalog.defaultVoiceId) {
+    return catalog.defaultVoiceId;
+  }
+  return DEFAULT_ELEVENLABS_VOICE_ID;
+}
+
+async function synthesizeViaElevenLabs(
+  env: Env,
+  text: string,
+  voiceId: string
+): Promise<{
+  bytes: Uint8Array;
+  ext: 'mp3' | 'wav' | 'ogg';
+  contentType: string;
+  provider: string;
+  voiceId: string;
+} | null> {
+  const apiKey = env.ELEVENLABS_API_KEY?.trim();
+  if (!apiKey || !voiceId) return null;
+
+  const primaryModel = env.ELEVENLABS_MODEL_ID?.trim() || 'eleven_multilingual_v2';
+  const models = Array.from(new Set([primaryModel, 'eleven_flash_v2_5']));
+
+  for (const modelId of models) {
+    try {
+      const res = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,
+        {
+          method: 'POST',
+          headers: {
+            'xi-api-key': apiKey,
+            'content-type': 'application/json',
+            accept: 'audio/mpeg',
+          },
+          body: JSON.stringify({
+            text,
+            model_id: modelId,
+            voice_settings: {
+              stability: 0.58,
+              similarity_boost: 0.80,
+              style: 0.16,
+              use_speaker_boost: true,
+            },
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        if (res.status === 400 || res.status === 403 || res.status === 422) {
+          continue;
+        }
+        return null;
+      }
+
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.byteLength > 512) {
+        const fmt = detectAudioFormat(bytes);
+        return { bytes, ...fmt, provider: 'elevenlabs', voiceId };
+      }
+    } catch {
+      // try next model or fall through
+    }
+  }
+  return null;
 }
 
 async function extractWorkersAiAudioBytes(aiOut: unknown): Promise<Uint8Array | null> {
@@ -229,31 +465,12 @@ async function findCachedVoiceKey(env: Env, basePrefix: string): Promise<string 
   return null;
 }
 
-async function getOrCreateSegmentUrl(
+async function putImmutableVoiceSegment(
   env: Env,
-  kind: 'greet' | 'body',
-  slug: string,
-  text: string,
-  allowSynth: () => Promise<boolean>
-): Promise<{ url: string; fromCache: boolean; provider: string } | null> {
+  finalKey: string,
+  synth: { bytes: Uint8Array; contentType: string; provider: string; voiceId?: string }
+): Promise<{ url: string; fromCache: boolean; provider: string; voiceId?: string } | null> {
   if (!env.AUDIO_BUCKET) return null;
-  const digest = await sha256Short(`v1|luna|${text}`);
-  const basePrefix = `voice/v1/${kind}_${slug.slice(0, 36)}_${digest}`;
-
-  const existingKey = await findCachedVoiceKey(env, basePrefix);
-  if (existingKey) {
-    const encoded = existingKey.split('/').map((s) => encodeURIComponent(s)).join('/');
-    return { url: `/api/audio/stream/${encoded}`, fromCache: true, provider: 'r2_cache' };
-  }
-
-  const permitted = await allowSynth();
-  if (!permitted) return null;
-
-  // Primary $0 Cloudflare Workers AI (Deepgram Aura `luna`), fallback Gemini Flash-Lite TTS (`Achernar`)
-  const synth = (await synthesizeViaWorkersAi(env, text)) ?? (await synthesizeViaGeminiTts(env, text));
-  if (!synth) return null;
-
-  const finalKey = `${basePrefix}.${synth.ext}`;
   await env.AUDIO_BUCKET.put(finalKey, synth.bytes, {
     httpMetadata: {
       contentType: synth.contentType,
@@ -261,11 +478,78 @@ async function getOrCreateSegmentUrl(
     },
     customMetadata: {
       voiceProvider: synth.provider,
+      ...(synth.voiceId ? { voiceId: synth.voiceId } : {}),
     },
   });
-
   const encoded = finalKey.split('/').map((s) => encodeURIComponent(s)).join('/');
-  return { url: `/api/audio/stream/${encoded}`, fromCache: false, provider: synth.provider };
+  return {
+    url: `/api/audio/stream/${encoded}`,
+    fromCache: false,
+    provider: synth.provider,
+    voiceId: synth.voiceId,
+  };
+}
+
+async function getOrCreateSegmentUrl(
+  env: Env,
+  kind: 'greet' | 'body',
+  slug: string,
+  text: string,
+  elevenLabsVoiceId: string | null,
+  allowSynth: () => Promise<boolean>
+): Promise<{ url: string; fromCache: boolean; provider: string; voiceId?: string } | null> {
+  if (!env.AUDIO_BUCKET) return null;
+
+  // 1. Primary path: ElevenLabs per-voice immutable R2 cache (`voice/v2/...`)
+  if (elevenLabsVoiceId && env.ELEVENLABS_API_KEY?.trim()) {
+    const elDigest = await sha256Short(`v2|11labs:${elevenLabsVoiceId}|${text}`);
+    const elPrefix = `voice/v2/${kind}_${slug.slice(0, 36)}_${elDigest}`;
+    const elCached = await findCachedVoiceKey(env, elPrefix);
+    if (elCached) {
+      const encoded = elCached.split('/').map((s) => encodeURIComponent(s)).join('/');
+      return {
+        url: `/api/audio/stream/${encoded}`,
+        fromCache: true,
+        provider: 'r2_cache',
+        voiceId: elevenLabsVoiceId,
+      };
+    }
+
+    const permitted = await allowSynth();
+    if (!permitted) return null;
+
+    const elSynth = await synthesizeViaElevenLabs(env, text, elevenLabsVoiceId);
+    if (elSynth) {
+      return putImmutableVoiceSegment(env, `${elPrefix}.${elSynth.ext}`, elSynth);
+    }
+    // If ElevenLabs fails (e.g. 429 quota exhausted), fall through transparently to Workers AI / Gemini!
+  }
+
+  // 2. Fallback / Free-Tier path: Cloudflare Workers AI (`luna`) -> Gemini 3.8 Flash-Lite TTS (`Achernar`)
+  const digest = await sha256Short(`v1|luna|${text}`);
+  const basePrefix = `voice/v1/${kind}_${slug.slice(0, 36)}_${digest}`;
+
+  const existingKey = await findCachedVoiceKey(env, basePrefix);
+  if (existingKey) {
+    const encoded = existingKey.split('/').map((s) => encodeURIComponent(s)).join('/');
+    return {
+      url: `/api/audio/stream/${encoded}`,
+      fromCache: true,
+      provider: 'r2_cache',
+      voiceId: 'aura_luna',
+    };
+  }
+
+  const permitted = await allowSynth();
+  if (!permitted) return null;
+
+  const synth = (await synthesizeViaWorkersAi(env, text)) ?? (await synthesizeViaGeminiTts(env, text));
+  if (!synth) return null;
+
+  return putImmutableVoiceSegment(env, `${basePrefix}.${synth.ext}`, {
+    ...synth,
+    voiceId: 'aura_luna',
+  });
 }
 
 export function sanitizeVoiceRequestPayload(raw: Record<string, unknown>): VoiceConciergeRequest {
@@ -296,9 +580,13 @@ export function sanitizeVoiceRequestPayload(raw: Record<string, unknown>): Voice
   const device: OutputDevice =
     devRaw === 'speakers' || devRaw === 'car_audio' ? devRaw : 'headphones';
 
+  const rawVoiceId = typeof raw.voiceId === 'string' ? raw.voiceId.trim() : '';
+  const voiceId = /^[A-Za-z0-9_-]{2,48}$/.test(rawVoiceId) ? rawVoiceId : null;
+
   return {
     cueType,
     firstName: typeof raw.firstName === 'string' ? raw.firstName.slice(0, 36) : null,
+    voiceId,
     currentState,
     targetState,
     armId,
@@ -319,13 +607,24 @@ export async function resolveVoiceConciergeAudio(
   const cleanReq = sanitizeVoiceRequestPayload(rawBody);
   const plan: VoiceConciergePlan = buildVoiceConciergePlan(cleanReq);
 
-  if (!env.AUDIO_BUCKET || (!env.AI && !env.GEMINI_API_KEY && !env.GEMINI_MUSIC_API_KEY)) {
+  if (
+    !env.AUDIO_BUCKET ||
+    (!env.ELEVENLABS_API_KEY?.trim() &&
+      !env.AI &&
+      !env.GEMINI_API_KEY &&
+      !env.GEMINI_MUSIC_API_KEY)
+  ) {
     return {
       available: false,
       cueType: plan.cueType,
       breathPauseMs: plan.breathPauseMs,
       transcript: plan.fullTranscript,
     };
+  }
+
+  let elevenLabsVoiceId: string | null = null;
+  if (env.ELEVENLABS_API_KEY?.trim() && cleanReq.voiceId !== 'aura_luna') {
+    elevenLabsVoiceId = cleanReq.voiceId || (await resolveDefaultElevenLabsVoiceId(env));
   }
 
   let quotaChecked = false;
@@ -339,8 +638,22 @@ export async function resolveVoiceConciergeAudio(
   };
 
   const [greetSeg, bodySeg] = await Promise.all([
-    getOrCreateSegmentUrl(env, 'greet', plan.greetingCacheSlug, plan.greetingText, allowOnce),
-    getOrCreateSegmentUrl(env, 'body', plan.bodyCacheSlug, plan.bodyText, allowOnce),
+    getOrCreateSegmentUrl(
+      env,
+      'greet',
+      plan.greetingCacheSlug,
+      plan.greetingText,
+      elevenLabsVoiceId,
+      allowOnce
+    ),
+    getOrCreateSegmentUrl(
+      env,
+      'body',
+      plan.bodyCacheSlug,
+      plan.bodyText,
+      elevenLabsVoiceId,
+      allowOnce
+    ),
   ]);
 
   if (!greetSeg || !bodySeg) {
@@ -361,5 +674,6 @@ export async function resolveVoiceConciergeAudio(
     transcript: plan.fullTranscript,
     fromCache: greetSeg.fromCache && bodySeg.fromCache,
     provider: greetSeg.fromCache ? bodySeg.provider : greetSeg.provider,
+    voiceId: bodySeg.voiceId ?? greetSeg.voiceId,
   };
 }

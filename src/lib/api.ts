@@ -1,4 +1,5 @@
 import type { ExecutableStudySpec } from '../../shared/studySpec';
+import type { ConciergeVoiceOption } from '../../shared/voiceConcierge';
 import type {
   AcousticParams,
   AppRuntimeConfig,
@@ -499,9 +500,18 @@ export const api = {
       body: JSON.stringify({ profileId }),
     }),
 
+  getVoiceConciergeVoices: () =>
+    apiFetch<{
+      available: boolean;
+      provider: string;
+      defaultVoiceId: string;
+      voices: ConciergeVoiceOption[];
+    }>('/api/voice/voices'),
+
   getVoiceConciergeCue: (payload: {
     cueType: 'intro_full' | 'intro_short' | 'outro_landing';
     firstName?: string | null;
+    voiceId?: string | null;
     currentState: CurrentState;
     targetState: TargetState;
     armId: string;
@@ -521,6 +531,7 @@ export const api = {
       transcript: string;
       fromCache?: boolean;
       provider?: string;
+      voiceId?: string;
     }>('/api/voice/concierge', {
       method: 'POST',
       body: JSON.stringify(payload),

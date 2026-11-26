@@ -8,9 +8,22 @@ import {
 
 export type VoiceCueType = 'intro_full' | 'intro_short' | 'outro_landing';
 
+export const DEFAULT_ELEVENLABS_VOICE_ID = 'pysCEvZRsl1S0ifPp4IM'; // Serene Presence - Calm & Grounded
+
+export interface ConciergeVoiceOption {
+  voiceId: string;
+  name: string;
+  shortLabel: string;
+  category: 'custom' | 'premade' | 'fallback';
+  gender?: string;
+  accent?: string;
+  descriptive?: string;
+}
+
 export interface VoiceConciergeRequest {
   cueType: VoiceCueType;
   firstName?: string | null;
+  voiceId?: string | null;
   currentState: CurrentState;
   targetState: TargetState;
   armId: string;

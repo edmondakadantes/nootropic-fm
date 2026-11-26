@@ -34,12 +34,15 @@ registerHooks({
   },
 });
 
-const { sanitizeSpokenFirstName, buildVoiceConciergePlan } = await import(
+const { sanitizeSpokenFirstName, buildVoiceConciergePlan, DEFAULT_ELEVENLABS_VOICE_ID } = await import(
   '../shared/voiceConcierge.ts'
 );
-const { resolveVoiceConciergeAudio, sanitizeVoiceRequestPayload } = await import(
-  '../worker/voiceConcierge.ts'
-);
+const {
+  resolveVoiceConciergeAudio,
+  sanitizeVoiceRequestPayload,
+  listAvailableConciergeVoices,
+  clearVoiceCatalogCacheForTests,
+} = await import('../worker/voiceConcierge.ts');
 const { VOCAL_PEAK_CEILING, VOCAL_TARGET_RMS } = await import(
   '../src/audio/VoiceConciergePlayer.ts'
 );
@@ -336,4 +339,172 @@ test('sanitizeVoiceRequestPayload + vocal headroom math strictly preserve Layer-
     worstCaseCombinedPeak < LIMITER_CEILING_LINEAR,
     `Expected combined peak ${worstCaseCombinedPeak.toFixed(4)} < master limiter ceiling ${LIMITER_CEILING_LINEAR.toFixed(4)}`
   );
+});
+
+
+test('listAvailableConciergeVoices prioritizes Serene Presence, keeps calm English voices, and filters horror/non-English', async () => {
+  clearVoiceCatalogCacheForTests();
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    assert.match(String(url), /api\.elevenlabs\.io\/v1\/voices$/);
+    assert.equal(init.headers['xi-api-key'], 'test-el-key');
+    return new Response(
+      JSON.stringify({
+        voices: [
+          {
+            voice_id: 'ro_dj_01',
+            name: 'Anyella - Vibrant Radio DJ',
+            category: 'professional',
+            labels: { language: 'ro', descriptive: 'excited', use_case: 'advertisement' },
+          },
+          {
+            voice_id: 'horror_01',
+            name: 'True - Crime & Horror Narrator',
+            category: 'professional',
+            labels: { language: 'en', descriptive: 'serious', use_case: 'narrative_story' },
+          },
+          {
+            voice_id: 'calm_02',
+            name: 'Alanya - Smooth',
+            category: 'professional',
+            labels: { language: 'en', gender: 'female', descriptive: 'calm', use_case: 'narrative_story' },
+          },
+          {
+            voice_id: DEFAULT_ELEVENLABS_VOICE_ID,
+            name: 'Serene Presence -  Calm & Grounded',
+            category: 'professional',
+            labels: { language: 'en', gender: 'female', descriptive: 'meditative', use_case: 'narrative_story' },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } }
+    );
+  };
+
+  try {
+    const catalog = await listAvailableConciergeVoices({ ELEVENLABS_API_KEY: 'test-el-key' });
+    assert.equal(catalog.available, true);
+    assert.equal(catalog.provider, 'elevenlabs');
+    assert.equal(catalog.defaultVoiceId, DEFAULT_ELEVENLABS_VOICE_ID);
+    assert.equal(catalog.voices.length, 2);
+    assert.equal(catalog.voices[0].voiceId, DEFAULT_ELEVENLABS_VOICE_ID);
+    assert.match(catalog.voices[0].shortLabel, /Serene Presence/);
+    assert.ok(!catalog.voices.some((v) => v.voiceId === 'ro_dj_01' || v.voiceId === 'horror_01'));
+  } finally {
+    clearVoiceCatalogCacheForTests();
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache per voiceId, and falls back on 429', async () => {
+  clearVoiceCatalogCacheForTests();
+  const bucket = createMockR2Bucket();
+  const mp3Bytes = makeFakeMp3Bytes(2600);
+  const origFetch = globalThis.fetch;
+  let elevenTtsCalls = 0;
+  let aiFallbackCalls = 0;
+  let simulateQuotaOut = false;
+
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.endsWith('/v1/voices')) {
+      return new Response(
+        JSON.stringify({
+          voices: [
+            {
+              voice_id: DEFAULT_ELEVENLABS_VOICE_ID,
+              name: 'Serene Presence - Calm & Grounded',
+              category: 'professional',
+              labels: { language: 'en', descriptive: 'meditative' },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+    if (u.includes('/v1/text-to-speech/')) {
+      elevenTtsCalls++;
+      if (simulateQuotaOut) {
+        return new Response('quota_exceeded', { status: 429 });
+      }
+      return new Response(mp3Bytes, { status: 200, headers: { 'content-type': 'audio/mpeg' } });
+    }
+    throw new Error(`Unexpected fetch URL: ${u}`);
+  };
+
+  const env = {
+    AUDIO_BUCKET: bucket,
+    ELEVENLABS_API_KEY: 'test-el-key',
+    AI: {
+      async run() {
+        aiFallbackCalls++;
+        return makeFakeMp3Bytes(2100);
+      },
+    },
+  };
+
+  try {
+    const first = await resolveVoiceConciergeAudio(
+      env,
+      {
+        cueType: 'intro_full',
+        firstName: 'Edmond',
+        currentState: 'distracted',
+        targetState: 'deep_flow',
+        armId: 'nootropic-trance-6x40hz',
+        modulationHz: 6,
+        genre: 'nootropic_trance',
+        isDriving: false,
+      },
+      async () => true
+    );
+    assert.equal(first.available, true);
+    assert.equal(first.provider, 'elevenlabs');
+    assert.equal(first.voiceId, DEFAULT_ELEVENLABS_VOICE_ID);
+    assert.equal(elevenTtsCalls, 2);
+    assert.match(first.greetingUrl, /^\/api\/audio\/stream\/voice\/v2\/greet_/);
+
+    // Repeat call hits R2 with 0 ElevenLabs calls
+    const second = await resolveVoiceConciergeAudio(
+      env,
+      {
+        cueType: 'intro_full',
+        firstName: 'Edmond',
+        currentState: 'distracted',
+        targetState: 'deep_flow',
+        armId: 'nootropic-trance-6x40hz',
+        modulationHz: 6,
+        genre: 'nootropic_trance',
+        isDriving: false,
+      },
+      async () => true
+    );
+    assert.equal(second.fromCache, true);
+    assert.equal(second.provider, 'r2_cache');
+    assert.equal(elevenTtsCalls, 2);
+
+    // Switching to another ElevenLabs voice triggers new v2 cache keys, or falls back on 429
+    simulateQuotaOut = true;
+    const fallback = await resolveVoiceConciergeAudio(
+      env,
+      {
+        cueType: 'intro_short',
+        firstName: 'Maria',
+        voiceId: 'iRb5bX2IzJDUAwy4jeki',
+        currentState: 'calm_neutral',
+        targetState: 'alert_focus',
+        armId: 'beta-16hz',
+        modulationHz: 16,
+        genre: 'lofi_keys',
+        isDriving: false,
+      },
+      async () => true
+    );
+    assert.equal(fallback.available, true);
+    assert.equal(fallback.provider, '@cf/deepgram/aura-2-en');
+    assert.equal(aiFallbackCalls, 2);
+  } finally {
+    clearVoiceCatalogCacheForTests();
+    globalThis.fetch = origFetch;
+  }
 });

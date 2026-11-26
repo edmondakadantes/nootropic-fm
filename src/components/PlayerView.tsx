@@ -62,6 +62,7 @@ import { BleHrvMonitor, isWebBluetoothSupported, type BleHrvState } from '../lib
 import { TappingTestModal } from './TappingTestModal';
 import type { GammaStimulusMode } from '../audio/MedicalStimulusRack';
 import { API_BASE, api, saveStoredProfileAuth } from '../lib/api';
+import type { ConciergeVoiceOption } from '../../shared/voiceConcierge';
 import { isNativePlayStoreApp } from '../lib/platform';
 import { HugginsCheckModal } from './HugginsCheckModal';
 import { LiveEnvelopeProof } from './LiveEnvelopeProof';
@@ -79,7 +80,25 @@ const SHARE_BONUS_SEC = 1800; // +30 minutes free when sharing your 1-of-1 Neura
 const SHARE_BONUS_DAY_KEY = 'nootropic_fm_share_bonus_day_v1';
 const FREE_USAGE_STORAGE_KEY = 'nootropic_fm_free_usage_v1';
 const VOICE_GUIDE_STORAGE_KEY = 'nootropic_fm_voice_guide_v1';
+const VOICE_ID_STORAGE_KEY = 'nootropic_fm_voice_id_v2';
 const VOICE_DAY_COUNT_KEY = 'nootropic_fm_voice_day_v1';
+
+function readSavedVoiceId(): string | null {
+  try {
+    const raw = localStorage.getItem(VOICE_ID_STORAGE_KEY)?.trim() ?? '';
+    return /^[A-Za-z0-9_-]{2,48}$/.test(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSavedVoiceId(voiceId: string): void {
+  try {
+    localStorage.setItem(VOICE_ID_STORAGE_KEY, voiceId);
+  } catch {
+    // ignore storage restrictions
+  }
+}
 
 function getTodayUtcKey(): string {
   return new Date().toISOString().slice(0, 10);
@@ -323,6 +342,8 @@ export function PlayerView({
   const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('tune');
   const [audioInterrupted, setAudioInterrupted] = useState(false);
   const [voiceGuideEnabled, setVoiceGuideEnabled] = useState<boolean>(() => readVoiceGuideEnabled());
+  const [conciergeVoices, setConciergeVoices] = useState<ConciergeVoiceOption[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(() => readSavedVoiceId());
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null);
   const [activeDevice, setActiveDevice] = useState<OutputDevice>(recommendation.device);
@@ -424,10 +445,36 @@ export function PlayerView({
   activeDeviceRef.current = activeDevice;
   const themeModeRef = useRef<'daylight' | 'night'>(themeMode);
   themeModeRef.current = themeMode;
+  const selectedVoiceIdRef = useRef<string | null>(selectedVoiceId);
+  selectedVoiceIdRef.current = selectedVoiceId;
 
   useEffect(() => {
     engineRef.current?.setCircadianMode(themeMode);
   }, [themeMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .getVoiceConciergeVoices()
+      .then((catalog) => {
+        if (cancelled || !catalog?.available || !Array.isArray(catalog.voices) || catalog.voices.length === 0) {
+          return;
+        }
+        setConciergeVoices(catalog.voices);
+        const currentSaved = selectedVoiceIdRef.current;
+        const resolvedId =
+          currentSaved && catalog.voices.some((v) => v.voiceId === currentSaved)
+            ? currentSaved
+            : catalog.defaultVoiceId || catalog.voices[0].voiceId;
+        selectedVoiceIdRef.current = resolvedId;
+        setSelectedVoiceId(resolvedId);
+        writeSavedVoiceId(resolvedId);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const triggerSessionVoiceCue = (cueType: 'intro_full' | 'intro_short' | 'outro_landing') => {
     if (!voiceGuideEnabledRef.current || layerMonitorRef.current === 'science_only') return;
@@ -435,6 +482,7 @@ export function PlayerView({
       .getVoiceConciergeCue({
         cueType,
         firstName: profileNameRef.current,
+        voiceId: selectedVoiceIdRef.current,
         currentState: recommendation.currentState,
         targetState: recommendation.targetState,
         armId: recommendation.arm.id,
@@ -1814,7 +1862,35 @@ export function PlayerView({
                 </div>
               </div>
 
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex flex-wrap shrink-0 items-center justify-end gap-2">
+                {voiceGuideEnabled && conciergeVoices.length > 0 && (
+                  <select
+                    aria-label="Studio Concierge Voice"
+                    value={selectedVoiceId ?? conciergeVoices[0].voiceId}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      selectedVoiceIdRef.current = nextId;
+                      setSelectedVoiceId(nextId);
+                      writeSavedVoiceId(nextId);
+                      if (
+                        audioStarted &&
+                        isPlaying &&
+                        layerMonitorRef.current !== 'science_only'
+                      ) {
+                        triggerVoiceCueRef.current('intro_short');
+                      }
+                    }}
+                    title="Select Studio Concierge voice from your ElevenLabs library"
+                    className="max-w-[185px] truncate rounded-lg border border-white/15 bg-[#14161A] px-2.5 py-2 font-mono-tech text-[11px] font-medium text-[#D4D4CE] transition hover:border-emerald-400/40 focus:border-emerald-400/60 focus:outline-none"
+                  >
+                    {conciergeVoices.map((v) => (
+                      <option key={v.voiceId} value={v.voiceId}>
+                        {v.shortLabel}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
                 <button
                   type="button"
                   onClick={handleToggleVoiceGuide}

@@ -61,7 +61,10 @@ import type { D1Database, Env, ExecutionContext } from './env';
 import { fetchVerifiedLiveLiterature } from './literature';
 import { resolveMusicProvider } from './musicProviders';
 import { compileMedicalStudy, searchLiveMedicalStudies } from './studyCompiler';
-import { resolveVoiceConciergeAudio } from './voiceConcierge';
+import {
+  listAvailableConciergeVoices,
+  resolveVoiceConciergeAudio,
+} from './voiceConcierge';
 import {
   createStripeCheckoutSession,
   createStripePortalSession,
@@ -1425,6 +1428,16 @@ export default {
 
         const queueNumber = 140 + Number(row?.id ?? 1);
         return json({ ok: true, queueNumber, productCode }, 200, request);
+      }
+
+      // GET /api/voice/voices — Curated ElevenLabs account voice catalog (defaults to Serene Presence)
+      if (url.pathname === '/api/voice/voices' && request.method === 'GET') {
+        const reqOrigin = request.headers.get('origin') ?? '';
+        if (reqOrigin && !isTrustedOrigin(reqOrigin)) {
+          return json({ available: false, error: 'Untrusted request origin' }, 403, request);
+        }
+        const catalog = await listAvailableConciergeVoices(env);
+        return json(catalog, 200, request);
       }
 
       // POST /api/voice/concierge — Zero-cost R2-cached personalized session Voice Concierge (2-part greeting + science bridge)
