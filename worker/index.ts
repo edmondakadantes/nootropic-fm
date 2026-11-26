@@ -142,6 +142,18 @@ function extractProfileTokenFromRequest(request: Request): string {
   return '';
 }
 
+function resolveAuthCookieDomainAttr(request: Request): string {
+  try {
+    const hostname = new URL(request.url).hostname.toLowerCase();
+    if (hostname === 'nootropic.fm' || hostname.endsWith('.nootropic.fm')) {
+      return '; Domain=.nootropic.fm';
+    }
+  } catch {
+    // ignore invalid URL
+  }
+  return '';
+}
+
 function buildAuthSetCookieHeader(request: Request, token: string | null): string {
   const isHttps = (() => {
     try {
@@ -151,10 +163,11 @@ function buildAuthSetCookieHeader(request: Request, token: string | null): strin
     }
   })();
   const secureFlag = isHttps ? '; Secure' : '';
+  const domainAttr = resolveAuthCookieDomainAttr(request);
   if (!token) {
-    return `${AUTH_COOKIE_NAME}=; Path=/api; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag}`;
+    return `${AUTH_COOKIE_NAME}=; Path=/api${domainAttr}; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag}`;
   }
-  return `${AUTH_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/api; Max-Age=7776000; HttpOnly; SameSite=Lax${secureFlag}`;
+  return `${AUTH_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/api${domainAttr}; Max-Age=7776000; HttpOnly; SameSite=Lax${secureFlag}`;
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
@@ -216,7 +229,8 @@ function buildWsBindSetCookieHeader(request: Request, bindId: string): string {
     }
   })();
   const secureFlag = isHttps ? '; Secure' : '';
-  return `${WS_BIND_COOKIE_NAME}=${encodeURIComponent(bindId)}; Path=/api/music; Max-Age=7200; HttpOnly; SameSite=Lax${secureFlag}`;
+  const domainAttr = resolveAuthCookieDomainAttr(request);
+  return `${WS_BIND_COOKIE_NAME}=${encodeURIComponent(bindId)}; Path=/api/music${domainAttr}; Max-Age=7200; HttpOnly; SameSite=Lax${secureFlag}`;
 }
 
 async function computeIpActorKey(request: Request): Promise<string> {
@@ -2137,6 +2151,74 @@ export default {
           request,
           { 'set-cookie': buildAuthSetCookieHeader(request, freshToken) }
         );
+      }
+
+      // GET /api/identity/me — Hydrate shared .nootropic.fm session across app.nootropic.fm & www.nootropic.fm
+      if (url.pathname === '/api/identity/me' && request.method === 'GET') {
+        const tok = extractProfileTokenFromRequest(request);
+        if (!tok) {
+          return json({ authenticated: false, profile: null, pendingDebrief: null }, 200, request);
+        }
+        const providedHash = await sha256Hex(tok);
+        const candidates = await env.DB.prepare(
+          'SELECT * FROM profiles WHERE token_hash = ? OR instr(token_hash, ?) > 0 LIMIT 5'
+        )
+          .bind(providedHash, providedHash)
+          .all<Record<string, unknown>>();
+        const matchedRow = (candidates.results ?? []).find((r) =>
+          tokenHashMatches(providedHash, String(r.token_hash ?? ''))
+        );
+        if (!matchedRow) {
+          return json({ authenticated: false, profile: null, pendingDebrief: null }, 200, request);
+        }
+        const id = String(matchedRow.id);
+        const [pendingRow, countRow, favoriteGenres] = await Promise.all([
+          env.DB.prepare(
+            `SELECT * FROM sessions
+             WHERE profile_id = ? AND status = 'pending_debrief' AND actual_duration_sec >= 60
+             ORDER BY created_at DESC LIMIT 1`
+          )
+            .bind(id)
+            .first(),
+          env.DB.prepare('SELECT COUNT(*) AS cnt FROM sessions WHERE profile_id = ?')
+            .bind(id)
+            .first<{ cnt: number }>(),
+          fetchTopPersonalGenres(env.DB, id),
+        ]);
+        return json(
+          {
+            authenticated: true,
+            profile: { ...mapProfileRow(matchedRow, Number(countRow?.cnt ?? 0)), favoriteGenres },
+            pendingDebrief: pendingRow ? mapSessionRow(pendingRow) : null,
+          },
+          200,
+          request,
+          { 'set-cookie': buildAuthSetCookieHeader(request, tok) }
+        );
+      }
+
+      // POST /api/identity/signout — Clears shared .nootropic.fm cookie & any host-only auth cookie
+      if (url.pathname === '/api/identity/signout' && request.method === 'POST') {
+        const resp = json(
+          { ok: true },
+          200,
+          request,
+          { 'set-cookie': buildAuthSetCookieHeader(request, null) }
+        );
+        if (resolveAuthCookieDomainAttr(request)) {
+          const isHttps = (() => {
+            try {
+              return new URL(request.url).protocol === 'https:';
+            } catch {
+              return true;
+            }
+          })();
+          resp.headers.append(
+            'set-cookie',
+            `${AUTH_COOKIE_NAME}=; Path=/api; Max-Age=0; HttpOnly; SameSite=Lax${isHttps ? '; Secure' : ''}`
+          );
+        }
+        return resp;
       }
 
       // GET /api/profile/:id — Authenticated via X-Profile-Token; returns pendingDebrief ONLY if listened >= 60s
@@ -4982,12 +5064,23 @@ export default {
         const safeOrigin = ALLOWED_ORIGINS.has(originHeader)
           ? originHeader
           : url.origin;
+        const checkoutHost = (() => {
+          try {
+            return new URL(safeOrigin).hostname.toLowerCase();
+          } catch {
+            return '';
+          }
+        })();
+        const successBaseOrigin =
+          checkoutHost === 'nootropic.fm' || checkoutHost === 'www.nootropic.fm'
+            ? 'https://app.nootropic.fm'
+            : safeOrigin;
 
         const session = await createStripeCheckoutSession({
           secretKey: stripeKey,
           plan,
           profileId: targetProfileId,
-          successUrl: `${safeOrigin}/?billing=success&session_id={CHECKOUT_SESSION_ID}`,
+          successUrl: `${successBaseOrigin}/?billing=success&session_id={CHECKOUT_SESSION_ID}`,
           cancelUrl: `${safeOrigin}/?billing=canceled`,
           email: body.email,
           priceMonthly: env.STRIPE_PRICE_MONTHLY,

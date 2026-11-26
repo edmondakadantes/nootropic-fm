@@ -34,9 +34,16 @@ import {
 } from '../shared/types';
 import { AmbientField, type FieldMood } from './components/AmbientField';
 import { CheckInView, type MoodPresetSelection } from './components/CheckInView';
+import { FlagshipShowcaseView } from './components/FlagshipShowcaseView';
 import { HeroLandingView } from './components/HeroLandingView';
 import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFingerprintPass';
 import { SoundSystemsModal } from './components/SoundSystemsModal';
+import {
+  buildShowcaseUrl,
+  resolveLegacyShowcaseRedirect,
+  resolveSurfaceMode,
+  type SurfaceMode,
+} from './lib/domainRouting';
 import {
   applyDocumentTheme,
   readCircadianPreference,
@@ -101,6 +108,7 @@ export default function App() {
     typeof window !== 'undefined' && /^#sync=([A-Za-z0-9-]+)$/i.test(window.location.hash);
   const hasInitialStoredProfile = Boolean(getStoredProfileAuth()?.profileId);
 
+  const [surfaceMode, setSurfaceMode] = useState<SurfaceMode>(() => resolveSurfaceMode());
   const [screen, setScreen] = useState<Screen>('checkin');
   const [checkinResetNonce, setCheckinResetNonce] = useState(0);
   const [booting, setBooting] = useState(hasInitialHashSync);
@@ -213,6 +221,12 @@ export default function App() {
 
   useEffect(() => {
     const boot = async () => {
+      const legacyRedirect = resolveLegacyShowcaseRedirect(window.location);
+      if (legacyRedirect) {
+        window.location.replace(legacyRedirect);
+        return;
+      }
+
       const configPromise = api
         .getConfig()
         .then((res) => setRuntimeConfig(res.config))
@@ -222,9 +236,28 @@ export default function App() {
       const searchParams = new URLSearchParams(window.location.search);
       const billingStatus = searchParams.get('billing');
       const checkoutSessionId = searchParams.get('session_id');
-      if (billingStatus) {
-        window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+      const deepLaunch = searchParams.get('launch');
+      const deepTarget = searchParams.get('target');
+      const deepDuration = Number(searchParams.get('duration') ?? '0');
+      const deepView = searchParams.get('view');
+
+      if (billingStatus || deepLaunch || deepTarget || deepView) {
+        const cleaned = new URLSearchParams(window.location.search);
+        cleaned.delete('billing');
+        cleaned.delete('session_id');
+        cleaned.delete('launch');
+        cleaned.delete('target');
+        cleaned.delete('duration');
+        cleaned.delete('view');
+        const nextSearch = cleaned.toString();
+        window.history.replaceState(
+          null,
+          '',
+          `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`
+        );
       }
+
+      let hydratedProfile: UserProfile | null = null;
 
       const verifyBillingIfReturned = async () => {
         if (
@@ -235,6 +268,7 @@ export default function App() {
           try {
             const verified = await api.verifyStripeCheckout(checkoutSessionId);
             if (verified.paid && verified.profile) {
+              hydratedProfile = verified.profile;
               setProfile(verified.profile);
               setQrToast(
                 'Welcome to nootropic.fm Pro! Unlimited music styles & all science studies are now unlocked.'
@@ -247,6 +281,53 @@ export default function App() {
         }
       };
 
+      const applyStudioDeepLinks = (activeProfile: UserProfile | null) => {
+        if (resolveSurfaceMode() !== 'studio') return;
+        const validLaunches = new Set<QuickTryId>([
+          'focus_lofi',
+          'mood_uplift',
+          'calm_rain',
+          'energy_electronic',
+          'signature_6x40',
+        ]);
+        if (deepLaunch && validLaunches.has(deepLaunch as QuickTryId)) {
+          const rec = buildInstantQuickTryRecommendation(deepLaunch as QuickTryId, activeProfile);
+          setActiveRec(rec);
+          setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+          setScreen('player');
+          return;
+        }
+        if (deepView === 'studylab') {
+          setFieldMood('focus');
+          setScreen('studylab');
+          return;
+        }
+        if (deepView === 'insights') {
+          setFieldMood('flow');
+          setScreen('insights');
+          return;
+        }
+        const validTargets = new Set<TargetState>([
+          'energy_lift',
+          'alert_focus',
+          'deep_flow',
+          'calm_reset',
+          'sleep_winddown',
+        ]);
+        if (deepTarget && validTargets.has(deepTarget as TargetState)) {
+          const t = deepTarget as TargetState;
+          const feeling: QuickFeelingId =
+            t === 'calm_reset' || t === 'sleep_winddown' ? 'stressed_anxious' : 'calm_ready';
+          const rec = buildStateGoalQuickRecommendation(feeling, t, activeProfile);
+          if (Number.isFinite(deepDuration) && deepDuration >= 5 && deepDuration <= 120) {
+            rec.plannedDurationMin = Math.round(deepDuration);
+          }
+          setActiveRec(rec);
+          setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+          setScreen('player');
+        }
+      };
+
       // 1. Magic Scanned QR Auto-Restore via private URL hash (#sync=NFM-XXXX-XXXX)
       // Hash fragments never leave the browser in HTTP logs or Referer headers.
       const hashMatch = window.location.hash.match(/^#sync=([A-Za-z0-9-]+)$/i);
@@ -256,6 +337,7 @@ export default function App() {
         try {
           const res = await api.restoreIdentity(scannedCode);
           saveStoredProfileAuth(res.profile.id, res.profileToken, res.syncCode);
+          hydratedProfile = res.profile;
           setProfile(res.profile);
           setSyncCode(res.syncCode);
           setPendingDebrief(res.pendingDebrief);
@@ -275,7 +357,19 @@ export default function App() {
 
       const stored = getStoredProfileAuth();
       if (!stored?.profileId) {
+        try {
+          const cookieSession = await api.getCurrentSession();
+          if (cookieSession.authenticated && cookieSession.profile) {
+            saveStoredProfileAuth(cookieSession.profile.id);
+            hydratedProfile = cookieSession.profile;
+            setProfile(cookieSession.profile);
+            setPendingDebrief(cookieSession.pendingDebrief);
+          }
+        } catch {
+          // ignore anonymous boot or test mocks without /api/identity/me
+        }
         await verifyBillingIfReturned();
+        applyStudioDeepLinks(hydratedProfile);
         void configPromise;
         setBooting(false);
         return;
@@ -297,6 +391,7 @@ export default function App() {
         if (res.syncCode) {
           setSyncCode(res.syncCode);
         }
+        hydratedProfile = res.profile;
         setProfile(res.profile);
         setPendingDebrief(res.pendingDebrief);
       } catch {
@@ -304,6 +399,7 @@ export default function App() {
         setSyncCode(null);
       } finally {
         await verifyBillingIfReturned();
+        applyStudioDeepLinks(hydratedProfile);
         void configPromise;
         setBooting(false);
       }
@@ -694,6 +790,7 @@ export default function App() {
   const handleSwitchIdentity = () => {
     // Signs out locally without deleting remote D1 history (can always restore via QR / Sync Key!)
     clearStoredProfileAuth();
+    void api.signOutSession().catch(() => {});
     setProfile(null);
     setSyncCode(null);
     setPendingDebrief(null);
@@ -733,13 +830,76 @@ export default function App() {
     }
   };
 
+  const handleEnterStudioFromShowcase = useCallback(
+    (opts?: {
+      launch?: string;
+      target?: TargetState;
+      durationMin?: number;
+      screen?: 'studylab' | 'insights';
+    }) => {
+      setSurfaceMode('studio');
+      if (opts?.launch) {
+        const rec = buildInstantQuickTryRecommendation(opts.launch as QuickTryId, profile);
+        setActiveRec(rec);
+        setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+        setScreen('player');
+        return;
+      }
+      if (opts?.screen === 'studylab') {
+        setFieldMood('focus');
+        setScreen('studylab');
+        return;
+      }
+      if (opts?.screen === 'insights') {
+        setFieldMood('flow');
+        setScreen('insights');
+        return;
+      }
+      if (opts?.target) {
+        const feeling: QuickFeelingId =
+          opts.target === 'calm_reset' || opts.target === 'sleep_winddown'
+            ? 'stressed_anxious'
+            : 'calm_ready';
+        const rec = buildStateGoalQuickRecommendation(feeling, opts.target, profile);
+        if (typeof opts.durationMin === 'number') {
+          rec.plannedDurationMin = Math.round(opts.durationMin);
+        }
+        setActiveRec(rec);
+        setFieldMood(moodFromTarget(rec.environment, rec.targetState));
+        setScreen('player');
+        return;
+      }
+      setScreen('checkin');
+    },
+    [moodFromTarget, profile]
+  );
+
   return (
     <div className="relative min-h-dvh flex flex-col overflow-x-hidden bg-[#0A0B0C]">
       {/* Architectural studio calibration backdrop */}
       <AmbientField mood={fieldMood} activePulse={audioActive} themeMode={themeMode} />
 
-      {/* Precision Console Header */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0A0B0C]/90 backdrop-blur-xl">
+      {surfaceMode === 'showcase' ? (
+        <FlagshipShowcaseView
+          profile={profile}
+          syncCode={syncCode}
+          themeMode={themeMode}
+          onSetThemeMode={handleSetCircadianTheme}
+          onOpenProModal={() => setShowProModal(true)}
+          onOpenIdentityModal={() => {
+            setIdentityStatus(null);
+            setShowIdentityModal(true);
+          }}
+          onOpenPrivacyModal={() => {
+            setPrivacyStatus(null);
+            setShowPrivacyModal(true);
+          }}
+          onEnterStudio={handleEnterStudioFromShowcase}
+        />
+      ) : (
+        <>
+          {/* Precision Console Header */}
+          <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0A0B0C]/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-2.5 sm:px-6 sm:py-3.5">
           <button
             type="button"
@@ -1428,14 +1588,22 @@ export default function App() {
             >
               Terms
             </a>
-            <a
-              href="/delete-data"
-              className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
-            >
-              Delete Data
-            </a>
-          </div>
-        </footer>
+              <a
+                href={buildShowcaseUrl()}
+                className="font-semibold text-[#34D399] underline-offset-2 hover:underline"
+              >
+                Hardware &amp; Science ↗
+              </a>
+              <a
+                href="/delete-data"
+                className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
+              >
+                Delete Data
+              </a>
+            </div>
+          </footer>
+        )}
+      </>
       )}
     </div>
   );

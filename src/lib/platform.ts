@@ -22,7 +22,7 @@ declare global {
 
 export function isNativeMobileApp(): boolean {
   if (typeof window === 'undefined') return false;
-  if (import.meta.env.VITE_CAPACITOR_NATIVE === 'true') return true;
+  if (import.meta.env?.VITE_CAPACITOR_NATIVE === 'true') return true;
   if (window.NootropicNativeBridge) return true;
   if (typeof window.Capacitor?.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) {
     return true;
@@ -32,14 +32,14 @@ export function isNativeMobileApp(): boolean {
 
 export function isNativePlayStoreApp(): boolean {
   if (typeof window === 'undefined') return false;
-  if (import.meta.env.VITE_PLAY_STORE_BUILD === 'true') return true;
+  if (import.meta.env?.VITE_PLAY_STORE_BUILD === 'true') return true;
   if (window.NootropicNativeBridge?.getStoreChannel?.() === 'google_play') return true;
   if (window.Capacitor?.getPlatform?.() === 'android' && isNativeMobileApp()) return true;
   return false;
 }
 
 export function resolveDefaultApiBase(): string {
-  const explicit = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '');
+  const explicit = (import.meta.env?.VITE_API_BASE as string | undefined)?.replace(/\/$/, '');
   if (explicit) return explicit;
   if (isNativeMobileApp()) return 'https://www.nootropic.fm';
   return '';

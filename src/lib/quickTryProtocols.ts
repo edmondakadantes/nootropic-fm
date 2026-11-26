@@ -18,7 +18,12 @@ import type {
   UserProfile,
 } from '../../shared/types';
 
-export type QuickTryId = 'focus_lofi' | 'mood_uplift' | 'calm_rain' | 'energy_electronic';
+export type QuickTryId =
+  | 'focus_lofi'
+  | 'mood_uplift'
+  | 'calm_rain'
+  | 'energy_electronic'
+  | 'signature_6x40';
 
 export type QuickFeelingId =
   | 'tired_fog'
@@ -389,6 +394,22 @@ const QUICK_TRY_CITATIONS: Record<QuickTryId, ScientificStudy[]> = {
         'Slow paced breathing at ~0.1 Hz (~6 breaths/min) engages cardiovascular baroreflex resonance and parasympathetic calm.',
       caveat: 'Follow the gentle 5s inhale / 5s exhale audio swell at your own comfortable pace.',
       applicableTargets: ['calm_reset', 'sleep_winddown'],
+    },
+  ],
+  signature_6x40: [
+    {
+      id: 'lisman-jensen-2013',
+      authors: 'Lisman, J. E., & Jensen, O.',
+      year: 2013,
+      title: 'The theta-gamma neural code',
+      journal: 'Neuron',
+      mechanism: '6 Hz Theta × 40 Hz Gamma Cross-Frequency Coupling locked to 120.000 BPM stems',
+      soundEffect: 'Phase-locked deep-flow immersion with zero sham dilution',
+      doiOrUrl: 'https://doi.org/10.1016/j.neuron.2013.03.007',
+      summary:
+        'Nested 40 Hz gamma cycles phase-locked to 6 Hz theta envelopes support working-memory item binding and deep flow.',
+      caveat: 'Engineered exclusively for sealed stereo in-ear buds; zero sham control dilution.',
+      applicableTargets: ['deep_flow', 'alert_focus'],
     },
   ],
 };
@@ -905,6 +926,150 @@ function buildRawQuickTryRecommendation(id: QuickTryId): ProtocolRecommendation 
       currentState: 'fatigued',
       targetState: 'energy_lift',
       baselineScore: 2,
+      environment: 'office',
+      device: 'headphones',
+    };
+  }
+
+  if (id === 'signature_6x40') {
+    const baseParams: ProtocolArm['baseParams'] = {
+      modulationHz: 6,
+      modulationDepth: 0.38,
+      crossoverHz: 190,
+      upperCrossoverHz: 4500,
+      bpm: 120,
+      pulseIntensity: 0.62,
+      noiseColor: 'pink',
+      noiseLevel: 0.04,
+      harmonicMode: 'warm_min9',
+      rootNoteHz: 146.83,
+      filterCutoffHz: 2800,
+      speakerSafeEQ: false,
+      antiMonotonyCycleMin: 0,
+      binauralOffsetHz: 0,
+    };
+
+    const spec: ExecutableStudySpec = {
+      id: 'lisman-jensen-2013-signature-6x40',
+      shortLabel: 'NootropicFM Signature Mode · 6×40 Hz',
+      studyRef: {
+        title: 'The theta-gamma neural code',
+        authors: 'Lisman, J. E., & Jensen, O.',
+        year: '2013',
+        journal: 'Neuron',
+        url: 'https://doi.org/10.1016/j.neuron.2013.03.007',
+        doi: '10.1016/j.neuron.2013.03.007',
+        source: 'core',
+      },
+      abstractExcerpt:
+        'Standalone 6 Hz Theta × 40 Hz Gamma Cross-Frequency Coupling phase-locked to 120.000 BPM polyrhythmic stems and a 0.10 Hz Mayer-wave stereo orbit.',
+      compilerMode: 'verified_ground_truth',
+      compliancePct: 100,
+      evidenceMap: [
+        {
+          parameter: 'Cross-Frequency Coupling',
+          targetLabel: '6 Hz Theta × 40 Hz Gamma',
+          executedValue: '6.0 Hz Theta envelope + 40.0 Hz Gamma phase lock (120.000 BPM)',
+          studyQuote: 'Discrete gamma sub-cycles nested inside theta envelopes organize working memory.',
+          origin: 'study_exact',
+        },
+        {
+          parameter: 'Spatial Autonomy',
+          targetLabel: '0.10 Hz Mayer Orbit',
+          executedValue: '0.10 Hz stereo flow orbit (0% sham control dilution)',
+          studyQuote: 'Slow 0.10 Hz oscillation aligns respiratory autonomic balance.',
+          origin: 'study_inferred',
+        },
+      ],
+      entrainment: {
+        type: 'amplitude_modulation',
+        frequencyHz: 6,
+        startFrequencyHz: 8,
+        modulationBandHz: [190, 4500],
+        modulationDepth: 0.38,
+        waveform: 'raised_cosine',
+        phaseOffsetDeg: 32,
+        hrvBreathHz: 0.1,
+      },
+      music: {
+        defaultCarrierMode: 'studio_library',
+        bpm: 120,
+        tonalMode: 'dorian',
+        tuningA4Hz: 440,
+        rootMidi: 50,
+        percussion: 'steady_pulse',
+        density: 0.54,
+        brightness: 0.56,
+        spectralLowPassHz: 2800,
+        instrumentPalette: 'deep_electronic',
+        vibeTags: ['hypnotic velvet', '120 bpm phase lock', 'signature mode', 'lyric-free'],
+        lyriaWeightedPrompts: [
+          {
+            text: 'Strictly instrumental hypnotic deep analog pulse at 120 BPM in D dorian, silk velvet textures, zero vocals',
+            weight: 1.6,
+          },
+        ],
+      },
+      noise: { color: 'pink', snrDb: -24 },
+      protocol: {
+        recommendedDurationMin: 25,
+        targetState: 'deep_flow',
+        requiresHeadphones: true,
+        drivingSafe: false,
+        safetyNotes: ['Best experienced with sealed stereo in-ear buds (0% sham dilution).'],
+      },
+    };
+
+    return {
+      sessionId,
+      cohortKey: 'quick_try:signature_6x40',
+      cohortLabel: 'NootropicFM Signature Mode · Instant',
+      arm: {
+        id: 'nootropic-trance-6x40hz',
+        name: 'NootropicFM Signature · 6×40 Hz',
+        tagline: '6 Hz Theta × 40 Hz Gamma · 120.000 BPM Lock',
+        description:
+          'Standalone flagship deep-flow protocol pairing 6 Hz Theta envelopes with nested 40 Hz Gamma phase-locked to 120 BPM stems (0% sham dilution).',
+        targetStates: ['deep_flow', 'alert_focus'],
+        drivingSafe: false,
+        priorAlpha: 5.0,
+        priorBeta: 1.2,
+        baseParams,
+        studyIds: ['lisman-jensen-2013'],
+      },
+      params: {
+        ...baseParams,
+        stereoAmSpread: true,
+        genre: 'nootropic_trance',
+        genreSelectionMode: 'user_chosen',
+        energyTier: 'focus',
+      },
+      isExploration: false,
+      isControlTrial: false,
+      ephemeralMode: true,
+      safetyMode: false,
+      safetyWarnings: [],
+      audioSource: 'studio_library',
+      fallbackCoreGenre: 'nootropic_trance',
+      personalizationSummary: [
+        'NootropicFM Signature Mode · Direct 6×40 Hz launch (0% sham dilution)',
+        'Locked to 120.000 BPM polyrhythmic stems + 0.10 Hz Mayer orbit',
+      ],
+      formulaIngredients: [
+        { role: 'Layer 1 · CFC Lock', compound: '6 Hz × 40 Hz · 3-Band LR4', dose: '38% (190Hz–4.5kHz)', evidenceTag: 'Lisman 2013' },
+        { role: 'Layer 2 · Music', compound: 'NootropicFM Signature · 120 BPM', dose: 'Studio Mix', evidenceTag: '0% Sham' },
+      ],
+      rationale:
+        'Synchronizes 40 Hz Gamma micro-cycles inside 6 Hz Theta envelopes at an exact integer ratio to 120.000 BPM stems for zero phase drift.',
+      studies: QUICK_TRY_CITATIONS.signature_6x40,
+      executableSpec: spec,
+      confidencePct: 92,
+      cohortTrials: 0,
+      profileTrials: 0,
+      plannedDurationMin: 25,
+      currentState: 'calm_neutral',
+      targetState: 'deep_flow',
+      baselineScore: 3,
       environment: 'office',
       device: 'headphones',
     };

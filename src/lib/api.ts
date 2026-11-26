@@ -143,6 +143,19 @@ export const api = {
       body: JSON.stringify({ syncCode }),
     }),
 
+  getCurrentSession: () =>
+    apiFetch<{
+      authenticated: boolean;
+      profile: UserProfile | null;
+      pendingDebrief: SessionRecord | null;
+    }>('/api/identity/me'),
+
+  signOutSession: () =>
+    apiFetch<{ ok: boolean }>('/api/identity/signout', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
   deleteProfile: (id: string) =>
     apiFetch<{ ok: boolean; deletedProfileId: string }>(`/api/profile/${encodeURIComponent(id)}`, {
       method: 'DELETE',
