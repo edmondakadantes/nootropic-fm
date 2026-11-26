@@ -477,6 +477,9 @@ export function PlayerView({
 
   const triggerSessionVoiceCue = (cueType: 'intro_full' | 'intro_short' | 'outro_landing') => {
     if (!voiceGuideEnabledRef.current || layerMonitorRef.current === 'science_only') return;
+    if (cueType !== 'outro_landing') {
+      engineRef.current?.primeVoiceIntroHold();
+    }
     void api
       .getVoiceConciergeCue({
         cueType,
@@ -501,6 +504,7 @@ export function PlayerView({
           !voiceGuideEnabledRef.current ||
           layerMonitorRef.current === 'science_only'
         ) {
+          engineRef.current?.releaseVoiceIntroHold();
           return;
         }
         const greetingUrl = res.greetingUrl.startsWith('http')
@@ -510,14 +514,19 @@ export function PlayerView({
           ? res.bodyUrl
           : `${API_BASE}${res.bodyUrl}`;
         setVoiceTranscript(res.transcript || null);
-        await engineRef.current?.playVoiceConciergeCue({
+        const started = await engineRef.current?.playVoiceConciergeCue({
           greetingUrl,
           bodyUrl,
           breathPauseMs: res.breathPauseMs,
-          initialDelayMs: cueType === 'outro_landing' ? 180 : 550,
+          initialDelayMs: cueType === 'outro_landing' ? 180 : 280,
         });
+        if (!started) {
+          engineRef.current?.releaseVoiceIntroHold();
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        engineRef.current?.releaseVoiceIntroHold();
+      });
   };
   const triggerVoiceCueRef = useRef(triggerSessionVoiceCue);
   triggerVoiceCueRef.current = triggerSessionVoiceCue;

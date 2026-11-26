@@ -31,7 +31,11 @@ import { LyriaRealtimeClient, type LyriaRealtimeStatus } from './LyriaRealtimeCl
 import { createCalibratedNoiseBuffer, MedicalStimulusRack, type GammaStimulusMode } from './MedicalStimulusRack';
 import { canUseWebCodecsOpus, streamOpusIntoWorklet } from './ProgressiveStemDecoder';
 import { StereoRainBed } from './StereoRainBed';
-import { VoiceConciergePlayer } from './VoiceConciergePlayer';
+import {
+  MUSIC_FADE_IN_AFTER_VOICE_SEC,
+  MUSIC_VOICE_DUCK_GAIN,
+  VoiceConciergePlayer,
+} from './VoiceConciergePlayer';
 import {
   bindNativeMediaActionHandler,
   isNativeMobileApp,
@@ -416,6 +420,9 @@ export class PsychoacousticEngine {
   private rainBed = new StereoRainBed();
   private voicePlayer = new VoiceConciergePlayer();
   private musicMasterBus: GainNode | null = null;
+  private voiceDuckFilterNode: BiquadFilterNode | null = null;
+  private voiceHoldWatchdogTimer: number | null = null;
+  private isVoiceSpeaking = false;
   private circadianFilterNode: BiquadFilterNode | null = null;
   private circadianMode: 'daylight' | 'night' = 'night';
   private voiceSpeakingListeners = new Set<(speaking: boolean) => void>();
@@ -590,12 +597,26 @@ export class PsychoacousticEngine {
     const musicMasterBus = ctx.createGain();
     musicMasterBus.gain.value = 1.0;
     this.musicMasterBus = musicMasterBus;
+    this.isVoiceSpeaking = false;
 
-    this.voicePlayer.attach(ctx, masterSumBus, null, (speaking) => {
-      if (this.ctx && this.musicMasterBus) {
-        const now = this.ctx.currentTime;
-        // Sidechain duck Layer-2 music softly (-6.7 dB -> 0.46) while Voice Concierge speaks, then swell back over 1.2s
-        smoothSetParam(this.musicMasterBus.gain, speaking ? 0.46 : 1.0, now, speaking ? 0.36 : 0.95);
+    const voiceDuckFilter = ctx.createBiquadFilter();
+    voiceDuckFilter.type = 'peaking';
+    voiceDuckFilter.frequency.setValueAtTime(Math.min(ctx.sampleRate * 0.35, 1250), ctx.currentTime);
+    voiceDuckFilter.Q.setValueAtTime(0.80, ctx.currentTime);
+    voiceDuckFilter.gain.setValueAtTime(0.0, ctx.currentTime);
+    this.voiceDuckFilterNode = voiceDuckFilter;
+
+    this.voicePlayer.attach(ctx, masterSumBus, null, (speaking, skipped) => {
+      this.isVoiceSpeaking = speaking;
+      this.clearVoiceHoldWatchdog();
+      if (speaking) {
+        this.scheduleMusicFadeFromVoice(MUSIC_VOICE_DUCK_GAIN, 0.32, -5.5);
+      } else {
+        this.scheduleMusicFadeFromVoice(
+          1.0,
+          skipped ? 1.8 : MUSIC_FADE_IN_AFTER_VOICE_SEC,
+          0.0
+        );
       }
       for (const cb of this.voiceSpeakingListeners) {
         try {
@@ -613,7 +634,8 @@ export class PsychoacousticEngine {
     circadianFilter.frequency.setValueAtTime(Math.min(ctx.sampleRate * 0.42, 3200), ctx.currentTime);
     circadianFilter.gain.setValueAtTime(this.circadianMode === 'night' ? -2.8 : 0.0, ctx.currentTime);
     this.circadianFilterNode = circadianFilter;
-    musicMasterBus.connect(circadianFilter);
+    musicMasterBus.connect(voiceDuckFilter);
+    voiceDuckFilter.connect(circadianFilter);
 
     if (this.workletsReady) {
       const musicPreLim = new AudioWorkletNode(ctx, 'nootropic-lookahead-limiter', {
@@ -1958,6 +1980,80 @@ export class PsychoacousticEngine {
     };
   }
 
+  private clearVoiceHoldWatchdog(): void {
+    if (this.voiceHoldWatchdogTimer !== null) {
+      window.clearTimeout(this.voiceHoldWatchdogTimer);
+      this.voiceHoldWatchdogTimer = null;
+    }
+  }
+
+  private scheduleMusicFadeFromVoice(targetGain: number, rampSec: number, eqCutDb: number): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const dur = Math.max(0.08, rampSec);
+    if (this.musicMasterBus) {
+      try {
+        const g = this.musicMasterBus.gain;
+        const cur = Math.max(0.05, Math.min(1.0, g.value || 1.0));
+        g.cancelScheduledValues(now);
+        g.setValueAtTime(cur, now);
+        g.exponentialRampToValueAtTime(Math.max(0.05, Math.min(1.0, targetGain)), now + dur);
+      } catch {
+        // ignore
+      }
+    }
+    if (this.voiceDuckFilterNode) {
+      try {
+        const fg = this.voiceDuckFilterNode.gain;
+        fg.cancelScheduledValues(now);
+        fg.setValueAtTime(fg.value, now);
+        fg.linearRampToValueAtTime(eqCutDb, now + Math.min(dur, 3.8));
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  public primeVoiceIntroHold(): void {
+    this.clearVoiceHoldWatchdog();
+    if (
+      !this.ctx ||
+      !this.musicMasterBus ||
+      this.layerMonitorMode === 'science_only' ||
+      this.isVoiceSpeaking
+    ) {
+      return;
+    }
+    const now = this.ctx.currentTime;
+    try {
+      const g = this.musicMasterBus.gain;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(0.06, now);
+      g.exponentialRampToValueAtTime(MUSIC_VOICE_DUCK_GAIN, now + 1.6);
+    } catch {
+      // ignore
+    }
+    if (this.voiceDuckFilterNode) {
+      try {
+        const fg = this.voiceDuckFilterNode.gain;
+        fg.cancelScheduledValues(now);
+        fg.setValueAtTime(-5.5, now);
+      } catch {
+        // ignore
+      }
+    }
+    this.voiceHoldWatchdogTimer = window.setTimeout(() => {
+      this.releaseVoiceIntroHold();
+    }, 6500);
+  }
+
+  public releaseVoiceIntroHold(): void {
+    this.clearVoiceHoldWatchdog();
+    if (!this.isVoiceSpeaking) {
+      this.scheduleMusicFadeFromVoice(1.0, 2.5, 0.0);
+    }
+  }
+
   public async playVoiceConciergeCue(opts: {
     greetingUrl: string;
     bodyUrl: string;
@@ -1969,6 +2065,7 @@ export class PsychoacousticEngine {
   }
 
   public stopVoiceConcierge(fadeSec = 0.2): void {
+    this.clearVoiceHoldWatchdog();
     this.voicePlayer.cancelActiveVoices(fadeSec);
   }
 
@@ -4264,7 +4361,10 @@ export class PsychoacousticEngine {
       this.musicEnvBuf = null;
       this.musicEnvSmoothedRms = 0.165;
       this.musicMasterBus = null;
+      this.voiceDuckFilterNode = null;
       this.circadianFilterNode = null;
+      this.isVoiceSpeaking = false;
+      this.clearVoiceHoldWatchdog();
 
       this.pendingCloseCtx = ctxRef;
       this.pendingCloseTimer = window.setTimeout(() => {
@@ -4329,7 +4429,10 @@ export class PsychoacousticEngine {
     this.lyriaClient.stop();
     this.rainBed.stop();
     this.voicePlayer.stop();
+    this.clearVoiceHoldWatchdog();
+    this.isVoiceSpeaking = false;
     this.musicMasterBus = null;
+    this.voiceDuckFilterNode = null;
     this.circadianFilterNode = null;
     this.clearStudioDeck(0.1);
     this.teardownMediaDeckPool();

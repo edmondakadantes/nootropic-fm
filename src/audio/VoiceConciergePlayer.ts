@@ -4,12 +4,16 @@
  * Fetches & decodes the 2-part R2-cached Voice Concierge clips (`greetingUrl` + `bodyUrl`),
  * trims dead encoder silence for human-natural breath cadence, normalizes vocal loudness
  * so Layer-1 scientific waves never hit the master safety limiter, shapes vocals through a
- * warm close-mic studio EQ chain (85 Hz HPF + 210 Hz warmth + 3.6 kHz de-harsh + subtle room reflection),
- * and coordinates smooth sidechain ducking on Layer-2 music.
+ * clear, intimate close-mic studio EQ chain (85 Hz HPF + 195 Hz warmth + 2.9 kHz presence +
+ * 6.8 kHz de-ess + subtle room reflection), and coordinates whisper-soft ducking + 5.5s swell on Layer-2 music.
  */
 
-export const VOCAL_TARGET_RMS = 0.135; // -17.4 dBFS intimate studio speech level
-export const VOCAL_PEAK_CEILING = 0.50; // Guarantees voice (0.50*0.70=0.35) + ducked music (0.27) + Layer1 (0.19) = 0.81 < 0.8913
+export const VOCAL_TARGET_RMS = 0.195; // -14.2 dBFS clear upfront close-mic speech
+export const VOCAL_PEAK_CEILING = 0.56; // Worst-case sum: 0.56*(0.82+0.045) + 0.68*0.12 + 0.19 = 0.756 < 0.8913
+export const VOICE_DRY_GAIN = 0.82;
+export const VOICE_EARLY_GAIN = 0.045;
+export const MUSIC_VOICE_DUCK_GAIN = 0.12; // -18.4 dB soft velvet background bed while Monique speaks
+export const MUSIC_FADE_IN_AFTER_VOICE_SEC = 5.5; // Smooth 5.5s dB-linear swell after Monique finishes
 
 function trimAndNormalizeVocalBuffer(ctx: AudioContext, raw: AudioBuffer): AudioBuffer {
   const channels = raw.numberOfChannels;
@@ -84,20 +88,20 @@ export class VoiceConciergePlayer {
   private voiceGain: GainNode | null = null;
   private endTimer: number | null = null;
   private playToken = 0;
-  private onSpeakingChange?: (speaking: boolean) => void;
+  private onSpeakingChange?: (speaking: boolean, skipped?: boolean) => void;
   private bufferCache = new Map<string, AudioBuffer>();
 
   public attach(
     ctx: AudioContext,
     destination: AudioNode,
     reverbSend?: AudioNode | null,
-    onSpeakingChange?: (speaking: boolean) => void
+    onSpeakingChange?: (speaking: boolean, skipped?: boolean) => void
   ): void {
     this.stop();
     this.ctx = ctx;
     this.onSpeakingChange = onSpeakingChange;
 
-    // Warm intimate close-mic studio vocal chain
+    // Clear intimate close-mic studio vocal chain
     const hpf = ctx.createBiquadFilter();
     hpf.type = 'highpass';
     hpf.frequency.value = Math.min(ctx.sampleRate * 0.2, 85);
@@ -105,22 +109,28 @@ export class VoiceConciergePlayer {
 
     const warmthShelf = ctx.createBiquadFilter();
     warmthShelf.type = 'lowshelf';
-    warmthShelf.frequency.value = Math.min(ctx.sampleRate * 0.25, 210);
-    warmthShelf.gain.value = 1.6;
+    warmthShelf.frequency.value = Math.min(ctx.sampleRate * 0.25, 195);
+    warmthShelf.gain.value = 1.2;
 
-    const deHarsh = ctx.createBiquadFilter();
-    deHarsh.type = 'peaking';
-    deHarsh.frequency.value = Math.min(ctx.sampleRate * 0.4, 3600);
-    deHarsh.Q.value = 1.4;
-    deHarsh.gain.value = -2.2;
+    const presenceLift = ctx.createBiquadFilter();
+    presenceLift.type = 'peaking';
+    presenceLift.frequency.value = Math.min(ctx.sampleRate * 0.4, 2900);
+    presenceLift.Q.value = 0.95;
+    presenceLift.gain.value = 1.8;
+
+    const deEss = ctx.createBiquadFilter();
+    deEss.type = 'peaking';
+    deEss.frequency.value = Math.min(ctx.sampleRate * 0.42, 6800);
+    deEss.Q.value = 2.0;
+    deEss.gain.value = -1.8;
 
     const airLp = ctx.createBiquadFilter();
     airLp.type = 'lowpass';
-    airLp.frequency.value = Math.min(ctx.sampleRate * 0.44, 11500);
+    airLp.frequency.value = Math.min(ctx.sampleRate * 0.44, 12500);
     airLp.Q.value = 0.707;
 
     const gain = ctx.createGain();
-    gain.gain.value = 0.68;
+    gain.gain.value = VOICE_DRY_GAIN;
 
     // Subtle self-contained stereo studio room reflection (works across Studio Mix, Endless Stream & Live Synth)
     const earlyL = ctx.createDelay(0.1);
@@ -131,12 +141,13 @@ export class VoiceConciergePlayer {
     earlyLp.type = 'lowpass';
     earlyLp.frequency.value = Math.min(ctx.sampleRate * 0.44, 2600);
     const earlyGain = ctx.createGain();
-    earlyGain.gain.value = 0.095;
+    earlyGain.gain.value = VOICE_EARLY_GAIN;
     const merger = ctx.createChannelMerger(2);
 
     hpf.connect(warmthShelf);
-    warmthShelf.connect(deHarsh);
-    deHarsh.connect(airLp);
+    warmthShelf.connect(presenceLift);
+    presenceLift.connect(deEss);
+    deEss.connect(airLp);
     airLp.connect(gain);
 
     airLp.connect(earlyLp);
@@ -150,7 +161,7 @@ export class VoiceConciergePlayer {
 
     if (reverbSend) {
       const revSend = ctx.createGain();
-      revSend.gain.value = 0.06;
+      revSend.gain.value = 0.045;
       airLp.connect(revSend);
       revSend.connect(reverbSend);
     }
@@ -202,14 +213,14 @@ export class VoiceConciergePlayer {
       await ctx.resume().catch(() => {});
     }
 
-    const delaySec = Math.max(0.08, (opts.initialDelayMs ?? 450) / 1000);
+    const delaySec = Math.max(0.08, (opts.initialDelayMs ?? 280) / 1000);
     const breathSec = Math.max(0.14, (opts.breathPauseMs ?? 250) / 1000);
     const startAt = ctx.currentTime + delaySec;
     const bodyStartAt = startAt + greetBuf.duration + breathSec;
     const totalEndAt = bodyStartAt + bodyBuf.duration;
 
     this.voiceGain.gain.cancelScheduledValues(ctx.currentTime);
-    this.voiceGain.gain.setValueAtTime(0.70, ctx.currentTime);
+    this.voiceGain.gain.setValueAtTime(VOICE_DRY_GAIN, ctx.currentTime);
 
     const greetSrc = ctx.createBufferSource();
     greetSrc.buffer = greetBuf;
@@ -238,13 +249,13 @@ export class VoiceConciergePlayer {
       }
       if (token === this.playToken) {
         this.activeSources = [];
-        this.onSpeakingChange?.(false);
+        this.onSpeakingChange?.(false, false);
       }
     };
 
     bodySrc.onended = finishCue;
     this.activeSources = [greetSrc, bodySrc];
-    this.onSpeakingChange?.(true);
+    this.onSpeakingChange?.(true, false);
 
     greetSrc.start(startAt);
     bodySrc.start(bodyStartAt);
@@ -288,7 +299,7 @@ export class VoiceConciergePlayer {
           }
         }
       }, Math.round((fadeSec + 0.05) * 1000));
-      this.onSpeakingChange?.(false);
+      this.onSpeakingChange?.(false, true);
     }
   }
 

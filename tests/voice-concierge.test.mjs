@@ -43,9 +43,14 @@ const {
   listAvailableConciergeVoices,
   clearVoiceCatalogCacheForTests,
 } = await import('../worker/voiceConcierge.ts');
-const { VOCAL_PEAK_CEILING, VOCAL_TARGET_RMS } = await import(
-  '../src/audio/VoiceConciergePlayer.ts'
-);
+const {
+  VOCAL_PEAK_CEILING,
+  VOCAL_TARGET_RMS,
+  VOICE_DRY_GAIN,
+  VOICE_EARLY_GAIN,
+  MUSIC_VOICE_DUCK_GAIN,
+  MUSIC_FADE_IN_AFTER_VOICE_SEC,
+} = await import('../src/audio/VoiceConciergePlayer.ts');
 const { LIMITER_CEILING_LINEAR } = await import('../src/audio/dspMath.ts');
 
 function createMockR2Bucket() {
@@ -328,13 +333,26 @@ test('sanitizeVoiceRequestPayload + vocal headroom math strictly preserve Layer-
   assert.equal(sanitized.durationMin, 5);
   assert.equal(sanitized.isDriving, true);
 
-  // Verify vocal peak + ducked music + Layer-1 clinical stimulus stays strictly below masterSafetyLimiter ceiling!
-  const maxVoicePeakAtSumBus = VOCAL_PEAK_CEILING * (0.70 + 0.095); // dry vocal gain + early stereo reflection
-  const maxDuckedMusicAtSumBus = 0.58 * 0.46; // musicPreLimiter * sidechain ducking (0.46)
+  // Verify vocal peak + whisper-soft ducked music + Layer-1 clinical stimulus stays strictly below masterSafetyLimiter ceiling!
+  const maxVoicePeakAtSumBus = VOCAL_PEAK_CEILING * (VOICE_DRY_GAIN + VOICE_EARLY_GAIN);
+  const maxDuckedMusicAtSumBus = 0.68 * MUSIC_VOICE_DUCK_GAIN; // musicPreLimiter * whisper ducking (0.12)
   const maxLayer1Peak = 0.19;
   const worstCaseCombinedPeak = maxVoicePeakAtSumBus + maxDuckedMusicAtSumBus + maxLayer1Peak;
 
-  assert.ok(VOCAL_TARGET_RMS > 0.08 && VOCAL_TARGET_RMS < 0.22);
+  const spokenRms = VOCAL_TARGET_RMS * VOICE_DRY_GAIN;
+  const duckedMusicRms = 0.22 * MUSIC_VOICE_DUCK_GAIN;
+  const speechToMusicSnrDb = 20 * Math.log10(spokenRms / duckedMusicRms);
+
+  assert.ok(VOCAL_TARGET_RMS >= 0.16 && VOCAL_TARGET_RMS < 0.25);
+  assert.ok(MUSIC_VOICE_DUCK_GAIN <= 0.15, `Expected deep whisper-bed duck <= 0.15, got ${MUSIC_VOICE_DUCK_GAIN}`);
+  assert.ok(
+    MUSIC_FADE_IN_AFTER_VOICE_SEC >= 4.5,
+    `Expected gradual fade-in >= 4.5s, got ${MUSIC_FADE_IN_AFTER_VOICE_SEC}`
+  );
+  assert.ok(
+    speechToMusicSnrDb >= 14.0,
+    `Expected clear speech-to-music SNR >= +14.0 dB while speaking, got ${speechToMusicSnrDb.toFixed(2)} dB`
+  );
   assert.ok(
     worstCaseCombinedPeak < LIMITER_CEILING_LINEAR,
     `Expected combined peak ${worstCaseCombinedPeak.toFixed(4)} < master limiter ceiling ${LIMITER_CEILING_LINEAR.toFixed(4)}`
