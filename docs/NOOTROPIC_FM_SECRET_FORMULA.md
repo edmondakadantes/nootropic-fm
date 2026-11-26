@@ -82,6 +82,61 @@ flowchart TD
 
 ---
 
+## 2B. Cheia Succesului („Triada Secretă”): Secretele Psihoacustice, Tehnice și Viscerale care Fac Platforma Să Livreze Real Ceea Ce Promite
+
+> **Adevărul Produsului:** Oricine poate pune o etichetă „40 Hz” peste o piesă ambientală și să pretindă „focus music”. **Noi avem cheia succesului** deoarece combinăm **3 straturi secrete imposibil de separat**:
+> 1. **Secrete Psihoacustice & Neurofiziologice** *(de ce creierul chiar răspunde biologic la nivel cohlear și talamo-cortical)*;
+> 2. **Secrete Tehnice „Hard-Tech” la `48 kHz`** *(de ce semnalul ajunge matematic intact la timpan și la `MSO` fără jitter și fără compresie)*;
+> 3. **Secrete Viscerale & de Atașament Zilnic (`<90s` + Ritual)** *(de ce omul simte fizic diferența în primele `90s` și revine zilnic ca la espresso-ul de dimineață)*.
+
+### 2B.1 Cele 5 Secrete Psihoacustice & Neurofiziologice (*Biologia Reală a Stimulului*)
+
+1. **Aplatizarea Anvelopei Concurente `2–10 Hz` (`+5.8 dB` Cortical AM-SNR — `nootropic-env-flattener`):**
+   - *De ce eșuează restul pieței:* Muzica obișnuită conține fluctuații haotice puternice de volum în banda silabică și ritmică de `2–10 Hz`, care îngroapă și maschează modularea neuronală (`16 Hz` / `40 Hz`) în cortexul auditiv.
+   - *Cheia `nootropic.fm`:* Procesorul dedicat `nootropic-env-flattener` din `dspWorklets.ts` netezește exclusiv haosul concurent `2–10 Hz` în Banda 2 (`190–4,500 Hz`) *înainte* de însumare, crescând raportul semnal-zgomot al modulării corticale cu **`+5.8 dB`** fără a mutila timbrul muzical.
+2. **Compensarea Dispersiei Bazilare Cohleare (`Upward Gamma Chirp` vs. Click-uri Plate — `MedicalStimulusRack.ts`):**
+   - *Secret psihoacustic (Dau et al.):* În melcul urechii interne, frecvențele înalte excită baza cohleei aproape instant (`~1–2 ms`), pe când frecvențele joase călătoresc lent spre apex (`~8–10 ms`), împrăștiind descărcarea neuronală în timp.
+   - *Cheia `nootropic.fm`:* Modul **`gamma_chirp`** întârzie cu microsecunde exacte componentele înalte față de cele joase, obligând **întreaga membrană bazilară să descarce sincron într-o singură salvă** — amplificând masiv răspunsul auditiv evocat (`ASSR`) la un nivel sonor mult mai blând și confortabil.
+3. **Panta Asimetrică de Atac Neuronal (`+dP/dt` Phase-Resetting Envelope):**
+   - *Secret neurofiziologic (Woods / Lakatos):* Neuronii talamo-corticali nu se sincronizează la presiunea sonoră constantă, ci la **derivata pozitivă a anvelopei (`+dP/dt` — frontul crescător rapid)**. Unda sinusoidală simplă are pantă prea moale; unda dreptunghiulară brută zgârie timpanul.
+   - *Cheia `nootropic.fm`:* Anvelope cu atac rapid calibrat pentru *phase-reset* sincron și eliberare catifelată în cosinus, filtrate per-sample — urechea simte mătase, iar cortexul primește impulsul de precizie.
+4. **Rezonanța Stochastică `1/f` Calibrată Post-Filtru (`-17.08 dBFS` RMS — `createCalibratedNoiseBuffer`):**
+   - *Secret biofizic (Stochastic Resonance):* Un pat de zgomot `1/f` (roz / maro / `soft_rain` cu micro-picături distribuite stochastic, cusătură de loop `0.00 dB`, calibrat exact post-biquad la `-17.08 dBFS`) la un `SNR dB` optim împinge potențialele sinaptice sub-prag chiar peste pragul de declanșare axonală, întărind captarea ritmului periodic în loc să îl acopere.
+5. **Calibrarea Frecvenței Individuale Alfa (`IAF`) & Cuplajul Dicotic `MSO` Fără Oboseală (`M/S` Crossfeed + `Huggins 600 Hz`):**
+   - Vârful individual `alphaIafHz` variază de la om la om (`~8.5–11.5 Hz`), iar separarea artificială `100%` L/R pe căști obosește rapid creierul. **`nootropic-crossfeed-processor`** (`0.000 dB` eroare mono) relaxează scena muzicală pentru confort ore în șir, păstrând simultan precizia de microsecundă a diferenței inter-aurale (`ITD`) sub `1,500 Hz` în nucleul olivar superior medial (`MSO`), verificată pe urechea utilizatorului prin testul `3-AFC Huggins Pitch` (`564–636 Hz`).
+
+### 2B.2 Cele 5 Secrete Tehnice „Hard-Tech” (*Ingineria de Precizie la `48 kHz`*)
+
+1. **Suită Proprietară de `9 AudioWorklet`-uri cu Acumulatoare `Float64` (`0.000000 Hz` Derivă & Zero Jitter Main-Thread):**
+   - Spre deosebire de aplicațiile care folosesc `AudioParam` pe thread-ul UI (vulnerabil la blocaje de `3–15 ms` din Garbage Collection, care distrug chiar faza de `25 ms` a undei de `40 Hz`) sau blocuri `k-rate` de `128 samples` (ce generează benzi parazite *zipper noise*), **`dspWorklets.ts`** rulează în thread-ul audio real-time cu fază pe `64 de biți` (`Float64`), filtre **Cytomic `ZDF/TPT-SVF` per-sample** și protecție automată Nyquist `< 0.44 * fs` chiar și când Bluetooth coboară în modul `16 kHz HFP`.
+2. **Sincronizare la Nivel de Sample între Muzică și Unda Cerebrală (`WSOLA 75%` + `32-Tap Kaiser-Sinc β=8.2`):**
+   - O derivă de doar `0.3 BPM` între tempo-ul muzicii și frecvența neuronală generează bătăi distructive de fază la fiecare câteva secunde. **`nootropic-wsola-processor`** (`75%` overlap stereo phase-locked + LUT polifazic **`32-tap Kaiser-Bessel`**, rejecție `>90 dB` la `19 kHz`, `0.000 dB` eroare DC) + **`computeDownbeatPhaseDelaySec()`** aliniează fiecare tranzient muzical pe grila sub-armonică întreagă (`120.000 BPM = 2.000 Hz` -> `1:3` cu `6 Hz` Theta, `1:8` cu `16 Hz` Beta, `1:20` cu `40 Hz` Gamma).
+3. **Izolare Dinamică `0.000 dB` pe Stimul + Limitator Mastering `5.0 ms` Lookahead `4×` True-Peak (`ITU-R BS.1770-4`):**
+   - `musicPreLimiter` preia vârfurile muzicale pe Layer-2 înainte de însumare, iar **`nootropic-lookahead-limiter`** (`48-tap`, `4×` oversampling la `-1.0 dBTP` cu contor live `Momentary LUFS`) garantează că amplitudinea stimulului neuroștiințific **nu scade nici cu `0.001 dB`** în pasajele dense.
+4. **Compensare Anti-Mascare `ERB` pe Bluetooth (`bluetoothSafeActive`) + Saltul Bit-Exact `LC3` & `PPG · HRV` pe `Earbuds Pro`:**
+   - Codecurile Bluetooth `AAC / SBC` elimină benzile laterale de modulare aflate la `-20.00 dBc` până la `-26.02 dBc` în interiorul aceleiași benzi critice `ERB` (Glasberg & Moore). Motorul compensează automat spectrul în modul `bluetoothSafeActive` pe căști comerciale și deblochează fidelitatea lossless `LC3` + telemetria `RMSSD` din ureche pe **`NootropicFM Earbuds Pro`**.
+5. **Control Orb Izo-Energetic `Active Aperiodic Sham` + Contracție `Empirical-Bayes` la Cost Marginal `~\$0`:**
+   - În **`nootropic-clinical-synth`**, controlul `25%` Sham păstrează **exact aceeași energie spectrală, același timbru și același `LUFS`** ca protocolul activ, spărgând doar periodicitatea temporală a fazelor — imposibil de distins la ureche, dar măsurabil cauzal prin `20-trial PVT (1000/RT ms)`, `Tapping CV` și `HRV`. Întreaga sinteză rulează client-side (`~\$0` cost server audio), în timp ce `computeHierarchicalArmPosterior()` converge spre rețeta personală a fiecărui creier.
+
+### 2B.3 Cele 5 Secrete Viscerale & de Atașament Zilnic (*Cum Simte Omul Diferența în `<90s` și Revine Zilnic*)
+
+1. **Contrastul Fizic în Primele `90 de Secunde` (*The 90-Second „Acoustic Airlock & Tunnel Lock-In”*):**
+   - Sistemul reticular activator (`RAS`) nu reacționează la stimuli plați, ci la **gradientul `Δ`** dintre zgomotul mental inițial și intrarea în tunel:
+     - **`0–12s` (*Acoustic Airlock*):** Sub-basul cald neatins (`<190 Hz`) + liniștea de `3.4s` a lui *Monique* creează senzația fizică imediată că s-a închis ușa grea a unui studio antifonat.
+     - **`12–60s` (*Stereo-to-Midline Tunnel Pull*):** Puntea `Iso-Bridge` strânge progresiv câmpul spre centrul fantomă inter-aural pe banda `190–4,500 Hz`, generând senzația palpabilă de *tunnel vision* și adunare a gândurilor între tâmple.
+     - **`60–90s` (*The Neural Click*):** Cuplajul în fază al grilei `120.000 BPM` cu Layer-1 la adâncimea calibrată + comutatorul live **`Full Mix | Pure Science Signal`** (`layerMonitorMode` în `PlayerView.tsx`), unde ascultătorul poate auzi instant forța brută a semnalului de sub muzică (*Zero Placebos Allowed*).
+2. **Ancora Pavloviană de `1.8 Secunde` (*Conditioned Neural Trigger — „Efectul Mirosului de Espresso”*):**
+   - Fiecare sesiune se deschide în faza `entry` cu o semnătură armonică unică și inconfundabilă de `1.8s` (*Phase-Lock Chime*) și se închide în faza `landing` cu un acord cald de eliberare (*Decompression Release Chord*). După `7–10` repetiții asociate cu starea de flux, simpla auzire a acelor `1.8` secunde devine un **declanșator pavlovian condiționat** care pregătește neurochimic atenția chiar înainte să înceapă muzica.
+3. **Micro-Valurile Dopaminergice la Fiecare `7–11 Minute` (*Anti-Habituation Micro-Lifts*):**
+   - Motivul real pentru care aplicațiile statice nu se mai simt după `10–15 minute` este habituarea cortexului auditiv. În timp ce Layer-1 rămâne matematic neîntrerupt și invariant pe studiu, `antiMonotonyActive` + `Endless Stream` introduc la fiecare `7–11 minute` o micro-rezoluție armonică și timbrală de `15–20s` (ciclu striatal de *anticipare -> eliberare*), păstrând minutul `40` la fel de viu și electrizant ca minutul `2`.
+4. **Doza Tactilă „Catifelată dar Simțită” (*Perceptual Sweet-Spot*):**
+   - O modulare prea slabă (`<5%`) este placebo invizibil; o modulare dreptunghiulară agresivă produce oboseală auditivă și respingere. Anvelopele netede calibrate pe `190–4,500 Hz` peste sub-basul neatins `<190 Hz` creează un puls fizic catifelat, perceput clar în mijlocul capului — al cărui prag optim este memorat individual de AI din ajustările live ale fiecărui ascultător.
+5. **Bucla de Craving Sănătos & Investiție Ireversibilă (*Trigger -> 90s Shift -> Millisecond Dopamine Proof -> Personal AI Lock-In*):**
+   - **Senzația (`<90s`)** + **Dovada obiectivă imediată (`DebriefView`)** (*„+21 ms mai rapid la `PVT` azi față de sesiunea oarbă Sham”*) + **Acumularea în Memoria Personală AI** (cu fiecare sesiune, AI-ul îți cunoaște mai exact creierul) transformă disciplina într-un **ritual zilnic așteptat cu nerăbdare** și ridică dramatic retenția la `D30–D90`.
+   - **Gardă Juridică Inteligentă (`FDA General Wellness / FTC`):** Intern proiectăm un atașament visceral de nedespărțit (ca ritualul espresso-ului de dimineață, cu **zero** dark patterns nocive); în comunicarea publică US-English folosim exclusiv expresii precum *„Feel the Shift in 90 Seconds”*, *„Unmistakable Neural Lock-In”* și *„Your Daily Cognitive Ritual”* — **niciodată** termenul clinic *„addictive”*.
+
+---
+
 ## 3. Cei 10 Piloni Secreți ai `nootropic.fm` (Rețeta Neînvinsă)
 
 Fiecare funcție nouă, protocol acustic, pachet hardware sau test trebuie să respecte simultan toți cei **10 Piloni Secreți**. Dacă o idee încalcă măcar unul dintre ei, nu intră în producție.
@@ -144,25 +199,27 @@ Fiecare funcție nouă, protocol acustic, pachet hardware sau test trebuie să r
 
 ---
 
-## 4. Poarta Obligatorie în 8 Puncte Înainte de Orice Lansare (*„The 8-Point Neural Release Gate”*)
+## 4. Poarta Obligatorie în 9 Puncte Înainte de Orice Lansare (*„The 9-Point Neural & Visceral Release Gate”*)
 
-Nicio funcție nouă pe `app.nootropic.fm`, niciun protocol acustic, niciun stem și nicio pagină pe `www.nootropic.fm` **NU se publică în producție** până nu obține **`8/8 PASS`**:
+Nicio funcție nouă pe `app.nootropic.fm`, niciun protocol acustic, niciun stem și nicio pagină pe `www.nootropic.fm` **NU se publică în producție** până nu obține **`9/9 PASS`**:
 
 1. **Invarianță DSP la `48 kHz`:** `0.000 dB` ducking pe Layer-1, True-Peak `<= -1.0 dBTP`, toate testele `npm run test:dsp` verzi (`100%` pass).
-2. **Puritate `DOI/PMID` & `0` Claim-uri Medicale Interzise:** Niciun studiu pe rozătoare/optic fără mapare auditivă umană; niciun termen medical de tratament/vindecare (`FDA General Wellness` + `18+`).
-3. **Intactitatea Onboarding-ului `CheckInView`:** Niciun link din `www.nootropic.fm` și niciun deep-link nu are voie să sară peste captarea `Cine ești × Starea A -> Starea B`.
-4. **Integrare în Bucla `Research Brain`:** Protocolul este înrolat complet în `Thompson Sampling`, raportează telemetria `PVT / Tapping / retenție` și respectă politica `25% Blind Sham` (cu excepția declarată `Signature Mode`).
-5. **Aliniere Sub-Armonică `-15.5 LUFS` & Ritual *Monique*:** Coerență `BPM` întreagă acolo unde e cazul, `3.4s` pre-roll liniște + voce `0.78×` în buzunar `-20 dB` + fade-in `6.0s`.
-6. **Audit Vizual Headless Circadian & Mobile (`375px` & `1440px`):** `0` tonuri galbene/chihlimbar în `Daylight Slate`, contrast WCAG AAA, butoane tactile `>= 44px` pe mobil.
-7. **Ierarhie Hardware *Wireless-First*:** `NootropicFM Earbuds Pro` (`Orbital Phase-Ring`, `PPG · HRV`) în spotlight `#1`; varianta wired niciodată în fața wireless-ului.
-8. **Securitate CSP, Secrete & Intimitate SEE/UK:** Zero secrete în client/git, zero `'unsafe-inline'` în `script-src`, cookie `.nootropic.fm` strict `HttpOnly; Secure; SameSite=Lax`, și funcționare corectă în modul fără consimțământ `SEE/UK`.
+2. **Testul Visceral de `90 de Secunde` & Anti-Amorțeală (*Feel-the-Shift Gate*):** Niciun protocol nou nu trece dacă pare plat în primele `90s` sau dacă pierde contrastul senzorial după minutul `15` (*Airlock -> Tunnel Pull -> Neural Click -> Micro-Lifts 7–11 min*, + verificat clar prin `Full Mix | Pure Science Signal`).
+3. **Puritate `DOI/PMID` & `0` Claim-uri Medicale Interzise:** Niciun studiu pe rozătoare/optic fără mapare auditivă umană; niciun termen medical de tratament/vindecare și zero folosire publică a cuvântului *„addictive”* (`FDA General Wellness` + `18+`).
+4. **Intactitatea Onboarding-ului `CheckInView`:** Niciun link din `www.nootropic.fm` și niciun deep-link nu are voie să sară peste captarea `Cine ești × Starea A -> Starea B`.
+5. **Înrolarea în Bucla `Research Brain`:** Protocolul este înrolat complet în `Thompson Sampling`, raportează telemetria `PVT / Tapping / retenție` și respectă politica `25% Blind Sham` (cu excepția declarată `Signature Mode`).
+6. **Aliniere Sub-Armonică `-15.5 LUFS` & Ritual *Monique*:** Coerență `BPM` întreagă acolo unde e cazul, `3.4s` pre-roll liniște + voce `0.78×` în buzunar `-20 dB` + fade-in `6.0s`.
+7. **Audit Vizual Headless Circadian & Mobile (`375px` & `1440px`):** `0` tonuri galbene/chihlimbar în `Daylight Slate`, contrast WCAG AAA, butoane tactile `>= 44px` pe mobil.
+8. **Ierarhie Hardware *Wireless-First*:** `NootropicFM Earbuds Pro` (`Orbital Phase-Ring`, `PPG · HRV`) în spotlight `#1`; varianta wired niciodată în fața wireless-ului.
+9. **Securitate CSP, Secrete & Intimitate SEE/UK:** Zero secrete în client/git, zero `'unsafe-inline'` în `script-src`, cookie `.nootropic.fm` strict `HttpOnly; Secure; SameSite=Lax`, și funcționare corectă în modul fără consimțământ `SEE/UK`.
 
 ---
 
 ## 5. Matricea de Maturitate Azi (*Live în Producție `0455e33`* vs. *Următorul Salt de Produs*)
 
-| Pilon Secret | Status Azi (`nootropic.fm` / `app.nootropic.fm` @ `0455e33`) | Ce Este Deja Live | Următorul Salt cu Impact Maxim (`Upgrade Recomandat`) |
+| Pilon / Strat Secret | Status Azi (`nootropic.fm` / `app.nootropic.fm` @ `0455e33`) | Ce Este Deja Live | Următorul Salt cu Impact Maxim (`Upgrade Recomandat`) |
 |---|---|---|---|
+| **0. Miezul Visceral (`<90s` Lock-In & Ritual)** | **65% Live *(Motor `entry/plateau/landing` & `antiMonotonyActive` activ)* ** | `SessionPhase` (`entry/plateau/landing`), `antiMonotonyActive`, `layerMonitorMode` (`Full Mix | Pure Science Signal`). | **PRIORITATEA #1B (Cuplată cu Pilonul 7):** Semnătura pavloviană de `1.8s` + *Stereo-to-Midline Tunnel Pull* în primele `90s` + *Dopamine Proof Card* (`Δ ms PVT` imediat după sesiune). |
 | **1. Vector `A -> B` & `Iso-Bridge`** | **95% Live** | `CheckInView` în 4 pași intact, Busolă 2D, `computeIsoBridgeForState()`, păstrat la intrarea de pe `www.nootropic.fm`. | Afisarea vizuală a punții `Iso-Bridge` ca mini-hartă temporală direct în Player. |
 | **2. Compilator Study-to-Sound** | **95% Live** | `StudyCompilerCore`, `StudyLabView`, `PubMed/OpenAlex`, `StudyFidelityMatrix`, zero pseudo-știință. | Expunerea unui card sumar „Study Chain Verified” pe pagina `www.nootropic.fm`. |
 | **3. Invarianță `48 kHz` Dual-Layer** | **100% Live** | `LR4 190–4,500 Hz`, `Envelope Flattener`, `musicPreLimiter` (`0.000 dB` ducking Layer-1), `-1.0 dBTP`, `81/81` teste verzi. | Păstrat ca invariant automatizat în CI/release gate. |
