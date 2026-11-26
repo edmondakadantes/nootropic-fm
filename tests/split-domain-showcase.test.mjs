@@ -549,13 +549,23 @@ test('Headless Edge: Flagship Showcase renders branded hardware, CAD X-Ray, WCAG
     );
     await assertShowcaseClean('Showcase Daylight CAD X-Ray', true);
 
-    // 2. Verify direct deep-link into Audio Studio with 6x40 Hz Signature Mode
-    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio&launch=signature_6x40` });
+    // Verify all primary Studio CTAs point directly to full onboarding (no launch/target skip query)
+    const studioLinks = await evalJs(`Array.from(document.querySelectorAll('a'))
+      .filter((a) => /Launch Audio Studio|Open Studio|Open Full Studio|Open Free Studio|Continue Full Calibration/i.test(a.innerText || ''))
+      .map((a) => a.getAttribute('href') || '')`);
+    assert.ok(studioLinks.length >= 4);
+    for (const href of studioLinks) {
+      assert.ok(!href.includes('launch=') && !href.includes('target='), `Expected onboarding link without player skip, got: ${href}`);
+    }
+
+    // 2. Verify entering Audio Studio opens the full original CheckInView onboarding (NOT skipping straight to PlayerView)
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio` });
     await waitUntil(
-      `document.body.innerText.includes('NootropicFM Signature')`,
+      `document.body.innerText.includes('Study Lab') && !document.body.innerText.includes('ORBITAL PHASE-RING ARCHITECTURE') && Boolean(document.querySelector('input, textarea'))`,
       8000,
-      'Studio deep-link launch=signature_6x40 into PlayerView'
+      'Full original CheckInView onboarding rendered on Studio entry'
     );
+    assert.equal(await evalJs(`document.body.innerText.includes('Pause Session')`), false);
 
     ws.close();
   } finally {

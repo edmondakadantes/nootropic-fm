@@ -236,18 +236,12 @@ export default function App() {
       const searchParams = new URLSearchParams(window.location.search);
       const billingStatus = searchParams.get('billing');
       const checkoutSessionId = searchParams.get('session_id');
-      const deepLaunch = searchParams.get('launch');
-      const deepTarget = searchParams.get('target');
-      const deepDuration = Number(searchParams.get('duration') ?? '0');
       const deepView = searchParams.get('view');
 
-      if (billingStatus || deepLaunch || deepTarget || deepView) {
+      if (billingStatus || deepView) {
         const cleaned = new URLSearchParams(window.location.search);
         cleaned.delete('billing');
         cleaned.delete('session_id');
-        cleaned.delete('launch');
-        cleaned.delete('target');
-        cleaned.delete('duration');
         cleaned.delete('view');
         const nextSearch = cleaned.toString();
         window.history.replaceState(
@@ -256,8 +250,6 @@ export default function App() {
           `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`
         );
       }
-
-      let hydratedProfile: UserProfile | null = null;
 
       const verifyBillingIfReturned = async () => {
         if (
@@ -268,7 +260,6 @@ export default function App() {
           try {
             const verified = await api.verifyStripeCheckout(checkoutSessionId);
             if (verified.paid && verified.profile) {
-              hydratedProfile = verified.profile;
               setProfile(verified.profile);
               setQrToast(
                 'Welcome to nootropic.fm Pro! Unlimited music styles & all science studies are now unlocked.'
@@ -281,22 +272,8 @@ export default function App() {
         }
       };
 
-      const applyStudioDeepLinks = (activeProfile: UserProfile | null) => {
+      const applyStudioDeepLinks = () => {
         if (resolveSurfaceMode() !== 'studio') return;
-        const validLaunches = new Set<QuickTryId>([
-          'focus_lofi',
-          'mood_uplift',
-          'calm_rain',
-          'energy_electronic',
-          'signature_6x40',
-        ]);
-        if (deepLaunch && validLaunches.has(deepLaunch as QuickTryId)) {
-          const rec = buildInstantQuickTryRecommendation(deepLaunch as QuickTryId, activeProfile);
-          setActiveRec(rec);
-          setFieldMood(moodFromTarget(rec.environment, rec.targetState));
-          setScreen('player');
-          return;
-        }
         if (deepView === 'studylab') {
           setFieldMood('focus');
           setScreen('studylab');
@@ -305,26 +282,6 @@ export default function App() {
         if (deepView === 'insights') {
           setFieldMood('flow');
           setScreen('insights');
-          return;
-        }
-        const validTargets = new Set<TargetState>([
-          'energy_lift',
-          'alert_focus',
-          'deep_flow',
-          'calm_reset',
-          'sleep_winddown',
-        ]);
-        if (deepTarget && validTargets.has(deepTarget as TargetState)) {
-          const t = deepTarget as TargetState;
-          const feeling: QuickFeelingId =
-            t === 'calm_reset' || t === 'sleep_winddown' ? 'stressed_anxious' : 'calm_ready';
-          const rec = buildStateGoalQuickRecommendation(feeling, t, activeProfile);
-          if (Number.isFinite(deepDuration) && deepDuration >= 5 && deepDuration <= 120) {
-            rec.plannedDurationMin = Math.round(deepDuration);
-          }
-          setActiveRec(rec);
-          setFieldMood(moodFromTarget(rec.environment, rec.targetState));
-          setScreen('player');
         }
       };
 
@@ -337,7 +294,6 @@ export default function App() {
         try {
           const res = await api.restoreIdentity(scannedCode);
           saveStoredProfileAuth(res.profile.id, res.profileToken, res.syncCode);
-          hydratedProfile = res.profile;
           setProfile(res.profile);
           setSyncCode(res.syncCode);
           setPendingDebrief(res.pendingDebrief);
@@ -361,7 +317,6 @@ export default function App() {
           const cookieSession = await api.getCurrentSession();
           if (cookieSession.authenticated && cookieSession.profile) {
             saveStoredProfileAuth(cookieSession.profile.id);
-            hydratedProfile = cookieSession.profile;
             setProfile(cookieSession.profile);
             setPendingDebrief(cookieSession.pendingDebrief);
           }
@@ -369,7 +324,7 @@ export default function App() {
           // ignore anonymous boot or test mocks without /api/identity/me
         }
         await verifyBillingIfReturned();
-        applyStudioDeepLinks(hydratedProfile);
+        applyStudioDeepLinks();
         void configPromise;
         setBooting(false);
         return;
@@ -391,7 +346,6 @@ export default function App() {
         if (res.syncCode) {
           setSyncCode(res.syncCode);
         }
-        hydratedProfile = res.profile;
         setProfile(res.profile);
         setPendingDebrief(res.pendingDebrief);
       } catch {
@@ -399,7 +353,7 @@ export default function App() {
         setSyncCode(null);
       } finally {
         await verifyBillingIfReturned();
-        applyStudioDeepLinks(hydratedProfile);
+        applyStudioDeepLinks();
         void configPromise;
         setBooting(false);
       }
@@ -838,13 +792,6 @@ export default function App() {
       screen?: 'studylab' | 'insights';
     }) => {
       setSurfaceMode('studio');
-      if (opts?.launch) {
-        const rec = buildInstantQuickTryRecommendation(opts.launch as QuickTryId, profile);
-        setActiveRec(rec);
-        setFieldMood(moodFromTarget(rec.environment, rec.targetState));
-        setScreen('player');
-        return;
-      }
       if (opts?.screen === 'studylab') {
         setFieldMood('focus');
         setScreen('studylab');
@@ -855,23 +802,13 @@ export default function App() {
         setScreen('insights');
         return;
       }
-      if (opts?.target) {
-        const feeling: QuickFeelingId =
-          opts.target === 'calm_reset' || opts.target === 'sleep_winddown'
-            ? 'stressed_anxious'
-            : 'calm_ready';
-        const rec = buildStateGoalQuickRecommendation(feeling, opts.target, profile);
-        if (typeof opts.durationMin === 'number') {
-          rec.plannedDurationMin = Math.round(opts.durationMin);
-        }
-        setActiveRec(rec);
-        setFieldMood(moodFromTarget(rec.environment, rec.targetState));
-        setScreen('player');
-        return;
-      }
+      setSelectedPreset(null);
+      setActiveRec(null);
+      setFieldMood('default');
+      setCheckinResetNonce((n) => n + 1);
       setScreen('checkin');
     },
-    [moodFromTarget, profile]
+    []
   );
 
   return (

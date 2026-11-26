@@ -1,8 +1,8 @@
 # nootropic.fm
 
-> Adaptive 48 kHz WebAudio psychoacoustic wellness platform blending peer-reviewed cortical modulation, autonomic paced breathing, and objective cognitive feedback into lyric-free music. Engineered exclusively for in-ear buds.
+> Self-learning 48 kHz WebAudio psychoacoustic AI exploring how the human mind reacts to peer-reviewed sound studies—mapping how you feel now to where you want to arrive, measuring objective cognitive outcomes, and continuously learning how to tune you to peak performance. Engineered exclusively for in-ear buds.
 
-nootropic.fm runs client-side 48 kHz AudioWorklet DSP (`~$0` marginal compute) paired with a closed-loop Bayesian Research Brain and an acoustic hardware roadmap (**NOOTROPIC FM SOUND SYSTEMS**). Intended for cognitive wellness, deep work, flow state, stress down-regulation, sleep wind-down, and daytime road alertness in adults 18+. Not a medical device; not intended to diagnose, treat, cure, or prevent any disease.
+nootropic.fm (`app.nootropic.fm`) runs client-side 48 kHz AudioWorklet DSP (`~$0` marginal compute) driven by a closed-loop Bayesian Thompson Sampling Research Brain, paired with the **NOOTROPIC FM SOUND SYSTEMS** hardware roadmap (`www.nootropic.fm`). Intended for cognitive wellness, deep work, flow state, stress down-regulation, sleep wind-down, and daytime road alertness in adults 18+. Not a medical device; not intended to diagnose, treat, cure, or prevent any disease.
 
 ## Core Documentation
 - [Full Technical & Scientific Reference](https://www.nootropic.fm/llms-full.txt): Complete DSP specifications, NootropicFM Signature Mode, peer-reviewed DOI citations, Research Brain telemetry, In-Ear Buds physics rationale, hardware roadmap, and pricing.

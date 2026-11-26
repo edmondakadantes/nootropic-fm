@@ -411,7 +411,6 @@ export function FlagshipShowcaseView({
   };
 
   const studioRootUrl = buildStudioUrl();
-  const studioSignatureUrl = buildStudioUrl({ launch: 'signature_6x40' });
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -432,7 +431,7 @@ export function FlagshipShowcaseView({
                 nootropic<span className="text-[#34D399]">.fm</span>
               </div>
               <div className="mt-0.5 text-[9px] font-mono-tech uppercase tracking-[0.14em] text-[#34D399]/85 sm:text-[10px]">
-                Sound Systems
+                Neural Tuning AI
               </div>
             </div>
           </button>
@@ -454,7 +453,7 @@ export function FlagshipShowcaseView({
               href="#platform"
               className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
-              Audio Studio
+              AI Engine
             </a>
             <a
               href="#pricing"
@@ -548,28 +547,27 @@ export function FlagshipShowcaseView({
             <div className="space-y-5 lg:col-span-6">
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/35 bg-emerald-500/10 px-3 py-1 font-mono-tech text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
                 <Headphones className="h-3.5 w-3.5 shrink-0" />
-                NootropicFM Sound Systems · Engineered Exclusively for In-Ear Buds
+                Adaptive Neural-Acoustic AI · Precision In-Ear Hardware
               </div>
 
               <h1 className="font-display text-3xl font-bold tracking-tight text-[#F3F1EC] sm:text-4xl lg:text-[42px] lg:leading-[1.08]">
-                Studio-Grade Neural Acoustics,{' '}
-                <span className="text-aurora">Cast in CNC Orbital Aluminum.</span>
+                The AI That Learns How Sound{' '}
+                <span className="text-aurora">Tunes the Human Mind.</span>
               </h1>
 
               <p className="text-sm leading-relaxed text-[#D4D4CE] sm:text-base">
-                Open speakers cancel phase in mid-air and consumer Bluetooth codecs quietly erase
-                subtle <span className="font-mono-tech font-semibold text-[#F3F1EC]">-20 dBc</span>{' '}
-                neural sidebands. <strong className="text-[#F3F1EC]">nootropic.fm</strong> unites a
-                zero-compression <strong className="text-[#F3F1EC]">48 kHz Audio Studio</strong>{' '}
-                (<code className="font-mono-tech text-[#34D399]">app.nootropic.fm</code>) with
-                custom-milled <strong className="text-[#F3F1EC]">Orbital Phase-Ring Earbuds</strong>{' '}
-                marked with precision CNC optics.
+                How the human brain responds to sound remains largely uncharted territory.{' '}
+                <strong className="text-[#F3F1EC]">nootropic.fm</strong> (<code className="font-mono-tech text-[#34D399]">app.nootropic.fm</code>)
+                is a self-learning AI that maps <strong className="text-[#F3F1EC]">how you feel right now</strong> to{' '}
+                <strong className="text-[#F3F1EC]">where you want to arrive</strong>, tests peer-reviewed acoustic studies on your nervous system, learns from your reaction, and pairs with{' '}
+                <strong className="text-[#F3F1EC]">Orbital Phase-Ring Earbuds</strong> built to preserve subtle{' '}
+                <span className="font-mono-tech font-semibold text-[#F3F1EC]">-20 dBc</span> neural waves.
               </p>
 
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <a
-                  href={studioSignatureUrl}
-                  onClick={(e) => handleStudioNavigate(e, { launch: 'signature_6x40' })}
+                  href={studioRootUrl}
+                  onClick={(e) => handleStudioNavigate(e)}
                   className="btn-aurora inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold"
                 >
                   <Zap className="h-4 w-4 shrink-0" />
@@ -819,11 +817,11 @@ export function FlagshipShowcaseView({
                 )}
               </button>
               <a
-                href={studioSignatureUrl}
-                onClick={(e) => handleStudioNavigate(e, { launch: 'signature_6x40' })}
+                href={studioRootUrl}
+                onClick={(e) => handleStudioNavigate(e)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-[#131518] px-3.5 py-2.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-white/30 hover:bg-[#1B1E24]"
               >
-                <span>Open Full Session</span>
+                <span>Open Full Studio</span>
                 <ArrowRight className="h-3.5 w-3.5 shrink-0" />
               </a>
             </div>
@@ -889,11 +887,11 @@ export function FlagshipShowcaseView({
                   via Web Audio API.
                 </span>
                 <a
-                  href={studioSignatureUrl}
-                  onClick={(e) => handleStudioNavigate(e, { launch: 'signature_6x40' })}
+                  href={studioRootUrl}
+                  onClick={(e) => handleStudioNavigate(e)}
                   className="inline-flex items-center gap-1 font-semibold text-[#34D399] underline-offset-2 hover:underline"
                 >
-                  <span>Continue Full Session on app.nootropic.fm</span>
+                  <span>Continue Full Calibration on app.nootropic.fm</span>
                   <ArrowRight className="h-3 w-3" />
                 </a>
               </div>
@@ -1107,10 +1105,10 @@ export function FlagshipShowcaseView({
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 font-mono-tech text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
                 <Layers className="h-3.5 w-3.5" />
-                Live Software Engine · app.nootropic.fm
+                Self-Learning Neural Engine · app.nootropic.fm
               </div>
               <h2 className="font-display text-2xl font-bold tracking-tight text-[#F3F1EC] sm:text-3xl">
-                Pick a Target State to Launch Straight Into the Audio Studio
+                How the AI Learns Your Brain — Session After Session
               </h2>
             </div>
 
@@ -1134,17 +1132,51 @@ export function FlagshipShowcaseView({
             </div>
           </div>
 
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-[#0B0C0E] p-4 space-y-1">
+              <div className="font-mono-tech text-[10.5px] font-bold text-[#34D399]">
+                01 · CURRENT STATE
+              </div>
+              <div className="font-display text-sm font-bold text-[#F3F1EC]">How You Feel Now</div>
+              <p className="text-xs leading-relaxed text-[#A3A39E]">
+                Maps your 2D Energy × Clarity coordinates and cognitive baseline during onboarding.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-[#0B0C0E] p-4 space-y-1">
+              <div className="font-mono-tech text-[10.5px] font-bold text-[#34D399]">
+                02 · TARGET STATE
+              </div>
+              <div className="font-display text-sm font-bold text-[#F3F1EC]">Where You Want to Arrive</div>
+              <p className="text-xs leading-relaxed text-[#A3A39E]">
+                Deep Flow, Sharp Focus, Energy Lift, Calm Reset, Sleep, or any open custom goal.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-[#0B0C0E] p-4 space-y-1">
+              <div className="font-mono-tech text-[10.5px] font-bold text-[#34D399]">
+                03 · STUDY SYNTHESIS
+              </div>
+              <div className="font-display text-sm font-bold text-[#F3F1EC]">Live Neuroscience Protocols</div>
+              <p className="text-xs leading-relaxed text-[#A3A39E]">
+                Compiles peer-reviewed NIH PubMed &amp; OpenAlex studies directly into 48 kHz LR4 music.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-[#0B0C0E] p-4 space-y-1">
+              <div className="font-mono-tech text-[10.5px] font-bold text-[#34D399]">
+                04 · AI ADAPTATION
+              </div>
+              <div className="font-display text-sm font-bold text-[#F3F1EC]">Learns Your Brain&apos;s Reaction</div>
+              <p className="text-xs leading-relaxed text-[#A3A39E]">
+                Tracks PVT reaction speed, retention &amp; 25% blind sham delta via Bayesian Thompson Sampling to tune you sharper every time.
+              </p>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {OUTCOME_LAUNCHERS.map((goal) => (
               <a
                 key={goal.target}
-                href={buildStudioUrl({ target: goal.target, durationMin: goal.durationMin })}
-                onClick={(e) =>
-                  handleStudioNavigate(e, {
-                    target: goal.target,
-                    durationMin: goal.durationMin,
-                  })
-                }
+                href={studioRootUrl}
+                onClick={(e) => handleStudioNavigate(e)}
                 className="group flex flex-col justify-between rounded-2xl border border-white/12 bg-[#121417] p-4 transition hover:border-emerald-400/60 hover:bg-[#171B20]"
               >
                 <div className="space-y-1.5">

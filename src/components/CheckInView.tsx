@@ -702,7 +702,7 @@ export function CheckInView({
                 </span>
               </div>
               <div className="text-[10px] text-[#7E7E78]">
-                Neural Fingerprint active · {profile.sessionCount ?? 0} sessions tuned
+                Neural Tuning AI active · {profile.sessionCount ?? 0} sessions learned for your mind
               </div>
             </div>
           </div>
@@ -768,7 +768,7 @@ export function CheckInView({
         <SonicOrb
           mood={activeMood}
           size={beat === 1 || (!isFirstVisit && beat === 2) ? 'lg' : 'sm'}
-          label={`Step ${visibleStepNum} of ${totalBeats} · Acoustic Calibration`}
+          label={`Step ${visibleStepNum} of ${totalBeats} · Adaptive AI Calibration`}
           themeMode={themeMode}
         />
 
@@ -778,8 +778,10 @@ export function CheckInView({
               Welcome to <span className="text-[#34D399]">nootropic.fm.</span>
             </h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#A3A39E] sm:text-base">
-              Share your age, gender, and what you do so we can calibrate your Neural Identity and
-              match the right acoustic studies.
+              How the human mind responds to sound is still largely unexplored. Share your age,
+              gender, and role so the <strong className="text-[#F3F1EC]">nootropic.fm</strong> AI
+              can test published acoustic studies from how you feel to where you want to arrive —
+              and learn how to tune your mind at its peak.
             </p>
           </>
         )}
