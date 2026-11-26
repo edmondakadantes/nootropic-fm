@@ -117,7 +117,7 @@ function SoundWavePreview({
         </span>
       </div>
       <svg viewBox="0 0 320 52" className="h-11 w-full overflow-visible">
-        <line x1="0" y1="26" x2="320" y2="26" stroke="rgba(255,255,255,0.09)" strokeDasharray="3 3" />
+        <line x1="0" y1="26" x2="320" y2="26" className="studio-grid-strong" strokeDasharray="3 3" />
         <polyline
           fill="none"
           stroke={strokeColor}

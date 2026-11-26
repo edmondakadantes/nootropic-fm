@@ -114,14 +114,14 @@ export function NeuralCompassSelector({
           preserveAspectRatio="none"
           className="pointer-events-none absolute inset-0 h-full w-full"
         >
-          <line x1="25" y1="0" x2="25" y2="100" stroke="rgba(255,255,255,0.03)" strokeWidth="0.25" />
-          <line x1="75" y1="0" x2="75" y2="100" stroke="rgba(255,255,255,0.03)" strokeWidth="0.25" />
-          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(255,255,255,0.03)" strokeWidth="0.25" />
-          <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(255,255,255,0.03)" strokeWidth="0.25" />
-          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.09)" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
-          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.09)" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
-          <circle cx="50" cy="50" r="18" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="0.3" />
-          <circle cx="50" cy="50" r="36" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="0.3" />
+          <line x1="25" y1="0" x2="25" y2="100" className="studio-grid-faint" strokeWidth="0.25" />
+          <line x1="75" y1="0" x2="75" y2="100" className="studio-grid-faint" strokeWidth="0.25" />
+          <line x1="0" y1="25" x2="100" y2="25" className="studio-grid-faint" strokeWidth="0.25" />
+          <line x1="0" y1="75" x2="100" y2="75" className="studio-grid-faint" strokeWidth="0.25" />
+          <line x1="50" y1="0" x2="50" y2="100" className="studio-grid-strong" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
+          <line x1="0" y1="50" x2="100" y2="50" className="studio-grid-strong" strokeWidth="0.35" strokeDasharray="1.5 1.5" />
+          <circle cx="50" cy="50" r="18" fill="none" className="studio-grid-strong" strokeWidth="0.3" />
+          <circle cx="50" cy="50" r="36" fill="none" className="studio-grid-faint" strokeWidth="0.3" />
           {/* Live Crosshair projection lines */}
           {coords && (
             <>
@@ -382,8 +382,8 @@ export function NeuralTrajectoryPreview({
               <stop offset="100%" stopColor="#34D399" />
             </linearGradient>
           </defs>
-          <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(255,255,255,0.07)" strokeWidth="0.4" />
-          <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(255,255,255,0.07)" strokeWidth="0.4" />
+          <line x1="50" y1="0" x2="50" y2="100" className="studio-grid-strong" strokeWidth="0.4" />
+          <line x1="0" y1="50" x2="100" y2="50" className="studio-grid-strong" strokeWidth="0.4" />
           {dest && (
             <>
               <path

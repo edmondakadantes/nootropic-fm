@@ -32,10 +32,19 @@ export function writeCircadianPreference(pref: CircadianPreference): void {
 
 export function applyDocumentTheme(mode: ResolvedThemeMode): void {
   if (typeof document === 'undefined') return;
-  document.documentElement.dataset.theme = mode;
-  document.documentElement.style.colorScheme = mode === 'daylight' ? 'light' : 'dark';
+  const root = document.documentElement;
+  root.dataset.theme = mode;
+  root.classList.toggle('dark', mode === 'night');
+  root.classList.toggle('light', mode === 'daylight');
+  root.style.colorScheme = mode === 'daylight' ? 'light' : 'dark';
   const metaTheme = document.querySelector('meta[name="theme-color"]');
   if (metaTheme) {
-    metaTheme.setAttribute('content', mode === 'daylight' ? '#F4F1EA' : '#0A0B0C');
+    metaTheme.setAttribute('content', mode === 'daylight' ? '#F3EFE6' : '#0A0B0C');
   }
+}
+
+export function initCircadianThemeSync(): ResolvedThemeMode {
+  const mode = resolveCircadianTheme(readCircadianPreference());
+  applyDocumentTheme(mode);
+  return mode;
 }

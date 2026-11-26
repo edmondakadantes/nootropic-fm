@@ -131,13 +131,18 @@ export default function App() {
   );
 
   useEffect(() => {
-    const resolved = resolveCircadianTheme(circadianPref);
-    setThemeMode(resolved);
-    applyDocumentTheme(resolved);
+    const syncTheme = () => {
+      const resolved = resolveCircadianTheme(circadianPref);
+      setThemeMode(resolved);
+      applyDocumentTheme(resolved);
+    };
+    syncTheme();
+    if (circadianPref !== 'auto') return undefined;
+    const id = window.setInterval(syncTheme, 60_000);
+    return () => window.clearInterval(id);
   }, [circadianPref]);
 
-  const handleToggleCircadianTheme = () => {
-    const next: ResolvedThemeMode = themeMode === 'daylight' ? 'night' : 'daylight';
+  const handleSetCircadianTheme = (next: ResolvedThemeMode) => {
     setCircadianPref(next);
     setThemeMode(next);
     writeCircadianPreference(next);
@@ -841,29 +846,42 @@ export default function App() {
               <span className="hidden sm:inline lg:hidden">Earbuds</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleToggleCircadianTheme}
-              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/12 bg-[#131518] px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:border-white/25 hover:text-[#F3F1EC]"
-              title={
-                themeMode === 'daylight'
-                  ? 'Daylight Mode active (warm alabaster lab + bright clarity) — click for Night Mode'
-                  : 'Night Mode active (obsidian studio + melatonin-safe silk filter) — click for Daylight Mode'
-              }
-              aria-label={`Switch to ${themeMode === 'daylight' ? 'Night' : 'Daylight'} Mode`}
+            <div
+              role="group"
+              aria-label="Display Mode"
+              className="inline-flex shrink-0 items-center rounded-lg border border-white/12 bg-[#131518] p-0.5 text-[11px] font-semibold"
             >
-              {themeMode === 'daylight' ? (
-                <>
-                  <Sun className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                  <span className="hidden md:inline">Daylight</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
-                  <span className="hidden md:inline">Night</span>
-                </>
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={() => handleSetCircadianTheme('daylight')}
+                aria-pressed={themeMode === 'daylight'}
+                aria-label="Daylight Mode"
+                title="Daylight Mode: warm alabaster acoustic lab + full daytime clarity"
+                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 transition ${
+                  themeMode === 'daylight'
+                    ? 'bg-emerald-500/15 text-[#34D399]'
+                    : 'text-[#8E8E88] hover:text-[#F3F1EC]'
+                }`}
+              >
+                <Sun className="h-3.5 w-3.5 shrink-0" />
+                <span>Day</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetCircadianTheme('night')}
+                aria-pressed={themeMode === 'night'}
+                aria-label="Night Mode"
+                title="Night Mode: obsidian studio + melatonin-safe nocturnal silk filter (-2.8 dB > 3.2 kHz)"
+                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 transition ${
+                  themeMode === 'night'
+                    ? 'bg-emerald-500/15 text-[#34D399]'
+                    : 'text-[#8E8E88] hover:text-[#F3F1EC]'
+                }`}
+              >
+                <Moon className="h-3.5 w-3.5 shrink-0" />
+                <span>Night</span>
+              </button>
+            </div>
 
             <button
               type="button"

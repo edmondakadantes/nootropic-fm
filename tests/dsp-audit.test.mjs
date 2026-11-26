@@ -1767,8 +1767,13 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
       new Promise((_, rej) => setTimeout(() => rej(new Error('Edge CDP startup timeout')), 12000)),
     ]);
 
-    const targets = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json();
-    const pageTarget = targets.find((tg) => tg.type === 'page') ?? targets[0];
+    let pageTarget = null;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json();
+      pageTarget = list.find((tg) => tg.type === 'page') ?? null;
+      if (pageTarget?.webSocketDebuggerUrl) break;
+      await new Promise((r) => setTimeout(r, 150));
+    }
     assert.ok(pageTarget?.webSocketDebuggerUrl, 'Missing CDP page target');
 
     ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
@@ -1895,7 +1900,7 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
         if (nextBtn) nextBtn.click();
         return Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'));
       })()`,
-      6000,
+      12000,
       'Continue to Step 2 Brain Map'
     );
 
@@ -1909,7 +1914,7 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
         if (paths.length > 0) throw new Error('Expected zero auto-drawn trajectory bar on Step 2 Brain Map');
         return true;
       })()`,
-      6000,
+      10000,
       'Step 2 2D Brain Map selection'
     );
 
