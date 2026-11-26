@@ -513,8 +513,31 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache p
     assert.equal(second.provider, 'r2_cache');
     assert.equal(elevenTtsCalls, 2);
 
-    // Switching to another ElevenLabs voice triggers new v2 cache keys, or falls back on 429
+    // Partial-cache scenario under ElevenLabs quota exhaustion: 'Edmond' greeting IS cached as Monique,
+    // while target 'sleep_winddown' body misses cache and triggers 429 -> BOTH segments unify onto aura_luna!
     simulateQuotaOut = true;
+    const partialFallback = await resolveVoiceConciergeAudio(
+      env,
+      {
+        cueType: 'intro_full',
+        firstName: 'Edmond',
+        currentState: 'distracted',
+        targetState: 'sleep_winddown',
+        armId: 'delta-2hz-sleep',
+        modulationHz: 2,
+        genre: 'solo_piano',
+        isDriving: false,
+      },
+      async () => true
+    );
+    assert.equal(partialFallback.available, true);
+    assert.equal(partialFallback.provider, '@cf/deepgram/aura-2-en');
+    assert.equal(partialFallback.voiceId, 'aura_luna');
+    assert.match(partialFallback.greetingUrl, /^\/api\/audio\/stream\/voice\/v1\/greet_/);
+    assert.match(partialFallback.bodyUrl, /^\/api\/audio\/stream\/voice\/v1\/body_/);
+
+    // Next brand-new user uses 5-min cooldown circuit-breaker (0 wasted ElevenLabs HTTP calls) on Workers AI
+    const prevElevenCalls = elevenTtsCalls;
     const fallback = await resolveVoiceConciergeAudio(
       env,
       {
@@ -532,7 +555,8 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache p
     );
     assert.equal(fallback.available, true);
     assert.equal(fallback.provider, '@cf/deepgram/aura-2-en');
-    assert.equal(aiFallbackCalls, 2);
+    assert.equal(elevenTtsCalls, prevElevenCalls);
+    assert.equal(aiFallbackCalls, 4);
   } finally {
     clearVoiceCatalogCacheForTests();
     globalThis.fetch = origFetch;

@@ -66,6 +66,8 @@ const CALM_VOICE_RX =
   /\b(meditat|serene|calm|gentle|smooth|velvet|sooth|whisper|soft|warm|relax|grounded|empathetic|nurturing)\b/i;
 
 const VOICE_CATALOG_TTL_MS = 10 * 60 * 1000;
+const ELEVENLABS_QUOTA_COOLDOWN_MS = 5 * 60 * 1000;
+let elevenLabsQuotaCooldownUntil = 0;
 let cachedCatalog: {
   keyHash: string;
   expiresAt: number;
@@ -74,6 +76,7 @@ let cachedCatalog: {
 
 export function clearVoiceCatalogCacheForTests(): void {
   cachedCatalog = null;
+  elevenLabsQuotaCooldownUntil = 0;
 }
 
 async function sha256Short(text: string): Promise<string> {
@@ -280,7 +283,7 @@ async function synthesizeViaElevenLabs(
   voiceId: string;
 } | null> {
   const apiKey = env.ELEVENLABS_API_KEY?.trim();
-  if (!apiKey || !voiceId) return null;
+  if (!apiKey || !voiceId || Date.now() < elevenLabsQuotaCooldownUntil) return null;
 
   const primaryModel = env.ELEVENLABS_MODEL_ID?.trim() || 'eleven_multilingual_v2';
   const models = Array.from(new Set([primaryModel, 'eleven_flash_v2_5']));
@@ -311,7 +314,16 @@ async function synthesizeViaElevenLabs(
       );
 
       if (!res.ok) {
+        if (res.status === 401 || res.status === 402 || res.status === 429) {
+          elevenLabsQuotaCooldownUntil = Date.now() + ELEVENLABS_QUOTA_COOLDOWN_MS;
+          return null;
+        }
         if (res.status === 400 || res.status === 403 || res.status === 422) {
+          const errText = await res.text().catch(() => '');
+          if (/quota|credit|insufficient|limit/i.test(errText)) {
+            elevenLabsQuotaCooldownUntil = Date.now() + ELEVENLABS_QUOTA_COOLDOWN_MS;
+            return null;
+          }
           continue;
         }
         return null;
@@ -640,7 +652,7 @@ export async function resolveVoiceConciergeAudio(
     return quotaAllowed;
   };
 
-  const [greetSeg, bodySeg] = await Promise.all([
+  let [greetSeg, bodySeg] = await Promise.all([
     getOrCreateSegmentUrl(
       env,
       'greet',
@@ -658,6 +670,31 @@ export async function resolveVoiceConciergeAudio(
       allowOnce
     ),
   ]);
+
+  // Voice-Pair Cohesion Guard: if one segment hit R2 on Monique while the other fell back to Workers AI
+  // (e.g. partial R2 hit during ElevenLabs quota exhaustion), unify both onto the same free voice!
+  if (greetSeg && bodySeg && greetSeg.voiceId !== bodySeg.voiceId) {
+    if (greetSeg.voiceId !== 'aura_luna') {
+      greetSeg = await getOrCreateSegmentUrl(
+        env,
+        'greet',
+        plan.greetingCacheSlug,
+        plan.greetingText,
+        null,
+        allowOnce
+      );
+    }
+    if (bodySeg && bodySeg.voiceId !== 'aura_luna') {
+      bodySeg = await getOrCreateSegmentUrl(
+        env,
+        'body',
+        plan.bodyCacheSlug,
+        plan.bodyText,
+        null,
+        allowOnce
+      );
+    }
+  }
 
   if (!greetSeg || !bodySeg) {
     return {
