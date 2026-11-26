@@ -685,48 +685,162 @@ export function CheckInView({
         </div>
       )}
 
-      {/* Returning Listener Identity Bar (shown only after Onboarding Step 1 is completed and user is on Step 2+) */}
-      {profile && onboardingComplete && beat > 1 && (
-        <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/10 bg-[#101114] px-4 py-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <NeuralFingerprintSigil
-              seed={syncCode || profile.id}
-              size={38}
-              className="rounded-lg border border-white/10 bg-[#08090B] p-0.5"
-            />
-            <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-[#F3F1EC]">
-                {profile.displayName ? `Welcome back, ${profile.displayName}` : 'Welcome back'}
-                <span className="ml-2 font-mono-tech text-[10px] font-normal text-[#34D399]">
-                  {liveProfileSummary}
-                </span>
+      {/* Returning Listener Identity + Personal Neural AI Memory Card (shown only after Onboarding Step 1 is completed and user is on Step 2+) */}
+      {profile && onboardingComplete && beat > 1 && (() => {
+        const mem = profile.neuralMemory;
+        const calPct = mem?.calibrationPct ?? 0;
+        const sessionsCount = Math.max(profile.sessionCount ?? 0, mem?.learnedSessions ?? 0);
+        const isDay = themeMode === 'daylight';
+        return (
+          <div className="animate-rise w-full space-y-2.5">
+            <div className="w-full flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/10 bg-[#101114] px-4 py-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <NeuralFingerprintSigil
+                  seed={syncCode || profile.id}
+                  size={38}
+                  className="rounded-lg border border-white/10 bg-[#08090B] p-0.5"
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-semibold text-[#F3F1EC]">
+                    {profile.displayName ? `Welcome back, ${profile.displayName}` : 'Welcome back'}
+                    <span className="ml-2 font-mono-tech text-[10px] font-normal text-[#34D399]">
+                      {liveProfileSummary}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-[#7E7E78]">
+                    Neural Tuning AI active · {sessionsCount} session{sessionsCount === 1 ? '' : 's'} learned for your mind
+                  </div>
+                </div>
               </div>
-              <div className="text-[10px] text-[#7E7E78]">
-                Neural Tuning AI active · {profile.sessionCount ?? 0} sessions learned for your mind
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setBeat(1)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-[#141518] px-2.5 py-1.5 text-[11px] font-medium text-[#A3A39E] transition hover:border-white/25 hover:text-[#F3F1EC]"
+                  title="Edit your Onboarding profile (age, gender, occupation)"
+                >
+                  <UserCog className="h-3.5 w-3.5 text-[#34D399]" />
+                  <span>Edit Profile</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenIdentityModal}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3 py-1.5 text-[11px] font-semibold text-[#D4D4CE] transition hover:border-white/30 hover:text-[#F3F1EC]"
+                >
+                  <QrCode className="h-3.5 w-3.5 text-[#34D399]" />
+                  Neural Pass &amp; QR
+                </button>
               </div>
             </div>
+
+            {profile.researchConsent && mem && (
+              <div
+                data-testid="personal-neural-memory-card"
+                className={`rounded-xl border px-4 py-3 text-left transition ${
+                  isDay
+                    ? 'border-slate-300/90 bg-white/95 text-slate-900 shadow-sm'
+                    : 'border-emerald-400/20 bg-[#0D1117]/95 text-[#F3F1EC]'
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="inline-flex items-center gap-1.5 font-mono-tech text-[10px] font-bold uppercase tracking-[0.14em]">
+                    <Cpu className={`h-3.5 w-3.5 ${isDay ? 'text-[#1E40AF]' : 'text-[#34D399]'}`} />
+                    <span className={isDay ? 'text-[#1E40AF]' : 'text-[#34D399]'}>
+                      Your Personal Neural AI Memory
+                    </span>
+                  </div>
+                  <span
+                    className={`font-mono-tech text-[11px] font-bold ${
+                      isDay ? 'text-[#047857]' : 'text-[#34D399]'
+                    }`}
+                  >
+                    {calPct}% Calibrated
+                  </span>
+                </div>
+                <div
+                  className={`mt-1.5 h-1.5 w-full overflow-hidden rounded-full ${
+                    isDay ? 'bg-slate-200' : 'bg-white/10'
+                  }`}
+                >
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isDay ? 'bg-[#047857]' : 'bg-[#34D399]'
+                    }`}
+                    style={{ width: `${Math.max(4, calPct)}%` }}
+                  />
+                </div>
+                <div className="mt-2.5 flex flex-wrap gap-1.5 text-[10px] font-mono-tech">
+                  <span
+                    className={`rounded-md border px-2 py-0.5 ${
+                      isDay
+                        ? 'border-slate-300 bg-slate-50 text-slate-800'
+                        : 'border-white/12 bg-[#14171D] text-[#D4D4CE]'
+                    }`}
+                  >
+                    IAF {mem.personalIafHz.toFixed(1)} Hz
+                  </span>
+                  <span
+                    className={`rounded-md border px-2 py-0.5 ${
+                      isDay
+                        ? 'border-slate-300 bg-slate-50 text-slate-800'
+                        : 'border-white/12 bg-[#14171D] text-[#D4D4CE]'
+                    }`}
+                  >
+                    Focus {mem.focusOffsetHz >= 0 ? `+${mem.focusOffsetHz.toFixed(1)}` : mem.focusOffsetHz.toFixed(1)} Hz
+                  </span>
+                  <span
+                    className={`rounded-md border px-2 py-0.5 ${
+                      isDay
+                        ? 'border-slate-300 bg-slate-50 text-slate-800'
+                        : 'border-white/12 bg-[#14171D] text-[#D4D4CE]'
+                    }`}
+                  >
+                    Dose {Math.round(mem.focusModMult * 100)}% / Calm {Math.round(mem.calmModMult * 100)}%
+                  </span>
+                  {mem.peakChronoBucket && (
+                    <span
+                      className={`rounded-md border px-2 py-0.5 capitalize ${
+                        isDay
+                          ? 'border-slate-300 bg-slate-50 text-[#1E40AF]'
+                          : 'border-sky-400/25 bg-sky-500/10 text-sky-300'
+                      }`}
+                    >
+                      Peak: {mem.peakChronoBucket}
+                    </span>
+                  )}
+                  {mem.fatigueDipMinute && (
+                    <span
+                      className={`rounded-md border px-2 py-0.5 ${
+                        isDay
+                          ? 'border-slate-300 bg-slate-50 text-[#047857]'
+                          : 'border-emerald-400/25 bg-emerald-500/10 text-[#34D399]'
+                      }`}
+                    >
+                      Pre-Dip Lift @ {Math.max(4, mem.fatigueDipMinute - 2)}m
+                    </span>
+                  )}
+                  {mem.causalLiftMs !== null && mem.causalLiftMs > 0 && (
+                    <span
+                      className={`rounded-md border px-2 py-0.5 font-bold ${
+                        isDay
+                          ? 'border-emerald-600/30 bg-emerald-50 text-[#047857]'
+                          : 'border-emerald-400/40 bg-emerald-500/15 text-[#34D399]'
+                      }`}
+                    >
+                      PVT Lift: {mem.causalLiftMs} ms faster vs Sham
+                    </span>
+                  )}
+                </div>
+                {mem.lastInsightLine && (
+                  <p className={`mt-1.5 text-[11px] leading-snug ${isDay ? 'text-slate-600' : 'text-[#A3A39E]'}`}>
+                    {mem.lastInsightLine}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setBeat(1)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-[#141518] px-2.5 py-1.5 text-[11px] font-medium text-[#A3A39E] transition hover:border-white/25 hover:text-[#F3F1EC]"
-              title="Edit your Onboarding profile (age, gender, occupation)"
-            >
-              <UserCog className="h-3.5 w-3.5 text-[#34D399]" />
-              <span>Edit Profile</span>
-            </button>
-            <button
-              type="button"
-              onClick={onOpenIdentityModal}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3 py-1.5 text-[11px] font-semibold text-[#D4D4CE] transition hover:border-white/30 hover:text-[#F3F1EC]"
-            >
-              <QrCode className="h-3.5 w-3.5 text-[#34D399]" />
-              Neural Pass &amp; QR
-            </button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Deferred Debrief Banner (returning users) */}
       {pendingDebrief && (

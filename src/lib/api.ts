@@ -15,6 +15,7 @@ import type {
   MusicGenreChoice,
   OutputDevice,
   ParsedCheckIn,
+  PersonalNeuralMemory,
   ProtocolRecommendation,
   ResearchInsights,
   ResolvedGenre,
@@ -300,6 +301,7 @@ export const api = {
         profileTrials: number;
         wasControlTrial: boolean;
         preferredModMult: number;
+        neuralMemory?: PersonalNeuralMemory;
         learnedGenre?: ResolvedGenre;
         learnedGenreLabel?: string;
         learnedGenreFitPct?: number;

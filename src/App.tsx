@@ -212,6 +212,10 @@ export default function App() {
     pvtLapsesPre?: number | null;
     pvtPreInvRt?: number | null;
     pvtTrialCount?: number | null;
+    tappingCvPct?: number | null;
+    tappingMeanItiMs?: number | null;
+    hrvRmssdMs?: number | null;
+    hrvLfRatio?: number | null;
     studySpecId?: string;
     studyTitle?: string;
     entrainmentType?: string;
@@ -656,6 +660,10 @@ export default function App() {
       pvtLapsesPre?: number | null;
       pvtPreInvRt?: number | null;
       pvtTrialCount?: number | null;
+      tappingCvPct?: number | null;
+      tappingMeanItiMs?: number | null;
+      hrvRmssdMs?: number | null;
+      hrvLfRatio?: number | null;
       sessionIdOverride?: string;
       ephemeralOverride?: boolean;
     }) => {
@@ -677,6 +685,10 @@ export default function App() {
         pvtLapsesPre: stats.pvtLapsesPre ?? null,
         pvtPreInvRt: stats.pvtPreInvRt ?? null,
         pvtTrialCount: stats.pvtTrialCount ?? null,
+        tappingCvPct: stats.tappingCvPct ?? null,
+        tappingMeanItiMs: stats.tappingMeanItiMs ?? null,
+        hrvRmssdMs: stats.hrvRmssdMs ?? null,
+        hrvLfRatio: stats.hrvLfRatio ?? null,
         studySpecId: spec?.id,
         studyTitle: spec?.shortLabel || spec?.studyRef.title,
         entrainmentType: spec?.entrainment.type,
@@ -1241,8 +1253,9 @@ export default function App() {
                   return {
                     ...prev,
                     preferredModMult: update.preferredModMult,
+                    neuralMemory: update.neuralMemory ?? prev.neuralMemory,
                     favoriteGenres: nextFavs,
-                    sessionCount: (prev.sessionCount ?? 0) + 1,
+                    sessionCount: Math.max((prev.sessionCount ?? 0) + 1, update.profileTrials || 0),
                   };
                 });
               }}

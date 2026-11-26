@@ -3,6 +3,8 @@
  * Pure, deterministic, zero-DOM primitives shared across browser, Worker, and automated audits.
  */
 
+import type { PersonalNeuralMemory, TimeOfDayBucket } from './types';
+
 export interface PvtMetrics {
   medianMs: number;
   meanInvRt: number; // mean(1000 / rtMs) in s^-1
@@ -521,4 +523,362 @@ export function pickSmartInitialEffectTier(input: {
   }
 
   return { tier: 'standard', modMult: NEURAL_EFFECT_MULT.standard, autoReason: 'Auto · Balanced' };
+}
+
+const VALID_CHRONO_BUCKETS: ReadonlySet<string> = new Set([
+  'morning',
+  'midday',
+  'afternoon',
+  'evening',
+  'night',
+]);
+
+function clampNumber(val: unknown, fallback: number, min: number, max: number, decimals = 2): number {
+  const n = typeof val === 'number' ? val : typeof val === 'string' ? Number(val) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  const clamped = Math.max(min, Math.min(max, n));
+  const factor = Math.pow(10, decimals);
+  return Math.round(clamped * factor) / factor;
+}
+
+export function agePriorIafHz(ageBand?: string): number {
+  switch (ageBand) {
+    case '18-24':
+      return 10.4;
+    case '25-34':
+      return 10.2;
+    case '35-44':
+      return 10.0;
+    case '45-54':
+      return 9.8;
+    case '55+':
+      return 9.5;
+    default:
+      return 10.0;
+  }
+}
+
+export function createDefaultNeuralMemory(ageBand?: string): PersonalNeuralMemory {
+  return {
+    calibrationPct: 0,
+    learnedSessions: 0,
+    personalIafHz: agePriorIafHz(ageBand),
+    focusOffsetHz: 0,
+    focusModMult: 1.0,
+    calmModMult: 1.0,
+    preferredNoiseMult: 1.0,
+    fatigueDipMinute: null,
+    peakChronoBucket: null,
+    dipChronoBucket: null,
+    activeAvgPvtDeltaMs: null,
+    shamAvgPvtDeltaMs: null,
+    causalLiftMs: null,
+    activePvtCount: 0,
+    shamPvtCount: 0,
+    lastInsightLine: 'Ready to learn from your first session and calibrate to your nervous system.',
+  };
+}
+
+export function parsePersonalNeuralMemory(
+  raw: unknown,
+  ageBand?: string
+): PersonalNeuralMemory {
+  const def = createDefaultNeuralMemory(ageBand);
+  if (!raw) return def;
+  let obj: Record<string, unknown> | null = null;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        obj = parsed as Record<string, unknown>;
+      }
+    } catch {
+      return def;
+    }
+  } else if (typeof raw === 'object' && !Array.isArray(raw)) {
+    obj = raw as Record<string, unknown>;
+  }
+  if (!obj) return def;
+
+  const peakRaw = typeof obj.peakChronoBucket === 'string' ? obj.peakChronoBucket : '';
+  const dipRaw = typeof obj.dipChronoBucket === 'string' ? obj.dipChronoBucket : '';
+  const activeCount = Math.max(0, Math.round(clampNumber(obj.activePvtCount, 0, 0, 10_000, 0)));
+  const shamCount = Math.max(0, Math.round(clampNumber(obj.shamPvtCount, 0, 0, 10_000, 0)));
+  const activeAvg =
+    typeof obj.activeAvgPvtDeltaMs === 'number' && Number.isFinite(obj.activeAvgPvtDeltaMs)
+      ? Math.round(Math.max(-400, Math.min(400, obj.activeAvgPvtDeltaMs)))
+      : null;
+  const shamAvg =
+    typeof obj.shamAvgPvtDeltaMs === 'number' && Number.isFinite(obj.shamAvgPvtDeltaMs)
+      ? Math.round(Math.max(-400, Math.min(400, obj.shamAvgPvtDeltaMs)))
+      : null;
+  const causalLift =
+    activeAvg !== null && shamAvg !== null
+      ? Math.round(shamAvg - activeAvg)
+      : typeof obj.causalLiftMs === 'number' && Number.isFinite(obj.causalLiftMs)
+        ? Math.round(obj.causalLiftMs)
+        : null;
+
+  return {
+    calibrationPct: Math.round(clampNumber(obj.calibrationPct, def.calibrationPct, 0, 100, 0)),
+    learnedSessions: Math.round(clampNumber(obj.learnedSessions, def.learnedSessions, 0, 100_000, 0)),
+    personalIafHz: clampNumber(obj.personalIafHz, def.personalIafHz, 8.6, 11.6, 1),
+    focusOffsetHz: clampNumber(obj.focusOffsetHz, def.focusOffsetHz, -1.4, 1.6, 1),
+    focusModMult: clampNumber(obj.focusModMult, def.focusModMult, 0.65, 1.35, 2),
+    calmModMult: clampNumber(obj.calmModMult, def.calmModMult, 0.65, 1.35, 2),
+    preferredNoiseMult: clampNumber(obj.preferredNoiseMult, def.preferredNoiseMult, 0.4, 1.6, 2),
+    fatigueDipMinute:
+      typeof obj.fatigueDipMinute === 'number' && Number.isFinite(obj.fatigueDipMinute)
+        ? Math.round(clampNumber(obj.fatigueDipMinute, 18, 8, 45, 0))
+        : null,
+    peakChronoBucket: VALID_CHRONO_BUCKETS.has(peakRaw) ? (peakRaw as TimeOfDayBucket) : null,
+    dipChronoBucket: VALID_CHRONO_BUCKETS.has(dipRaw) ? (dipRaw as TimeOfDayBucket) : null,
+    activeAvgPvtDeltaMs: activeAvg,
+    shamAvgPvtDeltaMs: shamAvg,
+    causalLiftMs: causalLift,
+    activePvtCount: activeCount,
+    shamPvtCount: shamCount,
+    ...(typeof obj.topProtocolId === 'string' ? { topProtocolId: obj.topProtocolId } : {}),
+    ...(typeof obj.topProtocolName === 'string' ? { topProtocolName: obj.topProtocolName } : {}),
+    ...(typeof obj.topProtocolFitPct === 'number' && Number.isFinite(obj.topProtocolFitPct)
+      ? { topProtocolFitPct: Math.round(clampNumber(obj.topProtocolFitPct, 70, 0, 100, 0)) }
+      : {}),
+    lastInsightLine:
+      typeof obj.lastInsightLine === 'string' && obj.lastInsightLine.trim().length > 0
+        ? obj.lastInsightLine.trim().slice(0, 200)
+        : def.lastInsightLine,
+    ...(typeof obj.updatedAt === 'string' ? { updatedAt: obj.updatedAt } : {}),
+  };
+}
+
+/**
+ * Updates the continuous per-listener Personal Neural Memory vector after each session debrief.
+ * Combines goal-separated AM dose, Beta frequency micro-tuning, motor-tapping IAF calibration,
+ * 1/f noise resonance, learned mid-session attention-dip anticipation, circadian windows, and Active-vs-Sham PVT lift.
+ */
+export function updatePersonalNeuralMemory(
+  prevInput: PersonalNeuralMemory,
+  input: {
+    targetState: string;
+    timeOfDayBucket?: TimeOfDayBucket;
+    isControlTrial: boolean;
+    reward: number;
+    deltaScore: number;
+    completionRatio: number;
+    actualDurationSec: number;
+    baseModulationHz: number;
+    feedbackTags?: string[];
+    liveAdjustments?: Array<{ atSec: number; control: string; delta: number }>;
+    pvtDeltaMs?: number | null;
+    tappingMeanItiMs?: number | null;
+    tappingCvPct?: number | null;
+    hrvRmssdMs?: number | null;
+    topProtocol?: { id: string; name: string; fitPct: number };
+    chronoScores?: Partial<Record<TimeOfDayBucket, { avgReward: number; trials: number }>>;
+    nowIso?: string;
+  }
+): PersonalNeuralMemory {
+  const prev = parsePersonalNeuralMemory(prevInput);
+  const tags = Array.isArray(input.feedbackTags) ? input.feedbackTags : [];
+  const adjs = Array.isArray(input.liveAdjustments) ? input.liveAdjustments : [];
+  const isCalmGoal =
+    input.targetState === 'calm_reset' || input.targetState === 'sleep_winddown';
+  const countThisSession = input.actualDurationSec >= 60;
+  const learnedSessions = prev.learnedSessions + (countThisSession ? 1 : 0);
+
+  let focusModMult = prev.focusModMult;
+  let calmModMult = prev.calmModMult;
+  let focusOffsetHz = prev.focusOffsetHz;
+  let preferredNoiseMult = prev.preferredNoiseMult;
+  let personalIafHz = prev.personalIafHz;
+  let fatigueDipMinute = prev.fatigueDipMinute;
+
+  const netModTweak = adjs
+    .filter((a) => a.control === 'modulation')
+    .reduce((acc, a) => acc + a.delta, 0);
+  const netNoiseTweak = adjs
+    .filter((a) => a.control === 'noise')
+    .reduce((acc, a) => acc + a.delta, 0);
+
+  const insights: string[] = [];
+
+  if (!input.isControlTrial) {
+    let multDelta = 0;
+    if (tags.includes('A bit too intense') || tags.includes('Modulation felt distracting')) {
+      multDelta -= 0.08;
+    }
+    if (tags.includes('Wanted stronger focus')) {
+      multDelta += 0.06;
+    }
+    if (netModTweak !== 0) {
+      multDelta += Math.max(-0.1, Math.min(0.1, netModTweak * 0.35));
+    }
+    if (multDelta !== 0) {
+      if (isCalmGoal) {
+        calmModMult = clampNumber(prev.calmModMult + multDelta, 1.0, 0.65, 1.35, 2);
+        insights.push(`Calm AM dose tuned to ${Math.round(calmModMult * 100)}%`);
+      } else {
+        focusModMult = clampNumber(prev.focusModMult + multDelta, 1.0, 0.65, 1.35, 2);
+        insights.push(`Focus AM dose tuned to ${Math.round(focusModMult * 100)}%`);
+      }
+    }
+
+    if (!isCalmGoal && input.baseModulationHz >= 13 && input.baseModulationHz <= 22) {
+      let hzStep = 0;
+      if (tags.includes('Wanted stronger focus') || (input.reward >= 0.78 && netModTweak > 0)) {
+        hzStep += 0.25;
+      } else if (tags.includes('A bit too intense') || tags.includes('Modulation felt distracting')) {
+        hzStep -= 0.3;
+      }
+      if (hzStep !== 0) {
+        focusOffsetHz = clampNumber(prev.focusOffsetHz + hzStep, 0, -1.4, 1.6, 1);
+        insights.push(
+          `Beta focus offset shifted to ${focusOffsetHz >= 0 ? '+' : ''}${focusOffsetHz.toFixed(1)} Hz`
+        );
+      }
+    }
+
+    if (netNoiseTweak !== 0) {
+      const noiseDelta = Math.max(-0.15, Math.min(0.15, netNoiseTweak * 0.4));
+      preferredNoiseMult = clampNumber(prev.preferredNoiseMult + noiseDelta, 1.0, 0.4, 1.6, 2);
+      insights.push(`1/f stochastic floor set to ${Math.round(preferredNoiseMult * 100)}%`);
+    }
+
+    // Detect mid-session fatigue dip minute from early-exit duration (>=8 min) or late live boost
+    let observedDipMin: number | null = null;
+    if (input.completionRatio >= 0.25 && input.completionRatio < 0.78 && input.actualDurationSec >= 480) {
+      observedDipMin = Math.max(8, Math.min(45, Math.round(input.actualDurationSec / 60)));
+    } else {
+      const midTweak = adjs.find((a) => a.atSec >= 480 && (a.control === 'modulation' || a.control === 'intensity'));
+      if (midTweak) {
+        observedDipMin = Math.max(8, Math.min(45, Math.round(midTweak.atSec / 60)));
+      }
+    }
+    if (observedDipMin !== null) {
+      fatigueDipMinute =
+        prev.fatigueDipMinute !== null
+          ? Math.round(clampNumber(prev.fatigueDipMinute * 0.65 + observedDipMin * 0.35, 18, 8, 45, 0))
+          : observedDipMin;
+      insights.push(`Proactive pre-dip lift armed before min ${Math.max(4, fatigueDipMinute - 2)}`);
+    }
+  }
+
+  // Motor continuation tapping -> Individual Alpha Frequency harmonic prior (8.6–11.6 Hz)
+  if (
+    typeof input.tappingMeanItiMs === 'number' &&
+    Number.isFinite(input.tappingMeanItiMs) &&
+    input.tappingMeanItiMs >= 350 &&
+    input.tappingMeanItiMs <= 1200 &&
+    (input.tappingCvPct === null || input.tappingCvPct === undefined || input.tappingCvPct <= 14)
+  ) {
+    const rawHz = 1000 / input.tappingMeanItiMs;
+    const candidateIaf = clampNumber(rawHz * 6, prev.personalIafHz, 8.6, 11.6, 2);
+    personalIafHz = clampNumber(prev.personalIafHz * 0.78 + candidateIaf * 0.22, 10.0, 8.6, 11.6, 1);
+    insights.push(`Personal IAF refined to ${personalIafHz.toFixed(1)} Hz`);
+  }
+
+  // Active vs. Blind Sham PVT reaction speed running averages
+  let activeAvgPvtDeltaMs = prev.activeAvgPvtDeltaMs;
+  let shamAvgPvtDeltaMs = prev.shamAvgPvtDeltaMs;
+  let activePvtCount = prev.activePvtCount ?? 0;
+  let shamPvtCount = prev.shamPvtCount ?? 0;
+  if (typeof input.pvtDeltaMs === 'number' && Number.isFinite(input.pvtDeltaMs)) {
+    const clampedPvt = Math.max(-400, Math.min(400, input.pvtDeltaMs));
+    if (input.isControlTrial) {
+      shamAvgPvtDeltaMs =
+        shamAvgPvtDeltaMs === null || shamPvtCount === 0
+          ? Math.round(clampedPvt)
+          : Math.round((shamAvgPvtDeltaMs * shamPvtCount + clampedPvt) / (shamPvtCount + 1));
+      shamPvtCount += 1;
+    } else {
+      activeAvgPvtDeltaMs =
+        activeAvgPvtDeltaMs === null || activePvtCount === 0
+          ? Math.round(clampedPvt)
+          : Math.round((activeAvgPvtDeltaMs * activePvtCount + clampedPvt) / (activePvtCount + 1));
+      activePvtCount += 1;
+      if (clampedPvt < 0) {
+        insights.push(`PVT reaction accelerated ${Math.abs(Math.round(clampedPvt))} ms today`);
+      }
+    }
+  }
+  const causalLiftMs =
+    activeAvgPvtDeltaMs !== null && shamAvgPvtDeltaMs !== null
+      ? Math.round(shamAvgPvtDeltaMs - activeAvgPvtDeltaMs)
+      : prev.causalLiftMs;
+
+  // Chronotype best / dip windows across circadian buckets
+  let peakChronoBucket = prev.peakChronoBucket;
+  let dipChronoBucket = prev.dipChronoBucket;
+  if (input.chronoScores) {
+    const entries = (Object.entries(input.chronoScores) as Array<
+      [TimeOfDayBucket, { avgReward: number; trials: number } | undefined]
+    >).filter((e): e is [TimeOfDayBucket, { avgReward: number; trials: number }] =>
+      Boolean(e[1] && e[1].trials >= 1 && VALID_CHRONO_BUCKETS.has(e[0]))
+    );
+    if (entries.length >= 2) {
+      const sorted = [...entries].sort((a, b) => b[1].avgReward - a[1].avgReward);
+      if (sorted[0][1].avgReward >= 0.62) {
+        peakChronoBucket = sorted[0][0];
+      }
+      const lowest = sorted[sorted.length - 1];
+      if (lowest[0] !== sorted[0][0] && lowest[1].avgReward < 0.58) {
+        dipChronoBucket = lowest[0];
+      } else if (lowest[0] === peakChronoBucket) {
+        dipChronoBucket = null;
+      }
+    }
+  }
+
+  // Bayesian shrinkage maturity (0..98%)
+  const shrinkageW = learnedSessions > 0 ? (learnedSessions * 0.018) / (learnedSessions * 0.018 + 0.095) : 0;
+  let calibrationPct = Math.round(shrinkageW * 84);
+  if (activePvtCount > 0 || (typeof input.tappingMeanItiMs === 'number' && input.tappingMeanItiMs > 0) || (typeof input.hrvRmssdMs === 'number' && input.hrvRmssdMs > 0)) {
+    calibrationPct += 8;
+  }
+  if (causalLiftMs !== null) {
+    calibrationPct += 6;
+  }
+  calibrationPct = Math.max(0, Math.min(98, calibrationPct));
+
+  const lastInsightLine =
+    insights.length > 0
+      ? insights.join(' · ')
+      : causalLiftMs !== null && causalLiftMs > 0
+        ? `Measured ${causalLiftMs} ms faster reaction on Active vs. Blind Control`
+        : learnedSessions > 0
+          ? `Absorbed ${learnedSessions} session${learnedSessions === 1 ? '' : 's'} into your personal acoustic model`
+          : prev.lastInsightLine;
+
+  return {
+    calibrationPct,
+    learnedSessions,
+    personalIafHz,
+    focusOffsetHz,
+    focusModMult,
+    calmModMult,
+    preferredNoiseMult,
+    fatigueDipMinute,
+    peakChronoBucket,
+    dipChronoBucket,
+    activeAvgPvtDeltaMs,
+    shamAvgPvtDeltaMs,
+    causalLiftMs,
+    activePvtCount,
+    shamPvtCount,
+    ...(input.topProtocol
+      ? {
+          topProtocolId: input.topProtocol.id,
+          topProtocolName: input.topProtocol.name,
+          topProtocolFitPct: Math.round(input.topProtocol.fitPct),
+        }
+      : prev.topProtocolId
+        ? {
+            topProtocolId: prev.topProtocolId,
+            topProtocolName: prev.topProtocolName,
+            topProtocolFitPct: prev.topProtocolFitPct,
+          }
+        : {}),
+    lastInsightLine,
+    updatedAt: input.nowIso ?? new Date().toISOString(),
+  };
 }

@@ -42,6 +42,7 @@ import type {
   ResolvedGenre,
   SessionEnvironment,
   TargetState,
+  TimeOfDayBucket,
   UserProfile,
   UserRole,
   WorkedRating,
@@ -858,6 +859,8 @@ export function selectProtocolRecommendation(input: {
   cohortStats: BanditStatRow[];
   marginalStats?: BanditStatRow[][];
   profileStats: BanditStatRow[];
+  profileChronoStats?: BanditStatRow[];
+  timeOfDayBucket?: TimeOfDayBucket;
   cohortGenreStats?: BanditStatRow[];
   profileGenreStats?: BanditStatRow[];
   cohortArmGenreStats?: BanditStatRow[];
@@ -886,11 +889,13 @@ export function selectProtocolRecommendation(input: {
     (rows) => new Map(rows.map((s) => [s.armId, s]))
   );
   const profileMap = new Map(input.profileStats.map((s) => [s.armId, s]));
+  const profileChronoMap = new Map((input.profileChronoStats ?? []).map((s) => [s.armId, s]));
   const armGenreMap = new Map((input.cohortArmGenreStats ?? []).map((s) => [s.armId, s]));
 
   const scored = candidates.map((arm) => {
     const c = cohortMap.get(arm.id);
     const p = profileMap.get(arm.id);
+    const pc = profileChronoMap.get(arm.id);
     const ag = armGenreMap.get(arm.id);
     const marginals = marginalMaps
       .map((m, idx) => {
@@ -905,6 +910,17 @@ export function selectProtocolRecommendation(input: {
           : null;
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
+    // Blend individual circadian profile evidence with overall profile evidence when present
+    const blendedProfileAlpha =
+      p && pc
+        ? Number((p.alpha + Math.max(0, pc.alpha - arm.priorAlpha) * 0.65).toFixed(3))
+        : p?.alpha ?? pc?.alpha;
+    const blendedProfileBeta =
+      p && pc
+        ? Number((p.beta + Math.max(0, pc.beta - arm.priorBeta) * 0.65).toFixed(3))
+        : p?.beta ?? pc?.beta;
+    const blendedProfileTrials = (p?.trials ?? 0) + Math.round((pc?.trials ?? 0) * 0.65);
+
     const posterior = computeHierarchicalArmPosterior({
       priorAlpha: arm.priorAlpha,
       priorBeta: arm.priorBeta,
@@ -915,9 +931,9 @@ export function selectProtocolRecommendation(input: {
       armGenreAlpha: ag?.alpha,
       armGenreBeta: ag?.beta,
       armGenreTrials: ag?.trials,
-      profileAlpha: p?.alpha,
-      profileBeta: p?.beta,
-      profileTrials: p?.trials,
+      profileAlpha: blendedProfileAlpha,
+      profileBeta: blendedProfileBeta,
+      profileTrials: blendedProfileTrials,
     });
     const pooledMarginalTrials = marginals.reduce((acc, m) => acc + m.trials, 0);
     const thompsonDraw = sampleHierarchicalThompson(posterior);
@@ -976,7 +992,14 @@ export function selectProtocolRecommendation(input: {
         profileGenreStats: input.profileGenreStats,
       });
 
-  const personalModMult = Math.max(0.65, Math.min(1.35, input.profile.preferredModMult ?? 1.0));
+  const isCalmTarget = effectiveTarget === 'calm_reset' || effectiveTarget === 'sleep_winddown';
+  const neuralMem = input.profile.neuralMemory;
+  const rawPersonalModMult = neuralMem
+    ? isCalmTarget
+      ? neuralMem.calmModMult
+      : neuralMem.focusModMult
+    : input.profile.preferredModMult ?? 1.0;
+  const personalModMult = Math.max(0.65, Math.min(1.35, rawPersonalModMult));
 
   const params: AcousticParams = {
     ...chosen.arm.baseParams,
@@ -992,6 +1015,11 @@ export function selectProtocolRecommendation(input: {
   params.modulationDepth = Number(
     Math.min(0.56, Math.max(0.12, params.modulationDepth * personalModMult)).toFixed(2)
   );
+  if (neuralMem && typeof neuralMem.preferredNoiseMult === 'number' && neuralMem.preferredNoiseMult !== 1.0) {
+    params.noiseLevel = Number(
+      Math.max(0.03, Math.min(0.32, params.noiseLevel * neuralMem.preferredNoiseMult)).toFixed(2)
+    );
+  }
 
   if (input.profile.noiseSensitivity === 'high') {
     params.noiseLevel = Number((params.noiseLevel * 0.45).toFixed(2));
@@ -1086,6 +1114,21 @@ export function selectProtocolRecommendation(input: {
     }
   }
 
+  // Apply continuous per-brain micro-frequency tuning (never overrides Signature 6x40 Hz integer lock or Driving Safety)
+  const baseSpecHzBeforeTuning = params.modulationHz;
+  let freqTunedNote: string | null = null;
+  if (!isDriving && neuralMem && chosen.arm.id !== 'nootropic-trance-6x40hz') {
+    if (baseSpecHzBeforeTuning >= 13 && baseSpecHzBeforeTuning <= 22 && Math.abs(neuralMem.focusOffsetHz) >= 0.1) {
+      params.modulationHz = Number(
+        Math.max(12.5, Math.min(22.0, baseSpecHzBeforeTuning + neuralMem.focusOffsetHz)).toFixed(1)
+      );
+      freqTunedNote = `Micro-tuned ${baseSpecHzBeforeTuning} Hz -> ${params.modulationHz} Hz for your brain`;
+    } else if (baseSpecHzBeforeTuning >= 8 && baseSpecHzBeforeTuning <= 12 && neuralMem.personalIafHz > 0) {
+      params.modulationHz = Number(neuralMem.personalIafHz.toFixed(1));
+      freqTunedNote = `Matched to your ${params.modulationHz} Hz Individual Alpha Peak`;
+    }
+  }
+
   // Stratified 25% Blind A/B Control strictly gated on explicit Research Consent (1 sham per 4-session block)
   // Standalone NootropicFM Mode (`nootropic-trance-6x40hz`) NEVER runs sham control so the 6x40 Hz lock hits at 100% strength!
   const isControlTrial =
@@ -1160,6 +1203,17 @@ export function selectProtocolRecommendation(input: {
   if (input.returnBonusAwarded) {
     personalizationSummary.push('Welcome back · your return strengthened your previous formula score');
   }
+  if (freqTunedNote) {
+    personalizationSummary.unshift(freqTunedNote);
+  }
+  const chronoAdapted = Boolean(
+    neuralMem?.dipChronoBucket &&
+      input.timeOfDayBucket &&
+      neuralMem.dipChronoBucket === input.timeOfDayBucket
+  );
+  if (chronoAdapted && input.timeOfDayBucket) {
+    personalizationSummary.push(`Circadian protection active for your ${input.timeOfDayBucket} energy dip window`);
+  }
 
   const evidenceNote =
     chosen.profileTrials > 0
@@ -1219,7 +1273,7 @@ export function selectProtocolRecommendation(input: {
         ]
       : [];
 
-  const executableSpec = validCustom
+  let resolvedExecSpec = validCustom
     ? {
         ...baseExecutableSpec,
         music: {
@@ -1238,6 +1292,53 @@ export function selectProtocolRecommendation(input: {
         },
       }
     : baseExecutableSpec;
+
+  if (
+    resolvedExecSpec &&
+    resolvedExecSpec.entrainment.type === 'amplitude_modulation' &&
+    chosen.arm.id !== 'nootropic-trance-6x40hz' &&
+    resolvedExecSpec.entrainment.frequencyHz !== 40
+  ) {
+    resolvedExecSpec = {
+      ...resolvedExecSpec,
+      entrainment: {
+        ...resolvedExecSpec.entrainment,
+        frequencyHz: params.modulationHz,
+        ...(chronoAdapted && !resolvedExecSpec.entrainment.isoBridge && !isDriving && !isCalmTarget && neuralMem
+          ? {
+              isoBridge: {
+                stabilizeHz: Number(neuralMem.personalIafHz.toFixed(1)),
+                stabilizeDurationSec: 45,
+                rampDurationSec: 35,
+                stabilizeEffectScale: 0.68,
+                reasonLabel: `Personal Circadian Dip Stabilizer (${neuralMem.personalIafHz.toFixed(1)} -> ${params.modulationHz} Hz)`,
+              },
+            }
+          : {}),
+      },
+    };
+  }
+
+  const executableSpec = resolvedExecSpec;
+  const appliedNeuralTuning =
+    neuralMem && (neuralMem.learnedSessions > 0 || freqTunedNote || chronoAdapted)
+      ? {
+          calibrationPct: neuralMem.calibrationPct,
+          tunedHz: params.modulationHz,
+          baseHz: baseSpecHzBeforeTuning,
+          appliedModMult: personalModMult,
+          appliedNoiseMult: neuralMem.preferredNoiseMult,
+          proactiveLiftMinute: neuralMem.fatigueDipMinute
+            ? Math.max(4, neuralMem.fatigueDipMinute - 2)
+            : null,
+          chronoAdapted,
+          summaryLine:
+            freqTunedNote ||
+            (chronoAdapted
+              ? `Circadian dip stabilizer armed at ${neuralMem.personalIafHz.toFixed(1)} Hz`
+              : neuralMem.lastInsightLine || `Calibrated across ${neuralMem.learnedSessions} learned sessions`),
+        }
+      : undefined;
 
   return {
     sessionId: input.sessionId,
@@ -1265,6 +1366,7 @@ export function selectProtocolRecommendation(input: {
     confidencePct,
     cohortTrials: chosen.cohortTrials,
     profileTrials: chosen.profileTrials,
+    ...(appliedNeuralTuning ? { appliedNeuralTuning } : {}),
     plannedDurationMin: input.durationMin,
     currentState: input.currentState,
     microStateId: microState?.id ?? input.microStateId,

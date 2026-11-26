@@ -215,6 +215,10 @@ interface PlayerViewProps {
     pvtLapsesPre?: number | null;
     pvtPreInvRt?: number | null;
     pvtTrialCount?: number | null;
+    tappingCvPct?: number | null;
+    tappingMeanItiMs?: number | null;
+    hrvRmssdMs?: number | null;
+    hrvLfRatio?: number | null;
     sessionIdOverride?: string;
     ephemeralOverride?: boolean;
   }) => void;
@@ -257,13 +261,21 @@ export function PlayerView({
         ? 'studio_library'
         : 'generative_live';
 
+  const isCalmOrSleepGoal =
+    recommendation.targetState === 'calm_reset' || recommendation.targetState === 'sleep_winddown';
+  const learnedModForGoal = profile?.neuralMemory
+    ? isCalmOrSleepGoal
+      ? profile.neuralMemory.calmModMult
+      : profile.neuralMemory.focusModMult
+    : profile?.preferredModMult;
+
   const smartEffectInit = pickSmartInitialEffectTier({
     currentState: recommendation.currentState,
     microStateId: recommendation.microStateId,
     targetState: recommendation.targetState,
     safetyMode: recommendation.safetyMode,
     noiseSensitivity: profile?.noiseSensitivity,
-    preferredModMult: profile?.preferredModMult,
+    preferredModMult: learnedModForGoal,
   });
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -309,9 +321,23 @@ export function PlayerView({
     metrics: null,
   });
   const pausedForHugginsRef = useRef(false);
-  const [alphaIafHz, setAlphaIafHz] = useState<number>(() =>
-    estimateAgePriorIafHz(profile?.ageBand)
+  const [alphaIafHz, setAlphaIafHz] = useState<number>(
+    () => profile?.neuralMemory?.personalIafHz ?? estimateAgePriorIafHz(profile?.ageBand)
   );
+  const tappingResultRef = useRef<TappingBiomarkerResult | null>(null);
+  const bleHrvMetricsRef = useRef<{ rmssdMs: number; lfPowerRatio: number } | null>(null);
+
+  useEffect(() => {
+    tappingResultRef.current = tappingResult;
+  }, [tappingResult]);
+
+  useEffect(() => {
+    const liveMetrics = bleHrvState.connected && bleHrvState.metrics ? bleHrvState.metrics : null;
+    bleHrvMetricsRef.current = liveMetrics
+      ? { rmssdMs: liveMetrics.rmssdMs, lfPowerRatio: liveMetrics.lfPowerRatio }
+      : null;
+    engineRef.current?.ingestLiveHrvMetrics(bleHrvMetricsRef.current);
+  }, [bleHrvState.connected, bleHrvState.metrics]);
   const [pvtPreMs, setPvtPreMs] = useState<number | null>(null);
   const [pvtLapsesPre, setPvtLapsesPre] = useState<number | null>(null);
   const [pvtPreInvRt, setPvtPreInvRt] = useState<number | null>(null);
@@ -688,6 +714,10 @@ export function PlayerView({
         if (!mounted) return;
         engineRef.current?.setCircadianMode(themeModeRef.current);
         engineRef.current?.setAlphaIafHz(alphaIafHz);
+        engineRef.current?.setPersonalAutopilot({
+          fatigueDipMinute: profile?.neuralMemory?.fatigueDipMinute ?? null,
+          personalIafHz: profile?.neuralMemory?.personalIafHz ?? alphaIafHz,
+        });
         engineRef.current?.adjustModDepth(modMultRef.current);
         if (engineRef.current) {
           setTelemetry(engineRef.current.updateElapsed(0));
@@ -979,6 +1009,10 @@ export function PlayerView({
           pvtLapsesPre: pvtPreRef.current.lapses,
           pvtPreInvRt: pvtPreRef.current.meanInvRt,
           pvtTrialCount: pvtPreRef.current.trialCount,
+          tappingCvPct: tappingResultRef.current?.cvPct ?? null,
+          tappingMeanItiMs: tappingResultRef.current?.meanItiMs ?? null,
+          hrvRmssdMs: bleHrvMetricsRef.current?.rmssdMs ?? null,
+          hrvLfRatio: bleHrvMetricsRef.current?.lfPowerRatio ?? null,
           sessionIdOverride: liveSessionId,
           ephemeralOverride: isEphemeral,
         });
@@ -1545,6 +1579,10 @@ export function PlayerView({
       pvtLapsesPre: pvtPreRef.current.lapses,
       pvtPreInvRt: pvtPreRef.current.meanInvRt,
       pvtTrialCount: pvtPreRef.current.trialCount,
+      tappingCvPct: tappingResultRef.current?.cvPct ?? null,
+      tappingMeanItiMs: tappingResultRef.current?.meanItiMs ?? null,
+      hrvRmssdMs: bleHrvMetricsRef.current?.rmssdMs ?? null,
+      hrvLfRatio: bleHrvMetricsRef.current?.lfPowerRatio ?? null,
       sessionIdOverride: liveSessionId,
       ephemeralOverride: isEphemeral,
     });
@@ -1832,8 +1870,14 @@ export function PlayerView({
                 <Activity className="h-3 w-3 shrink-0" />
                 <span className="truncate">{telemetry.phaseLabel}</span>
                 {telemetry.antiMonotonyActive && (
-                  <span className="rounded border border-amber-400/35 bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-200">
-                    Fresh pulse
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${
+                      themeMode === 'daylight'
+                        ? 'border-slate-300 bg-slate-100 text-[#1E40AF]'
+                        : 'border-sky-400/35 bg-sky-400/15 text-sky-200'
+                    }`}
+                  >
+                    {telemetry.autopilotLiftActive ? 'AI Autopilot · Pre-Dip Lift' : 'Fresh pulse'}
                   </span>
                 )}
               </span>

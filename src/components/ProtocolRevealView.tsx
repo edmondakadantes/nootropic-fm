@@ -456,6 +456,70 @@ export function ProtocolRevealView({
         </div>
       )}
 
+      {/* Personal Neural AI Calibration Banner (when returning brain fingerprint shaped this formula) */}
+      {recommendation.appliedNeuralTuning && (
+        <div
+          className={`animate-rise rounded-2xl border p-4 sm:px-5 space-y-2 ${
+            themeMode === 'daylight'
+              ? 'border-slate-300/90 bg-white/95 text-slate-900 shadow-sm'
+              : 'border-emerald-400/25 bg-[#0E1319] text-[#F3F1EC]'
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-2 font-mono-tech text-[11px] font-bold uppercase tracking-[0.12em]">
+              <Cpu className={`h-4 w-4 ${themeMode === 'daylight' ? 'text-[#1E40AF]' : 'text-[#34D399]'}`} />
+              <span className={themeMode === 'daylight' ? 'text-[#1E40AF]' : 'text-[#34D399]'}>
+                Personal Neural AI Calibration Applied
+              </span>
+            </div>
+            <span
+              className={`font-mono-tech text-xs font-bold ${
+                themeMode === 'daylight' ? 'text-[#047857]' : 'text-[#34D399]'
+              }`}
+            >
+              {recommendation.appliedNeuralTuning.calibrationPct}% Calibrated
+            </span>
+          </div>
+          <div
+            className={`h-1.5 w-full overflow-hidden rounded-full ${
+              themeMode === 'daylight' ? 'bg-slate-200' : 'bg-white/10'
+            }`}
+          >
+            <div
+              className={`h-full rounded-full ${
+                themeMode === 'daylight' ? 'bg-[#047857]' : 'bg-[#34D399]'
+              }`}
+              style={{ width: `${Math.max(4, recommendation.appliedNeuralTuning.calibrationPct)}%` }}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className={themeMode === 'daylight' ? 'text-slate-700' : 'text-[#D4D4CE]'}>
+              {recommendation.appliedNeuralTuning.summaryLine}
+            </span>
+            <span
+              className={`font-mono-tech rounded border px-2 py-0.5 text-[10px] font-semibold ${
+                themeMode === 'daylight'
+                  ? 'border-slate-300 bg-slate-50 text-slate-800'
+                  : 'border-white/12 bg-[#141820] text-[#D4D4CE]'
+              }`}
+            >
+              {recommendation.appliedNeuralTuning.tunedHz} Hz · {Math.round(recommendation.appliedNeuralTuning.appliedModMult * 100)}% Dose
+            </span>
+            {recommendation.appliedNeuralTuning.proactiveLiftMinute && (
+              <span
+                className={`font-mono-tech rounded border px-2 py-0.5 text-[10px] font-semibold ${
+                  themeMode === 'daylight'
+                    ? 'border-slate-300 bg-slate-50 text-[#047857]'
+                    : 'border-emerald-400/25 bg-emerald-500/10 text-[#34D399]'
+                }`}
+              >
+                Pre-Dip Lift @ {recommendation.appliedNeuralTuning.proactiveLiftMinute}m
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ================================================================= */}
       {/* BLOCK 1: VERIFIED STUDIES FOUND FIRST (Core DOIs + Live PubMed)   */}
       {/* ================================================================= */}

@@ -12,7 +12,13 @@ import {
   ThumbsUp,
   Zap,
 } from 'lucide-react';
-import type { LiveAdjustment, ResolvedGenre, UserProfile, WorkedRating } from '../../shared/types';
+import type {
+  LiveAdjustment,
+  PersonalNeuralMemory,
+  ResolvedGenre,
+  UserProfile,
+  WorkedRating,
+} from '../../shared/types';
 import { api } from '../lib/api';
 import {
   NeuralFingerprintSigil,
@@ -35,6 +41,7 @@ export interface DebriefLearningUpdate {
   profileTrials: number;
   wasControlTrial: boolean;
   preferredModMult: number;
+  neuralMemory?: PersonalNeuralMemory;
   learnedGenre?: ResolvedGenre;
   learnedGenreLabel?: string;
   learnedGenreFitPct?: number;
@@ -53,6 +60,10 @@ interface DebriefViewProps {
   pvtLapsesPre?: number | null;
   pvtPreInvRt?: number | null;
   pvtTrialCount?: number | null;
+  tappingCvPct?: number | null;
+  tappingMeanItiMs?: number | null;
+  hrvRmssdMs?: number | null;
+  hrvLfRatio?: number | null;
   studySpecId?: string;
   studyTitle?: string;
   entrainmentType?: string;
@@ -93,6 +104,10 @@ export function DebriefView({
   pvtLapsesPre = null,
   pvtPreInvRt = null,
   pvtTrialCount = null,
+  tappingCvPct = null,
+  tappingMeanItiMs = null,
+  hrvRmssdMs = null,
+  hrvLfRatio = null,
   studySpecId,
   studyTitle,
   entrainmentType,
@@ -193,6 +208,10 @@ export function DebriefView({
         pvtRefreshHz,
         pvtDecileSpreadMs,
         blindingGuess,
+        tappingCvPct,
+        tappingMeanItiMs,
+        hrvRmssdMs,
+        hrvLfRatio,
         studySpecId,
         studyTitle,
         entrainmentType,
@@ -401,6 +420,87 @@ export function DebriefView({
               </span>
             )}
           </div>
+
+          {learningUpdate.neuralMemory && (() => {
+            const mem = learningUpdate.neuralMemory;
+            const isDay = themeMode === 'daylight';
+            return (
+              <div
+                data-testid="debrief-neural-memory-proof"
+                className={`rounded-xl border p-4 text-left space-y-2 ${
+                  isDay
+                    ? 'border-slate-300/90 bg-white text-slate-900'
+                    : 'border-emerald-400/25 bg-[#0D1117] text-[#F3F1EC]'
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span
+                    className={`font-mono-tech text-[11px] font-bold uppercase tracking-[0.12em] ${
+                      isDay ? 'text-[#1E40AF]' : 'text-[#34D399]'
+                    }`}
+                  >
+                    Neural AI Calibration Updated
+                  </span>
+                  <span
+                    className={`font-mono-tech text-xs font-bold ${
+                      isDay ? 'text-[#047857]' : 'text-[#34D399]'
+                    }`}
+                  >
+                    {mem.calibrationPct}% Calibrated ({mem.learnedSessions} sessions)
+                  </span>
+                </div>
+                <div
+                  className={`h-1.5 w-full overflow-hidden rounded-full ${
+                    isDay ? 'bg-slate-200' : 'bg-white/10'
+                  }`}
+                >
+                  <div
+                    className={`h-full rounded-full ${isDay ? 'bg-[#047857]' : 'bg-[#34D399]'}`}
+                    style={{ width: `${Math.max(4, mem.calibrationPct)}%` }}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-1.5 text-[10px] font-mono-tech">
+                  <span
+                    className={`rounded border px-2 py-0.5 ${
+                      isDay ? 'border-slate-300 bg-slate-50 text-slate-800' : 'border-white/12 bg-[#14171D] text-[#D4D4CE]'
+                    }`}
+                  >
+                    IAF {mem.personalIafHz.toFixed(1)} Hz
+                  </span>
+                  <span
+                    className={`rounded border px-2 py-0.5 ${
+                      isDay ? 'border-slate-300 bg-slate-50 text-slate-800' : 'border-white/12 bg-[#14171D] text-[#D4D4CE]'
+                    }`}
+                  >
+                    Focus {mem.focusOffsetHz >= 0 ? `+${mem.focusOffsetHz.toFixed(1)}` : mem.focusOffsetHz.toFixed(1)} Hz
+                  </span>
+                  <span
+                    className={`rounded border px-2 py-0.5 ${
+                      isDay ? 'border-slate-300 bg-slate-50 text-slate-800' : 'border-white/12 bg-[#14171D] text-[#D4D4CE]'
+                    }`}
+                  >
+                    Dose {Math.round(mem.focusModMult * 100)}% / Calm {Math.round(mem.calmModMult * 100)}%
+                  </span>
+                  {mem.causalLiftMs !== null && (
+                    <span
+                      className={`rounded border px-2 py-0.5 font-bold ${
+                        isDay
+                          ? 'border-emerald-600/30 bg-emerald-50 text-[#047857]'
+                          : 'border-emerald-400/40 bg-emerald-500/15 text-[#34D399]'
+                      }`}
+                    >
+                      Active vs Sham Proof: {mem.causalLiftMs > 0 ? `${mem.causalLiftMs} ms faster` : `${mem.causalLiftMs} ms`}
+                    </span>
+                  )}
+                </div>
+                {mem.lastInsightLine && (
+                  <p className={`text-xs leading-relaxed ${isDay ? 'text-slate-600' : 'text-[#A3A39E]'}`}>
+                    {mem.lastInsightLine}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
             <button

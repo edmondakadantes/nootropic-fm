@@ -107,6 +107,9 @@ export interface EngineTelemetry {
   stemCodecLabel: string | null;
   stemSubHarmonicLocked: boolean;
   audioInterrupted?: boolean;
+  autopilotLiftActive?: boolean;
+  tunnelLockProgress?: number;
+  hrvClosedLoopTrim?: number;
 }
 
 /**
@@ -402,6 +405,10 @@ export class PsychoacousticEngine {
   private scopeFftBuf: Float32Array<ArrayBuffer> | null = null;
   private gammaMode: GammaStimulusMode = 'harmonic_mbi';
   private alphaIafHz: number | null = null;
+  private personalFatigueDipMin: number | null = null;
+  private hrvClosedLoopTrim = 0;
+  private autopilotLiftActive = false;
+  private landingChordTriggered = false;
   private hugginsStatus: 'untested' | 'verified_stereo' | 'monaural_safe' = 'untested';
   private bluetoothSafeActive = false;
   private momentaryLufs: number | null = null;
@@ -529,6 +536,9 @@ export class PsychoacousticEngine {
     this.elapsedSec = 0;
     this.intensityMultiplier = 1.0;
     this.modDepthMultiplier = 1.0;
+    this.hrvClosedLoopTrim = 0;
+    this.autopilotLiftActive = false;
+    this.landingChordTriggered = false;
     this.carrierMode = initialCarrierMode ?? this.studySpec.music.defaultCarrierMode ?? 'generative_live';
     this.layerMonitorMode = this.carrierMode === 'pure_stimulus' ? 'science_only' : 'full_mix';
     this.gammaMode = this.carrierMode === 'pure_stimulus' ? 'clinical_clicks' : 'harmonic_mbi';
@@ -1446,6 +1456,7 @@ export class PsychoacousticEngine {
 
     this.isPlaying = true;
     this.setAudioInterrupted(false);
+    this.triggerPavlovianEntryChime();
     this.setupMediaSession(title);
     void this.requestWakeLock();
 
@@ -1813,7 +1824,9 @@ export class PsychoacousticEngine {
     if (!spec || spec.entrainment.type === 'none') return 0;
     const baseDepth = Math.max(0.2, Math.min(0.6, spec.entrainment.modulationDepth || 0.38));
     const normBase = 0.88 + 0.3 * baseDepth; // ~0.994 on 0.38 focus protocols, ~0.952 on 0.24 calm protocols
-    const raw = 0.65 * this.modDepthMultiplier * normBase * activePhaseFactor * antiHabFactor;
+    const hrvFactor = Math.max(0.88, Math.min(1.06, 1 + this.hrvClosedLoopTrim));
+    const raw =
+      0.65 * this.modDepthMultiplier * hrvFactor * normBase * activePhaseFactor * antiHabFactor;
     const cap = this.params?.speakerSafeEQ ? 0.68 : 0.95;
     return Math.min(cap, Math.max(0.15, raw));
   }
@@ -1947,14 +1960,164 @@ export class PsychoacousticEngine {
   }
 
   public setAlphaIafHz(hz: number): void {
-    const snapped = Math.max(8.5, Math.min(11.5, Math.round(hz * 2) / 2));
-    this.alphaIafHz = snapped;
+    const clamped = Math.max(8.5, Math.min(11.6, Math.round(hz * 10) / 10));
+    this.alphaIafHz = clamped;
     const spec = this.studySpec;
     if (spec && spec.entrainment.frequencyHz >= 8 && spec.entrainment.frequencyHz <= 12) {
-      this.stimulusRack.setOverrideFrequencyHz(snapped);
+      this.stimulusRack.setOverrideFrequencyHz(clamped);
       if (this.isPlaying) {
         this.updateElapsed(this.elapsedSec);
       }
+    }
+  }
+
+  public setPersonalAutopilot(opts: {
+    fatigueDipMinute?: number | null;
+    personalIafHz?: number | null;
+  }): void {
+    this.personalFatigueDipMin =
+      typeof opts.fatigueDipMinute === 'number' && Number.isFinite(opts.fatigueDipMinute)
+        ? Math.max(8, Math.min(45, Math.round(opts.fatigueDipMinute)))
+        : null;
+    if (typeof opts.personalIafHz === 'number' && Number.isFinite(opts.personalIafHz)) {
+      this.setAlphaIafHz(opts.personalIafHz);
+    }
+  }
+
+  public ingestLiveHrvMetrics(
+    metrics: { rmssdMs: number; lfPowerRatio: number } | null
+  ): void {
+    if (!metrics || !Number.isFinite(metrics.rmssdMs) || metrics.rmssdMs <= 0) {
+      this.hrvClosedLoopTrim = 0;
+      return;
+    }
+    const isCalmTarget = this.params?.energyTier === 'calm';
+    if (!isCalmTarget && metrics.rmssdMs < 22) {
+      this.hrvClosedLoopTrim = -0.04;
+    } else if (!isCalmTarget && metrics.rmssdMs >= 42) {
+      this.hrvClosedLoopTrim = 0.02;
+    } else {
+      this.hrvClosedLoopTrim = 0;
+    }
+  }
+
+  /**
+   * 1.8s Pavlovian Phase-Lock Signature routed strictly onto Layer-2 `musicMasterBus`
+   * (zero impact on Layer-1 stimulus invariance and zero unblinding bias between Active & Sham).
+   */
+  private triggerPavlovianEntryChime(): void {
+    if (
+      !this.ctx ||
+      !this.musicMasterBus ||
+      this.carrierMode === 'pure_stimulus' ||
+      this.layerMonitorMode === 'science_only' ||
+      !this.studySpec
+    ) {
+      return;
+    }
+    try {
+      const ctx = this.ctx;
+      const t0 = ctx.currentTime + 0.08;
+      const rootHz = Math.max(
+        196,
+        Math.min(
+          440,
+          computeHarmonicCarrierHz(this.studySpec.music.rootMidi, this.studySpec.music.tuningA4Hz, 220)
+        )
+      );
+      const busGain = ctx.createGain();
+      busGain.gain.setValueAtTime(0.0001, t0);
+      busGain.gain.linearRampToValueAtTime(0.055, t0 + 0.05);
+      busGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8);
+      busGain.connect(this.musicMasterBus);
+
+      const oscRoot = ctx.createOscillator();
+      const oscFifth = ctx.createOscillator();
+      const fifthGain = ctx.createGain();
+      fifthGain.gain.setValueAtTime(0.42, t0);
+
+      oscRoot.type = 'sine';
+      oscRoot.frequency.setValueAtTime(rootHz, t0);
+      oscFifth.type = 'sine';
+      oscFifth.frequency.setValueAtTime(rootHz * 1.5, t0);
+
+      oscRoot.connect(busGain);
+      oscFifth.connect(fifthGain);
+      fifthGain.connect(busGain);
+
+      oscRoot.start(t0);
+      oscFifth.start(t0 + 0.14);
+      oscRoot.stop(t0 + 1.85);
+      oscFifth.stop(t0 + 1.85);
+      oscRoot.onended = () => {
+        try {
+          oscRoot.disconnect();
+          oscFifth.disconnect();
+          fifthGain.disconnect();
+          busGain.disconnect();
+        } catch {
+          // ignore
+        }
+      };
+    } catch {
+      // ignore non-critical WebAudio chime errors
+    }
+  }
+
+  private triggerLandingReleaseChord(): void {
+    if (
+      this.landingChordTriggered ||
+      !this.ctx ||
+      !this.musicMasterBus ||
+      this.carrierMode === 'pure_stimulus' ||
+      this.layerMonitorMode === 'science_only' ||
+      !this.studySpec
+    ) {
+      return;
+    }
+    this.landingChordTriggered = true;
+    try {
+      const ctx = this.ctx;
+      const t0 = ctx.currentTime + 0.05;
+      const rootHz = Math.max(
+        174,
+        Math.min(
+          392,
+          computeHarmonicCarrierHz(this.studySpec.music.rootMidi, this.studySpec.music.tuningA4Hz, 220)
+        )
+      );
+      const busGain = ctx.createGain();
+      busGain.gain.setValueAtTime(0.0001, t0);
+      busGain.gain.linearRampToValueAtTime(0.042, t0 + 0.25);
+      busGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.4);
+      busGain.connect(this.musicMasterBus);
+
+      const freqs = [rootHz, rootHz * 1.5, rootHz * 2.5];
+      const oscs = freqs.map((f, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(f, t0);
+        g.gain.setValueAtTime(idx === 0 ? 0.55 : idx === 1 ? 0.35 : 0.22, t0);
+        osc.connect(g);
+        g.connect(busGain);
+        osc.start(t0 + idx * 0.08);
+        osc.stop(t0 + 2.45);
+        return { osc, g };
+      });
+      oscs[0].osc.onended = () => {
+        try {
+          for (const item of oscs) {
+            item.osc.disconnect();
+            item.g.disconnect();
+          }
+          busGain.disconnect();
+        } catch {
+          // ignore
+        }
+      };
+    } catch {
+      // ignore non-critical release chord errors
     }
   }
 
@@ -3837,7 +4000,23 @@ export class PsychoacousticEngine {
       phaseModFactor = 1.0;
     }
 
-    const antiMonotonyActive = this.isAntiMonotonyPulseActive();
+    let antiMonotonyActive = this.isAntiMonotonyPulseActive();
+    let autopilotLiftActive = false;
+    if (
+      this.personalFatigueDipMin &&
+      this.plannedSec >= this.personalFatigueDipMin * 60 &&
+      !this.isControlTrial
+    ) {
+      const liftStartSec = Math.max(180, (this.personalFatigueDipMin - 2) * 60);
+      if (elapsedSec >= liftStartSec && elapsedSec <= liftStartSec + 45) {
+        autopilotLiftActive = true;
+        antiMonotonyActive = true;
+      }
+    }
+    this.autopilotLiftActive = autopilotLiftActive;
+    if (progressRatio > 0.9) {
+      this.triggerLandingReleaseChord();
+    }
     this.composer.updateProgress(progressRatio, antiMonotonyActive);
 
     const scienceMuted = this.layerMonitorMode === 'music_only';
@@ -3845,10 +4024,34 @@ export class PsychoacousticEngine {
       this.layerMonitorMode === 'science_only' || this.carrierMode === 'pure_stimulus';
     const activePhaseFactor = isIsolatedScience ? 1.0 : phaseModFactor;
     // Gentle 0.004 Hz (~4 min) macro-dynamic breathing prevents N1 cortical habituation without ever dropping AM audibility
-    const antiHabFactor =
+    const antiHabBase =
       isIsolatedScience || this.isControlTrial
         ? 1.0
         : 0.94 + 0.06 * Math.cos(2 * Math.PI * 0.004 * elapsedSec);
+    const antiHabFactor = autopilotLiftActive ? Math.min(1.04, antiHabBase * 1.04) : antiHabBase;
+
+    // 90-Second Visceral "Acoustic Airlock & Stereo-to-Midline Tunnel Pull" on Layer-2 Headphone Crossfeed
+    const tunnelLockProgress = Number(Math.min(1, Math.max(0, elapsedSec / 90)).toFixed(3));
+    if (
+      this.ctx &&
+      this.crossfeedNode &&
+      this.layerMonitorMode !== 'science_only' &&
+      !this.params?.speakerSafeEQ &&
+      this.params?.energyTier !== 'calm'
+    ) {
+      let targetXf = 0.18;
+      if (elapsedSec < 12) {
+        targetXf = 0.08;
+      } else if (elapsedSec < 75) {
+        const s = 0.5 * (1 - Math.cos((Math.PI * (elapsedSec - 12)) / 63));
+        targetXf = 0.08 + 0.22 * s;
+      } else {
+        targetXf = 0.24;
+      }
+      this.crossfeedNode.parameters
+        .get('crossLevel')
+        ?.setTargetAtTime(targetXf, this.ctx.currentTime, 0.25);
+    }
     const amActive = spec?.entrainment.type === 'amplitude_modulation' && spec.entrainment.frequencyHz > 0;
     const nominalDepth = this.computeCalibratedEffectPct(activePhaseFactor, antiHabFactor);
     const effectiveDepth = scienceMuted ? 0 : nominalDepth;
@@ -4073,6 +4276,9 @@ export class PsychoacousticEngine {
       gammaMode: stim.gammaMode,
       alphaIafHz: this.alphaIafHz,
       hugginsStatus: this.hugginsStatus,
+      autopilotLiftActive: this.autopilotLiftActive,
+      tunnelLockProgress,
+      hrvClosedLoopTrim: this.hrvClosedLoopTrim,
       bluetoothSafeActive: this.bluetoothSafeActive,
       band2FlattenerActive: this.isBand2FlattenerActive(),
       stemCodecLabel: this.usingStudioAudio ? this.activeStemCodecLabel : null,

@@ -77,6 +77,40 @@ export type AudioSourceType =
   | 'pure_stimulus'
   | 'procedural_fallback';
 
+export interface PersonalNeuralMemory {
+  calibrationPct: number; // 0..100 Bayesian shrinkage maturity
+  learnedSessions: number;
+  personalIafHz: number; // 8.6..11.6 Hz individualized Alpha peak
+  focusOffsetHz: number; // -1.4..+1.6 Hz continuous micro-tuning around Beta focus (13–22 Hz)
+  focusModMult: number; // 0.65..1.35 personal AM depth for activating targets
+  calmModMult: number; // 0.65..1.35 personal AM depth for calm/sleep targets
+  preferredNoiseMult: number; // 0.40..1.60 personal 1/f stochastic resonance multiplier
+  fatigueDipMinute: number | null; // 8..45 learned mid-session attention dip minute
+  peakChronoBucket: TimeOfDayBucket | null;
+  dipChronoBucket: TimeOfDayBucket | null;
+  activeAvgPvtDeltaMs: number | null; // negative = faster post-session reaction
+  shamAvgPvtDeltaMs: number | null;
+  causalLiftMs: number | null; // shamAvgPvtDeltaMs - activeAvgPvtDeltaMs (>0 = faster on Active vs Blind Sham)
+  activePvtCount?: number;
+  shamPvtCount?: number;
+  topProtocolId?: string;
+  topProtocolName?: string;
+  topProtocolFitPct?: number;
+  lastInsightLine?: string;
+  updatedAt?: string;
+}
+
+export interface AppliedNeuralTuningSummary {
+  calibrationPct: number;
+  tunedHz: number;
+  baseHz: number;
+  appliedModMult: number;
+  appliedNoiseMult: number;
+  proactiveLiftMinute: number | null;
+  chronoAdapted: boolean;
+  summaryLine: string;
+}
+
 export interface UserProfile {
   id: string;
   displayName?: string;
@@ -91,6 +125,7 @@ export interface UserProfile {
   primaryChallenge: PrimaryChallenge;
   researchConsent: boolean;
   preferredModMult?: number;
+  neuralMemory?: PersonalNeuralMemory;
   favoriteGenres?: ResolvedGenre[];
   sessionCount?: number;
   planTier?: 'free' | 'pro';
@@ -239,6 +274,7 @@ export interface ProtocolRecommendation {
   confidencePct: number;
   cohortTrials: number;
   profileTrials: number;
+  appliedNeuralTuning?: AppliedNeuralTuningSummary;
   plannedDurationMin: number;
   currentState: CurrentState;
   microStateId?: string;
@@ -311,6 +347,10 @@ export interface DebriefPayload {
   pvtRefreshHz?: number | null;
   pvtDecileSpreadMs?: number | null;
   blindingGuess?: 'active' | 'control' | 'unsure' | null;
+  tappingCvPct?: number | null;
+  tappingMeanItiMs?: number | null;
+  hrvRmssdMs?: number | null;
+  hrvLfRatio?: number | null;
   studySpecId?: string;
   studyTitle?: string;
   entrainmentType?: string;

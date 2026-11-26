@@ -54,6 +54,7 @@ import {
   type SessionEnvironment,
   type SessionRecord,
   type TargetState,
+  type TimeOfDayBucket,
   type UserProfile,
   type WorkedRating,
 } from '../shared/types';
@@ -74,6 +75,10 @@ import {
 } from './stripeBilling';
 import { buildRecommendationFromStudySpec } from '../shared/studyCompilerCore';
 import { VERIFIED_STUDY_PRESETS } from '../shared/studyPresets';
+import {
+  parsePersonalNeuralMemory,
+  updatePersonalNeuralMemory,
+} from '../shared/psychometrics';
 
 const EEA_UK_CH_COUNTRIES = new Set([
   'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE',
@@ -465,16 +470,28 @@ function json(
   });
 }
 
+let neuralMemSchemaReady = false;
+async function ensureNeuralMemorySchema(db: D1Database): Promise<void> {
+  if (neuralMemSchemaReady) return;
+  try {
+    await db.prepare('ALTER TABLE profiles ADD COLUMN neural_memory_json TEXT').run();
+  } catch {
+    // Column already exists
+  }
+  neuralMemSchemaReady = true;
+}
+
 function mapProfileRow(row: Record<string, unknown>, sessionCount?: number): UserProfile {
   const rawPlan = String(row.plan_tier ?? 'free').toLowerCase();
   const proUntil = row.pro_until ? String(row.pro_until) : null;
   const isProActive =
     rawPlan === 'pro' && (!proUntil || Number.isNaN(Date.parse(proUntil)) || Date.parse(proUntil) > Date.now());
+  const resolvedAgeBand = ageToBand(Math.max(18, Number(row.age)));
   return {
     id: String(row.id),
     displayName: row.display_name ? String(row.display_name) : undefined,
     age: Math.max(18, Number(row.age)),
-    ageBand: ageToBand(Math.max(18, Number(row.age))),
+    ageBand: resolvedAgeBand,
     gender: parseGenderValue(row.gender ? String(row.gender) : undefined),
     role: String(row.role) as UserProfile['role'],
     occupationLabel: row.occupation_label ? String(row.occupation_label) : undefined,
@@ -487,6 +504,7 @@ function mapProfileRow(row: Record<string, unknown>, sessionCount?: number): Use
       row.preferred_mod_mult === null || row.preferred_mod_mult === undefined
         ? 1.0
         : Number(row.preferred_mod_mult),
+    neuralMemory: parsePersonalNeuralMemory(row.neural_memory_json, resolvedAgeBand),
     planTier: isProActive ? 'pro' : 'free',
     proUntil,
     ...(typeof sessionCount === 'number' ? { sessionCount } : {}),
@@ -643,6 +661,7 @@ type BanditScopeType =
   | 'cohort'
   | 'profile'
   | 'profile_state'
+  | 'profile_chrono'
   | 'cohort_genre'
   | 'profile_genre'
   | 'cohort_arm_genre'
@@ -1126,6 +1145,7 @@ export default {
     }
 
     try {
+      await ensureNeuralMemorySchema(env.DB);
       // GET /api/health
       if (url.pathname === '/api/health' && request.method === 'GET') {
         const provider = resolveMusicProvider(env);
@@ -2285,7 +2305,7 @@ export default {
         await env.DB.batch([
           env.DB.prepare('DELETE FROM sessions WHERE profile_id = ?').bind(id),
           env.DB.prepare(
-            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre') AND scope_id = ?) OR (scope_type = 'profile_state' AND scope_id LIKE ?)`
+            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre') AND scope_id = ?) OR (scope_type IN ('profile_state', 'profile_chrono') AND scope_id LIKE ?)`
           ).bind(id, `${id}|%`),
           env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id),
         ]);
@@ -2338,7 +2358,7 @@ export default {
         await env.DB.batch([
           env.DB.prepare('DELETE FROM sessions WHERE profile_id = ?').bind(id),
           env.DB.prepare(
-            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre') AND scope_id = ?) OR (scope_type = 'profile_state' AND scope_id LIKE ?)`
+            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre') AND scope_id = ?) OR (scope_type IN ('profile_state', 'profile_chrono') AND scope_id LIKE ?)`
           ).bind(id, `${id}|%`),
           env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id),
         ]);
@@ -2495,6 +2515,8 @@ export default {
           effectiveTarget
         );
         const profileStateKey = `${profile.id}|${body.currentState}|${effectiveGoalSlug || effectiveTarget}`;
+        const timeBucket = getTimeOfDayBucket();
+        const profileChronoKey = `${profile.id}|${timeBucket}|${effectiveGoalSlug || effectiveTarget}`;
 
         // Map core genre aliases typed as custom text (e.g. "rain", "ploaie", "lo-fi") straight to instant Studio R2!
         const coreAliasFromCustom = matchCoreGenreAlias(body.customGenreInput);
@@ -2651,6 +2673,7 @@ export default {
           marginalStats,
           profileStats,
           profileStateStats,
+          profileChronoStats,
           cohortGenreStats,
           profileGenreStats,
           cohortArmGenreStats,
@@ -2667,6 +2690,7 @@ export default {
           ),
           isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile', profile.id),
           isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile_state', profileStateKey),
+          isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile_chrono', profileChronoKey),
           fetchBanditRows(env.DB, 'cohort_genre', cohortKey),
           isEphemeral ? Promise.resolve([]) : fetchBanditRows(env.DB, 'profile_genre', profile.id),
           validCustom
@@ -2853,6 +2877,8 @@ export default {
             cohortStats,
             marginalStats,
             profileStats: mergedProfileStats,
+            profileChronoStats,
+            timeOfDayBucket: timeBucket,
             cohortGenreStats,
             profileGenreStats,
             cohortArmGenreStats,
@@ -3883,6 +3909,34 @@ export default {
           body.blindingGuess === 'unsure'
             ? body.blindingGuess
             : null;
+        const cleanTappingCv =
+          typeof body.tappingCvPct === 'number' &&
+          Number.isFinite(body.tappingCvPct) &&
+          body.tappingCvPct >= 0.1 &&
+          body.tappingCvPct <= 100
+            ? Number(body.tappingCvPct.toFixed(2))
+            : null;
+        const cleanTappingIti =
+          typeof body.tappingMeanItiMs === 'number' &&
+          Number.isFinite(body.tappingMeanItiMs) &&
+          body.tappingMeanItiMs >= 200 &&
+          body.tappingMeanItiMs <= 2500
+            ? Number(body.tappingMeanItiMs.toFixed(1))
+            : null;
+        const cleanHrvRmssd =
+          typeof body.hrvRmssdMs === 'number' &&
+          Number.isFinite(body.hrvRmssdMs) &&
+          body.hrvRmssdMs >= 2 &&
+          body.hrvRmssdMs <= 350
+            ? Number(body.hrvRmssdMs.toFixed(1))
+            : null;
+        const cleanHrvLf =
+          typeof body.hrvLfRatio === 'number' &&
+          Number.isFinite(body.hrvLfRatio) &&
+          body.hrvLfRatio >= 0 &&
+          body.hrvLfRatio <= 1
+            ? Number(body.hrvLfRatio.toFixed(3))
+            : null;
 
         if (!body.sessionId || body.sessionId.startsWith('eph_')) {
           // Record completely anonymous aggregated Study Lab empirical rating (zero user PII!)
@@ -4023,6 +4077,10 @@ export default {
             pvt_refresh_hz = COALESCE(?, pvt_refresh_hz),
             pvt_decile_spread_ms = COALESCE(?, pvt_decile_spread_ms),
             blinding_guess = COALESCE(?, blinding_guess),
+            tapping_cv_pct = COALESCE(?, tapping_cv_pct),
+            tapping_mean_iti_ms = COALESCE(?, tapping_mean_iti_ms),
+            hrv_rmssd_ms = COALESCE(?, hrv_rmssd_ms),
+            hrv_lf_ratio = COALESCE(?, hrv_lf_ratio),
             notes = ?,
             completed_at = ?
            WHERE id = ?`
@@ -4050,6 +4108,10 @@ export default {
             cleanRefreshHz,
             cleanDecileSpread,
             cleanBlindingGuess,
+            cleanTappingCv,
+            cleanTappingIti,
+            cleanHrvRmssd,
+            cleanHrvLf,
             (body.notes ?? '').slice(0, 500),
             now,
             body.sessionId
@@ -4146,6 +4208,18 @@ export default {
             updateBanditScope(env.DB, {
               scopeType: 'profile_state',
               scopeId: `${profileId}|${session.currentState}|${sessionGoalKey}`,
+              armId: session.armId,
+              mode: 'explicit',
+              reward: protocolReward,
+              weight: learningWeight,
+              delta,
+              completionRatio,
+              supersedePrevReward: prevImplicitReward,
+              supersedePrevWeight: prevImplicitWeight,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'profile_chrono',
+              scopeId: `${profileId}|${session.timeOfDayBucket}|${sessionGoalKey}`,
               armId: session.armId,
               mode: 'explicit',
               reward: protocolReward,
@@ -4254,10 +4328,22 @@ export default {
           };
         }
 
-        // Adapt personal AM sensitivity multiplier
-        const profRow = await env.DB.prepare('SELECT preferred_mod_mult FROM profiles WHERE id = ?')
-          .bind(profileId)
-          .first<{ preferred_mod_mult?: number }>();
+        // Adapt personal AM sensitivity multiplier & full Continuous Personal Neural Memory Vector
+        const [profRow, chronoAggRows, pAllStats] = await Promise.all([
+          env.DB.prepare('SELECT age_band, preferred_mod_mult, neural_memory_json FROM profiles WHERE id = ?')
+            .bind(profileId)
+            .first<{ age_band?: string; preferred_mod_mult?: number; neural_memory_json?: string }>(),
+          env.DB.prepare(
+            `SELECT time_of_day_bucket, AVG(reward_score) AS avg_r, COUNT(*) AS cnt
+             FROM sessions
+             WHERE profile_id = ? AND status = 'completed' AND is_control_trial = 0 AND reward_score IS NOT NULL
+             GROUP BY time_of_day_bucket`
+          )
+            .bind(profileId)
+            .all<{ time_of_day_bucket?: string; avg_r?: number; cnt?: number }>(),
+          fetchBanditRows(env.DB, 'profile', profileId),
+        ]);
+
         const prevMult = Number(profRow?.preferred_mod_mult ?? 1.0);
         let multDelta = 0;
         if (tags.includes('A bit too intense') || tags.includes('Modulation felt distracting')) {
@@ -4273,11 +4359,60 @@ export default {
           multDelta += Math.max(-0.1, Math.min(0.1, netModTweak * 0.35));
         }
         const updatedModMult = Number(Math.max(0.65, Math.min(1.35, prevMult + multDelta)).toFixed(2));
-        if (multDelta !== 0 && !session.isControlTrial) {
-          await env.DB.prepare('UPDATE profiles SET preferred_mod_mult = ?, updated_at = ? WHERE id = ?')
-            .bind(updatedModMult, now, profileId)
-            .run();
+
+        const chronoScores: Partial<Record<TimeOfDayBucket, { avgReward: number; trials: number }>> = {};
+        for (const cr of chronoAggRows.results ?? []) {
+          const b = cr.time_of_day_bucket as TimeOfDayBucket | undefined;
+          if (b && cr.avg_r !== undefined && cr.cnt !== undefined) {
+            chronoScores[b] = { avgReward: Number(cr.avg_r), trials: Number(cr.cnt) };
+          }
         }
+        const topPersonalArm = [...pAllStats]
+          .filter((a) => a.trials > 0)
+          .sort((a, b) => b.alpha / (b.alpha + b.beta) - a.alpha / (a.alpha + a.beta))[0];
+        const matchedTopArmMeta = topPersonalArm
+          ? PROTOCOL_ARMS.find((arm) => arm.id === topPersonalArm.armId)
+          : undefined;
+        const prevNeuralMem = parsePersonalNeuralMemory(profRow?.neural_memory_json, profRow?.age_band);
+        const nextNeuralMemory = updatePersonalNeuralMemory(prevNeuralMem, {
+          targetState: session.targetState,
+          timeOfDayBucket: session.timeOfDayBucket,
+          isControlTrial: session.isControlTrial,
+          reward: protocolReward,
+          deltaScore: delta,
+          completionRatio,
+          actualDurationSec: actualSec,
+          baseModulationHz: session.acousticParams?.modulationHz ?? 16,
+          feedbackTags: tags,
+          liveAdjustments,
+          pvtDeltaMs: finalPvtDelta,
+          tappingMeanItiMs: cleanTappingIti,
+          tappingCvPct: cleanTappingCv,
+          hrvRmssdMs: cleanHrvRmssd,
+          topProtocol:
+            topPersonalArm && matchedTopArmMeta
+              ? {
+                  id: matchedTopArmMeta.id,
+                  name: matchedTopArmMeta.name,
+                  fitPct: Math.round(
+                    (topPersonalArm.alpha / (topPersonalArm.alpha + topPersonalArm.beta)) * 100
+                  ),
+                }
+              : undefined,
+          chronoScores,
+          nowIso: now,
+        });
+
+        await env.DB.prepare(
+          'UPDATE profiles SET preferred_mod_mult = ?, neural_memory_json = ?, updated_at = ? WHERE id = ?'
+        )
+          .bind(
+            !session.isControlTrial && multDelta !== 0 ? updatedModMult : prevMult,
+            JSON.stringify(nextNeuralMemory),
+            now,
+            profileId
+          )
+          .run();
 
         return json(
           {
@@ -4296,6 +4431,7 @@ export default {
               profileTrials: profileUpdated.trials,
               wasControlTrial: session.isControlTrial,
               preferredModMult: updatedModMult,
+              neuralMemory: nextNeuralMemory,
               ...(finalGenre in GENRE_META ? { learnedGenre: finalGenre as ResolvedGenre } : {}),
               learnedGenreLabel: getGenreDisplayMeta(finalGenre).label,
               learnedGenreFitPct: profileGenreUpdated.successRatePct,
