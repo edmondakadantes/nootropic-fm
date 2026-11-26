@@ -1,4 +1,10 @@
-import { type CurrentState, type ResolvedGenre, type TargetState, type TimeOfDayBucket } from './types';
+import {
+  type CurrentState,
+  type OutputDevice,
+  type ResolvedGenre,
+  type TargetState,
+  type TimeOfDayBucket,
+} from './types';
 
 export type VoiceCueType = 'intro_full' | 'intro_short' | 'outro_landing';
 
@@ -11,6 +17,7 @@ export interface VoiceConciergeRequest {
   modulationHz: number;
   genre: ResolvedGenre;
   isDriving: boolean;
+  device?: OutputDevice;
   timeBucket?: TimeOfDayBucket;
   durationMin?: number;
 }
@@ -184,26 +191,35 @@ export function buildVoiceConciergePlan(req: VoiceConciergeRequest): VoiceConcie
   } else {
     const lead = getStateEmpathyLead(req.currentState);
     const joiner = lead.endsWith(',') ? ' so' : ' We';
+    const speakerCue =
+      req.device === 'speakers'
+        ? ' Slip both earbuds in whenever you can for full stereo lock.'
+        : '';
+    const devSlug = req.device === 'speakers' ? '_spk' : '';
     if (req.armId === 'nootropic-trance-6x40hz' || (req.genre === 'nootropic_trance' && req.modulationHz === 6)) {
+      const earbudBridge =
+        req.device === 'speakers'
+          ? 'Pop both earbuds in for full stereo depth, as we weave'
+          : 'With both earbuds gently sealed in, we have woven';
       bodyText = lead.endsWith(',')
-        ? `${lead} so we've woven a six-by-forty hertz trance rhythm right inside your ${spokenGenre}. Unclench your jaw... and let us take care of the rest.`
-        : `${lead} We've woven a six-by-forty hertz trance rhythm right inside your ${spokenGenre}. Unclench your jaw... and let us take care of the rest.`;
-      bodyBucketKey = `full_${req.currentState}_trance6x40_${req.genre}`;
+        ? `${lead} so with both earbuds sealed in, we've woven a six-by-forty hertz trance rhythm right inside your ${spokenGenre}. Unclench your jaw... and let us take care of the rest.`
+        : `${lead} ${earbudBridge} a six-by-forty hertz trance rhythm right inside your ${spokenGenre}. Unclench your jaw... and let us take care of the rest.`;
+      bodyBucketKey = `full_${req.currentState}_trance6x40_${req.genre}${devSlug}`;
     } else if (req.targetState === 'sleep_winddown') {
       bodyText = lead.endsWith(',')
-        ? `${lead} so we're guiding your mind down with a soft ${hz}-hertz sleep drift over ${spokenGenre}. Close your eyes... and let go.`
-        : `${lead}${joiner}'re guiding your mind down with a soft ${hz}-hertz sleep drift over ${spokenGenre}. Close your eyes... and let go.`;
-      bodyBucketKey = `full_${req.currentState}_sleep_${hz}_${req.genre}`;
+        ? `${lead} so we're guiding your mind down with a soft ${hz}-hertz sleep drift over ${spokenGenre}.${speakerCue} Close your eyes... and let go.`
+        : `${lead}${joiner}'re guiding your mind down with a soft ${hz}-hertz sleep drift over ${spokenGenre}.${speakerCue} Close your eyes... and let go.`;
+      bodyBucketKey = `full_${req.currentState}_sleep_${hz}_${req.genre}${devSlug}`;
     } else if (req.targetState === 'calm_reset') {
       bodyText = lead.endsWith(',')
-        ? `${lead} so we've wrapped a soothing ${hz}-hertz calm wave inside your ${spokenGenre}. Relax your shoulders... and let us take care of you.`
-        : `${lead}${joiner}'ve wrapped a soothing ${hz}-hertz calm wave inside your ${spokenGenre}. Relax your shoulders... and let us take care of you.`;
-      bodyBucketKey = `full_${req.currentState}_calm_${hz}_${req.genre}`;
+        ? `${lead} so we've wrapped a soothing ${hz}-hertz calm wave inside your ${spokenGenre}.${speakerCue} Relax your shoulders... and let us take care of you.`
+        : `${lead}${joiner}'ve wrapped a soothing ${hz}-hertz calm wave inside your ${spokenGenre}.${speakerCue} Relax your shoulders... and let us take care of you.`;
+      bodyBucketKey = `full_${req.currentState}_calm_${hz}_${req.genre}${devSlug}`;
     } else {
       bodyText = lead.endsWith(',')
-        ? `${lead} so we've blended a peer-reviewed ${hz}-hertz focus rhythm right inside your ${spokenGenre}. Soften your gaze... and let us take care of the rest.`
-        : `${lead}${joiner}'ve blended a peer-reviewed ${hz}-hertz focus rhythm right inside your ${spokenGenre}. Soften your gaze... and let us take care of the rest.`;
-      bodyBucketKey = `full_${req.currentState}_focus_${hz}_${req.genre}`;
+        ? `${lead} so we've blended a peer-reviewed ${hz}-hertz focus rhythm right inside your ${spokenGenre}.${speakerCue} Soften your gaze... and let us take care of the rest.`
+        : `${lead}${joiner}'ve blended a peer-reviewed ${hz}-hertz focus rhythm right inside your ${spokenGenre}.${speakerCue} Soften your gaze... and let us take care of the rest.`;
+      bodyBucketKey = `full_${req.currentState}_focus_${hz}_${req.genre}${devSlug}`;
     }
   }
 

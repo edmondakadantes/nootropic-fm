@@ -15,9 +15,11 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   UserCog,
   Volume2,
   X,
+  Zap,
 } from 'lucide-react';
 import {
   NEURAL_MICRO_STATES,
@@ -46,6 +48,7 @@ import {
   GENDER_LABELS,
   GENRE_META,
   ROLE_SHORT_LABELS,
+  STUDIO_MIX_GENRES,
   TARGET_LABELS,
   formatProfileSummary,
   isProfileOnboardingComplete,
@@ -54,7 +57,6 @@ import {
   type MusicGenreChoice,
   type NoiseSensitivity,
   type OutputDevice,
-  type ResolvedGenre,
   type SessionEnvironment,
   type SessionRecord,
   type TargetState,
@@ -89,6 +91,7 @@ interface CheckInViewProps {
   onEditProfile?: () => void;
   onSaveProfileStep?: (data: Partial<UserProfile>) => Promise<void>;
   onMoodChange?: (mood: FieldMood) => void;
+  onOpenSoundSystems?: () => void;
   onLaunchUnifiedSession: (payload: {
     profileUpdate?: Partial<UserProfile>;
     ephemeralMode: boolean;
@@ -146,6 +149,7 @@ export function CheckInView({
   onOpenIdentityModal,
   onSaveProfileStep,
   onMoodChange,
+  onOpenSoundSystems,
   onLaunchUnifiedSession,
 }: CheckInViewProps) {
   const onboardingComplete = isProfileOnboardingComplete(profile);
@@ -517,7 +521,8 @@ export function CheckInView({
     }
   };
 
-  const handleLaunch = async () => {
+  const handleLaunch = async (genreOverride?: MusicGenreChoice) => {
+    const activeGenreChoice = genreOverride ?? genreChoice;
     if (isFirstVisit) {
       const err = validateBeat1();
       if (err) {
@@ -584,9 +589,13 @@ export function CheckInView({
 
       const activeCuratedGoal = CURATED_GOAL_PRESETS.find((g) => g.slug === selectedGoalSlug);
       const effectiveCustomGoalSlug =
-        openGoalIntent?.slug ?? activeCuratedGoal?.slug ?? undefined;
+        activeGenreChoice === 'nootropic_trance'
+          ? 'trance_lock'
+          : (openGoalIntent?.slug ?? activeCuratedGoal?.slug ?? undefined);
       const effectiveCustomGoalLabel =
-        openGoalIntent?.label ?? activeCuratedGoal?.label ?? undefined;
+        activeGenreChoice === 'nootropic_trance'
+          ? 'NootropicFM Signature Lock (6×40 Hz)'
+          : (openGoalIntent?.label ?? activeCuratedGoal?.label ?? undefined);
 
       await onLaunchUnifiedSession({
         profileUpdate,
@@ -603,10 +612,13 @@ export function CheckInView({
         customGoalSlug: effectiveCustomGoalSlug,
         customGoalLabel: effectiveCustomGoalLabel,
         environment: effectiveEnv,
-        device: effectiveDevice,
+        device:
+          activeGenreChoice === 'nootropic_trance' && !isDriving
+            ? 'headphones'
+            : effectiveDevice,
         durationMin,
         ageOverride: effectiveAge,
-        requestedGenre: genreChoice,
+        requestedGenre: activeGenreChoice,
       });
     } finally {
       setStarting(false);
@@ -622,6 +634,30 @@ export function CheckInView({
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center space-y-5">
+      {/* Explicit Platform Acoustic Law: Engineered Exclusively for In-Ear Buds + Sound Systems Lab */}
+      {!isDriving && (
+        <div className="animate-rise flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/[0.07] px-3.5 py-2 text-[11px] text-[#D4D4CE]">
+          <span className="inline-flex items-center gap-2">
+            <Headphones className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+            <span>
+              <strong className="uppercase tracking-wider text-[#34D399]">
+                Engineered Exclusively for In-Ear Buds:
+              </strong>{' '}
+              Seal both earbuds for 100% dichotic L/R phase-lock &amp; zero room crosstalk.
+            </span>
+          </span>
+          {onOpenSoundSystems && (
+            <button
+              type="button"
+              onClick={onOpenSoundSystems}
+              className="shrink-0 rounded-md border border-emerald-400/35 bg-[#0B0C0E] px-2.5 py-1 font-mono-tech text-[10px] font-semibold text-[#34D399] transition hover:border-emerald-400/70 hover:text-[#F3F1EC]"
+            >
+              Sound Systems · Earbuds 01 →
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Selected Mood Goal Pill */}
       {initialPreset && (
         <div className="animate-rise w-full flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/[0.06] px-4 py-2.5 text-xs text-[#D4D4CE]">
@@ -1380,47 +1416,77 @@ export function CheckInView({
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[11px] font-medium text-[#A3A39E]">How are you listening?</div>
+              <div className="flex items-center justify-between text-[11px] font-medium text-[#A3A39E]">
+                <span>Listening Hardware</span>
+                <span className="font-mono-tech text-[9.5px] font-semibold uppercase tracking-wider text-[#34D399]">
+                  Earbuds Required
+                </span>
+              </div>
               <div className="grid grid-cols-3 gap-1.5">
                 <button
                   type="button"
                   onClick={() => handleSelectDevice('headphones')}
-                  className={`flex flex-col items-center gap-1 rounded-lg border py-2 text-[11px] font-medium transition ${
+                  className={`flex flex-col items-center gap-0.5 rounded-lg border py-2 text-[11px] font-semibold transition ${
                     device === 'headphones' && !isDriving
-                      ? 'border-emerald-400/60 bg-emerald-400/12 text-[#F3F1EC]'
+                      ? 'border-emerald-400/70 bg-emerald-400/15 text-[#F3F1EC]'
                       : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/25'
                   }`}
                 >
-                  <Headphones className="h-3.5 w-3.5" />
-                  Headphones
+                  <Headphones className="h-3.5 w-3.5 text-[#34D399]" />
+                  <span>In-Ear Buds</span>
+                  <span className="font-mono-tech text-[8.5px] text-[#34D399]">100% Lock</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleSelectDevice('speakers')}
-                  className={`flex flex-col items-center gap-1 rounded-lg border py-2 text-[11px] font-medium transition ${
+                  className={`flex flex-col items-center gap-0.5 rounded-lg border py-2 text-[11px] font-medium transition ${
                     device === 'speakers' && !isDriving
-                      ? 'border-emerald-400/60 bg-emerald-400/12 text-[#F3F1EC]'
-                      : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/25'
+                      ? 'border-amber-400/65 bg-amber-500/12 text-amber-200'
+                      : 'border-white/[0.08] bg-[#131417] text-[#8E8E88] hover:border-white/25'
                   }`}
                 >
                   <Volume2 className="h-3.5 w-3.5" />
-                  Speakers
+                  <span>Speakers</span>
+                  <span className="font-mono-tech text-[8.5px] text-amber-300/80">Degraded</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleSelectDevice('car_audio')}
-                  className={`flex flex-col items-center gap-1 rounded-lg border py-2 text-[11px] font-medium transition ${
+                  className={`flex flex-col items-center gap-0.5 rounded-lg border py-2 text-[11px] font-medium transition ${
                     isDriving
                       ? 'border-amber-400/70 bg-amber-500/15 text-amber-200'
                       : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/25'
                   }`}
                 >
                   <Car className="h-3.5 w-3.5" />
-                  Car Safety
+                  <span>Car Safety</span>
+                  <span className="font-mono-tech text-[8.5px] text-[#7E7E78]">Road Safe</span>
                 </button>
               </div>
             </div>
           </div>
+
+          {device === 'speakers' && !isDriving && (
+            <div className="animate-step flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-amber-400/45 bg-amber-500/10 p-3 text-xs text-amber-100">
+              <div className="flex items-start gap-2.5 max-w-lg">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                <span>
+                  <strong className="text-amber-200">
+                    Acoustic Crosstalk Warning — In-Ear Buds Strongly Required:
+                  </strong>{' '}
+                  Open speakers leak Left/Right channels across the room (~0.3 ms delay), canceling
+                  brainstem dichotic phase-locking and weakening neural entrainment by &gt;60%.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSelectDevice('headphones')}
+                className="shrink-0 rounded-lg border border-emerald-400/50 bg-[#0B0C0E] px-3 py-1.5 font-mono-tech text-[10.5px] font-semibold text-[#34D399] transition hover:border-emerald-400"
+              >
+                Switch to In-Ear Buds
+              </button>
+            </div>
+          )}
 
           {isDriving && (
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-100">
@@ -1462,18 +1528,90 @@ export function CheckInView({
       )}
 
       {/* ===================================================================== */}
-      {/* BEAT 4: PREFERRED MUSIC LAYER (10 Curated Studio + Endless Stream)    */}
+      {/* BEAT 4: STANDALONE NOOTROPIC FM MODE vs 10 STUDIO MIX GENRES          */}
       {/* ===================================================================== */}
       {beat === 4 && (
         <div key="beat-4" className="animate-step glass-stage w-full rounded-2xl p-5 sm:p-7 space-y-5">
+          {/* SECTION A: STANDALONE FLAGSHIP NOOTROPIC FM SIGNATURE ENGINE */}
+          <div
+            onClick={() => {
+              setGenreChoice('nootropic_trance');
+              if (!isDriving && device === 'speakers') {
+                setDevice('headphones');
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setGenreChoice('nootropic_trance');
+                if (!isDriving && device === 'speakers') setDevice('headphones');
+              }
+            }}
+            className={`cursor-pointer rounded-2xl border p-4 sm:p-5 transition-all space-y-3 ${
+              genreChoice === 'nootropic_trance'
+                ? 'border-emerald-400/80 bg-emerald-500/[0.11] shadow-[0_0_28px_rgba(52,211,153,0.16)]'
+                : 'border-emerald-400/35 bg-[#0B0C0E] hover:border-emerald-400/65 hover:bg-emerald-500/[0.06]'
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="inline-flex items-center gap-1.5 rounded-md border border-emerald-400/45 bg-emerald-500/15 px-2.5 py-0.5 font-mono-tech text-[10px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
+                <Zap className="h-3 w-3" />
+                Standalone Flagship Engine · Separate from Studio Mix
+              </div>
+              <span className="inline-flex items-center gap-1 rounded border border-white/12 bg-[#131518] px-2 py-0.5 font-mono-tech text-[9.5px] font-semibold text-[#D4D4CE]">
+                <Headphones className="h-3 w-3 text-[#34D399]" />
+                In-Ear Buds Only · 6×40 Hz CFC
+              </span>
+            </div>
+
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div className="space-y-1">
+                <div className="font-display text-base font-bold text-[#F3F1EC] sm:text-lg">
+                  {genreChoice === 'nootropic_trance' ? '✓ ' : ''}NootropicFM Mode — Deep Trance &amp; Neural Lock
+                </div>
+                <p className="text-xs leading-relaxed text-[#A3A39E]">
+                  Locks our dedicated <strong>6 Hz Theta × 40 Hz Gamma</strong> Cross-Frequency
+                  Coupling directly onto phase-aligned <strong>120.000 BPM</strong> hypnotic
+                  sub-bass stems (0% sham dilution, maximum tunnel immersion).
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={starting}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setGenreChoice('nootropic_trance');
+                  if (!isDriving && device === 'speakers') setDevice('headphones');
+                  void handleLaunch('nootropic_trance');
+                }}
+                className="btn-aurora inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-semibold"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Lock NootropicFM Mode
+              </button>
+            </div>
+          </div>
+
+          {/* CLEAN ARCHITECTURAL DIVIDER */}
+          <div className="relative flex items-center py-0.5">
+            <div className="flex-grow border-t border-white/10" />
+            <span className="mx-3 shrink-0 font-mono-tech text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8E8E88]">
+              Or Pair Your Study With 10 Studio Mix Genres
+            </span>
+            <div className="flex-grow border-t border-white/10" />
+          </div>
+
+          {/* SECTION B: 10 STANDARD STUDIO MIX GENRES */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="inline-flex items-center gap-1.5 font-medium text-[#F3F1EC]">
                 <Music2 className="h-4 w-4 text-[#34D399]" />
-                Choose the music style blended with your session rhythm
+                Standard Studio Mix Carrier (blended with matched PubMed studies)
               </span>
               <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
-                11 curated styles · Lyric-free
+                10 Studio Genres · Lyric-free
               </span>
             </div>
 
@@ -1491,9 +1629,8 @@ export function CheckInView({
                 Auto (Best match)
               </button>
 
-              {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
+              {STUDIO_MIX_GENRES.map((g) => {
                 const isSelected = genreChoice === g;
-                const isSignature = g === 'nootropic_trance';
                 return (
                   <button
                     key={g}
@@ -1502,20 +1639,13 @@ export function CheckInView({
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
                       isSelected
                         ? 'border-emerald-400/75 bg-emerald-400/18 text-[#F3F1EC] shadow-[0_0_18px_rgba(52,211,153,0.18)]'
-                        : isSignature
-                          ? 'border-emerald-400/40 bg-emerald-500/[0.08] text-[#F3F1EC] hover:border-emerald-400/70 hover:bg-emerald-500/[0.14]'
-                          : 'subtle-chip'
+                        : 'subtle-chip'
                     }`}
                   >
                     <span>
                       {isSelected ? '✓ ' : ''}
                       {GENRE_META[g].label}
                     </span>
-                    {isSignature && (
-                      <span className="rounded border border-emerald-400/45 bg-emerald-400/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#34D399]">
-                        6×40 Hz Trance
-                      </span>
-                    )}
                   </button>
                 );
               })}

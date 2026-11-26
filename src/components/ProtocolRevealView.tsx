@@ -8,6 +8,7 @@ import {
   Cpu,
   ExternalLink,
   FlaskConical,
+  Headphones,
   Loader2,
   Music2,
   Play,
@@ -15,6 +16,7 @@ import {
   Radio,
   Search,
   ShieldAlert,
+  Sparkles,
   Waves,
 } from 'lucide-react';
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
@@ -24,6 +26,7 @@ import {
   ENERGY_LABELS,
   GENRE_META,
   STATE_LABELS,
+  STUDIO_MIX_GENRES,
   TARGET_LABELS,
   formatProfileSummary,
 } from '../../shared/types';
@@ -40,6 +43,7 @@ interface ProtocolRevealViewProps {
   onSwapGenre: (genre: ResolvedGenre) => void;
   onSwapCustomVibe: (customLabel: string) => void | Promise<void>;
   onLaunchAudio: () => void;
+  onOpenSoundSystems?: () => void;
   onOpenStudyLab?: () => void;
   onBack: () => void;
 }
@@ -134,6 +138,7 @@ export function ProtocolRevealView({
   mood,
   onSwapGenre,
   onLaunchAudio,
+  onOpenSoundSystems,
   onOpenStudyLab,
   onBack,
 }: ProtocolRevealViewProps) {
@@ -402,7 +407,7 @@ export function ProtocolRevealView({
       </div>
 
       {/* Driving Safety Notice */}
-      {recommendation.safetyMode && (
+      {recommendation.safetyMode ? (
         <div className="animate-rise rounded-xl border border-amber-400/40 bg-amber-500/10 p-4">
           <div className="flex items-start gap-3">
             <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
@@ -413,6 +418,26 @@ export function ProtocolRevealView({
               <p className="text-amber-100/90">{recommendation.safetyWarnings[0]}</p>
             </div>
           </div>
+        </div>
+      ) : (
+        <div className="animate-rise flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/[0.07] px-4 py-2.5 text-xs text-[#D4D4CE]">
+          <span className="inline-flex items-center gap-2">
+            <Headphones className="h-4 w-4 shrink-0 text-[#34D399]" />
+            <span>
+              <strong className="text-[#34D399]">In-Ear Buds Required Before Pressing Start:</strong>{' '}
+              Seal both earbuds in your ears so L/R phase-locked envelopes reach full cortical
+              depth.
+            </span>
+          </span>
+          {onOpenSoundSystems && (
+            <button
+              type="button"
+              onClick={onOpenSoundSystems}
+              className="shrink-0 rounded-md border border-emerald-400/35 bg-[#0B0C0E] px-2.5 py-1 font-mono-tech text-[10px] font-semibold text-[#34D399] transition hover:border-emerald-400/70"
+            >
+              Sound Systems Lab →
+            </button>
+          )}
         </div>
       )}
 
@@ -690,15 +715,36 @@ export function ProtocolRevealView({
             </div>
           )}
 
-          {/* 1-Tap Layer 2 Swap (10 Curated Genres + Other Coming Soon) */}
-          <div className="space-y-2 pt-1">
+          {/* Standalone NootropicFM Signature Mode vs 10 Studio Mix Genres */}
+          <div className="space-y-2.5 pt-1">
+            <button
+              type="button"
+              onClick={() => onSwapGenre('nootropic_trance')}
+              className={`flex w-full items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-left text-xs transition ${
+                !recommendation.customGenreSlug && recommendation.params.genre === 'nootropic_trance'
+                  ? 'border-emerald-400/75 bg-emerald-400/16 text-[#F3F1EC]'
+                  : 'border-emerald-400/35 bg-emerald-500/[0.06] text-[#F3F1EC] hover:border-emerald-400/65'
+              }`}
+            >
+              <span className="inline-flex items-center gap-2 font-semibold">
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                <span>
+                  {!recommendation.customGenreSlug && recommendation.params.genre === 'nootropic_trance'
+                    ? '✓ NootropicFM Signature Mode Locked'
+                    : 'Switch to NootropicFM Signature Mode'}
+                </span>
+              </span>
+              <span className="rounded border border-emerald-400/40 bg-[#0B0C0E] px-2 py-0.5 font-mono-tech text-[9.5px] font-bold uppercase tracking-wider text-[#34D399]">
+                Standalone · 6×40 Hz
+              </span>
+            </button>
+
             <div className="text-[11px] font-medium text-[#8E8E88]">
-              Want a different music style? Swap in 1 tap before playing:
+              Or swap among the 10 Studio Mix music styles:
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
+              {STUDIO_MIX_GENRES.map((g) => {
                 const active = !recommendation.customGenreSlug && recommendation.params.genre === g;
-                const isSignature = g === 'nootropic_trance';
                 return (
                   <button
                     key={g}
@@ -707,17 +753,10 @@ export function ProtocolRevealView({
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
                       active
                         ? 'border-emerald-400/65 bg-emerald-400/16 text-[#F3F1EC]'
-                        : isSignature
-                          ? 'border-emerald-400/35 bg-emerald-500/[0.07] text-[#F3F1EC] hover:border-emerald-400/60'
-                          : 'subtle-chip'
+                        : 'subtle-chip'
                     }`}
                   >
                     <span>{GENRE_META[g].label}</span>
-                    {isSignature && (
-                      <span className="rounded bg-emerald-400/15 px-1 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
-                        Trance
-                      </span>
-                    )}
                   </button>
                 );
               })}

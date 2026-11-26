@@ -557,6 +557,19 @@ export const GENRE_META: Record<
   },
 };
 
+export const STUDIO_MIX_GENRES: ResolvedGenre[] = [
+  'lofi_keys',
+  'deep_electronic',
+  'cinematic_strings',
+  'jazz_rhodes',
+  'acoustic_pluck',
+  'nature_rain',
+  'dub_reggae',
+  'ambient_space',
+  'solo_piano',
+  'bossa_nova',
+];
+
 export const STATE_LABELS: Record<CurrentState, string> = {
   distracted: 'Distracted / scattered',
   fatigued: 'Fatigued / low energy',
@@ -592,8 +605,8 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 export const DEVICE_LABELS: Record<OutputDevice, string> = {
-  headphones: 'Headphones',
-  speakers: 'Speakers',
+  headphones: 'In-Ear Buds',
+  speakers: 'Speakers (Degraded)',
   car_audio: 'Vehicle Speakers',
 };
 

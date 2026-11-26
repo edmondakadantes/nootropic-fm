@@ -5,11 +5,14 @@ import {
   Download,
   Fingerprint,
   FlaskConical,
+  Headphones,
   KeyRound,
   LogOut,
+  Moon,
   Radio,
   ShieldCheck,
   SlidersHorizontal,
+  Sun,
   Trash2,
   X,
 } from 'lucide-react';
@@ -33,6 +36,15 @@ import { AmbientField, type FieldMood } from './components/AmbientField';
 import { CheckInView, type MoodPresetSelection } from './components/CheckInView';
 import { HeroLandingView } from './components/HeroLandingView';
 import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFingerprintPass';
+import { SoundSystemsModal } from './components/SoundSystemsModal';
+import {
+  applyDocumentTheme,
+  readCircadianPreference,
+  resolveCircadianTheme,
+  writeCircadianPreference,
+  type CircadianPreference,
+  type ResolvedThemeMode,
+} from './lib/circadianTheme';
 
 const DebriefView = lazy(() =>
   import('./components/DebriefView').then((m) => ({ default: m.DebriefView }))
@@ -110,6 +122,27 @@ export default function App() {
 
   const [showIdentityModal, setShowIdentityModal] = useState(false);
   const [showProModal, setShowProModal] = useState(false);
+  const [showSoundSystemsModal, setShowSoundSystemsModal] = useState(false);
+  const [circadianPref, setCircadianPref] = useState<CircadianPreference>(() =>
+    readCircadianPreference()
+  );
+  const [themeMode, setThemeMode] = useState<ResolvedThemeMode>(() =>
+    resolveCircadianTheme(readCircadianPreference())
+  );
+
+  useEffect(() => {
+    const resolved = resolveCircadianTheme(circadianPref);
+    setThemeMode(resolved);
+    applyDocumentTheme(resolved);
+  }, [circadianPref]);
+
+  const handleToggleCircadianTheme = () => {
+    const next: ResolvedThemeMode = themeMode === 'daylight' ? 'night' : 'daylight';
+    setCircadianPref(next);
+    setThemeMode(next);
+    writeCircadianPreference(next);
+    applyDocumentTheme(next);
+  };
   const [restoreInput, setRestoreInput] = useState('');
   const [restoring, setRestoring] = useState(false);
   const [identityStatus, setIdentityStatus] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
@@ -698,7 +731,7 @@ export default function App() {
   return (
     <div className="relative min-h-dvh flex flex-col overflow-x-hidden bg-[#0A0B0C]">
       {/* Architectural studio calibration backdrop */}
-      <AmbientField mood={fieldMood} activePulse={audioActive} />
+      <AmbientField mood={fieldMood} activePulse={audioActive} themeMode={themeMode} />
 
       {/* Precision Console Header */}
       <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0A0B0C]/90 backdrop-blur-xl">
@@ -795,6 +828,41 @@ export default function App() {
               <BarChart3 className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden md:inline">Research Brain</span>
               <span className="hidden sm:inline md:hidden">Research</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowSoundSystemsModal(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-2.5 py-1.5 text-xs font-medium text-[#34D399] transition hover:border-emerald-400/60 hover:bg-emerald-500/15 sm:px-3"
+              title="NootropicFM Sound Systems — Engineered Exclusively for In-Ear Buds & Upcoming Hardware"
+            >
+              <Headphones className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+              <span className="hidden lg:inline">Sound Systems</span>
+              <span className="hidden sm:inline lg:hidden">Earbuds</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleToggleCircadianTheme}
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/12 bg-[#131518] px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:border-white/25 hover:text-[#F3F1EC]"
+              title={
+                themeMode === 'daylight'
+                  ? 'Daylight Mode active (warm alabaster lab + bright clarity) — click for Night Mode'
+                  : 'Night Mode active (obsidian studio + melatonin-safe silk filter) — click for Daylight Mode'
+              }
+              aria-label={`Switch to ${themeMode === 'daylight' ? 'Night' : 'Daylight'} Mode`}
+            >
+              {themeMode === 'daylight' ? (
+                <>
+                  <Sun className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                  <span className="hidden md:inline">Daylight</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                  <span className="hidden md:inline">Night</span>
+                </>
+              )}
             </button>
 
             <button
@@ -930,6 +998,7 @@ export default function App() {
             onEditProfile={() => setScreen('onboarding')}
             onSaveProfileStep={handleSaveProfileStep}
             onMoodChange={setFieldMood}
+            onOpenSoundSystems={() => setShowSoundSystemsModal(true)}
             onLaunchUnifiedSession={handleLaunchUnifiedSession}
           />
         ) : screen === 'studylab' ? (
@@ -969,6 +1038,7 @@ export default function App() {
               onSwapGenre={handleSwapRevealGenre}
               onSwapCustomVibe={(label) => handleSwapCustomVibe(label)}
               onLaunchAudio={() => setScreen('player')}
+              onOpenSoundSystems={() => setShowSoundSystemsModal(true)}
               onOpenStudyLab={() => {
                 setFieldMood('focus');
                 setScreen('studylab');
@@ -994,6 +1064,8 @@ export default function App() {
               lyriaRealtimeAvailable={runtimeConfig?.lyriaRealtimeAvailable}
               isPro={profile?.planTier === 'pro'}
               stripeAvailable={runtimeConfig?.stripeBillingAvailable ?? false}
+              themeMode={themeMode}
+              onOpenSoundSystems={() => setShowSoundSystemsModal(true)}
               onUpgradePro={() => setShowProModal(true)}
               onStartDirectCheckout={handleStartDirectCheckout}
               onOpenCustomCheckIn={() => {
@@ -1071,6 +1143,14 @@ export default function App() {
           </Suspense>
         )}
       </main>
+
+      {/* NootropicFM Sound Systems & Earbuds Hardware Lab Modal */}
+      {showSoundSystemsModal && (
+        <SoundSystemsModal
+          profileId={profile?.id}
+          onClose={() => setShowSoundSystemsModal(false)}
+        />
+      )}
 
       {/* Stripe Pro Subscription Upgrade / Billing Portal Modal */}
       {showProModal && (
@@ -1288,6 +1368,14 @@ export default function App() {
             <span className="text-[#555550]">
               Samples: Salamander Grand Piano &amp; FluidR3 GM (CC-BY 3.0)
             </span>
+            <button
+              type="button"
+              onClick={() => setShowSoundSystemsModal(true)}
+              className="inline-flex items-center gap-1 font-semibold text-[#34D399] underline-offset-2 hover:underline"
+            >
+              <Headphones className="h-3 w-3" />
+              NootropicFM Sound Systems (Earbuds Only)
+            </button>
             <button
               type="button"
               onClick={() => {

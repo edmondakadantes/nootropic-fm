@@ -26,6 +26,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sliders,
+  Sparkles,
   Volume2,
   Zap,
 } from 'lucide-react';
@@ -42,7 +43,14 @@ import type {
   ResolvedGenre,
   UserProfile,
 } from '../../shared/types';
-import { DEVICE_LABELS, GENRE_META, STATE_LABELS, TARGET_LABELS } from '../../shared/types';
+import {
+  DEVICE_LABELS,
+  GENRE_META,
+  STATE_LABELS,
+  STUDIO_MIX_GENRES,
+  TARGET_LABELS,
+  type OutputDevice,
+} from '../../shared/types';
 import { estimateAgePriorIafHz } from '../audio/dspMath';
 import {
   PsychoacousticEngine,
@@ -167,6 +175,8 @@ interface PlayerViewProps {
   lyriaRealtimeAvailable?: boolean;
   isPro?: boolean;
   stripeAvailable?: boolean;
+  themeMode?: 'daylight' | 'night';
+  onOpenSoundSystems?: () => void;
   onUpgradePro?: () => void;
   onStartDirectCheckout?: (plan: 'annual' | 'monthly') => Promise<void>;
   onOpenCustomCheckIn?: () => void;
@@ -203,6 +213,8 @@ export function PlayerView({
   lyriaRealtimeAvailable: _lyriaRealtimeAvailable = false,
   isPro = false,
   stripeAvailable = false,
+  themeMode = 'night',
+  onOpenSoundSystems,
   onUpgradePro,
   onStartDirectCheckout,
   onOpenCustomCheckIn,
@@ -313,6 +325,7 @@ export function PlayerView({
   const [voiceGuideEnabled, setVoiceGuideEnabled] = useState<boolean>(() => readVoiceGuideEnabled());
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null);
+  const [activeDevice, setActiveDevice] = useState<OutputDevice>(recommendation.device);
 
   const effectiveFreeLimitSec = FREE_PREVIEW_LIMIT_SEC + shareBonusSec;
   const remainingFreeSec = Math.max(0, effectiveFreeLimitSec - dailyFreeUsedSec);
@@ -407,6 +420,14 @@ export function PlayerView({
   profileNameRef.current = profile?.displayName ?? null;
   const layerMonitorRef = useRef<LayerMonitorMode>(layerMonitor);
   layerMonitorRef.current = layerMonitor;
+  const activeDeviceRef = useRef<OutputDevice>(activeDevice);
+  activeDeviceRef.current = activeDevice;
+  const themeModeRef = useRef<'daylight' | 'night'>(themeMode);
+  themeModeRef.current = themeMode;
+
+  useEffect(() => {
+    engineRef.current?.setCircadianMode(themeMode);
+  }, [themeMode]);
 
   const triggerSessionVoiceCue = (cueType: 'intro_full' | 'intro_short' | 'outro_landing') => {
     if (!voiceGuideEnabledRef.current || layerMonitorRef.current === 'science_only') return;
@@ -420,6 +441,7 @@ export function PlayerView({
         modulationHz: recommendation.params.modulationHz,
         genre: genreRef.current,
         isDriving: recommendation.safetyMode,
+        device: activeDeviceRef.current,
         timeBucket: inferClientTimeBucket(),
         durationMin: recommendation.plannedDurationMin,
       })
@@ -496,6 +518,7 @@ export function PlayerView({
     voiceOutroSentRef.current = false;
     setVoiceSpeaking(false);
     setVoiceTranscript(null);
+    setActiveDevice(recommendation.device);
     elapsedRef.current = 0;
     activeElapsedMsRef.current = 0;
     lastCheckpointSecRef.current = 0;
@@ -601,6 +624,7 @@ export function PlayerView({
         );
 
         if (!mounted) return;
+        engineRef.current?.setCircadianMode(themeModeRef.current);
         engineRef.current?.setAlphaIafHz(alphaIafHz);
         engineRef.current?.adjustModDepth(modMultRef.current);
         if (engineRef.current) {
@@ -1475,17 +1499,19 @@ export function PlayerView({
       ? 'Layer 1 · Science Signal'
       : layerMonitor === 'music_only'
         ? `${activeVibeDisplay.label} · Plain Music`
-        : telemetry.carrierMode === 'lyria_realtime'
-          ? `${activeVibeDisplay.label} · Endless Stream`
-          : telemetry.usingCustomTrack || audioSource === 'community_cache'
-            ? activeVibeDisplay.label
-            : telemetry.usingStudioAudio
-              ? `${activeVibeDisplay.label} · Studio`
-              : activeVibeDisplay.label;
+        : genre === 'nootropic_trance' && !telemetry.usingCustomTrack
+          ? 'NootropicFM Mode · 6×40 Hz Lock'
+          : telemetry.carrierMode === 'lyria_realtime'
+            ? `${activeVibeDisplay.label} · Endless Stream`
+            : telemetry.usingCustomTrack || audioSource === 'community_cache'
+              ? activeVibeDisplay.label
+              : telemetry.usingStudioAudio
+                ? `${activeVibeDisplay.label} · Studio`
+                : activeVibeDisplay.label;
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
-      {recommendation.safetyMode && (
+      {recommendation.safetyMode ? (
         <div className="animate-rise rounded-xl border border-amber-400/40 bg-amber-500/10 p-3.5">
           <div className="flex items-start gap-2.5">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
@@ -1499,7 +1525,40 @@ export function PlayerView({
             </div>
           </div>
         </div>
-      )}
+      ) : activeDevice === 'speakers' ? (
+        <div className="animate-rise flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-amber-400/45 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">
+          <div className="flex items-start gap-2.5 max-w-md">
+            <Headphones className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+            <span>
+              <strong className="text-amber-200">Speaker Mode Degraded — In-Ear Buds Required:</strong>{' '}
+              Room crosstalk weakens stereo phase-locking. Put both earbuds in to unlock 100%
+              dichotic depth.
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveDevice('headphones');
+                engineRef.current?.applyAcousticProfile({ hugginsPassed: true });
+                setTelemetry((prev) => ({ ...prev, hugginsStatus: 'verified_stereo' }));
+              }}
+              className="rounded-lg border border-emerald-400/50 bg-[#0B0C0E] px-2.5 py-1.5 font-mono-tech text-[10px] font-semibold text-[#34D399] transition hover:border-emerald-400"
+            >
+              Earbuds In · Unlock Stereo
+            </button>
+            {onOpenSoundSystems && (
+              <button
+                type="button"
+                onClick={onOpenSoundSystems}
+                className="rounded-lg border border-white/15 bg-[#141518] px-2.5 py-1.5 font-mono-tech text-[10px] text-[#D4D4CE] hover:text-[#F3F1EC]"
+              >
+                Earbuds 01
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {/* Brief Custom Music Background Status */}
       {customGenState === 'generating' && activeCustomLabel && (
@@ -1567,7 +1626,12 @@ export function PlayerView({
             </h1>
             <p className="text-[11px] text-[#8E8E88]">
               {STATE_LABELS[recommendation.currentState]} → {TARGET_LABELS[recommendation.targetState]} ·{' '}
-              {DEVICE_LABELS[recommendation.device]}
+              {DEVICE_LABELS[activeDevice]}
+              {!recommendation.safetyMode && activeDevice === 'headphones' && (
+                <span className="ml-1.5 font-mono-tech text-[10px] text-[#34D399]">
+                  · Earbuds Dichotic Lock
+                </span>
+              )}
             </p>
           </div>
 
@@ -1800,8 +1864,34 @@ export function PlayerView({
           </div>
         </div>
 
-        {/* Prominent 2-Button Music Engine Selector: Studio Mix vs Endless Stream */}
-        <div className="space-y-2">
+        {/* Standalone Flagship NootropicFM Mode + 2-Button Carrier Engine Selector */}
+        <div className="space-y-2.5">
+          <button
+            type="button"
+            onClick={() => switchGenre('nootropic_trance')}
+            className={`flex w-full items-center justify-between gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
+              genre === 'nootropic_trance' && !telemetry.usingCustomTrack
+                ? 'border-emerald-400/75 bg-emerald-500/[0.11] text-[#F3F1EC] shadow-[0_0_20px_rgba(52,211,153,0.14)]'
+                : 'border-emerald-400/30 bg-[#0F1013] text-[#D4D4CE] hover:border-emerald-400/60 hover:text-[#F3F1EC]'
+            }`}
+          >
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold sm:text-sm">
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                <span>NootropicFM Signature Mode</span>
+                <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
+                  Standalone 6×40 Hz
+                </span>
+              </div>
+              <p className="mt-0.5 truncate text-[11px] text-[#8E8E88]">
+                Dedicated 120 BPM hypnotic neural lock · Engineered for sealed in-ear buds
+              </p>
+            </div>
+            <span className="shrink-0 rounded-md border border-white/12 bg-[#14161A] px-2 py-1 font-mono-tech text-[9.5px] font-bold uppercase tracking-wider text-[#34D399]">
+              {genre === 'nootropic_trance' && !telemetry.usingCustomTrack ? '✓ Locked' : 'Activate'}
+            </span>
+          </button>
+
           <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
               {/* Button 1: Studio Mix */}
               <button
@@ -2175,12 +2265,12 @@ export function PlayerView({
             </div>
           </div>
 
-          {/* Music Style Switcher */}
+          {/* Music Style Switcher (10 Standard Studio Mix Genres — NootropicFM Mode separated above) */}
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="inline-flex items-center gap-1.5 font-medium text-[#D4D4CE]">
                 <Music2 className="h-3.5 w-3.5 text-[#34D399]" />
-                Switch Music Style Live
+                Switch Studio Mix Genre Live (10 Styles)
               </span>
               {telemetry.backgroundAudioActive && (
                 <span className="inline-flex items-center gap-1 rounded border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 font-mono-tech text-[10px] font-medium text-[#34D399]">
@@ -2190,10 +2280,9 @@ export function PlayerView({
               )}
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {(Object.keys(GENRE_META) as ResolvedGenre[]).map((style) => {
+              {STUDIO_MIX_GENRES.map((style) => {
                 const meta = GENRE_META[style];
                 const active = !telemetry.usingCustomTrack && genre === style;
-                const isSignature = style === 'nootropic_trance';
                 return (
                   <button
                     key={style}
@@ -2202,18 +2291,11 @@ export function PlayerView({
                     className={`rounded-xl border px-3 py-2 text-left transition-all ${
                       active
                         ? 'border-emerald-400/65 bg-emerald-400/12 text-[#F3F1EC] shadow-[0_0_16px_rgba(52,211,153,0.14)]'
-                        : isSignature
-                          ? 'border-emerald-400/35 bg-emerald-500/[0.06] text-[#F3F1EC] hover:border-emerald-400/60 hover:bg-emerald-500/[0.11]'
-                          : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
+                        : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-xs font-semibold">{meta.label}</span>
-                      {isSignature && (
-                        <span className="rounded border border-emerald-400/40 bg-emerald-400/15 px-1.5 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
-                          6×40 Hz
-                        </span>
-                      )}
                     </div>
                     <div className="mt-0.5 text-[10px] text-[#7E7E78]">{meta.shortDesc}</div>
                   </button>

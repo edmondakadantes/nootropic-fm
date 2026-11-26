@@ -4,7 +4,13 @@ import {
   type VoiceConciergeRequest,
   type VoiceCueType,
 } from '../shared/voiceConcierge';
-import type { CurrentState, ResolvedGenre, TargetState, TimeOfDayBucket } from '../shared/types';
+import type {
+  CurrentState,
+  OutputDevice,
+  ResolvedGenre,
+  TargetState,
+  TimeOfDayBucket,
+} from '../shared/types';
 import { GENRE_META } from '../shared/types';
 import type { Env } from './env';
 
@@ -286,6 +292,10 @@ export function sanitizeVoiceRequestPayload(raw: Record<string, unknown>): Voice
   const modulationHz = Math.max(1, Math.min(45, Number(raw.modulationHz) || 16));
   const durationMin = Math.max(5, Math.min(120, Number(raw.durationMin) || 25));
 
+  const devRaw = String(raw.device ?? 'headphones');
+  const device: OutputDevice =
+    devRaw === 'speakers' || devRaw === 'car_audio' ? devRaw : 'headphones';
+
   return {
     cueType,
     firstName: typeof raw.firstName === 'string' ? raw.firstName.slice(0, 36) : null,
@@ -295,6 +305,7 @@ export function sanitizeVoiceRequestPayload(raw: Record<string, unknown>): Voice
     modulationHz,
     genre,
     isDriving: Boolean(raw.isDriving),
+    device,
     timeBucket,
     durationMin,
   };

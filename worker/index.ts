@@ -1370,6 +1370,63 @@ export default {
         return json({ spec: recommendation.executableSpec ?? spec, recommendation, fromCache }, 200, request);
       }
 
+      // POST /api/hardware/waitlist — NootropicFM Sound Systems (Earbuds 01 / Earbuds Pro / Sound System 01) waitlist
+      if (url.pathname === '/api/hardware/waitlist' && request.method === 'POST') {
+        const reqOrigin = request.headers.get('origin') ?? '';
+        if (reqOrigin && !isTrustedOrigin(reqOrigin)) {
+          return json({ error: 'Untrusted request origin' }, 403, request);
+        }
+        const allowed = await checkDailyRateLimit(env.DB, request, 'hardware_waitlist', 15);
+        if (!allowed) {
+          return json({ error: 'Too many waitlist requests today. Please try again tomorrow.' }, 429, request);
+        }
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const rawEmail = String(body.email ?? '').trim().toLowerCase().slice(0, 160);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(rawEmail)) {
+          return json({ error: 'Please enter a valid email address.' }, 400, request);
+        }
+        const validProducts = new Set(['earbuds_01_usb_c', 'earbuds_pro_hrv', 'sound_system_01']);
+        const productCode = validProducts.has(String(body.productCode ?? ''))
+          ? String(body.productCode)
+          : 'earbuds_01_usb_c';
+        const profileId =
+          typeof body.profileId === 'string' && body.profileId.length <= 64
+            ? body.profileId
+            : null;
+        const cfCountry = String(
+          ((request as unknown as { cf?: { country?: string } }).cf?.country ?? 'US').toUpperCase()
+        );
+
+        await env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS hardware_waitlist (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             email TEXT NOT NULL,
+             product_code TEXT NOT NULL,
+             profile_id TEXT,
+             country_code TEXT,
+             created_at TEXT NOT NULL,
+             UNIQUE(email, product_code)
+           )`
+        ).run();
+
+        await env.DB.prepare(
+          `INSERT INTO hardware_waitlist (email, product_code, profile_id, country_code, created_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(email, product_code) DO UPDATE SET profile_id = COALESCE(excluded.profile_id, hardware_waitlist.profile_id)`
+        )
+          .bind(rawEmail, productCode, profileId, cfCountry, new Date().toISOString())
+          .run();
+
+        const row = await env.DB.prepare(
+          `SELECT id FROM hardware_waitlist WHERE email = ? AND product_code = ?`
+        )
+          .bind(rawEmail, productCode)
+          .first<{ id?: number }>();
+
+        const queueNumber = 140 + Number(row?.id ?? 1);
+        return json({ ok: true, queueNumber, productCode }, 200, request);
+      }
+
       // POST /api/voice/concierge — Zero-cost R2-cached personalized session Voice Concierge (2-part greeting + science bridge)
       if (url.pathname === '/api/voice/concierge' && request.method === 'POST') {
         const reqOrigin = request.headers.get('origin') ?? '';

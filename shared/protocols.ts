@@ -933,12 +933,22 @@ export function selectProtocolRecommendation(input: {
   const bestExploit = [...scored].sort((a, b) => b.expectedMean - a.expectedMean)[0];
   const thompsonWinner = [...scored].sort((a, b) => b.thompsonDraw - a.thompsonDraw)[0];
 
-  const tranceArmEntry =
+  const directTranceArm =
     !isDriving &&
     effectiveTarget !== 'sleep_winddown' &&
     (input.requestedGenre === 'nootropic_trance' || input.customGoalSlug === 'trance_lock')
-      ? scored.find((s) => s.arm.id === 'nootropic-trance-6x40hz')
+      ? PROTOCOL_ARMS.find((a) => a.id === 'nootropic-trance-6x40hz')
       : undefined;
+
+  const tranceArmEntry = directTranceArm
+    ? scored.find((s) => s.arm.id === 'nootropic-trance-6x40hz') ?? {
+        arm: directTranceArm,
+        expectedMean: directTranceArm.priorAlpha / (directTranceArm.priorAlpha + directTranceArm.priorBeta),
+        thompsonDraw: 0.99,
+        cohortTrials: 0,
+        profileTrials: 0,
+      }
+    : undefined;
 
   const isExploration = tranceArmEntry ? false : thompsonWinner.arm.id !== bestExploit.arm.id;
   const chosen = tranceArmEntry ?? thompsonWinner;
@@ -1077,13 +1087,17 @@ export function selectProtocolRecommendation(input: {
   }
 
   // Stratified 25% Blind A/B Control strictly gated on explicit Research Consent (1 sham per 4-session block)
-  const isControlTrial = assignStratifiedShamControl({
-    recentControlFlags: input.recentControlFlags ?? [],
-    researchConsent: input.profile.researchConsent === true,
-    allowControlTrial: input.allowControlTrial,
-    ephemeralMode: Boolean(input.ephemeralMode),
-    blockSize: 4,
-  });
+  // Standalone NootropicFM Mode (`nootropic-trance-6x40hz`) NEVER runs sham control so the 6x40 Hz lock hits at 100% strength!
+  const isControlTrial =
+    chosen.arm.id === 'nootropic-trance-6x40hz'
+      ? false
+      : assignStratifiedShamControl({
+          recentControlFlags: input.recentControlFlags ?? [],
+          researchConsent: input.profile.researchConsent === true,
+          allowControlTrial: input.allowControlTrial,
+          ephemeralMode: Boolean(input.ephemeralMode),
+          blockSize: 4,
+        });
 
   const cohortKey = buildCohortKey(
     input.profile.ageBand,

@@ -416,6 +416,8 @@ export class PsychoacousticEngine {
   private rainBed = new StereoRainBed();
   private voicePlayer = new VoiceConciergePlayer();
   private musicMasterBus: GainNode | null = null;
+  private circadianFilterNode: BiquadFilterNode | null = null;
+  private circadianMode: 'daylight' | 'night' = 'night';
   private voiceSpeakingListeners = new Set<(speaking: boolean) => void>();
 
   // Mobile background bridge, iOS 'interrupted' recovery & wake lock
@@ -604,6 +606,15 @@ export class PsychoacousticEngine {
       }
     });
 
+    // Circadian Layer-2 tone shaper: crisp full-spectrum clarity in Daylight Mode (0 dB),
+    // gentle melatonin-safe -2.8 dB silk roll-off above 3.2 kHz in Night Mode (Layer-1 untouched!)
+    const circadianFilter = ctx.createBiquadFilter();
+    circadianFilter.type = 'highshelf';
+    circadianFilter.frequency.setValueAtTime(Math.min(ctx.sampleRate * 0.42, 3200), ctx.currentTime);
+    circadianFilter.gain.setValueAtTime(this.circadianMode === 'night' ? -2.8 : 0.0, ctx.currentTime);
+    this.circadianFilterNode = circadianFilter;
+    musicMasterBus.connect(circadianFilter);
+
     if (this.workletsReady) {
       const musicPreLim = new AudioWorkletNode(ctx, 'nootropic-lookahead-limiter', {
         numberOfInputs: 1,
@@ -612,14 +623,14 @@ export class PsychoacousticEngine {
       });
       const initPreCeil = this.computeMusicPreLimiterCeiling();
       musicPreLim.parameters.get('ceiling')?.setValueAtTime(initPreCeil, ctx.currentTime);
-      musicMasterBus.connect(musicPreLim);
+      circadianFilter.connect(musicPreLim);
       musicPreLim.connect(masterSumBus);
       this.musicPreLimiterNode = musicPreLim;
     } else {
       const preClipper = ctx.createWaveShaper();
       preClipper.curve = createMasteringLimiterCurve();
       preClipper.oversample = '2x';
-      musicMasterBus.connect(preClipper);
+      circadianFilter.connect(preClipper);
       preClipper.connect(masterSumBus);
       this.musicPreLimiterNode = null;
     }
@@ -1959,6 +1970,18 @@ export class PsychoacousticEngine {
 
   public stopVoiceConcierge(fadeSec = 0.2): void {
     this.voicePlayer.cancelActiveVoices(fadeSec);
+  }
+
+  public setCircadianMode(mode: 'daylight' | 'night'): void {
+    this.circadianMode = mode;
+    if (this.ctx && this.circadianFilterNode) {
+      smoothSetParam(
+        this.circadianFilterNode.gain,
+        mode === 'night' ? -2.8 : 0.0,
+        this.ctx.currentTime,
+        0.35
+      );
+    }
   }
 
   public getMomentaryLufs(): number | null {
@@ -4241,6 +4264,7 @@ export class PsychoacousticEngine {
       this.musicEnvBuf = null;
       this.musicEnvSmoothedRms = 0.165;
       this.musicMasterBus = null;
+      this.circadianFilterNode = null;
 
       this.pendingCloseCtx = ctxRef;
       this.pendingCloseTimer = window.setTimeout(() => {
@@ -4306,6 +4330,7 @@ export class PsychoacousticEngine {
     this.rainBed.stop();
     this.voicePlayer.stop();
     this.musicMasterBus = null;
+    this.circadianFilterNode = null;
     this.clearStudioDeck(0.1);
     this.teardownMediaDeckPool();
     if (this.visibilityHandler) {

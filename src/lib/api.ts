@@ -508,6 +508,7 @@ export const api = {
     modulationHz: number;
     genre: ResolvedGenre;
     isDriving: boolean;
+    device?: OutputDevice;
     timeBucket?: string;
     durationMin?: number;
   }) =>
@@ -521,6 +522,20 @@ export const api = {
       fromCache?: boolean;
       provider?: string;
     }>('/api/voice/concierge', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  joinHardwareWaitlist: (payload: {
+    email: string;
+    productCode: 'earbuds_01_usb_c' | 'earbuds_pro_hrv' | 'sound_system_01';
+    profileId?: string;
+  }) =>
+    apiFetch<{
+      ok: boolean;
+      queueNumber: number;
+      productCode: string;
+    }>('/api/hardware/waitlist', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

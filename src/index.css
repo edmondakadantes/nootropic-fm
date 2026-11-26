@@ -213,6 +213,155 @@ input[type='range'] {
   accent-color: #34D399;
 }
 
+/* ============================================================================
+ * CIRCADIAN DAYLIGHT MODE — Warm Alabaster Precision Acoustic Lab (#F4F1EA)
+ * Zero harsh #FFFFFF blue glare; preserves #030706/#070809 OLED oscilloscope bays.
+ * ============================================================================ */
+html[data-theme='daylight'] body {
+  background-color: #F4F1EA;
+  color: #141619;
+}
+
+html[data-theme='daylight'] .bg-\[\#0A0B0C\] {
+  background-color: #F4F1EA !important;
+}
+
+html[data-theme='daylight'] .bg-\[\#0A0B0C\]\/90 {
+  background-color: rgba(244, 241, 234, 0.92) !important;
+}
+
+html[data-theme='daylight'] .glass-stage {
+  background: linear-gradient(180deg, #FCFBF8 0%, #F5F2EA 100%);
+  border: 1px solid rgba(20, 22, 25, 0.12);
+  box-shadow:
+    0 20px 48px -24px rgba(20, 22, 25, 0.12),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.92);
+}
+
+html[data-theme='daylight'] .glass-card {
+  background: #FAF8F3;
+  border: 1px solid rgba(20, 22, 25, 0.1);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.85);
+}
+
+html[data-theme='daylight'] .glow-input-wrap {
+  background: rgba(20, 22, 25, 0.14);
+}
+
+html[data-theme='daylight'] .glow-input-wrap:focus-within {
+  background: rgba(4, 120, 87, 0.65);
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.14);
+}
+
+html[data-theme='daylight'] .subtle-chip {
+  background: #ECE8DE;
+  border: 1px solid rgba(20, 22, 25, 0.12);
+  color: #3B3F46;
+}
+
+html[data-theme='daylight'] .subtle-chip:hover {
+  background: #E2DDD1;
+  border-color: rgba(20, 22, 25, 0.26);
+  color: #141619;
+}
+
+html[data-theme='daylight'] .btn-aurora {
+  background: #141619;
+  color: #FAF8F3 !important;
+  border: 1px solid #141619;
+  box-shadow:
+    0 2px 0 rgba(20, 22, 25, 0.25),
+    0 10px 22px -8px rgba(20, 22, 25, 0.28);
+}
+
+html[data-theme='daylight'] .btn-aurora:hover:not(:disabled) {
+  background: #22262B;
+  color: #FFFFFF !important;
+}
+
+html[data-theme='daylight'] .btn-aurora svg {
+  fill: currentColor;
+}
+
+/* Warm tactile stone wells for recessed cards & controls (excluding #030706 OLED scope canvas) */
+html[data-theme='daylight'] .bg-\[\#070809\],
+html[data-theme='daylight'] .bg-\[\#08090B\],
+html[data-theme='daylight'] .bg-\[\#0B0C0E\],
+html[data-theme='daylight'] .bg-\[\#0F1013\],
+html[data-theme='daylight'] .bg-\[\#101114\],
+html[data-theme='daylight'] .bg-\[\#101215\],
+html[data-theme='daylight'] .bg-\[\#111215\],
+html[data-theme='daylight'] .bg-\[\#121417\],
+html[data-theme='daylight'] .bg-\[\#131417\],
+html[data-theme='daylight'] .bg-\[\#131518\],
+html[data-theme='daylight'] .bg-\[\#141518\],
+html[data-theme='daylight'] .bg-\[\#14161A\],
+html[data-theme='daylight'] .bg-\[\#16181C\],
+html[data-theme='daylight'] .bg-\[\#17191E\],
+html[data-theme='daylight'] .bg-\[\#181A1F\],
+html[data-theme='daylight'] .bg-\[\#191C22\],
+html[data-theme='daylight'] .bg-\[\#22252A\] {
+  background-color: #EBE7DD !important;
+}
+
+html[data-theme='daylight'] .bg-\[\#050706\] {
+  background-color: #E5E0D4 !important;
+}
+
+/* Crisp Studio Charcoal & Optical Forest Emerald Typography */
+html[data-theme='daylight'] .text-\[\#F3F1EC\],
+html[data-theme='daylight'] .text-\[\#E8E6DF\] {
+  color: #141619 !important;
+}
+
+html[data-theme='daylight'] .text-\[\#D4D4CE\] {
+  color: #2C3036 !important;
+}
+
+html[data-theme='daylight'] .text-\[\#A3A39E\],
+html[data-theme='daylight'] .text-\[\#8E8E88\],
+html[data-theme='daylight'] .text-\[\#7E7E78\],
+html[data-theme='daylight'] .text-\[\#6E6E68\] {
+  color: #555961 !important;
+}
+
+html[data-theme='daylight'] .text-\[\#34D399\],
+html[data-theme='daylight'] .text-emerald-200,
+html[data-theme='daylight'] .text-emerald-300,
+html[data-theme='daylight'] .text-\[\#D9F3E7\]\/95 {
+  color: #047857 !important;
+}
+
+html[data-theme='daylight'] .text-amber-100,
+html[data-theme='daylight'] .text-amber-200,
+html[data-theme='daylight'] .text-amber-300 {
+  color: #92400E !important;
+}
+
+html[data-theme='daylight'] .text-rose-100,
+html[data-theme='daylight'] .text-rose-200,
+html[data-theme='daylight'] .text-rose-300 {
+  color: #BE123C !important;
+}
+
+/* Precision Graphite Hairline Borders */
+html[data-theme='daylight'] .border-white\/10,
+html[data-theme='daylight'] .border-white\/12,
+html[data-theme='daylight'] .border-white\/15,
+html[data-theme='daylight'] .border-white\/20,
+html[data-theme='daylight'] .border-white\/25,
+html[data-theme='daylight'] .border-white\/30,
+html[data-theme='daylight'] .border-white\/35,
+html[data-theme='daylight'] .border-white\/\[0\.06\],
+html[data-theme='daylight'] .border-white\/\[0\.07\],
+html[data-theme='daylight'] .border-white\/\[0\.08\] {
+  border-color: rgba(20, 22, 25, 0.13) !important;
+}
+
+html[data-theme='daylight'] input[type='range'] {
+  accent-color: #047857;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-rise,
   .animate-step,
