@@ -64,6 +64,7 @@ interface DebriefViewProps {
   tappingMeanItiMs?: number | null;
   hrvRmssdMs?: number | null;
   hrvLfRatio?: number | null;
+  activeTrackKey?: string | null;
   studySpecId?: string;
   studyTitle?: string;
   entrainmentType?: string;
@@ -108,6 +109,7 @@ export function DebriefView({
   tappingMeanItiMs = null,
   hrvRmssdMs = null,
   hrvLfRatio = null,
+  activeTrackKey = null,
   studySpecId,
   studyTitle,
   entrainmentType,
@@ -212,6 +214,7 @@ export function DebriefView({
         tappingMeanItiMs,
         hrvRmssdMs,
         hrvLfRatio,
+        activeTrackKey,
         studySpecId,
         studyTitle,
         entrainmentType,

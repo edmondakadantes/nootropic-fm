@@ -164,8 +164,14 @@ test('selectProtocolRecommendation micro-tunes Hz, arms circadian stabilizer, an
     device: 'headphones',
     durationMin: 30,
     cohortStats: [],
-    profileStats: [{ armId: 'smr-15hz-focus', alpha: 14, beta: 2, trials: 10, avgDelta: 2, avgCompletion: 0.95 }],
-    profileChronoStats: [{ armId: 'smr-15hz-focus', alpha: 8, beta: 1, trials: 5, avgDelta: 2.1, avgCompletion: 1 }],
+    profileStats: [
+      { armId: 'beta-drive-16hz', alpha: 42, beta: 1, trials: 36, avgDelta: 2, avgCompletion: 0.96 },
+      { armId: 'nootropic-trance-6x40hz', alpha: 2, beta: 18, trials: 18, avgDelta: 0, avgCompletion: 0.5 },
+      { armId: 'crisp-vigilance-18hz', alpha: 3, beta: 12, trials: 12, avgDelta: 0, avgCompletion: 0.6 },
+      { armId: 'steady-horizon-14hz', alpha: 3, beta: 12, trials: 12, avgDelta: 0, avgCompletion: 0.6 },
+      { armId: 'deep-stochastic-flow', alpha: 3, beta: 12, trials: 12, avgDelta: 0, avgCompletion: 0.6 },
+    ],
+    profileChronoStats: [{ armId: 'beta-drive-16hz', alpha: 20, beta: 1, trials: 12, avgDelta: 2.1, avgCompletion: 1 }],
     timeOfDayBucket: 'afternoon',
   });
 
@@ -173,9 +179,10 @@ test('selectProtocolRecommendation micro-tunes Hz, arms circadian stabilizer, an
   assert.equal(focusRec.appliedNeuralTuning.calibrationPct, 68);
   assert.equal(focusRec.appliedNeuralTuning.chronoAdapted, true);
   assert.equal(focusRec.appliedNeuralTuning.proactiveLiftMinute, 18);
-  assert.ok(
-    focusRec.params.modulationHz > 15,
-    `Expected Beta focus modulationHz > 15 after +0.8 offset, got ${focusRec.params.modulationHz}`
+  assert.equal(
+    focusRec.params.modulationHz,
+    16.8,
+    `Expected Beta-Drive 16 Hz micro-tuned +0.8 Hz -> 16.8 Hz, got ${focusRec.params.modulationHz}`
   );
   assert.ok(
     focusRec.executableSpec?.entrainment.isoBridge?.reasonLabel.includes('Circadian'),
@@ -193,7 +200,10 @@ test('selectProtocolRecommendation micro-tunes Hz, arms circadian stabilizer, an
     device: 'headphones',
     durationMin: 20,
     cohortStats: [],
-    profileStats: [{ armId: 'alpha-10hz-calm', alpha: 12, beta: 2, trials: 8, avgDelta: 2, avgCompletion: 0.95 }],
+    profileStats: [
+      { armId: 'alpha-parasympathetic-10hz', alpha: 40, beta: 1, trials: 30, avgDelta: 2, avgCompletion: 0.95 },
+      { armId: 'theta-drift-6hz', alpha: 2, beta: 18, trials: 18, avgDelta: 0, avgCompletion: 0.5 },
+    ],
     timeOfDayBucket: 'evening',
   });
   assert.equal(calmRec.params.modulationHz, 10.6);

@@ -165,6 +165,9 @@ export class GenerativeComposer {
   private fractal = new PinkFractalWalk();
   private kickPattern: boolean[] = buildEuclideanPattern(16, 4);
   private hatPattern: boolean[] = buildEuclideanPattern(16, 6);
+  private bassPattern: boolean[] = buildEuclideanPattern(16, 5);
+  private lastMelodicMidi: number | null = null;
+  private striatalArcPhase: 'groove' | 'riser' | 'drop' = 'groove';
 
   private getSamplePadScale(palette: InstrumentPalette = this.palette): number {
     return palette === 'cinematic_strings' || palette === 'ambient_water' ? 0.78 : 0.58;
@@ -224,6 +227,8 @@ export class GenerativeComposer {
     this.delaySend = delaySend;
     this.chordIdx = 0;
     this.prevVoicedMidis = [];
+    this.lastMelodicMidi = null;
+    this.striatalArcPhase = 'groove';
     this.stepCount = 0;
     this.progressRatio = 0;
     this.usingRealSamples = false;
@@ -414,13 +419,20 @@ export class GenerativeComposer {
     if (perc === 'none') {
       this.kickPattern = new Array(16).fill(false);
       this.hatPattern = new Array(16).fill(false);
+      this.bassPattern = new Array(16).fill(false);
     } else if (perc === 'minimal_soft') {
       this.kickPattern = buildEuclideanPattern(16, 2);
       this.hatPattern = buildEuclideanPattern(16, Math.max(2, Math.round(density * 5)));
+      this.bassPattern = buildEuclideanPattern(16, 3);
     } else {
       this.kickPattern = buildEuclideanPattern(16, 4);
       this.hatPattern = buildEuclideanPattern(16, Math.max(4, Math.round(density * 9)));
+      this.bassPattern = buildEuclideanPattern(16, 5);
     }
+  }
+
+  public getStriatalArcPhase(): 'groove' | 'riser' | 'drop' {
+    return this.striatalArcPhase;
   }
 
   public getCurrentBpm(): number {
@@ -716,28 +728,6 @@ export class GenerativeComposer {
 
     while (this.nextStepTime < ctx.currentTime + lookahead) {
       const step = this.stepCount % 16;
-      if (this.stepCount >= this.nextChordStep) {
-        const stepsPerChord = liveBpm === 0 || liveBpm <= 68 ? 32 : 64;
-        this.nextChordStep = this.stepCount + stepsPerChord;
-        this.advanceMarkovChord(Math.max(ctx.currentTime + 0.01, this.nextStepTime));
-      }
-      const swing =
-        step % 2 === 1
-          ? this.palette === 'warm_rhodes'
-            ? eighthDur * 0.16
-            : this.palette === 'nylon_acoustic'
-              ? eighthDur * 0.11
-              : this.palette === 'felt_piano'
-                ? eighthDur * 0.08
-                : 0
-          : 0;
-      const pocketDelay =
-        this.palette === 'warm_rhodes' && (step % 4 === 1 || step % 4 === 3) ? 0.011 : 0;
-      const rubato =
-        this.palette === 'felt_piano' ? (this.fractal.next() - 0.5) * 0.022 : 0;
-      const humanMicro = (Math.random() - 0.5) * 0.008;
-      const t = Math.max(ctx.currentTime + 0.01, this.nextStepTime + swing + pocketDelay + rubato + humanMicro);
-      const lift = this.antiMonotonyActive ? 1.2 : 1.0;
       const genreSuppressesDrums =
         this.genre === 'nature_rain' ||
         this.genre === 'ambient_space' ||
@@ -756,6 +746,75 @@ export class GenerativeComposer {
           : this.musicSpec.percussion === 'none' && genreWantsGroove
             ? 'minimal_soft'
             : this.musicSpec.percussion;
+
+      // 32-Bar Striatal Anticipation -> Resolution Dopamine Arc (Caudate Riser -> Micro-Vacuum -> Accumbens Drop)
+      const arcCycleSteps = liveBpm === 0 || liveBpm <= 72 ? 128 : 256;
+      const arcPos = this.stepCount % arcCycleSteps;
+      const inRiser = arcPos >= Math.floor(arcCycleSteps * 0.75);
+      const inMicroVacuum = perc !== 'none' && arcPos >= arcCycleSteps - 8;
+      const isDropDownbeat = this.stepCount > 0 && arcPos === 0;
+      this.striatalArcPhase =
+        isDropDownbeat || (this.stepCount >= arcCycleSteps && arcPos < 8)
+          ? 'drop'
+          : inRiser
+            ? 'riser'
+            : 'groove';
+
+      const nyqMax = ctx.sampleRate * 0.44;
+      const swing =
+        step % 2 === 1
+          ? this.palette === 'warm_rhodes'
+            ? eighthDur * 0.16
+            : this.palette === 'nylon_acoustic' || this.genre === 'dub_reggae' || this.genre === 'bossa_nova'
+              ? eighthDur * 0.1
+              : this.palette === 'felt_piano'
+                ? eighthDur * 0.08
+                : this.genre === 'deep_electronic'
+                  ? eighthDur * 0.05
+                  : this.genre === 'nootropic_trance'
+                    ? eighthDur * 0.035
+                    : 0
+          : 0;
+      const pocketDelay =
+        this.palette === 'warm_rhodes' && (step % 4 === 1 || step % 4 === 3) ? 0.011 : 0;
+      const rubato =
+        this.palette === 'felt_piano' ? (this.fractal.next() - 0.5) * 0.022 : 0;
+      const humanMicro = (Math.random() - 0.5) * 0.008;
+      const t = Math.max(ctx.currentTime + 0.01, this.nextStepTime + swing + pocketDelay + rubato + humanMicro);
+      const lift = this.antiMonotonyActive ? 1.2 : 1.0;
+
+      if (isDropDownbeat) {
+        const stepsPerChord = liveBpm === 0 || liveBpm <= 68 ? 32 : 64;
+        this.nextChordStep = this.stepCount + stepsPerChord;
+        this.spawnMarkovChord(0, t);
+        if (this.genre !== 'nature_rain') {
+          this.triggerHarmonicVoicing(t, 0.12 * lift);
+        }
+        this.padFilter?.frequency.setTargetAtTime(
+          Math.min(nyqMax, this.computeCutoffHz()),
+          t,
+          0.35
+        );
+      } else if (this.stepCount >= this.nextChordStep) {
+        const stepsPerChord = liveBpm === 0 || liveBpm <= 68 ? 32 : 64;
+        this.nextChordStep = this.stepCount + stepsPerChord;
+        const nextTime = Math.max(ctx.currentTime + 0.01, this.nextStepTime);
+        if (inRiser) {
+          const graph = this.getActiveGraph();
+          this.spawnMarkovChord(Math.max(0, graph.length - 1), nextTime);
+        } else {
+          this.advanceMarkovChord(nextTime);
+        }
+      }
+
+      if (inRiser && this.padFilter && step % 4 === 0) {
+        const riserStart = Math.floor(arcCycleSteps * 0.75);
+        const riserFrac = (arcPos - riserStart) / Math.max(1, arcCycleSteps - riserStart);
+        const targetOpenHz = Math.min(nyqMax, this.computeCutoffHz() + 450 * riserFrac);
+        this.padFilter.frequency.setTargetAtTime(targetOpenHz, t, 0.35);
+      }
+
+      const subArcScale = inMicroVacuum ? 0.75 : isDropDownbeat ? 1.08 : 1.0;
       const metricAccent = step === 0 || step === 8 ? 1.0 : step === 4 || step === 12 ? 0.84 : 0.64;
       const phraseBreath = 0.88 + 0.18 * Math.sin((this.stepCount / 16) * Math.PI);
       const phraseAccent = metricAccent * phraseBreath;
@@ -765,7 +824,7 @@ export class GenerativeComposer {
         if (this.genre === 'nootropic_trance') {
           // Hypnotic 4-on-the-floor velvet pulse + off-beat brushed shaker
           if (step % 4 === 0) {
-            this.triggerWarmSubKick(t, 0.44 * (perc === 'minimal_soft' ? 0.72 : 1.0));
+            this.triggerWarmSubKick(t, 0.44 * subArcScale * (perc === 'minimal_soft' ? 0.72 : 1.0));
           }
           if (!this.speakerSafeEQ && step % 4 === 2) {
             this.triggerBrushedAirHat(t, 0.032 * phraseBreath);
@@ -775,7 +834,7 @@ export class GenerativeComposer {
         } else if (this.genre === 'bossa_nova') {
           // Classic Brazilian surdo pulse on beats 1 & 3 + soft syncopated shaker
           if (step === 0 || step === 8) {
-            this.triggerWarmSubKick(t, (step === 0 ? 0.34 : 0.28) * (perc === 'minimal_soft' ? 0.7 : 1.0));
+            this.triggerWarmSubKick(t, (step === 0 ? 0.34 : 0.28) * subArcScale * (perc === 'minimal_soft' ? 0.7 : 1.0));
           }
           if (!this.speakerSafeEQ && step % 2 === 0) {
             this.triggerBrushedAirHat(t, (step % 4 === 2 ? 0.032 : 0.018) * phraseBreath);
@@ -783,7 +842,7 @@ export class GenerativeComposer {
         } else if (this.genre === 'dub_reggae') {
           // One-drop / steppers warm dub kick + crisp rim click on beat 3 (step 8)
           if (step === 0 || step === 8) {
-            this.triggerWarmSubKick(t, step === 8 ? 0.44 : 0.3);
+            this.triggerWarmSubKick(t, (step === 8 ? 0.44 : 0.3) * subArcScale);
           }
           if (!this.speakerSafeEQ && step === 8) {
             this.triggerWarmWoodRim(t, 0.055 * phraseBreath);
@@ -793,7 +852,7 @@ export class GenerativeComposer {
           }
         } else {
           if (this.kickPattern[step]) {
-            this.triggerWarmSubKick(t, (step === 0 ? 0.46 : 0.34) * (perc === 'minimal_soft' ? 0.65 : 1.0));
+            this.triggerWarmSubKick(t, (step === 0 ? 0.46 : 0.34) * subArcScale * (perc === 'minimal_soft' ? 0.65 : 1.0));
           }
           if (this.genre === 'lofi_keys' && !this.speakerSafeEQ && (step === 4 || step === 12)) {
             this.triggerWarmWoodRim(t + 0.006, 0.046 * phraseBreath);
@@ -806,23 +865,23 @@ export class GenerativeComposer {
         }
       }
 
-      // 2. Genre-Authentic Clean Sub-Bass Anchor (<175 Hz clean sub bus)
+      // 2. Genre-Authentic Clean Sub-Bass Anchor (<175 Hz clean sub bus with E(5,16) kinetic pocket)
       if (perc !== 'none') {
         if (this.genre === 'nootropic_trance' && (step % 4 === 2 || step === 14)) {
-          this.triggerCleanBass(t, step === 14 ? 7 : 0, 0.24 * phraseBreath, eighthDur * 1.45);
+          this.triggerCleanBass(t, step === 14 ? 7 : 0, 0.24 * subArcScale * phraseBreath, eighthDur * 1.45);
         } else if (this.genre === 'bossa_nova' && (step === 0 || step === 6 || step === 8 || step === 14)) {
-          this.triggerCleanBass(t, step >= 8 ? 7 : 0, 0.2 * phraseBreath, eighthDur * 1.6);
+          this.triggerCleanBass(t, step >= 8 ? 7 : 0, 0.2 * subArcScale * phraseBreath, eighthDur * 1.6);
         } else if (this.genre === 'dub_reggae' && (step === 0 || step === 3 || step === 8 || step === 10)) {
           const dubSemi = step === 3 ? 5 : step === 10 ? 7 : 0;
-          this.triggerCleanBass(t, dubSemi, 0.25 * phraseBreath, eighthDur * 1.7);
+          this.triggerCleanBass(t, dubSemi, 0.25 * subArcScale * phraseBreath, eighthDur * 1.7);
         } else if (this.genre === 'jazz_rhodes' && step % 4 === 0) {
           const walkIntervals = [0, 3, 7, 10];
-          this.triggerCleanBass(t, walkIntervals[(step >> 2) % 4], 0.19 * phraseBreath, eighthDur * 1.8);
+          this.triggerCleanBass(t, walkIntervals[(step >> 2) % 4], 0.19 * subArcScale * phraseBreath, eighthDur * 1.8);
         } else if (
           (this.palette === 'deep_electronic' || this.palette === 'warm_rhodes') &&
-          (step === 0 || step === 6 || step === 8 || step === 14)
+          (this.bassPattern[step] || step === 14)
         ) {
-          this.triggerCleanBass(t, step === 14 ? 7 : 0, 0.21 * phraseBreath, eighthDur * 1.5);
+          this.triggerCleanBass(t, step === 14 ? 7 : 0, 0.21 * subArcScale * phraseBreath, eighthDur * 1.5);
         }
       }
 
@@ -875,7 +934,23 @@ export class GenerativeComposer {
     const degree = this.getCurrentChord();
     const walk = this.fractal.next(); // smooth 0..1 pink-fractal contour
     const idx = Math.min(scale.length - 1, Math.floor(walk * scale.length));
-    return Math.max(36, Math.min(81, this.musicSpec.rootMidi + degree.rootOffset + scale[idx] + octaveShift));
+    let midi = Math.max(
+      36,
+      Math.min(81, this.musicSpec.rootMidi + degree.rootOffset + scale[idx] + octaveShift)
+    );
+    // Wundt 85/15 Guardrail: constrain melodic leaps <= 7 semitones (perfect fifth) so novelty never startles attention
+    if (this.lastMelodicMidi !== null && Math.abs(midi - this.lastMelodicMidi) > 7) {
+      if (midi - 12 >= 36 && Math.abs(midi - 12 - this.lastMelodicMidi) <= 7) {
+        midi -= 12;
+      } else if (midi + 12 <= 81 && Math.abs(midi + 12 - this.lastMelodicMidi) <= 7) {
+        midi += 12;
+      } else {
+        const dir = midi > this.lastMelodicMidi ? 1 : -1;
+        midi = Math.max(36, Math.min(81, this.lastMelodicMidi + dir * 7));
+      }
+    }
+    this.lastMelodicMidi = midi;
+    return midi;
   }
 
   private triggerMelodicVoice(time: number, step: number, lift: number, phraseAccent = 1.0): void {
@@ -1076,7 +1151,7 @@ export class GenerativeComposer {
     lp.Q.value = 1.4;
 
     gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp, time + 0.006);
+    gain.gain.linearRampToValueAtTime(amp, time + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, time + 1.35);
 
     const subGain = this.ctx.createGain();
@@ -1113,7 +1188,7 @@ export class GenerativeComposer {
     lp.Q.value = 2.0;
 
     gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.linearRampToValueAtTime(amp * 0.72, time + 0.01);
+    gain.gain.linearRampToValueAtTime(amp * 0.72, time + 0.013);
     gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.42);
 
     pan.pan.value = step % 4 < 2 ? -0.35 : 0.35;
@@ -1127,12 +1202,13 @@ export class GenerativeComposer {
 
   private playGlassHarmonic(time: number, freq: number, amp: number, step: number): void {
     if (!this.ctx || !this.pulseBus) return;
+    const nyqMax = this.ctx.sampleRate * 0.44;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     const pan = this.ctx.createStereoPanner();
 
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, time);
+    osc.frequency.setValueAtTime(Math.min(nyqMax, freq), time);
 
     gain.gain.setValueAtTime(0.0001, time);
     gain.gain.linearRampToValueAtTime(amp, time + 0.045);
@@ -1162,6 +1238,25 @@ export class GenerativeComposer {
     gain.connect(this.cleanSubBus);
     osc.start(time);
     osc.stop(time + 0.28);
+
+    // -1.8 dB Ghost Sidechain breathing pulse on padBus (keeps Layer-1 completely untouched!)
+    if (this.padBus && !this.standby) {
+      const basePad =
+        this.getPalettePadGain() * (this.usingRealSamples ? this.getSamplePadScale(this.palette) : 1.0);
+      const pGain = this.padBus.gain as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+      try {
+        if (typeof pGain.cancelAndHoldAtTime === 'function') {
+          pGain.cancelAndHoldAtTime(time);
+        } else {
+          pGain.cancelScheduledValues(time);
+          pGain.setValueAtTime(basePad, time);
+        }
+        pGain.linearRampToValueAtTime(Math.max(0.001, basePad * 0.813), time + 0.018);
+        pGain.setTargetAtTime(basePad, time + 0.024, 0.065);
+      } catch {
+        // ignore overlapping param schedules
+      }
+    }
   }
 
   private triggerCleanBass(time: number, semiOffset: number, amp: number, dur: number): void {
@@ -1274,6 +1369,8 @@ export class GenerativeComposer {
     this.activePadOscs = [];
     this.activePadGains = [];
     this.prevVoicedMidis = [];
+    this.lastMelodicMidi = null;
+    this.striatalArcPhase = 'groove';
     this.sampler.clear();
     this.usingRealSamples = false;
     this.filterLfo = null;

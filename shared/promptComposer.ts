@@ -283,8 +283,10 @@ export function composeScientificMusicPrompt(input: {
   return [
     `Strictly instrumental ${customGenreLabel} music track. Instrumental only, no vocals, no lyrics.`,
     `Authentic studio ${customGenreLabel} instrumentation with ${tempoClause}, ${harmonicDesc}, and ${textureClause}.`,
-    `[0:00 - 0:15] Intro: Smooth warm instrumental entrance establishing the authentic ${customGenreLabel} rhythm and bass.`,
-    `[0:15 - 1:45] Main Groove: Cohesive continuous instrumental ${customGenreLabel} arrangement with rich evolving textures, zero abrupt drops or sudden silences, ${goalClause}.`,
+    `Carve subtle warm space in the 1.2-2.8 kHz inner-voice thinking band with soft analog harmonics and zero harsh transients below 10 ms.`,
+    `[0:00 - 0:20] Decompression Intro: Warm airlock pad with clean sub-bass entering softly to clear mental static.`,
+    `[0:20 - 1:15] Hypnotic Ignition Groove: Syncopated forward pocket pulse with 85% steady familiarity and 15% organic melodic drift, ${goalClause}.`,
+    `[1:15 - 1:45] Striatal Rise & Flow-Lock Drop: Gentle suspended filter swell resolving cleanly onto the root chord on Beat 1.`,
     `[1:45 - 2:00] Outro: Seamless warm instrumental resolution ideal for continuous looping.`,
     `Instrumental only, strictly no vocals, no singing, no humming, no choir, no spoken words.`,
   ].join(' ');

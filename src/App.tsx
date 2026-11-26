@@ -216,6 +216,7 @@ export default function App() {
     tappingMeanItiMs?: number | null;
     hrvRmssdMs?: number | null;
     hrvLfRatio?: number | null;
+    activeTrackKey?: string | null;
     studySpecId?: string;
     studyTitle?: string;
     entrainmentType?: string;
@@ -664,6 +665,7 @@ export default function App() {
       tappingMeanItiMs?: number | null;
       hrvRmssdMs?: number | null;
       hrvLfRatio?: number | null;
+      activeTrackKey?: string | null;
       sessionIdOverride?: string;
       ephemeralOverride?: boolean;
     }) => {
@@ -689,6 +691,7 @@ export default function App() {
         tappingMeanItiMs: stats.tappingMeanItiMs ?? null,
         hrvRmssdMs: stats.hrvRmssdMs ?? null,
         hrvLfRatio: stats.hrvLfRatio ?? null,
+        activeTrackKey: stats.activeTrackKey ?? null,
         studySpecId: spec?.id,
         studyTitle: spec?.shortLabel || spec?.studyRef.title,
         entrainmentType: spec?.entrainment.type,

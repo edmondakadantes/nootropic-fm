@@ -351,6 +351,7 @@ export interface DebriefPayload {
   tappingMeanItiMs?: number | null;
   hrvRmssdMs?: number | null;
   hrvLfRatio?: number | null;
+  activeTrackKey?: string | null;
   studySpecId?: string;
   studyTitle?: string;
   entrainmentType?: string;

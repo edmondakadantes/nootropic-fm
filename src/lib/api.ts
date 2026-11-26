@@ -344,6 +344,7 @@ export const api = {
           sampleRate?: number;
           v7Remastered?: boolean;
           durationSec?: number;
+          darwinianFitScore?: number;
         }>
       >;
       customTracks?: CustomTrackInfo[];

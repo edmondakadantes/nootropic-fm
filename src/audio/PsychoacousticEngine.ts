@@ -62,6 +62,7 @@ export interface StudioTrackRef {
   sampleRate?: number;
   v7Remastered?: boolean;
   durationSec?: number;
+  darwinianFitScore?: number;
 }
 
 export interface EngineTelemetry {
@@ -110,6 +111,23 @@ export interface EngineTelemetry {
   autopilotLiftActive?: boolean;
   tunnelLockProgress?: number;
   hrvClosedLoopTrim?: number;
+  dopamineArcPhase?: 'groove' | 'riser' | 'drop';
+  ignitionStage?: 'decompression' | 'ignition' | 'flow_locked';
+}
+
+/**
+ * Even-harmonic Studer-style Analog Tape Warmth Curve (exact 0.000 DC offset at x=0, Layer-2 music only).
+ */
+function createAnalogTapeWarmthCurve(): Float32Array<ArrayBuffer> {
+  const n = 4096;
+  const curve = new Float32Array(new ArrayBuffer(n * 4));
+  const tanhNorm = Math.tanh(1.08);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / (n - 1) - 1;
+    const raw = Math.tanh(x * 1.08) / tanhNorm + 0.024 * x * x * (1 - x * x);
+    curve[i] = Math.max(-0.99, Math.min(0.99, raw));
+  }
+  return curve;
 }
 
 /**
@@ -400,6 +418,10 @@ export class PsychoacousticEngine {
   private amTiltNodeL: AudioNode | null = null;
   private amTiltNodeR: AudioNode | null = null;
   private band2SpectralRotNode: BiquadFilterNode | null = null;
+  private mudCleanFilterNode: BiquadFilterNode | null = null;
+  private innerVoicePocketNode: BiquadFilterNode | null = null;
+  private ignitionArcFilterNode: BiquadFilterNode | null = null;
+  private airShimmerPanNode: StereoPannerNode | null = null;
   private activeStemAbort: AbortController | null = null;
   private envSinkGain: GainNode | null = null;
   private scopeFftBuf: Float32Array<ArrayBuffer> | null = null;
@@ -913,6 +935,36 @@ export class PsychoacousticEngine {
     spectralRot.gain.setValueAtTime(allowInitRot ? 1.5 : 0, ctx.currentTime);
     this.band2SpectralRotNode = spectralRot;
 
+    // Inner-Voice Clarity Pocket (1650 Hz Baddeley Phonological Loop space) + 280 Hz Mud Clean + 3-Stage Ignition Filter
+    // All three sit UPSTREAM of LR4 split -> 0.000 dB LR4 crossover phase-coherence preserved!
+    const mudCleanFilter = ctx.createBiquadFilter();
+    mudCleanFilter.type = 'peaking';
+    mudCleanFilter.frequency.setValueAtTime(Math.min(nyquistSafe, 280), ctx.currentTime);
+    mudCleanFilter.Q.setValueAtTime(1.15, ctx.currentTime);
+    mudCleanFilter.gain.setValueAtTime(initMonitorMode === 'science_only' ? 0 : -2.2, ctx.currentTime);
+    this.mudCleanFilterNode = mudCleanFilter;
+
+    const innerVoicePocket = ctx.createBiquadFilter();
+    innerVoicePocket.type = 'peaking';
+    innerVoicePocket.frequency.setValueAtTime(Math.min(nyquistSafe, 1650), ctx.currentTime);
+    innerVoicePocket.Q.setValueAtTime(0.9, ctx.currentTime);
+    innerVoicePocket.gain.setValueAtTime(
+      initMonitorMode === 'science_only' ? 0 : params.energyTier === 'calm' ? -1.8 : -3.2,
+      ctx.currentTime
+    );
+    this.innerVoicePocketNode = innerVoicePocket;
+
+    const ignitionArcFilter = ctx.createBiquadFilter();
+    ignitionArcFilter.type = 'lowpass';
+    ignitionArcFilter.Q.setValueAtTime(BUTTERWORTH_LP_HP_Q_DB, ctx.currentTime);
+    ignitionArcFilter.frequency.setValueAtTime(
+      initMonitorMode !== 'science_only' && params.energyTier !== 'calm'
+        ? Math.min(nyquistSafe, 960)
+        : nyquistSafe,
+      ctx.currentTime
+    );
+    this.ignitionArcFilterNode = ignitionArcFilter;
+
     if (params.speakerSafeEQ) {
       // Driving/speaker safety notch sits BEFORE LR4 split so crossover summing remains 0.000 dB phase-coherent
       const safetyNotch = ctx.createBiquadFilter();
@@ -920,24 +972,35 @@ export class PsychoacousticEngine {
       safetyNotch.frequency.value = Math.min(nyquistSafe, 1850);
       safetyNotch.Q.value = 0.72;
       safetyNotch.gain.value = -5.5;
-      spectralPocketNotch.connect(safetyNotch);
+      spectralPocketNotch.connect(mudCleanFilter);
+      mudCleanFilter.connect(innerVoicePocket);
+      innerVoicePocket.connect(ignitionArcFilter);
+      ignitionArcFilter.connect(safetyNotch);
       safetyNotch.connect(spectralRot);
     } else {
-      spectralPocketNotch.connect(spectralRot);
+      spectralPocketNotch.connect(mudCleanFilter);
+      mudCleanFilter.connect(innerVoicePocket);
+      innerVoicePocket.connect(ignitionArcFilter);
+      ignitionArcFilter.connect(spectralRot);
     }
     spectralRot.connect(preHrvBus);
     this.musicAuditionGain = musicAuditionGain;
 
-    // Gentle peak glue ONLY on procedural live synth (mastered -14 LUFS studio stems bypass WebAudio auto-makeup 100%!)
+    // Gentle peak glue ONLY on procedural live synth + even-harmonic Analog Tape Warmth exclusively on Layer-2 music
     musicCompressor.threshold.value = -8;
     musicCompressor.knee.value = 8;
     musicCompressor.ratio.value = 1.65;
+
+    const layer2WarmthShaper = ctx.createWaveShaper();
+    layer2WarmthShaper.curve = createAnalogTapeWarmthCurve();
+    layer2WarmthShaper.oversample = '2x';
+    layer2WarmthShaper.connect(musicAuditionGain);
 
     const startWithMusic = this.carrierMode === 'generative_live';
     const proceduralMaster = ctx.createGain();
     proceduralMaster.gain.setValueAtTime(startWithMusic ? 0.94 : 0, ctx.currentTime);
     proceduralMaster.connect(musicCompressor);
-    musicCompressor.connect(musicAuditionGain);
+    musicCompressor.connect(layer2WarmthShaper);
     this.proceduralMaster = proceduralMaster;
 
     const studioBus = ctx.createGain();
@@ -950,7 +1013,7 @@ export class PsychoacousticEngine {
       ctx.currentTime
     );
     studioBus.connect(studioFilter);
-    studioFilter.connect(musicAuditionGain);
+    studioFilter.connect(layer2WarmthShaper);
     this.studioBus = studioBus;
     this.studioFilter = studioFilter;
 
@@ -1006,10 +1069,14 @@ export class PsychoacousticEngine {
     const aboveLow = createLR4Filter(ctx, 'highpass', lowerHz);
     musicMixBus.connect(aboveLow.input);
 
-    // BAND 3: Clean Air (> upperHz) -> musicMasterBus
+    // BAND 3: Clean Air (> upperHz) + Ultra-Slow 0.04 Hz 3D Shimmer -> musicMasterBus
     const airBand = createLR4Filter(ctx, 'highpass', upperHz);
+    const airShimmerPan = ctx.createStereoPanner();
+    airShimmerPan.pan.setValueAtTime(0, ctx.currentTime);
+    this.airShimmerPanNode = airShimmerPan;
     aboveLow.output.connect(airBand.input);
-    airBand.output.connect(musicMasterBus);
+    airBand.output.connect(airShimmerPan);
+    airShimmerPan.connect(musicMasterBus);
 
     // BAND 2: Cortical AM Entrainment Band (lowerHz – upperHz) — ZERO phase-shifting IIR filters inside Band 2!
     const midBand = createLR4Filter(ctx, 'lowpass', upperHz);
@@ -2366,6 +2433,13 @@ export class PsychoacousticEngine {
       now,
       0.08
     );
+    smoothSetParam(this.mudCleanFilterNode?.gain, muteMusic ? 0 : -2.2, now, 0.08);
+    smoothSetParam(
+      this.innerVoicePocketNode?.gain,
+      muteMusic ? 0 : this.params?.energyTier === 'calm' ? -1.8 : -3.2,
+      now,
+      0.08
+    );
 
     const needsPureHrv = muteMusic && !muteScience && this.specNeedsPureHrvReferenceCarrier();
     smoothSetParam(this.pureAmCarrierGain?.gain, needsPureHrv ? 0.24 : 0, now, 0.08);
@@ -3625,6 +3699,12 @@ export class PsychoacousticEngine {
             : false;
         if (aAligned !== bAligned) return aAligned ? -1 : 1;
 
+        const aFit = typeof a.darwinianFitScore === 'number' ? a.darwinianFitScore : 0.5;
+        const bFit = typeof b.darwinianFitScore === 'number' ? b.darwinianFitScore : 0.5;
+        if (Math.abs(bFit - aFit) >= 0.06) {
+          return bFit - aFit;
+        }
+
         if (targetBpm > 0) {
           const score = (track: StudioTrackRef): number => {
             const nb = track.subHarmonicBpm || this.inferTrackNativeBpm(track, genre);
@@ -3994,10 +4074,53 @@ export class PsychoacousticEngine {
         phaseLabel = 'Stage 2/2 · Locked Focus Plateau';
         phaseModFactor = 1.0;
       }
-    } else if (elapsedSec < 25) {
+    } else if (elapsedSec < 20) {
       phase = 'entry';
-      phaseLabel = 'State-Locked Active Entry';
+      phaseLabel = 'Stage 1/3 · Decompression Airlock';
       phaseModFactor = 1.0;
+    } else if (elapsedSec < 75) {
+      phase = 'entry';
+      phaseLabel = 'Stage 2/3 · Tunnel Ignition';
+      phaseModFactor = 1.0;
+    } else if (elapsedSec < 95) {
+      phase = 'plateau';
+      phaseLabel = 'Stage 3/3 · Flow-Lock Drop';
+      phaseModFactor = 1.0;
+    }
+
+    const ignitionStage: 'decompression' | 'ignition' | 'flow_locked' =
+      elapsedSec < 20 ? 'decompression' : elapsedSec < 75 ? 'ignition' : 'flow_locked';
+
+    if (this.ctx && this.ignitionArcFilterNode) {
+      const nyqSafe = this.ctx.sampleRate * 0.44;
+      let targetIgnitionHz = nyqSafe;
+      if (this.layerMonitorMode !== 'science_only' && this.params?.energyTier !== 'calm') {
+        if (elapsedSec < 20) {
+          targetIgnitionHz = Math.min(nyqSafe, 960);
+        } else if (elapsedSec < 75) {
+          const s = 0.5 * (1 - Math.cos((Math.PI * (elapsedSec - 20)) / 55));
+          targetIgnitionHz = Math.min(nyqSafe, 960 + 990 * s);
+        } else if (elapsedSec < 95) {
+          const openMax = Math.min(nyqSafe, 14000);
+          const s2 = 0.5 * (1 - Math.cos((Math.PI * (elapsedSec - 75)) / 20));
+          targetIgnitionHz = Math.min(nyqSafe, 1950 + Math.max(0, openMax - 1950) * s2);
+        } else {
+          targetIgnitionHz = Math.min(nyqSafe, 14000);
+        }
+      }
+      this.ignitionArcFilterNode.frequency.setTargetAtTime(
+        targetIgnitionHz,
+        this.ctx.currentTime,
+        0.35
+      );
+    }
+
+    if (this.ctx && this.airShimmerPanNode) {
+      const panTarget =
+        !this.params?.speakerSafeEQ && this.layerMonitorMode !== 'science_only'
+          ? Number((0.22 * Math.sin(2 * Math.PI * 0.04 * elapsedSec)).toFixed(4))
+          : 0;
+      this.airShimmerPanNode.pan.setTargetAtTime(panTarget, this.ctx.currentTime, 0.25);
     }
 
     let antiMonotonyActive = this.isAntiMonotonyPulseActive();
@@ -4279,6 +4402,8 @@ export class PsychoacousticEngine {
       autopilotLiftActive: this.autopilotLiftActive,
       tunnelLockProgress,
       hrvClosedLoopTrim: this.hrvClosedLoopTrim,
+      dopamineArcPhase: this.composer.getStriatalArcPhase(),
+      ignitionStage,
       bluetoothSafeActive: this.bluetoothSafeActive,
       band2FlattenerActive: this.isBand2FlattenerActive(),
       stemCodecLabel: this.usingStudioAudio ? this.activeStemCodecLabel : null,
@@ -4566,6 +4691,11 @@ export class PsychoacousticEngine {
       this.band2FlattenerNode = null;
       this.amTiltNodeL = null;
       this.amTiltNodeR = null;
+      this.band2SpectralRotNode = null;
+      this.mudCleanFilterNode = null;
+      this.innerVoicePocketNode = null;
+      this.ignitionArcFilterNode = null;
+      this.airShimmerPanNode = null;
       this.envSinkGain = null;
       this.momentaryLufs = null;
       this.truePeakDbtp = null;
@@ -4691,6 +4821,10 @@ export class PsychoacousticEngine {
       this.band2FlattenerNode?.disconnect();
       this.amTiltNodeL?.disconnect();
       this.amTiltNodeR?.disconnect();
+      this.mudCleanFilterNode?.disconnect();
+      this.innerVoicePocketNode?.disconnect();
+      this.ignitionArcFilterNode?.disconnect();
+      this.airShimmerPanNode?.disconnect();
     } catch {
       // ignore
     }
@@ -4754,6 +4888,11 @@ export class PsychoacousticEngine {
     this.studioFilter = null;
     this.musicAuditionGain = null;
     this.spectralPocketNotch = null;
+    this.band2SpectralRotNode = null;
+    this.mudCleanFilterNode = null;
+    this.innerVoicePocketNode = null;
+    this.ignitionArcFilterNode = null;
+    this.airShimmerPanNode = null;
     this.musicEnvAnalyser = null;
     this.musicEnvBuf = null;
     this.musicEnvSmoothedRms = 0.165;

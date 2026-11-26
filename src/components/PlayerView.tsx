@@ -219,6 +219,7 @@ interface PlayerViewProps {
     tappingMeanItiMs?: number | null;
     hrvRmssdMs?: number | null;
     hrvLfRatio?: number | null;
+    activeTrackKey?: string | null;
     sessionIdOverride?: string;
     ephemeralOverride?: boolean;
   }) => void;
@@ -326,6 +327,7 @@ export function PlayerView({
   );
   const tappingResultRef = useRef<TappingBiomarkerResult | null>(null);
   const bleHrvMetricsRef = useRef<{ rmssdMs: number; lfPowerRatio: number } | null>(null);
+  const activeTrackKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     tappingResultRef.current = tappingResult;
@@ -432,6 +434,10 @@ export function PlayerView({
     stemCodecLabel: null,
     stemSubHarmonicLocked: false,
   });
+
+  useEffect(() => {
+    activeTrackKeyRef.current = telemetry.activeTrackKey ?? null;
+  }, [telemetry.activeTrackKey]);
 
   const plannedSec = recommendation.plannedDurationMin * 60;
   const elapsedRef = useRef(0);
@@ -1013,6 +1019,7 @@ export function PlayerView({
           tappingMeanItiMs: tappingResultRef.current?.meanItiMs ?? null,
           hrvRmssdMs: bleHrvMetricsRef.current?.rmssdMs ?? null,
           hrvLfRatio: bleHrvMetricsRef.current?.lfPowerRatio ?? null,
+          activeTrackKey: activeTrackKeyRef.current,
           sessionIdOverride: liveSessionId,
           ephemeralOverride: isEphemeral,
         });
@@ -1583,6 +1590,7 @@ export function PlayerView({
       tappingMeanItiMs: tappingResultRef.current?.meanItiMs ?? null,
       hrvRmssdMs: bleHrvMetricsRef.current?.rmssdMs ?? null,
       hrvLfRatio: bleHrvMetricsRef.current?.lfPowerRatio ?? null,
+      activeTrackKey: activeTrackKeyRef.current,
       sessionIdOverride: liveSessionId,
       ephemeralOverride: isEphemeral,
     });
@@ -1878,6 +1886,17 @@ export function PlayerView({
                     }`}
                   >
                     {telemetry.autopilotLiftActive ? 'AI Autopilot · Pre-Dip Lift' : 'Fresh pulse'}
+                  </span>
+                )}
+                {telemetry.dopamineArcPhase === 'drop' && (
+                  <span
+                    className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${
+                      themeMode === 'daylight'
+                        ? 'border-emerald-600/30 bg-emerald-50 text-[#047857]'
+                        : 'border-emerald-400/35 bg-emerald-500/15 text-[#34D399]'
+                    }`}
+                  >
+                    Flow-Lock Drop
                   </span>
                 )}
               </span>

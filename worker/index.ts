@@ -662,6 +662,8 @@ type BanditScopeType =
   | 'profile'
   | 'profile_state'
   | 'profile_chrono'
+  | 'profile_track'
+  | 'global_track'
   | 'cohort_genre'
   | 'profile_genre'
   | 'cohort_arm_genre'
@@ -1842,14 +1844,53 @@ export default {
         } as ResponseInit & { webSocket: CfWebSocket });
       }
 
-      // GET /api/audio/catalog — Core Studio Stems + Community R2 Custom Tracks
+      // GET /api/audio/catalog — Core Studio Stems (with Darwinian Track Bandit scores) + Community R2 Custom Tracks
       if (url.pathname === '/api/audio/catalog' && request.method === 'GET') {
-        const [tracksByGenre, customRows] = await Promise.all([
+        const tok = extractProfileTokenFromRequest(request);
+        let authProfileId: string | null = null;
+        if (tok) {
+          const providedHash = await sha256Hex(tok);
+          const tokCandidates = await env.DB.prepare(
+            'SELECT id, research_consent, token_hash FROM profiles WHERE token_hash = ? OR instr(token_hash, ?) > 0 LIMIT 5'
+          )
+            .bind(providedHash, providedHash)
+            .all<Record<string, unknown>>();
+          const matched = (tokCandidates.results ?? []).find(
+            (r) => r.token_hash && tokenHashMatches(providedHash, String(r.token_hash))
+          );
+          if (matched && Number(matched.research_consent ?? 0) === 1) {
+            authProfileId = String(matched.id);
+          }
+        }
+
+        const [rawTracksByGenre, customRows, globalTrackRows, profileTrackRows] = await Promise.all([
           getCoreStudioCatalog(env),
           env.DB.prepare(
             `SELECT * FROM custom_tracks WHERE status = 'ready' ORDER BY play_count DESC, created_at DESC LIMIT 120`
           ).all<Record<string, unknown>>(),
+          fetchBanditRows(env.DB, 'global_track', 'global'),
+          authProfileId ? fetchBanditRows(env.DB, 'profile_track', authProfileId) : Promise.resolve([]),
         ]);
+
+        const globalTrackMap = new Map(globalTrackRows.map((r) => [r.armId, r]));
+        const profileTrackMap = new Map(profileTrackRows.map((r) => [r.armId, r]));
+        const tracksByGenre = { ...rawTracksByGenre };
+        for (const gKey of Object.keys(tracksByGenre) as ResolvedGenre[]) {
+          tracksByGenre[gKey] = (tracksByGenre[gKey] ?? [])
+            .map((tr) => {
+              const gStat = globalTrackMap.get(tr.key);
+              const pStat = profileTrackMap.get(tr.key);
+              const gMean =
+                gStat && gStat.trials > 0 ? gStat.alpha / (gStat.alpha + gStat.beta) : 0.5;
+              const pMean =
+                pStat && pStat.trials > 0 ? pStat.alpha / (pStat.alpha + pStat.beta) : null;
+              const darwinianFitScore = Number(
+                (pMean !== null ? 0.6 * pMean + 0.4 * gMean : gMean).toFixed(3)
+              );
+              return { ...tr, darwinianFitScore };
+            })
+            .sort((a, b) => (b.darwinianFitScore ?? 0.5) - (a.darwinianFitScore ?? 0.5));
+        }
 
         const customTracks: CustomTrackInfo[] = customRows.results.map((row) => {
           const r2Key = String(row.r2_key);
@@ -2305,7 +2346,7 @@ export default {
         await env.DB.batch([
           env.DB.prepare('DELETE FROM sessions WHERE profile_id = ?').bind(id),
           env.DB.prepare(
-            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre') AND scope_id = ?) OR (scope_type IN ('profile_state', 'profile_chrono') AND scope_id LIKE ?)`
+            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre', 'profile_track') AND scope_id = ?) OR (scope_type IN ('profile_state', 'profile_chrono') AND scope_id LIKE ?)`
           ).bind(id, `${id}|%`),
           env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id),
         ]);
@@ -2358,7 +2399,7 @@ export default {
         await env.DB.batch([
           env.DB.prepare('DELETE FROM sessions WHERE profile_id = ?').bind(id),
           env.DB.prepare(
-            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre') AND scope_id = ?) OR (scope_type IN ('profile_state', 'profile_chrono') AND scope_id LIKE ?)`
+            `DELETE FROM bandit_stats WHERE (scope_type IN ('profile', 'profile_genre', 'profile_track') AND scope_id = ?) OR (scope_type IN ('profile_state', 'profile_chrono') AND scope_id LIKE ?)`
           ).bind(id, `${id}|%`),
           env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id),
         ]);
@@ -3937,6 +3978,10 @@ export default {
           body.hrvLfRatio <= 1
             ? Number(body.hrvLfRatio.toFixed(3))
             : null;
+        const cleanTrackKey =
+          typeof body.activeTrackKey === 'string' && body.activeTrackKey.trim().length > 2
+            ? body.activeTrackKey.trim().slice(0, 140)
+            : null;
 
         if (!body.sessionId || body.sessionId.startsWith('eph_')) {
           // Record completely anonymous aggregated Study Lab empirical rating (zero user PII!)
@@ -4326,6 +4371,40 @@ export default {
             trials: pRow?.trials ?? 0,
             successRatePct: pRow ? Math.round((pRow.alpha / (pRow.alpha + pRow.beta)) * 100) : 70,
           };
+        }
+
+        // Track-Level Darwinian Bandit: score exact studio stems by <60s bounce vs >=90% completion & PVT ms lift
+        if (cleanTrackKey) {
+          let trackReward = genreReward;
+          if (actualSec < 60) {
+            trackReward = Math.min(0.15, trackReward);
+          } else {
+            if (completionRatio >= 0.9) trackReward += 0.1;
+            if (finalPvtDelta !== null && finalPvtDelta <= -10) trackReward += 0.1;
+          }
+          trackReward = Number(Math.max(0.05, Math.min(0.98, trackReward)).toFixed(3));
+          await Promise.all([
+            updateBanditScope(env.DB, {
+              scopeType: 'global_track',
+              scopeId: 'global',
+              armId: cleanTrackKey,
+              mode: 'explicit',
+              reward: trackReward,
+              weight: learningWeight,
+              delta,
+              completionRatio,
+            }),
+            updateBanditScope(env.DB, {
+              scopeType: 'profile_track',
+              scopeId: profileId,
+              armId: cleanTrackKey,
+              mode: 'explicit',
+              reward: trackReward,
+              weight: learningWeight,
+              delta,
+              completionRatio,
+            }),
+          ]);
         }
 
         // Adapt personal AM sensitivity multiplier & full Continuous Personal Neural Memory Vector
