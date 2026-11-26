@@ -57,6 +57,7 @@ import {
   type EngineTelemetry,
   type LayerMonitorMode,
 } from '../audio/PsychoacousticEngine';
+import { SESSION_INTRO_VOICE_DELAY_MS } from '../audio/VoiceConciergePlayer';
 import type { TappingBiomarkerResult } from '../../shared/psychometrics';
 import { BleHrvMonitor, isWebBluetoothSupported, type BleHrvState } from '../lib/bleHrv';
 import { TappingTestModal } from './TappingTestModal';
@@ -475,9 +476,12 @@ export function PlayerView({
     };
   }, []);
 
-  const triggerSessionVoiceCue = (cueType: 'intro_full' | 'intro_short' | 'outro_landing') => {
+  const triggerSessionVoiceCue = (
+    cueType: 'intro_full' | 'intro_short' | 'outro_landing',
+    immediatePreview = false
+  ) => {
     if (!voiceGuideEnabledRef.current || layerMonitorRef.current === 'science_only') return;
-    if (cueType !== 'outro_landing') {
+    if (cueType !== 'outro_landing' && !immediatePreview) {
       engineRef.current?.primeVoiceIntroHold();
     }
     void api
@@ -518,7 +522,9 @@ export function PlayerView({
           greetingUrl,
           bodyUrl,
           breathPauseMs: res.breathPauseMs,
-          initialDelayMs: cueType === 'outro_landing' ? 180 : 280,
+          minSessionOffsetMs:
+            cueType === 'outro_landing' || immediatePreview ? 0 : SESSION_INTRO_VOICE_DELAY_MS,
+          initialDelayMs: cueType === 'outro_landing' ? 220 : immediatePreview ? 380 : 450,
         });
         if (!started) {
           engineRef.current?.releaseVoiceIntroHold();
@@ -1887,7 +1893,7 @@ export function PlayerView({
                         isPlaying &&
                         layerMonitorRef.current !== 'science_only'
                       ) {
-                        triggerVoiceCueRef.current('intro_short');
+                        triggerVoiceCueRef.current('intro_short', true);
                       }
                     }}
                     title="Select Studio Concierge voice from your ElevenLabs library"

@@ -244,6 +244,6 @@ export function buildVoiceConciergePlan(req: VoiceConciergeRequest): VoiceConcie
     fullTranscript: `${greetingText} ${bodyText}`,
     greetingCacheSlug: greetingBucketKey.replace(/[^a-z0-9_-]/g, ''),
     bodyCacheSlug: bodyBucketKey.replace(/[^a-z0-9_-]/g, ''),
-    breathPauseMs: req.cueType === 'intro_short' ? 180 : 250,
+    breathPauseMs: req.cueType === 'intro_short' ? 520 : 720,
   };
 }

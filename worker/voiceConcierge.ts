@@ -300,9 +300,10 @@ async function synthesizeViaElevenLabs(
             text,
             model_id: modelId,
             voice_settings: {
-              stability: 0.58,
-              similarity_boost: 0.80,
-              style: 0.16,
+              stability: 0.70,
+              similarity_boost: 0.82,
+              style: 0.08,
+              speed: 0.78,
               use_speaker_boost: true,
             },
           }),
@@ -502,10 +503,10 @@ async function getOrCreateSegmentUrl(
 ): Promise<{ url: string; fromCache: boolean; provider: string; voiceId?: string } | null> {
   if (!env.AUDIO_BUCKET) return null;
 
-  // 1. Primary path: ElevenLabs per-voice immutable R2 cache (`voice/v2/...`)
+  // 1. Primary path: ElevenLabs per-voice immutable R2 cache (`voice/v3/...` @ slow 0.78x cadence)
   if (elevenLabsVoiceId && env.ELEVENLABS_API_KEY?.trim()) {
-    const elDigest = await sha256Short(`v2|11labs:${elevenLabsVoiceId}|${text}`);
-    const elPrefix = `voice/v2/${kind}_${slug.slice(0, 36)}_${elDigest}`;
+    const elDigest = await sha256Short(`v3|11labs:${elevenLabsVoiceId}:s078|${text}`);
+    const elPrefix = `voice/v3/${kind}_${slug.slice(0, 36)}_${elDigest}`;
     const elCached = await findCachedVoiceKey(env, elPrefix);
     if (elCached) {
       const encoded = elCached.split('/').map((s) => encodeURIComponent(s)).join('/');

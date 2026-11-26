@@ -50,6 +50,7 @@ const {
   VOICE_EARLY_GAIN,
   MUSIC_VOICE_DUCK_GAIN,
   MUSIC_FADE_IN_AFTER_VOICE_SEC,
+  SESSION_INTRO_VOICE_DELAY_MS,
 } = await import('../src/audio/VoiceConciergePlayer.ts');
 const { LIMITER_CEILING_LINEAR } = await import('../src/audio/dspMath.ts');
 
@@ -121,7 +122,7 @@ test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across
   assert.match(trancePlan.bodyText, /six-by-forty hertz trance rhythm/i);
   assert.match(trancePlan.bodyText, /Nootropic F M pulse/);
   assert.match(trancePlan.bodyText, /let us take care of the rest/i);
-  assert.equal(trancePlan.breathPauseMs, 250);
+  assert.equal(trancePlan.breathPauseMs, 720);
 
   // Anonymous listener never hears "null" or awkward trailing commas
   const anonCalm = buildVoiceConciergePlan({
@@ -152,7 +153,7 @@ test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across
     isDriving: false,
   });
   assert.equal(shortPlan.greetingText, 'Welcome back, Edmond.');
-  assert.equal(shortPlan.breathPauseMs, 180);
+  assert.equal(shortPlan.breathPauseMs, 520);
   assert.match(shortPlan.bodyText, /Deep Electronic groove focus flow/);
 
   // Driving Safety Mode overrides calming language with road-safe alertness cue
@@ -344,6 +345,10 @@ test('sanitizeVoiceRequestPayload + vocal headroom math strictly preserve Layer-
   const speechToMusicSnrDb = 20 * Math.log10(spokenRms / duckedMusicRms);
 
   assert.ok(VOCAL_TARGET_RMS >= 0.16 && VOCAL_TARGET_RMS < 0.25);
+  assert.ok(
+    SESSION_INTRO_VOICE_DELAY_MS >= 3000,
+    `Expected calm arrival delay >= 3000ms before speech starts, got ${SESSION_INTRO_VOICE_DELAY_MS}`
+  );
   assert.ok(MUSIC_VOICE_DUCK_GAIN <= 0.15, `Expected deep whisper-bed duck <= 0.15, got ${MUSIC_VOICE_DUCK_GAIN}`);
   assert.ok(
     MUSIC_FADE_IN_AFTER_VOICE_SEC >= 4.5,
@@ -487,7 +492,7 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache p
     assert.equal(first.provider, 'elevenlabs');
     assert.equal(first.voiceId, DEFAULT_ELEVENLABS_VOICE_ID);
     assert.equal(elevenTtsCalls, 2);
-    assert.match(first.greetingUrl, /^\/api\/audio\/stream\/voice\/v2\/greet_/);
+    assert.match(first.greetingUrl, /^\/api\/audio\/stream\/voice\/v3\/greet_/);
 
     // Repeat call hits R2 with 0 ElevenLabs calls
     const second = await resolveVoiceConciergeAudio(

@@ -5,15 +5,17 @@
  * trims dead encoder silence for human-natural breath cadence, normalizes vocal loudness
  * so Layer-1 scientific waves never hit the master safety limiter, shapes vocals through a
  * clear, intimate close-mic studio EQ chain (85 Hz HPF + 195 Hz warmth + 2.9 kHz presence +
- * 6.8 kHz de-ess + subtle room reflection), and coordinates whisper-soft ducking + 5.5s swell on Layer-2 music.
+ * 6.8 kHz de-ess + subtle room reflection), and coordinates a 3.4s calm arrival cushion,
+ * whisper-soft ducking (-20 dB), and a 6.0s swell on Layer-2 music.
  */
 
 export const VOCAL_TARGET_RMS = 0.195; // -14.2 dBFS clear upfront close-mic speech
-export const VOCAL_PEAK_CEILING = 0.56; // Worst-case sum: 0.56*(0.82+0.045) + 0.68*0.12 + 0.19 = 0.756 < 0.8913
-export const VOICE_DRY_GAIN = 0.82;
-export const VOICE_EARLY_GAIN = 0.045;
-export const MUSIC_VOICE_DUCK_GAIN = 0.12; // -18.4 dB soft velvet background bed while Monique speaks
-export const MUSIC_FADE_IN_AFTER_VOICE_SEC = 5.5; // Smooth 5.5s dB-linear swell after Monique finishes
+export const VOCAL_PEAK_CEILING = 0.56; // Worst-case sum: 0.56*(0.85+0.04) + 0.68*0.10 + 0.19 = 0.7564 < 0.8913
+export const VOICE_DRY_GAIN = 0.85;
+export const VOICE_EARLY_GAIN = 0.04;
+export const MUSIC_VOICE_DUCK_GAIN = 0.10; // -20.0 dB soft velvet background bed while Monique speaks
+export const MUSIC_FADE_IN_AFTER_VOICE_SEC = 6.0; // Smooth 6.0s dB-linear swell after Monique finishes
+export const SESSION_INTRO_VOICE_DELAY_MS = 3400; // 3.4s calm arrival cushion after session start
 
 function trimAndNormalizeVocalBuffer(ctx: AudioContext, raw: AudioBuffer): AudioBuffer {
   const channels = raw.numberOfChannels;
@@ -87,6 +89,7 @@ export class VoiceConciergePlayer {
   private inputNode: AudioNode | null = null;
   private voiceGain: GainNode | null = null;
   private endTimer: number | null = null;
+  private startNotifyTimer: number | null = null;
   private playToken = 0;
   private onSpeakingChange?: (speaking: boolean, skipped?: boolean) => void;
   private bufferCache = new Map<string, AudioBuffer>();
@@ -194,6 +197,9 @@ export class VoiceConciergePlayer {
     bodyUrl: string;
     breathPauseMs?: number;
     initialDelayMs?: number;
+    minSessionOffsetMs?: number;
+    sessionStartCtxTime?: number;
+    onDuckHold?: () => void;
   }): Promise<boolean> {
     if (!this.ctx || !this.voiceGain) return false;
     const token = ++this.playToken;
@@ -213,11 +219,17 @@ export class VoiceConciergePlayer {
       await ctx.resume().catch(() => {});
     }
 
-    const delaySec = Math.max(0.08, (opts.initialDelayMs ?? 280) / 1000);
-    const breathSec = Math.max(0.14, (opts.breathPauseMs ?? 250) / 1000);
-    const startAt = ctx.currentTime + delaySec;
+    const minLeadSec = Math.max(0.18, (opts.initialDelayMs ?? 350) / 1000);
+    const sessionTargetStart =
+      opts.minSessionOffsetMs && opts.sessionStartCtxTime !== undefined
+        ? opts.sessionStartCtxTime + opts.minSessionOffsetMs / 1000
+        : 0;
+    const startAt = Math.max(ctx.currentTime + minLeadSec, sessionTargetStart);
+    const breathSec = Math.max(0.14, (opts.breathPauseMs ?? 720) / 1000);
     const bodyStartAt = startAt + greetBuf.duration + breathSec;
     const totalEndAt = bodyStartAt + bodyBuf.duration;
+
+    opts.onDuckHold?.();
 
     this.voiceGain.gain.cancelScheduledValues(ctx.currentTime);
     this.voiceGain.gain.setValueAtTime(VOICE_DRY_GAIN, ctx.currentTime);
@@ -243,6 +255,10 @@ export class VoiceConciergePlayer {
     bodyEnv.connect(this.inputNode ?? this.voiceGain);
 
     const finishCue = () => {
+      if (this.startNotifyTimer !== null) {
+        window.clearTimeout(this.startNotifyTimer);
+        this.startNotifyTimer = null;
+      }
       if (this.endTimer !== null) {
         window.clearTimeout(this.endTimer);
         this.endTimer = null;
@@ -255,7 +271,18 @@ export class VoiceConciergePlayer {
 
     bodySrc.onended = finishCue;
     this.activeSources = [greetSrc, bodySrc];
-    this.onSpeakingChange?.(true, false);
+
+    const notifyWaitMs = Math.max(0, Math.round((startAt - ctx.currentTime - 0.08) * 1000));
+    if (notifyWaitMs <= 80) {
+      this.onSpeakingChange?.(true, false);
+    } else {
+      this.startNotifyTimer = window.setTimeout(() => {
+        this.startNotifyTimer = null;
+        if (token === this.playToken) {
+          this.onSpeakingChange?.(true, false);
+        }
+      }, notifyWaitMs);
+    }
 
     greetSrc.start(startAt);
     bodySrc.start(bodyStartAt);
@@ -271,6 +298,11 @@ export class VoiceConciergePlayer {
   }
 
   public cancelActiveVoices(fadeSec = 0.18): void {
+    const hadPendingStart = this.startNotifyTimer !== null;
+    if (this.startNotifyTimer !== null) {
+      window.clearTimeout(this.startNotifyTimer);
+      this.startNotifyTimer = null;
+    }
     if (this.endTimer !== null) {
       window.clearTimeout(this.endTimer);
       this.endTimer = null;
@@ -280,7 +312,7 @@ export class VoiceConciergePlayer {
     for (const s of prev) {
       s.onended = null;
     }
-    if (prev.length > 0 && this.ctx && this.voiceGain) {
+    if ((prev.length > 0 || hadPendingStart) && this.ctx && this.voiceGain) {
       const now = this.ctx.currentTime;
       try {
         this.voiceGain.gain.cancelScheduledValues(now);

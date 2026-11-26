@@ -423,6 +423,7 @@ export class PsychoacousticEngine {
   private voiceDuckFilterNode: BiquadFilterNode | null = null;
   private voiceHoldWatchdogTimer: number | null = null;
   private isVoiceSpeaking = false;
+  private sessionStartCtxTime = 0;
   private circadianFilterNode: BiquadFilterNode | null = null;
   private circadianMode: 'daylight' | 'night' = 'night';
   private voiceSpeakingListeners = new Set<(speaking: boolean) => void>();
@@ -598,6 +599,7 @@ export class PsychoacousticEngine {
     musicMasterBus.gain.value = 1.0;
     this.musicMasterBus = musicMasterBus;
     this.isVoiceSpeaking = false;
+    this.sessionStartCtxTime = ctx.currentTime;
 
     const voiceDuckFilter = ctx.createBiquadFilter();
     voiceDuckFilter.type = 'peaking';
@@ -610,7 +612,7 @@ export class PsychoacousticEngine {
       this.isVoiceSpeaking = speaking;
       this.clearVoiceHoldWatchdog();
       if (speaking) {
-        this.scheduleMusicFadeFromVoice(MUSIC_VOICE_DUCK_GAIN, 0.32, -5.5);
+        this.scheduleMusicFadeFromVoice(MUSIC_VOICE_DUCK_GAIN, 0.32, -6.0);
       } else {
         this.scheduleMusicFadeFromVoice(
           1.0,
@@ -2037,14 +2039,14 @@ export class PsychoacousticEngine {
       try {
         const fg = this.voiceDuckFilterNode.gain;
         fg.cancelScheduledValues(now);
-        fg.setValueAtTime(-5.5, now);
+        fg.setValueAtTime(-6.0, now);
       } catch {
         // ignore
       }
     }
     this.voiceHoldWatchdogTimer = window.setTimeout(() => {
       this.releaseVoiceIntroHold();
-    }, 6500);
+    }, 12000);
   }
 
   public releaseVoiceIntroHold(): void {
@@ -2059,9 +2061,17 @@ export class PsychoacousticEngine {
     bodyUrl: string;
     breathPauseMs?: number;
     initialDelayMs?: number;
+    minSessionOffsetMs?: number;
   }): Promise<boolean> {
     if (!this.ctx || !this.isPlaying || this.layerMonitorMode === 'science_only') return false;
-    return this.voicePlayer.playTwoPartCue(opts);
+    return this.voicePlayer.playTwoPartCue({
+      ...opts,
+      sessionStartCtxTime: this.sessionStartCtxTime,
+      onDuckHold: () => {
+        this.clearVoiceHoldWatchdog();
+        this.scheduleMusicFadeFromVoice(MUSIC_VOICE_DUCK_GAIN, 0.32, -6.0);
+      },
+    });
   }
 
   public stopVoiceConcierge(fadeSec = 0.2): void {
