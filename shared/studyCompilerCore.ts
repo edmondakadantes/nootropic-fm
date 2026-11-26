@@ -885,16 +885,22 @@ export function applySafetyAndDeviceGuardrails(
         'Driving Safety Override: Sedative / sleep down-regulation is blocked behind the wheel — converted to Alert Vigilance mode.'
       );
     }
-    if (spec.entrainment.type === 'binaural_beat' || spec.entrainment.type === 'gamma_40hz_clicks') {
+    if (
+      spec.entrainment.type === 'binaural_beat' ||
+      spec.entrainment.type === 'gamma_40hz_clicks' ||
+      spec.entrainment.type === 'theta_gamma_cfc'
+    ) {
       spec.entrainment.type = 'amplitude_modulation';
       spec.entrainment.frequencyHz = 16;
+      spec.entrainment.startFrequencyHz = undefined;
       spec.entrainment.waveform = 'sine';
       spec.entrainment.modulationDepth = Math.min(0.36, spec.entrainment.modulationDepth);
       spec.evidenceMap.push({
         parameter: 'Safety Adaptation',
         targetLabel: 'Driving Mode Stimulus Guard',
         executedValue: '16 Hz mild speaker-safe AM (800–3500 Hz traffic cues open)',
-        studyQuote: 'Binaural beats & 40 Hz click trains are automatically disabled while driving for road safety.',
+        studyQuote:
+          'Binaural beats, 40 Hz click trains & Theta-trance coupling are automatically disabled while driving for road safety.',
         origin: 'clinical_safety_default',
       });
     }
@@ -973,6 +979,7 @@ export function verifyAndMergeAiExtraction(
     'monaural_beat',
     'isochronic_pulse',
     'gamma_40hz_clicks',
+    'theta_gamma_cfc',
     'hrv_breathing_swell',
   ]);
   const validModes = new Set<TonalMode>(['major', 'minor', 'pentatonic', 'suspended', 'dorian', 'drone']);

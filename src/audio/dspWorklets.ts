@@ -1333,6 +1333,8 @@ class NootropicClinicalSynth extends AudioWorkletProcessor {
 
     // Double-precision (Float64) normalized phases [0, 1) — immune to 44.1 kHz integer-frame rounding!
     this.modPhase = 0.0;
+    this.gammaPhase = 0.0;
+    this.orbitPhase = 0.0;
     this.phaseL = 0.0;
     this.phaseR = 0.0;
     this.p1 = 0.0;
@@ -1462,6 +1464,44 @@ class NootropicClinicalSynth extends AudioWorkletProcessor {
         const val = chord * env * 0.78;
         l = val;
         r = val;
+      } else if (this.mode === 'theta_gamma_cfc') {
+        // Theta–Gamma Cross-Frequency Phase-Amplitude Coupling (6.000 Hz Theta crest nesting 40.000 Hz Gamma shimmer)
+        // + 0.10 Hz Mayer-wave stereo halo orbit (100% mono-sum invariant, < 0.44 * fs Nyquist clamped)
+        const c = safeCarrier;
+        const h2 = c * 1.49830708;
+        const h3 = c * 2.0;
+        const h4 = c * 2.2449241;
+        const safeGammaHz = Math.min(40.0, maxSafeHz * 0.12);
+        this.p1 = (this.p1 + c * invFs) % 1.0;
+        if (h2 < maxSafeHz) this.p2 = (this.p2 + h2 * invFs) % 1.0;
+        if (h3 < maxSafeHz) this.p3 = (this.p3 + h3 * invFs) % 1.0;
+        if (h4 < maxSafeHz) this.p4 = (this.p4 + h4 * invFs) % 1.0;
+        this.modPhase = (this.modPhase + safeRate * invFs) % 1.0;
+        this.gammaPhase = (this.gammaPhase + safeGammaHz * invFs) % 1.0;
+        this.orbitPhase = (this.orbitPhase + 0.1 * invFs) % 1.0;
+
+        const w1 = 0.48;
+        const w2 = h2 < maxSafeHz ? 0.24 : 0;
+        const w3 = h3 < maxSafeHz ? 0.18 : 0;
+        const w4 = h4 < maxSafeHz ? 0.1 : 0;
+        const normW = 1.0 / (w1 + w2 + w3 + w4);
+
+        const chord =
+          (Math.sin(TWO_PI * this.p1) * w1 +
+            (w2 > 0 ? Math.sin(TWO_PI * this.p2) * w2 : 0) +
+            (w3 > 0 ? Math.sin(TWO_PI * this.p3) * w3 : 0) +
+            (w4 > 0 ? Math.sin(TWO_PI * this.p4) * w4 : 0)) *
+          normW;
+
+        const thetaCrest = 0.5 * (1 - Math.cos(TWO_PI * this.modPhase));
+        const gammaNest = 0.5 * (1 - Math.cos(TWO_PI * this.gammaPhase));
+        const cfcEnv =
+          (1 - this.depth) +
+          this.depth * (0.44 * thetaCrest + 0.56 * thetaCrest * gammaNest);
+        const val = chord * cfcEnv * 0.8;
+        const orbit = this.bluetoothSafe ? 0 : 0.16 * Math.sin(TWO_PI * this.orbitPhase);
+        l = val * (1 - orbit);
+        r = val * (1 + orbit);
       } else if (this.mode === 'gamma_clicks') {
         // Blackman-Harris windowed GENUS burst with >= 4.0 ms window (~3 ms core) over high-latency Bluetooth
         this.modPhase = (this.modPhase + safeRate * invFs) % 1.0;

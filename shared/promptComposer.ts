@@ -74,6 +74,9 @@ export function matchCoreGenreAlias(rawInput: string | undefined | null): Resolv
   if (!norm) return null;
   const canonical = GENRE_TYPO_ALIASES[norm] ?? norm;
 
+  if (/^(nootropicfm|nootropicfm mode|nootropic fm|nootropic fm mode|nootropic mode|tunnel vision|hypnotic trance|trance lock)$/.test(canonical)) {
+    return 'nootropic_trance';
+  }
   if (/^(rain|nature|nature rain|nature & rain|nature and rain|soft rain|rain piano|rain & piano|ploaie|soft rain & nature)$/.test(canonical)) {
     return 'nature_rain';
   }

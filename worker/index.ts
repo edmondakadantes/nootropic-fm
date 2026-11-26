@@ -832,6 +832,8 @@ const STUDIO_TRACK_ACOUSTIC_MAP: Record<
   string,
   { bpm: number; lufs: number; rootMidi: number; keyLabel: string }
 > = {
+  'nootropic_trance/focus/hypnotic-velvet-tunnel-120-1.mp3': { bpm: 120, lufs: -15.5, rootMidi: 50, keyLabel: 'D min' },
+  'nootropic_trance/focus/polyrhythmic-neural-lock-120-2.mp3': { bpm: 120, lufs: -15.5, rootMidi: 45, keyLabel: 'A min' },
   'lofi_keys/focus/dusty-rhodes-88-1.mp3': { bpm: 88, lufs: -14.7, rootMidi: 48, keyLabel: 'C maj' },
   'lofi_keys/focus/dusty-rhodes-88-2.mp3': { bpm: 88, lufs: -14.7, rootMidi: 48, keyLabel: 'C maj' },
   'deep_electronic/drive/warm-analog-pulse-1.mp3': { bpm: 112, lufs: -12.9, rootMidi: 43, keyLabel: 'G min' },
@@ -872,6 +874,7 @@ async function getCoreStudioCatalog(env: Env) {
   }
 
   const tracksByGenre: Record<ResolvedGenre, StudioCatalogTrackItem[]> = {
+    nootropic_trance: [],
     lofi_keys: [],
     deep_electronic: [],
     cinematic_strings: [],
@@ -911,6 +914,8 @@ async function getCoreStudioCatalog(env: Env) {
       case 'jazz_rhodes':
       case 'bossa_nova':
         return 92;
+      case 'nootropic_trance':
+        return 120;
       case 'deep_electronic':
         return energy === 'calm' ? 68 : energy === 'focus' ? 94 : 112;
     }

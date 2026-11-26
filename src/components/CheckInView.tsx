@@ -256,6 +256,12 @@ export function CheckInView({
     }
   }, [profile?.id, onboardingComplete]);
 
+  useEffect(() => {
+    if (selectedGoalSlug === 'trance_lock') {
+      setGenreChoice('nootropic_trance');
+    }
+  }, [selectedGoalSlug]);
+
   // Sync regional opt-in once /api/config returns
   useEffect(() => {
     if (!profile && !consentTouched && runtimeConfig) {
@@ -1467,7 +1473,7 @@ export function CheckInView({
                 Choose the music style blended with your session rhythm
               </span>
               <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
-                10 curated styles · Lyric-free
+                11 curated styles · Lyric-free
               </span>
             </div>
 
@@ -1487,19 +1493,29 @@ export function CheckInView({
 
               {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
                 const isSelected = genreChoice === g;
+                const isSignature = g === 'nootropic_trance';
                 return (
                   <button
                     key={g}
                     type="button"
                     onClick={() => setGenreChoice(g)}
-                    className={`rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
                       isSelected
-                        ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
-                        : 'subtle-chip'
+                        ? 'border-emerald-400/75 bg-emerald-400/18 text-[#F3F1EC] shadow-[0_0_18px_rgba(52,211,153,0.18)]'
+                        : isSignature
+                          ? 'border-emerald-400/40 bg-emerald-500/[0.08] text-[#F3F1EC] hover:border-emerald-400/70 hover:bg-emerald-500/[0.14]'
+                          : 'subtle-chip'
                     }`}
                   >
-                    {isSelected ? '✓ ' : ''}
-                    {GENRE_META[g].label}
+                    <span>
+                      {isSelected ? '✓ ' : ''}
+                      {GENRE_META[g].label}
+                    </span>
+                    {isSignature && (
+                      <span className="rounded border border-emerald-400/45 bg-emerald-400/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#34D399]">
+                        6×40 Hz Trance
+                      </span>
+                    )}
                   </button>
                 );
               })}

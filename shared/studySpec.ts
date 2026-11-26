@@ -16,6 +16,7 @@ export type EntrainmentType =
   | 'monaural_beat'
   | 'isochronic_pulse'
   | 'gamma_40hz_clicks'
+  | 'theta_gamma_cfc'
   | 'hrv_breathing_swell';
 
 export type EntrainmentWaveform =
@@ -270,6 +271,7 @@ export function studySpecToAcousticParams(
     spec.entrainment.type === 'amplitude_modulation' ||
     spec.entrainment.type === 'isochronic_pulse' ||
     spec.entrainment.type === 'gamma_40hz_clicks' ||
+    spec.entrainment.type === 'theta_gamma_cfc' ||
     spec.entrainment.type === 'binaural_beat' ||
     spec.entrainment.type === 'monaural_beat'
       ? spec.entrainment.frequencyHz
@@ -313,6 +315,12 @@ export const GENRE_LYRIA_PROMPTS: Record<
   ResolvedGenre,
   { prompts: Array<{ text: string; weight: number }>; muteDrums?: boolean }
 > = {
+  nootropic_trance: {
+    prompts: [
+      { text: 'Hypnotic 120 BPM minimal dub techno trance, deep velvet sub-bass heartbeat, polyrhythmic analog synth arpeggios, evolving resonant dub chords with tape delay, immersive flow tunnel, zero harsh drops, strictly instrumental, no vocals', weight: 1.0 },
+      { text: 'Endless meditative hypnotic groove, suspended Dorian modal atmosphere, silky stereo depth, steady locked pulse, strictly no lyrics', weight: 0.65 },
+    ],
+  },
   lofi_keys: {
     prompts: [
       { text: 'Instrumental Lo-Fi chillhop beats, warm dusty Rhodes electric piano, mellow vinyl groove, no vocals', weight: 1.0 },
@@ -384,6 +392,7 @@ export const GENRE_LYRIA_PROMPTS: Record<
  * and the listener's active curated genre.
  */
 const RHYTHMIC_LYRIA_GENRES: ReadonlySet<ResolvedGenre> = new Set([
+  'nootropic_trance',
   'deep_electronic',
   'lofi_keys',
   'dub_reggae',
@@ -392,6 +401,7 @@ const RHYTHMIC_LYRIA_GENRES: ReadonlySet<ResolvedGenre> = new Set([
 ]);
 
 const DEFAULT_GENRE_BPM: Partial<Record<ResolvedGenre, number>> = {
+  nootropic_trance: 120,
   deep_electronic: 96,
   lofi_keys: 80,
   dub_reggae: 84,
@@ -440,7 +450,8 @@ export function buildLyriaRealtimeConfig(
 
   const minBrightness =
     !isSleep &&
-    (genreOverride === 'deep_electronic' ||
+    (genreOverride === 'nootropic_trance' ||
+      genreOverride === 'deep_electronic' ||
       genreOverride === 'bossa_nova' ||
       genreOverride === 'acoustic_pluck' ||
       genreOverride === 'jazz_rhodes')
@@ -477,6 +488,7 @@ export const ENTRAINMENT_LABELS: Record<EntrainmentType, string> = {
   monaural_beat: 'Acoustic Monaural Beat',
   isochronic_pulse: 'Isochronic Gated Pulse',
   gamma_40hz_clicks: '40 Hz Gamma Acoustic Bursts (GENUS)',
+  theta_gamma_cfc: 'Theta–Gamma Nested Coupling (6×40 Hz CFC)',
   hrv_breathing_swell: '0.1 Hz HRV Vagal Breathing Swell',
 };
 

@@ -548,7 +548,11 @@ export class GenerativeComposer {
     this.reverbSend.gain.setTargetAtTime(level, this.ctx.currentTime, 0.4);
     if (this.delaySend) {
       const delayLevel =
-        this.palette === 'ambient_water' || this.palette === 'deep_electronic' ? 0.24 : 0.14;
+        this.genre === 'nootropic_trance'
+          ? 0.34
+          : this.palette === 'ambient_water' || this.palette === 'deep_electronic'
+            ? 0.24
+            : 0.14;
       this.delaySend.gain.setTargetAtTime(delayLevel, this.ctx.currentTime, 0.4);
     }
   }
@@ -740,6 +744,7 @@ export class GenerativeComposer {
         this.genre === 'solo_piano' ||
         this.genre === 'cinematic_strings';
       const genreWantsGroove =
+        this.genre === 'nootropic_trance' ||
         this.genre === 'deep_electronic' ||
         this.genre === 'lofi_keys' ||
         this.genre === 'dub_reggae' ||
@@ -757,7 +762,17 @@ export class GenerativeComposer {
 
       // 1. Genre-Authentic Percussion Layer (strictly obeys study's percussion lock & beatless genres!)
       if (perc !== 'none') {
-        if (this.genre === 'bossa_nova') {
+        if (this.genre === 'nootropic_trance') {
+          // Hypnotic 4-on-the-floor velvet pulse + off-beat brushed shaker
+          if (step % 4 === 0) {
+            this.triggerWarmSubKick(t, 0.44 * (perc === 'minimal_soft' ? 0.72 : 1.0));
+          }
+          if (!this.speakerSafeEQ && step % 4 === 2) {
+            this.triggerBrushedAirHat(t, 0.032 * phraseBreath);
+          } else if (!this.speakerSafeEQ && step % 2 === 1 && Math.random() < 0.42) {
+            this.triggerBrushedAirHat(t + 0.004, 0.014 * phraseBreath);
+          }
+        } else if (this.genre === 'bossa_nova') {
           // Classic Brazilian surdo pulse on beats 1 & 3 + soft syncopated shaker
           if (step === 0 || step === 8) {
             this.triggerWarmSubKick(t, (step === 0 ? 0.34 : 0.28) * (perc === 'minimal_soft' ? 0.7 : 1.0));
@@ -793,7 +808,9 @@ export class GenerativeComposer {
 
       // 2. Genre-Authentic Clean Sub-Bass Anchor (<175 Hz clean sub bus)
       if (perc !== 'none') {
-        if (this.genre === 'bossa_nova' && (step === 0 || step === 6 || step === 8 || step === 14)) {
+        if (this.genre === 'nootropic_trance' && (step % 4 === 2 || step === 14)) {
+          this.triggerCleanBass(t, step === 14 ? 7 : 0, 0.24 * phraseBreath, eighthDur * 1.45);
+        } else if (this.genre === 'bossa_nova' && (step === 0 || step === 6 || step === 8 || step === 14)) {
           this.triggerCleanBass(t, step >= 8 ? 7 : 0, 0.2 * phraseBreath, eighthDur * 1.6);
         } else if (this.genre === 'dub_reggae' && (step === 0 || step === 3 || step === 8 || step === 10)) {
           const dubSemi = step === 3 ? 5 : step === 10 ? 7 : 0;
@@ -810,7 +827,13 @@ export class GenerativeComposer {
       }
 
       // 3. Genre-Specific Rhythmic Comping & 1/f Pink-Fractal Melodic Voice
-      if (this.genre === 'dub_reggae' && perc !== 'none' && step % 4 === 2) {
+      if (this.genre === 'nootropic_trance' && this.stepCount % 3 === 0) {
+        // 5-against-4 / 3-step Euclidean polyrhythmic trance pluck tunnel
+        this.triggerMelodicVoice(t, step, lift * 1.08, phraseAccent);
+        if (this.stepCount % 12 === 0) {
+          this.triggerHarmonicVoicing(t, 0.105 * lift * phraseBreath);
+        }
+      } else if (this.genre === 'dub_reggae' && perc !== 'none' && step % 4 === 2) {
         // Signature off-beat reggae skank chord chop routed into dub delay
         this.triggerHarmonicVoicing(t, 0.11 * lift * phraseBreath);
       } else if (

@@ -123,6 +123,30 @@ export const CURATED_GOAL_PRESETS: CuratedGoalPreset[] = [
       '"background music" AND ("flow state" OR "sustained attention" OR "cognitive performance")',
   },
   {
+    slug: 'trance_lock',
+    label: 'Hypnotic Trance Lock',
+    shortLabel: 'NootropicFM Trance · Time Warp',
+    subtitle: 'Absorptive 6×40 Hz Theta-Gamma tunnel where hours feel like minutes',
+    hzBadge: '6×40 Hz CFC',
+    coreTarget: 'deep_flow',
+    coords: { energy: 64, clarity: 95 },
+    defaultMin: 45,
+    keywords: ['trance', 'hypnotic', 'tunnel', 'timewarp', 'nootropicfm', 'hyperlock'],
+    dspOverride: {
+      modulationHz: 6,
+      startFrequencyHz: 14,
+      bpm: 120,
+      harmonicMode: 'suspended_open',
+      noiseColor: 'brown',
+      noiseLevel: 0.08,
+      filterCutoffHz: 2200,
+    },
+    pubmedQuery:
+      '("theta-gamma"[Title/Abstract] OR "cross-frequency coupling"[Title/Abstract] OR "auditory steady-state"[Title/Abstract]) AND (attention[Title/Abstract] OR "working memory"[Title/Abstract])',
+    openAlexTerm:
+      '("theta-gamma" OR "cross-frequency coupling") AND (attention OR "working memory" OR auditory)',
+  },
+  {
     slug: 'creative_ideation',
     label: 'Creative Flow & Ideation',
     shortLabel: 'Creative Flow & Brainstorming',

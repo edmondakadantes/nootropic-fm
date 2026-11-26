@@ -75,9 +75,9 @@ function loadWorkletProcessors(sampleRate = 48000) {
   return registry;
 }
 
-test('STUDIO_STEM_V7_MANIFEST covers all 26 stems on exact sub-harmonic grids & dual codecs', () => {
+test('STUDIO_STEM_V7_MANIFEST covers all 28 stems on exact sub-harmonic grids & dual codecs', () => {
   const entries = Object.values(STUDIO_STEM_V7_MANIFEST);
-  assert.equal(entries.length, 26, `Expected 26 remastered stems, got ${entries.length}`);
+  assert.equal(entries.length, 28, `Expected 28 remastered stems, got ${entries.length}`);
 
   const gridSet = new Set(SUBHARMONIC_GRID_BPMS);
   for (const entry of entries) {

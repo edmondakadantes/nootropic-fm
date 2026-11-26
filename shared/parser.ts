@@ -399,7 +399,10 @@ export function parseNaturalCheckIn(
   let extractedGenre: ResolvedGenre | undefined;
   let extractedCustomGenre: string | undefined;
 
-  if (/\b(dub reggae|chill reggae|reggae|dub)\b/.test(norm)) {
+  if (/\b(nootropicfm|nootropic mode|tunnel vision|hypnotic trance|trance mode|trance lock)\b/.test(norm)) {
+    extractedGenre = 'nootropic_trance';
+    detectedKeywords.push('Genre: NootropicFM Mode');
+  } else if (/\b(dub reggae|chill reggae|reggae|dub)\b/.test(norm)) {
     extractedGenre = 'dub_reggae';
     detectedKeywords.push('Genre: Dub Reggae');
   } else if (/\b(bossa nova|bosanova|bossa|brazilian)\b/.test(norm)) {

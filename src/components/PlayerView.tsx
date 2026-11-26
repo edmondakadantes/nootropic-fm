@@ -443,6 +443,7 @@ export function PlayerView({
           .then(({ tracksByGenre }) => {
             if (!mounted) return;
             const resolved: typeof tracksByGenre = {
+              nootropic_trance: [],
               lofi_keys: [],
               deep_electronic: [],
               cinematic_strings: [],
@@ -1974,6 +1975,7 @@ export function PlayerView({
               {(Object.keys(GENRE_META) as ResolvedGenre[]).map((style) => {
                 const meta = GENRE_META[style];
                 const active = !telemetry.usingCustomTrack && genre === style;
+                const isSignature = style === 'nootropic_trance';
                 return (
                   <button
                     key={style}
@@ -1981,11 +1983,20 @@ export function PlayerView({
                     onClick={() => switchGenre(style)}
                     className={`rounded-xl border px-3 py-2 text-left transition-all ${
                       active
-                        ? 'border-emerald-400/55 bg-emerald-400/10 text-[#F3F1EC]'
-                        : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
+                        ? 'border-emerald-400/65 bg-emerald-400/12 text-[#F3F1EC] shadow-[0_0_16px_rgba(52,211,153,0.14)]'
+                        : isSignature
+                          ? 'border-emerald-400/35 bg-emerald-500/[0.06] text-[#F3F1EC] hover:border-emerald-400/60 hover:bg-emerald-500/[0.11]'
+                          : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
                     }`}
                   >
-                    <div className="text-xs font-semibold">{meta.label}</div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-semibold">{meta.label}</span>
+                      {isSignature && (
+                        <span className="rounded border border-emerald-400/40 bg-emerald-400/15 px-1.5 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
+                          6×40 Hz
+                        </span>
+                      )}
+                    </div>
                     <div className="mt-0.5 text-[10px] text-[#7E7E78]">{meta.shortDesc}</div>
                   </button>
                 );
@@ -2413,7 +2424,7 @@ export function PlayerView({
               </li>
               <li className="flex items-start gap-2">
                 <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />
-                <span>All 10 curated instrumental styles + Endless Stream (never repeats)</span>
+                <span>All 11 curated instrumental styles + NootropicFM Mode &amp; Endless Stream</span>
               </li>
               <li className="flex items-start gap-2">
                 <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#34D399]" />

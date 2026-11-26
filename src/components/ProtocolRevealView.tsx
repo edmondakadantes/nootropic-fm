@@ -698,18 +698,26 @@ export function ProtocolRevealView({
             <div className="flex flex-wrap gap-1.5">
               {(Object.keys(GENRE_META) as ResolvedGenre[]).map((g) => {
                 const active = !recommendation.customGenreSlug && recommendation.params.genre === g;
+                const isSignature = g === 'nootropic_trance';
                 return (
                   <button
                     key={g}
                     type="button"
                     onClick={() => onSwapGenre(g)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
                       active
-                        ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
-                        : 'subtle-chip'
+                        ? 'border-emerald-400/65 bg-emerald-400/16 text-[#F3F1EC]'
+                        : isSignature
+                          ? 'border-emerald-400/35 bg-emerald-500/[0.07] text-[#F3F1EC] hover:border-emerald-400/60'
+                          : 'subtle-chip'
                     }`}
                   >
-                    {GENRE_META[g].label}
+                    <span>{GENRE_META[g].label}</span>
+                    {isSignature && (
+                      <span className="rounded bg-emerald-400/15 px-1 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
+                        Trance
+                      </span>
+                    )}
                   </button>
                 );
               })}

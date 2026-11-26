@@ -521,5 +521,49 @@ export const STUDIO_STEM_V7_MANIFEST: Record<string, StudioStemV7Entry> = {
     "truePeakDbtp": -2,
     "sampleRate": 48000,
     "durationSec": 165.9
+  },
+  "nootropic_trance/focus/hypnotic-velvet-tunnel-120-1.mp3": {
+    "sourceKey": "nootropic_trance/focus/hypnotic-velvet-tunnel-120-1.mp3",
+    "opusKey": "v7/nootropic_trance/focus/hypnotic-velvet-tunnel-120-1.opus",
+    "aacKey": "v7/nootropic_trance/focus/hypnotic-velvet-tunnel-120-1.m4a",
+    "opusUrl": "/api/audio/stream/v7/nootropic_trance/focus/hypnotic-velvet-tunnel-120-1.opus?r=6",
+    "aacUrl": "/api/audio/stream/v7/nootropic_trance/focus/hypnotic-velvet-tunnel-120-1.m4a?r=6",
+    "opusBytes": 7624948,
+    "aacBytes": 6171757,
+    "nativeBpm": 120,
+    "subHarmonicBpm": 120,
+    "alignedBandsHz": [
+      6,
+      10,
+      16,
+      40
+    ],
+    "downbeatOffsetMs": 5,
+    "lufs": -15.5,
+    "truePeakDbtp": -2,
+    "sampleRate": 48000,
+    "durationSec": 192
+  },
+  "nootropic_trance/focus/polyrhythmic-neural-lock-120-2.mp3": {
+    "sourceKey": "nootropic_trance/focus/polyrhythmic-neural-lock-120-2.mp3",
+    "opusKey": "v7/nootropic_trance/focus/polyrhythmic-neural-lock-120-2.opus",
+    "aacKey": "v7/nootropic_trance/focus/polyrhythmic-neural-lock-120-2.m4a",
+    "opusUrl": "/api/audio/stream/v7/nootropic_trance/focus/polyrhythmic-neural-lock-120-2.opus?r=6",
+    "aacUrl": "/api/audio/stream/v7/nootropic_trance/focus/polyrhythmic-neural-lock-120-2.m4a?r=6",
+    "opusBytes": 7677980,
+    "aacBytes": 6172337,
+    "nativeBpm": 120,
+    "subHarmonicBpm": 120,
+    "alignedBandsHz": [
+      6,
+      10,
+      16,
+      40
+    ],
+    "downbeatOffsetMs": 5,
+    "lufs": -15.5,
+    "truePeakDbtp": -1.9,
+    "sampleRate": 48000,
+    "durationSec": 192
   }
 };

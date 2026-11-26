@@ -48,7 +48,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT = resolve(__dirname, '..');
 
-const ALL_10_GENRES = [
+const ALL_11_GENRES = [
+  'nootropic_trance',
   'deep_electronic',
   'lofi_keys',
   'cinematic_strings',
@@ -115,11 +116,12 @@ test('3. 10-Genre Lyria RealTime & ISO Protocol Audit: rhythmic groove vs beatle
   const sleepSpec = structuredClone(calmSpec);
   sleepSpec.protocol.targetState = 'sleep_winddown';
 
-  for (const genre of ALL_10_GENRES) {
+  for (const genre of ALL_11_GENRES) {
     assert.ok(GENRE_LYRIA_PROMPTS[genre], `Missing GENRE_LYRIA_PROMPTS for ${genre}`);
     const cfg = buildLyriaRealtimeConfig(calmSpec, genre);
 
     if (
+      genre === 'nootropic_trance' ||
       genre === 'deep_electronic' ||
       genre === 'lofi_keys' ||
       genre === 'dub_reggae' ||
@@ -180,9 +182,9 @@ test('3. 10-Genre Lyria RealTime & ISO Protocol Audit: rhythmic groove vs beatle
   }
 });
 
-test('4. STUDIO_STEM_V7_MANIFEST 10-Genre Parity: all 26 stems remastered (?r=5), balanced LUFS & zero >0 dBFS clipping', () => {
+test('4. STUDIO_STEM_V7_MANIFEST 11-Genre Parity: all 28 stems remastered (?r=5/6), balanced LUFS & zero >0 dBFS clipping', () => {
   const entries = Object.values(STUDIO_STEM_V7_MANIFEST);
-  assert.equal(entries.length, 26, `Expected 26 v7 studio stems, got ${entries.length}`);
+  assert.equal(entries.length, 28, `Expected 28 v7 studio stems, got ${entries.length}`);
 
   const genresSeen = new Set();
   for (const e of entries) {
@@ -200,7 +202,7 @@ test('4. STUDIO_STEM_V7_MANIFEST 10-Genre Parity: all 26 stems remastered (?r=5)
     );
   }
 
-  for (const g of ALL_10_GENRES) {
+  for (const g of ALL_11_GENRES) {
     assert.ok(genresSeen.has(g), `Genre ${g} missing from STUDIO_STEM_V7_MANIFEST`);
   }
 });
@@ -266,3 +268,163 @@ test('5. NootropicEnvFlattener prevents inverse-gate pumping on rhythmic synth p
     `Expected <= +1.5 dB reverb tail boost during inter-note rests, got +${tailBoostDb.toFixed(2)} dB`
   );
 });
+
+test('6. NootropicFM Mode: Theta-Gamma 6x40 Hz CFC envelope coupling, 0.000 dB mono-sum orbit, & Driving Safety override', () => {
+  const tsSrc = readFileSync(resolve(ROOT, 'src/audio/dspWorklets.ts'), 'utf8');
+  const startMarker = 'export const DSP_WORKLET_CODE = `';
+  const startIdx = tsSrc.indexOf(startMarker);
+  const endIdx = tsSrc.indexOf('`;\n\nconst loadedWorkletContexts', startIdx);
+  const rawCode = tsSrc
+    .slice(startIdx + startMarker.length, endIdx)
+    .replace(/\\`/g, '`')
+    .replace(/\\\$/g, '$');
+
+  const reg = new Map();
+  vm.runInNewContext(rawCode, {
+    AudioWorkletProcessor: class {
+      constructor() {
+        this.port = { onmessage: null, postMessage: () => {} };
+      }
+    },
+    registerProcessor: (n, c) => reg.set(n, c),
+    sampleRate: 48000,
+    currentTime: 0,
+    Math,
+    Float32Array,
+    Float64Array,
+    Int16Array,
+    Uint8Array,
+  });
+
+  const SynthCtor = reg.get('nootropic-clinical-synth');
+  const synth = new SynthCtor();
+  synth.port.onmessage({
+    data: {
+      type: 'config',
+      mode: 'theta_gamma_cfc',
+      rateHz: 6.0,
+      startRateHz: 6.0,
+      rampSec: 0,
+      carrierHz: 220,
+      depth: 0.72,
+      bluetoothSafe: false,
+    },
+  });
+
+  const sr = 48000;
+  const total = sr * 4;
+  const env = new Float32Array(total);
+  const synthMono = new SynthCtor();
+  synthMono.port.onmessage({
+    data: {
+      type: 'config',
+      mode: 'theta_gamma_cfc',
+      rateHz: 6.0,
+      startRateHz: 6.0,
+      rampSec: 0,
+      carrierHz: 220,
+      depth: 0.72,
+      bluetoothSafe: true,
+    },
+  });
+
+  let maxMonoDiff = 0;
+  for (let off = 0; off < total; off += 128) {
+    const oL = new Float32Array(128);
+    const oR = new Float32Array(128);
+    const mL = new Float32Array(128);
+    const mR = new Float32Array(128);
+    synth.process([], [[oL, oR]]);
+    synthMono.process([], [[mL, mR]]);
+    for (let i = 0; i < 128; i++) {
+      const monoSum = 0.5 * (oL[i] + oR[i]);
+      maxMonoDiff = Math.max(maxMonoDiff, Math.abs(monoSum - mL[i]));
+      env[off + i] = Math.abs(monoSum);
+    }
+  }
+  assert.ok(maxMonoDiff < 1e-6, `Expected exact mono-sum invariance on 0.1 Hz stereo orbit, diff=${maxMonoDiff}`);
+
+  // Goertzel envelope spectrum after 1.0s settle (3.000s window = exact 1/3 Hz integer bins)
+  const steady = env.subarray(sr);
+  const goertzel = (hz) => {
+    const N = steady.length;
+    const w = (2 * Math.PI * hz) / sr;
+    const coeff = 2 * Math.cos(w);
+    let s1 = 0, s2 = 0;
+    for (let i = 0; i < N; i++) {
+      const s0 = steady[i] + coeff * s1 - s2;
+      s2 = s1;
+      s1 = s0;
+    }
+    return Math.sqrt(s1 * s1 + s2 * s2 - coeff * s1 * s2) / N;
+  };
+
+  const mag6Hz = goertzel(6.0);
+  const mag40Hz = goertzel(40.0);
+  const magSideband34Hz = goertzel(34.0); // 40 - 6 Hz CFC lower sideband!
+  const magSideband46Hz = goertzel(46.0); // 40 + 6 Hz CFC upper sideband!
+  const magOff23Hz = goertzel(23.0);
+
+  assert.ok(mag6Hz > magOff23Hz * 6, `Expected strong 6.0 Hz Theta envelope peak (${mag6Hz} vs ${magOff23Hz})`);
+  assert.ok(mag40Hz > magOff23Hz * 3, `Expected strong 40.0 Hz Gamma envelope peak (${mag40Hz} vs ${magOff23Hz})`);
+  assert.ok(
+    magSideband34Hz > magOff23Hz * 2.2 && magSideband46Hz > magOff23Hz * 2.2,
+    `Expected 40±6 Hz (34 & 46 Hz) phase-amplitude coupling sidebands (${magSideband34Hz}, ${magSideband46Hz} vs ${magOff23Hz})`
+  );
+
+  // Verify Stationary NootropicFM Mode launches 14->6 Hz Theta-Gamma CFC @ 120 BPM
+  const baseProfile = {
+    id: 'anon_trance_test',
+    age: 29,
+    ageBand: '25_34',
+    gender: 'male',
+    role: 'knowledge_worker',
+    texturePref: 'minimal_electronic',
+    noiseSensitivity: 'medium',
+    defaultDevice: 'headphones',
+    favoriteGenres: ['nootropic_trance'],
+    primaryChallenge: 'distraction',
+    researchConsent: true,
+    createdAt: new Date().toISOString(),
+  };
+
+  const stationaryRec = selectProtocolRecommendation({
+    sessionId: 'ses_trance_desk',
+    profile: baseProfile,
+    currentState: 'distracted',
+    baselineScore: 2,
+    targetState: 'deep_flow',
+    environment: 'office',
+    device: 'headphones',
+    durationMin: 45,
+    requestedGenre: 'nootropic_trance',
+    cohortStats: [],
+    profileStats: [],
+  });
+  assert.equal(stationaryRec.arm.id, 'nootropic-trance-6x40hz');
+  assert.equal(stationaryRec.params.genre, 'nootropic_trance');
+  assert.equal(stationaryRec.params.bpm, 120);
+  assert.equal(stationaryRec.executableSpec?.entrainment.type, 'theta_gamma_cfc');
+  assert.equal(stationaryRec.executableSpec?.entrainment.startFrequencyHz, 14);
+  assert.equal(stationaryRec.executableSpec?.entrainment.frequencyHz, 6);
+
+  // Verify Driving Safety Override automatically blocks 6 Hz Theta trance behind the wheel -> >=14 Hz Beta!
+  const drivingRec = selectProtocolRecommendation({
+    sessionId: 'ses_trance_car',
+    profile: baseProfile,
+    currentState: 'fatigued',
+    baselineScore: 2,
+    targetState: 'deep_flow',
+    environment: 'driving',
+    device: 'car_audio',
+    durationMin: 30,
+    requestedGenre: 'nootropic_trance',
+    cohortStats: [],
+    profileStats: [],
+  });
+  assert.notEqual(drivingRec.arm.id, 'nootropic-trance-6x40hz');
+  assert.ok(drivingRec.params.modulationHz >= 14, `Driving must use >=14 Hz Beta, got ${drivingRec.params.modulationHz}`);
+  assert.equal(drivingRec.params.speakerSafeEQ, true);
+  assert.notEqual(drivingRec.executableSpec?.entrainment.type, 'theta_gamma_cfc');
+});
+

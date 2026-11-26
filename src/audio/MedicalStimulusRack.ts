@@ -490,6 +490,67 @@ export class MedicalStimulusRack {
           : useChirp
             ? `${rateHz} Hz Gamma Chirp (8 ms Sweep @ ${carrierHz} Hz)`
             : `${rateHz} Hz GENUS · ${(duty * (1000 / rateHz)).toFixed(1)} ms @ ${carrierHz} Hz (Lab)`;
+      } else if (eType === 'theta_gamma_cfc' && !speakerSafeEQ) {
+        const rateHz = effectiveTargetHz || 6;
+        const startRateHz = spec.entrainment.startFrequencyHz ?? 14;
+        const rampSec =
+          spec.entrainment.startFrequencyHz !== undefined
+            ? Math.min(240, Math.max(45, this.plannedSec * 0.2))
+            : 0;
+        const carrierHz = Math.round(
+          computeHarmonicCarrierHz(spec.music.rootMidi, spec.music.tuningA4Hz, 220)
+        );
+        this.primaryCarrierHz = carrierHz;
+
+        if (this.workletsReady) {
+          const synth = new AudioWorkletNode(ctx, 'nootropic-clinical-synth', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [2],
+          });
+          const lp = ctx.createBiquadFilter();
+          lp.type = 'lowpass';
+          lp.frequency.value = Math.min(ctx.sampleRate * 0.44, 2400);
+          lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
+          synth.port.postMessage({
+            type: 'config',
+            mode: isControlTrial ? 'aperiodic_sham' : 'theta_gamma_cfc',
+            rateHz,
+            startRateHz,
+            rampSec,
+            carrierHz,
+            depth: Math.max(0.35, Math.min(0.88, (spec.entrainment.modulationDepth || 0.42) * 1.65)),
+            bluetoothSafe: this.bluetoothSafe,
+          });
+          synth.connect(lp);
+          lp.connect(stimGain);
+          this.clinicalSynthNode = synth;
+          this.clinicalSynthWarmLp = lp;
+        } else if (isControlTrial) {
+          this.mountFallbackAperiodicSham(ctx, carrierHz, 2200, stimGain, now);
+        } else {
+          const buf = createPeriodicPulseBuffer(ctx, {
+            pulseRateHz: rateHz,
+            carrierHz,
+            dutyCycle: 0.48,
+            mode: 'isochronic',
+          });
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.loop = true;
+          const lp = ctx.createBiquadFilter();
+          lp.type = 'lowpass';
+          lp.frequency.value = Math.min(ctx.sampleRate * 0.44, 2200);
+          lp.Q.value = BUTTERWORTH_LP_HP_Q_DB;
+          src.connect(lp);
+          lp.connect(stimGain);
+          src.start(now);
+          this.activeSources.push(src);
+        }
+        this.carrierLabel =
+          startRateHz !== rateHz
+            ? `${startRateHz}→${rateHz} Hz Theta × 40 Hz Gamma CFC @ ${carrierHz} Hz`
+            : `${rateHz} Hz Theta × 40 Hz Gamma CFC @ ${carrierHz} Hz`;
       } else if (eType === 'isochronic_pulse') {
         const rateHz = effectiveTargetHz || 14;
         const carrierHz =
@@ -794,6 +855,7 @@ export class MedicalStimulusRack {
           ? 'gamma_chirp'
           : 'gamma_clicks';
     }
+    if (eType === 'theta_gamma_cfc') return 'theta_gamma_cfc';
     if (eType === 'isochronic_pulse') return 'isochronic';
     if (eType === 'binaural_beat') {
       return !this.speakerSafeEQ && !this.forceMonaural ? 'binaural' : 'monaural';
@@ -823,7 +885,8 @@ export class MedicalStimulusRack {
           : this.pureStimulusMode
             ? 0.27
             : 0.18;
-    } else if (type === 'isochronic_pulse') base = this.pureStimulusMode ? 0.25 : 0.165;
+    } else if (type === 'theta_gamma_cfc') base = this.pureStimulusMode ? 0.3 : 0.165;
+    else if (type === 'isochronic_pulse') base = this.pureStimulusMode ? 0.25 : 0.165;
     else if (type === 'binaural_beat' || type === 'monaural_beat') {
       base = this.pureStimulusMode ? 0.25 : 0.155;
     }
@@ -953,8 +1016,13 @@ export class MedicalStimulusRack {
     }
     this.spec.music.rootMidi = rootMidi;
     const eType = this.spec.entrainment.type;
-    if (eType === 'gamma_40hz_clicks' && !this.speakerSafeEQ && this.clinicalSynthNode) {
-      const targetCenter = this.gammaMode === 'harmonic_mbi' ? 220 : 520;
+    if (
+      (eType === 'gamma_40hz_clicks' || eType === 'theta_gamma_cfc') &&
+      !this.speakerSafeEQ &&
+      this.clinicalSynthNode
+    ) {
+      const targetCenter =
+        eType === 'theta_gamma_cfc' || this.gammaMode === 'harmonic_mbi' ? 220 : 520;
       const newCarrierHz = Math.round(computeHarmonicCarrierHz(rootMidi, tuningA4Hz, targetCenter));
       this.primaryCarrierHz = newCarrierHz;
       this.clinicalSynthNode.port.postMessage({ type: 'retune', carrierHz: newCarrierHz });
@@ -1084,6 +1152,21 @@ export class MedicalStimulusRack {
         spec.entrainment.type === 'binaural_beat' && !this.speakerSafeEQ && !this.forceMonaural
           ? `${leftHz} Hz L / ${rightHz} Hz R (${liveBeatHz} Hz Beat)`
           : `${leftHz} + ${rightHz} Hz Monaural (${liveBeatHz} Hz Beat)`;
+    } else if (
+      spec &&
+      !this.isControlTrial &&
+      spec.entrainment.type === 'theta_gamma_cfc' &&
+      spec.entrainment.startFrequencyHz !== undefined
+    ) {
+      const rampRatio = Math.min(1, Math.max(0, progressRatio) / 0.2);
+      const liveThetaHz = Number(
+        (
+          spec.entrainment.startFrequencyHz +
+          (spec.entrainment.frequencyHz - spec.entrainment.startFrequencyHz) * rampRatio
+        ).toFixed(2)
+      );
+      this.currentHz = liveThetaHz;
+      this.carrierLabel = `${liveThetaHz} Hz Theta × 40 Hz Gamma CFC @ ${this.primaryCarrierHz ?? 220} Hz`;
     }
     this.refreshLevels();
   }

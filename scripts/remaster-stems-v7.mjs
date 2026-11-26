@@ -68,6 +68,8 @@ const BASE_CDN = process.env.NOOTROPIC_ORIGIN || 'https://www.nootropic.fm';
  * Exact 26 core stems currently tracked in worker/index.ts (`STUDIO_TRACK_ACOUSTIC_MAP`).
  */
 const CORE_STEMS = [
+  { key: 'nootropic_trance/focus/hypnotic-velvet-tunnel-120-1.mp3', nativeBpm: 120, variant: 0 },
+  { key: 'nootropic_trance/focus/polyrhythmic-neural-lock-120-2.mp3', nativeBpm: 120, variant: 0 },
   { key: 'lofi_keys/focus/dusty-rhodes-88-1.mp3', nativeBpm: 88, variant: 0 },
   { key: 'lofi_keys/focus/dusty-rhodes-88-2.mp3', nativeBpm: 88, variant: 1 },
   { key: 'lofi_keys/calm/evening-felt-rhodes-68-1.mp3', nativeBpm: 68, variant: 0 },
@@ -149,7 +151,13 @@ function buildGenreMasteringEq(sourceKey) {
   }
 
   let eq;
-  if (genre === 'deep_electronic') {
+  if (genre === 'nootropic_trance') {
+    eq = [
+      'highpass=f=30:poles=2',
+      'equalizer=f=2400:t=q:w=1.0:g=2.2',
+      'highshelf=f=6500:g=2.4:w=0.75',
+    ].join(',');
+  } else if (genre === 'deep_electronic') {
     eq = [
       'highpass=f=30:poles=2',
       'lowshelf=f=110:g=-3.4:w=0.7',

@@ -6,6 +6,23 @@ import type { ScientificStudy } from './types';
  */
 export const SCIENTIFIC_STUDIES: ScientificStudy[] = [
   {
+    id: 'lisman-jensen-2013-theta-gamma-cfc',
+    authors: 'Lisman, J. E., & Jensen, O.',
+    year: 2013,
+    journal: 'Neuron',
+    title: 'The θ–γ neural code',
+    mechanism:
+      'Theta–Gamma Cross-Frequency Phase-Amplitude Coupling (6 Hz Theta envelope nesting 40 Hz Gamma bursts) + 120 BPM (2.0 Hz) integer sub-harmonic lock',
+    soundEffect:
+      'Glides from 14 Hz Beta capture down to 6.0 Hz Theta with nested 40.0 Hz harmonic Gamma bursts on each Theta crest over a 120 BPM polyrhythmic tunnel.',
+    summary:
+      'Cortical working memory and absorptive cognitive binding rely on high-frequency Gamma (~40 Hz) oscillations phase-locked to the crests of slower Theta (~6 Hz) waves, supporting deep immersion without drowsiness.',
+    caveat:
+      'Intended strictly for stationary deep work, coding, or study — automatically converted to 16 Hz Beta alertness in Driving Safety Mode.',
+    doiOrUrl: 'https://doi.org/10.1016/j.neuron.2013.03.007',
+    applicableTargets: ['deep_flow', 'alert_focus'],
+  },
+  {
     id: 'salimpoor-2011-dopamine-preference',
     authors: 'Salimpoor, V. N., Benovoy, M., Larcher, K., Dagher, A., & Zatorre, R. J.',
     year: 2011,

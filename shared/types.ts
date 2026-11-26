@@ -52,6 +52,7 @@ export type HarmonicMode = 'bright_maj9' | 'warm_min9' | 'suspended_open' | 'dee
 
 export type MusicGenreChoice =
   | 'auto'
+  | 'nootropic_trance'
   | 'lofi_keys'
   | 'deep_electronic'
   | 'cinematic_strings'
@@ -499,6 +500,11 @@ export const GENRE_META: Record<
   ResolvedGenre,
   { label: string; shortDesc: string; vibeTag: string }
 > = {
+  nootropic_trance: {
+    label: 'NootropicFM Mode',
+    shortDesc: 'Hypnotic 120 BPM trance pulse engineered to lock your mind in deep flow',
+    vibeTag: 'Signature Trance · 6×40 Hz',
+  },
   lofi_keys: {
     label: 'Lo-Fi Beats',
     shortDesc: 'Dusty Rhodes chords & laid-back beat',

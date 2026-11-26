@@ -2518,6 +2518,8 @@ export class PsychoacousticEngine {
       case 'jazz_rhodes':
       case 'bossa_nova':
         return 92;
+      case 'nootropic_trance':
+        return 120;
       case 'deep_electronic':
         return 112;
     }

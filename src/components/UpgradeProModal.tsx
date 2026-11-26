@@ -22,7 +22,7 @@ interface UpgradeProModalProps {
 
 const PRO_BENEFITS = [
   'Unlimited full sessions (15, 30, 45, 60 min with zero cutoffs)',
-  'All 10 curated instrumental styles + Endless Stream (never repeats)',
+  'All 11 curated instrumental styles + NootropicFM Trance Mode & Endless Stream',
   'Real-time oscilloscope proof (Y/t & X/Y Lissajous) & 1-tap Pure Wave isolation',
   'Full Science Study Lab + reaction-speed tracking & instant QR sync across devices',
 ];

@@ -798,7 +798,7 @@ test('P1 #6: NootropicClinicalSynth clamps carriers/harmonics/chirps < 0.44*samp
   const sr8 = 8000;
   const reg8 = loadWorkletProcessors(sr8);
   const Synth8 = reg8.get('nootropic-clinical-synth');
-  for (const mode of ['isochronic', 'binaural', 'monaural', 'gamma_clicks', 'gamma_chirp', 'gamma_mbi', 'aperiodic_sham']) {
+  for (const mode of ['isochronic', 'binaural', 'monaural', 'gamma_clicks', 'gamma_chirp', 'gamma_mbi', 'theta_gamma_cfc', 'aperiodic_sham']) {
     const s = new Synth8();
     s.port._deliver({
       type: 'config',

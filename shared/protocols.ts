@@ -255,6 +255,39 @@ export const PROTOCOL_ARMS: ProtocolArm[] = [
       'heiderscheit-2015-iso-principle',
     ],
   },
+  {
+    id: 'nootropic-trance-6x40hz',
+    name: 'NootropicFM Trance Lock 6×40 Hz',
+    tagline: '14→6 Hz Theta × 40 Hz Gamma CFC + 120 BPM polyrhythmic sub-harmonic tunnel',
+    description:
+      'Signature absorptive trance architecture: glides from 14 Hz Beta capture into 6.0 Hz frontal-midline Theta nesting 40.0 Hz Gamma bursts (Lisman & Jensen 2013), locked to a 120.000 BPM (2.0 Hz) polyrhythmic dub-trance pulse.',
+    targetStates: ['deep_flow', 'alert_focus'],
+    drivingSafe: false,
+    priorAlpha: 3.9,
+    priorBeta: 1.1,
+    baseParams: {
+      modulationHz: 6,
+      modulationDepth: 0.42,
+      crossoverHz: 190,
+      upperCrossoverHz: 4500,
+      bpm: 120,
+      pulseIntensity: 0.58,
+      noiseColor: 'brown',
+      noiseLevel: 0.08,
+      harmonicMode: 'suspended_open',
+      rootNoteHz: 146.83, // D3
+      filterCutoffHz: 2200,
+      speakerSafeEQ: false,
+      antiMonotonyCycleMin: 0,
+      binauralOffsetHz: 0,
+    },
+    studyIds: [
+      'lisman-jensen-2013-theta-gamma-cfc',
+      'salimpoor-2011-dopamine-preference',
+      'heiderscheit-2015-iso-principle',
+      'perham-2014-lyric-interference',
+    ],
+  },
 ];
 
 export interface BanditStatRow {
@@ -446,6 +479,7 @@ export function resolveEnergyTier(
 }
 
 const ALL_GENRES: ResolvedGenre[] = [
+  'nootropic_trance',
   'deep_electronic',
   'lofi_keys',
   'cinematic_strings',
@@ -485,7 +519,8 @@ function getGenrePrior(
     else if (genre === 'acoustic_pluck') alpha = 2.6;
     else alpha = 1.4;
   } else if (targetState === 'deep_flow') {
-    if (genre === 'deep_electronic') alpha = 3.6;
+    if (genre === 'nootropic_trance') alpha = 3.8;
+    else if (genre === 'deep_electronic') alpha = 3.6;
     else if (genre === 'lofi_keys' || genre === 'cinematic_strings' || genre === 'solo_piano') alpha = 3.4;
     else if (genre === 'jazz_rhodes' || genre === 'dub_reggae') alpha = 3.1;
     else if (genre === 'bossa_nova' || genre === 'ambient_space') alpha = 2.8;
@@ -537,8 +572,13 @@ function resolveGenreLayer(input: {
 
     // Exclude genres that conflict with road safety or sleep wind-down when Science picks Auto
     const eligible = ALL_GENRES.filter((g) => {
-      if (isDriving && (g === 'nature_rain' || g === 'ambient_space')) return false;
-      if (input.targetState === 'sleep_winddown' && (g === 'deep_electronic' || g === 'bossa_nova')) return false;
+      if (isDriving && (g === 'nature_rain' || g === 'ambient_space' || g === 'nootropic_trance')) return false;
+      if (
+        input.targetState === 'sleep_winddown' &&
+        (g === 'deep_electronic' || g === 'bossa_nova' || g === 'nootropic_trance')
+      ) {
+        return false;
+      }
       return true;
     });
 
@@ -579,6 +619,24 @@ function resolveGenreLayer(input: {
   }
 
   // Smart Iso-Safety adaptation when user chooses a genre that could clash with goal/safety
+  if (isDriving && req === 'nootropic_trance') {
+    return {
+      genre: 'nootropic_trance',
+      mode: 'iso_adapted',
+      adaptationNote:
+        'Driving Safety Lock: Kept the 120 BPM NootropicFM pulse while shifting neural entrainment from 6 Hz Theta trance to 16 Hz Beta road alertness.',
+    };
+  }
+
+  if (input.targetState === 'sleep_winddown' && req === 'nootropic_trance') {
+    return {
+      genre: 'nootropic_trance',
+      mode: 'iso_adapted',
+      adaptationNote:
+        'Softened NootropicFM Mode low-pass spectrum and down-regulated tempo for nocturnal sleep wind-down.',
+    };
+  }
+
   if ((input.targetState === 'sleep_winddown' || input.targetState === 'calm_reset') && req === 'deep_electronic') {
     return {
       genre: 'deep_electronic',
@@ -875,8 +933,15 @@ export function selectProtocolRecommendation(input: {
   const bestExploit = [...scored].sort((a, b) => b.expectedMean - a.expectedMean)[0];
   const thompsonWinner = [...scored].sort((a, b) => b.thompsonDraw - a.thompsonDraw)[0];
 
-  const isExploration = thompsonWinner.arm.id !== bestExploit.arm.id;
-  const chosen = thompsonWinner;
+  const tranceArmEntry =
+    !isDriving &&
+    effectiveTarget !== 'sleep_winddown' &&
+    (input.requestedGenre === 'nootropic_trance' || input.customGoalSlug === 'trance_lock')
+      ? scored.find((s) => s.arm.id === 'nootropic-trance-6x40hz')
+      : undefined;
+
+  const isExploration = tranceArmEntry ? false : thompsonWinner.arm.id !== bestExploit.arm.id;
+  const chosen = tranceArmEntry ?? thompsonWinner;
 
   const sanitizedCustom = sanitizeCustomVibe(input.customGenreInput);
   const validCustom = sanitizedCustom && !sanitizedCustom.rejectedReason ? sanitizedCustom : null;

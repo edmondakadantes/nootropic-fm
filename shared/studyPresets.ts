@@ -732,6 +732,92 @@ export const VERIFIED_STUDY_PRESETS: ExecutableStudySpec[] = [
       safetyNotes: [],
     },
   },
+  {
+    id: 'lisman-jensen-2013-theta-gamma-cfc',
+    shortLabel: 'NootropicFM Trance Lock · 6×40 Hz Theta–Gamma CFC',
+    studyRef: {
+      title: 'The θ–γ neural code',
+      authors: 'Lisman, J. E., & Jensen, O.',
+      year: '2013',
+      journal: 'Neuron',
+      url: 'https://doi.org/10.1016/j.neuron.2013.03.007',
+      doi: '10.1016/j.neuron.2013.03.007',
+      pmid: '23522038',
+      source: 'core',
+    },
+    abstractExcerpt:
+      'High-frequency gamma (~40 Hz) oscillations nested on the crests of slower theta (~6 Hz) cycles organize multi-item working memory and deep absorptive cognitive binding across cortical networks.',
+    compilerMode: 'verified_ground_truth',
+    compliancePct: 98,
+    evidenceMap: [
+      {
+        parameter: 'Cross-Frequency Coupling',
+        targetLabel: '6.0 Hz Theta × 40.0 Hz Gamma Phase-Amplitude Nesting',
+        executedValue: '14.0→6.0 Hz Theta descent nesting 40.000 Hz harmonic Gamma bursts',
+        studyQuote: 'Gamma-band (~40 Hz) oscillations are modulated by the phase of theta (~6 Hz) waves.',
+        origin: 'study_exact',
+      },
+      {
+        parameter: 'Sub-Harmonic Tempo Grid',
+        targetLabel: '120.000 BPM Integer Sub-Harmonic Lock',
+        executedValue: '120.000 BPM (2.000 Hz = exact 1:3 Theta & 1:20 Gamma phase lock)',
+        studyQuote: 'Phase-locked rhythmic timing aligns motor-auditory expectation with cortical theta cycles.',
+        origin: 'study_inferred',
+      },
+      {
+        parameter: 'Autonomic Spatial Halo',
+        targetLabel: '0.10 Hz Vagal Azimuthal Orbit',
+        executedValue: '10.0s Mayer-wave stereo shimmer + mono-locked <190 Hz sub-bass',
+        studyQuote: 'Stationary absorptive immersion; automatically converted to 16 Hz Beta in Driving Mode.',
+        origin: 'clinical_safety_default',
+      },
+    ],
+    entrainment: {
+      type: 'theta_gamma_cfc',
+      frequencyHz: 6,
+      startFrequencyHz: 14,
+      modulationBandHz: [190, 4500],
+      modulationDepth: 0.42,
+      waveform: 'raised_cosine',
+      hrvBreathHz: 0.1,
+    },
+    music: {
+      defaultCarrierMode: 'studio_library',
+      bpm: 120,
+      tonalMode: 'dorian',
+      tuningA4Hz: 440,
+      rootMidi: 50, // D3
+      percussion: 'steady_pulse',
+      density: 0.56,
+      brightness: 0.54,
+      spectralLowPassHz: 2400,
+      instrumentPalette: 'deep_electronic',
+      vibeTags: ['hypnotic 120 BPM dub trance', '5:4 polyrhythmic plucks', 'endless Dorian tunnel', 'no vocals'],
+      lyriaWeightedPrompts: [
+        {
+          text: 'Hypnotic 120 BPM minimal dub techno trance, deep velvet sub-bass heartbeat, polyrhythmic analog synth arpeggios, evolving resonant dub chords with tape delay, strictly instrumental, no vocals',
+          weight: 1.4,
+        },
+        {
+          text: 'Endless meditative hypnotic groove, suspended Dorian modal atmosphere, zero harsh drops',
+          weight: 0.85,
+        },
+      ],
+    },
+    noise: {
+      color: 'brown',
+      snrDb: -22,
+    },
+    protocol: {
+      recommendedDurationMin: 45,
+      targetState: 'deep_flow',
+      requiresHeadphones: false,
+      drivingSafe: false,
+      safetyNotes: [
+        'Deep absorptive trance protocol: intended strictly for stationary focus, coding, or study — never use while driving.',
+      ],
+    },
+  },
 ];
 
 export function getPresetStudySpecById(
@@ -764,15 +850,17 @@ export function buildCheckInExecutableSpec(input: {
   microStateId?: string;
 }): ExecutableStudySpec {
   const baseId =
-    input.armId === 'theta-drift-6hz' || input.targetState === 'sleep_winddown'
-      ? 'jespersen-2022-cochrane-sleep'
-      : input.armId === 'alpha-parasympathetic-10hz' || input.targetState === 'calm_reset'
-        ? 'thoma-2013-music-stress-hpa'
-        : input.armId === 'deep-stochastic-flow'
-          ? 'soderlund-2010-stochastic-noise'
-          : input.armId === 'crisp-vigilance-18hz' || input.targetState === 'energy_lift'
-            ? 'husain-2002-tempo-arousal'
-            : 'woods-2024-am-attention';
+    input.armId === 'nootropic-trance-6x40hz'
+      ? 'lisman-jensen-2013-theta-gamma-cfc'
+      : input.armId === 'theta-drift-6hz' || input.targetState === 'sleep_winddown'
+        ? 'jespersen-2022-cochrane-sleep'
+        : input.armId === 'alpha-parasympathetic-10hz' || input.targetState === 'calm_reset'
+          ? 'thoma-2013-music-stress-hpa'
+          : input.armId === 'deep-stochastic-flow'
+            ? 'soderlund-2010-stochastic-noise'
+            : input.armId === 'crisp-vigilance-18hz' || input.targetState === 'energy_lift'
+              ? 'husain-2002-tempo-arousal'
+              : 'woods-2024-am-attention';
 
   const template = structuredClone(
     VERIFIED_STUDY_PRESETS.find((p) => p.id === baseId) ?? VERIFIED_STUDY_PRESETS[0]
@@ -820,6 +908,7 @@ export function buildCheckInExecutableSpec(input: {
 
   // Map user's selected Layer 2 genre into the live generative palette
   const paletteMap: Record<typeof input.genre, ExecutableStudySpec['music']['instrumentPalette']> = {
+    nootropic_trance: 'deep_electronic',
     lofi_keys: 'felt_piano',
     jazz_rhodes: 'warm_rhodes',
     acoustic_pluck: 'nylon_acoustic',

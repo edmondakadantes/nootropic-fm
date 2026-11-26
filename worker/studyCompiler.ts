@@ -459,7 +459,7 @@ async function runWorkersAiStudyExtractor(
 NEVER invent parameters or quotes not present in the text. Every "studyQuote" MUST be an exact verbatim substring copied from the text.
 Return ONLY valid JSON with optional keys:
 {
-  "entrainmentType": "none" | "amplitude_modulation" | "binaural_beat" | "monaural_beat" | "isochronic_pulse" | "gamma_40hz_clicks" | "hrv_breathing_swell",
+  "entrainmentType": "none" | "amplitude_modulation" | "binaural_beat" | "monaural_beat" | "isochronic_pulse" | "gamma_40hz_clicks" | "theta_gamma_cfc" | "hrv_breathing_swell",
   "frequencyHz": number,
   "carrierLeftHz": number,
   "carrierRightHz": number,
