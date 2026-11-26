@@ -16,6 +16,8 @@ import {
   KeyRound,
   Loader2,
   Lock,
+  Mic,
+  MicOff,
   Music2,
   Pause,
   Play,
@@ -68,9 +70,56 @@ const FREE_LYRIA_PREVIEW_SEC = 90; // 90-second daily live Endless Stream previe
 const SHARE_BONUS_SEC = 1800; // +30 minutes free when sharing your 1-of-1 Neural Fingerprint Card
 const SHARE_BONUS_DAY_KEY = 'nootropic_fm_share_bonus_day_v1';
 const FREE_USAGE_STORAGE_KEY = 'nootropic_fm_free_usage_v1';
+const VOICE_GUIDE_STORAGE_KEY = 'nootropic_fm_voice_guide_v1';
+const VOICE_DAY_COUNT_KEY = 'nootropic_fm_voice_day_v1';
 
 function getTodayUtcKey(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function readVoiceGuideEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(VOICE_GUIDE_STORAGE_KEY);
+    if (raw === null) return true;
+    return raw !== '0' && raw !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+function writeVoiceGuideEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(VOICE_GUIDE_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    // ignore storage restrictions
+  }
+}
+
+function consumeDailyVoiceIntroType(): 'intro_full' | 'intro_short' {
+  try {
+    const today = getTodayUtcKey();
+    const raw = localStorage.getItem(VOICE_DAY_COUNT_KEY);
+    let count = 0;
+    if (raw) {
+      const parsed = JSON.parse(raw) as { day?: string; count?: number };
+      if (parsed.day === today) {
+        count = Math.max(0, Math.floor(Number(parsed.count) || 0));
+      }
+    }
+    localStorage.setItem(VOICE_DAY_COUNT_KEY, JSON.stringify({ day: today, count: count + 1 }));
+    return count === 0 ? 'intro_full' : 'intro_short';
+  } catch {
+    return 'intro_full';
+  }
+}
+
+function inferClientTimeBucket(): 'morning' | 'midday' | 'afternoon' | 'evening' | 'night' {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 11) return 'morning';
+  if (h >= 11 && h < 14) return 'midday';
+  if (h >= 14 && h < 18) return 'afternoon';
+  if (h >= 18 && h < 22) return 'evening';
+  return 'night';
 }
 
 function hasClaimedShareBonusToday(): boolean {
@@ -261,6 +310,9 @@ export function PlayerView({
   const [redeemingSyncKey, setRedeemingSyncKey] = useState(false);
   const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('tune');
   const [audioInterrupted, setAudioInterrupted] = useState(false);
+  const [voiceGuideEnabled, setVoiceGuideEnabled] = useState<boolean>(() => readVoiceGuideEnabled());
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState<string | null>(null);
 
   const effectiveFreeLimitSec = FREE_PREVIEW_LIMIT_SEC + shareBonusSec;
   const remainingFreeSec = Math.max(0, effectiveFreeLimitSec - dailyFreeUsedSec);
@@ -345,6 +397,61 @@ export function PlayerView({
   const carrierModeRef = useRef<CarrierEngineMode>(carrierMode);
   const modMultRef = useRef<number>(modMult);
   modMultRef.current = modMult;
+  const voiceGuideEnabledRef = useRef<boolean>(voiceGuideEnabled);
+  voiceGuideEnabledRef.current = voiceGuideEnabled;
+  const voiceIntroSentRef = useRef<boolean>(false);
+  const voiceOutroSentRef = useRef<boolean>(false);
+  const genreRef = useRef<ResolvedGenre>(genre);
+  genreRef.current = genre;
+  const profileNameRef = useRef<string | null>(profile?.displayName ?? null);
+  profileNameRef.current = profile?.displayName ?? null;
+  const layerMonitorRef = useRef<LayerMonitorMode>(layerMonitor);
+  layerMonitorRef.current = layerMonitor;
+
+  const triggerSessionVoiceCue = (cueType: 'intro_full' | 'intro_short' | 'outro_landing') => {
+    if (!voiceGuideEnabledRef.current || layerMonitorRef.current === 'science_only') return;
+    void api
+      .getVoiceConciergeCue({
+        cueType,
+        firstName: profileNameRef.current,
+        currentState: recommendation.currentState,
+        targetState: recommendation.targetState,
+        armId: recommendation.arm.id,
+        modulationHz: recommendation.params.modulationHz,
+        genre: genreRef.current,
+        isDriving: recommendation.safetyMode,
+        timeBucket: inferClientTimeBucket(),
+        durationMin: recommendation.plannedDurationMin,
+      })
+      .then(async (res) => {
+        if (
+          !res ||
+          !res.available ||
+          !res.greetingUrl ||
+          !res.bodyUrl ||
+          !voiceGuideEnabledRef.current ||
+          layerMonitorRef.current === 'science_only'
+        ) {
+          return;
+        }
+        const greetingUrl = res.greetingUrl.startsWith('http')
+          ? res.greetingUrl
+          : `${API_BASE}${res.greetingUrl}`;
+        const bodyUrl = res.bodyUrl.startsWith('http')
+          ? res.bodyUrl
+          : `${API_BASE}${res.bodyUrl}`;
+        setVoiceTranscript(res.transcript || null);
+        await engineRef.current?.playVoiceConciergeCue({
+          greetingUrl,
+          bodyUrl,
+          breathPauseMs: res.breathPauseMs,
+          initialDelayMs: cueType === 'outro_landing' ? 180 : 550,
+        });
+      })
+      .catch(() => {});
+  };
+  const triggerVoiceCueRef = useRef(triggerSessionVoiceCue);
+  triggerVoiceCueRef.current = triggerSessionVoiceCue;
 
   elapsedRef.current = elapsedSec;
   adjustmentsRef.current = adjustments;
@@ -385,6 +492,10 @@ export function PlayerView({
     modMultRef.current = nextSmartEffect.modMult;
     setEffectAutoTag(nextSmartEffect.autoReason);
     milestonesSentRef.current = new Set();
+    voiceIntroSentRef.current = false;
+    voiceOutroSentRef.current = false;
+    setVoiceSpeaking(false);
+    setVoiceTranscript(null);
     elapsedRef.current = 0;
     activeElapsedMsRef.current = 0;
     lastCheckpointSecRef.current = 0;
@@ -409,6 +520,9 @@ export function PlayerView({
     endedByUserRef.current = false;
     const unsubInterrupt = engineRef.current?.onInterruptionChange((interrupted) => {
       if (mounted) setAudioInterrupted(interrupted);
+    });
+    const unsubVoice = engineRef.current?.onVoiceSpeakingChange((speaking) => {
+      if (mounted) setVoiceSpeaking(speaking);
     });
 
     const triggerCustomCrossfade = async (trackUrl: string, label: string) => {
@@ -496,6 +610,14 @@ export function PlayerView({
         setAudioStarted(true);
         if (engineRef.current) {
           setGenre(engineRef.current.getGenre());
+        }
+        if (
+          !voiceIntroSentRef.current &&
+          initialCarrier !== 'pure_stimulus' &&
+          voiceGuideEnabledRef.current
+        ) {
+          voiceIntroSentRef.current = true;
+          triggerVoiceCueRef.current(consumeDailyVoiceIntroType());
         }
 
         // Case A: Custom vibe already exists in Cloudflare R2 Community Cache -> immediate HTTP Range streaming!
@@ -596,6 +718,7 @@ export function PlayerView({
     return () => {
       mounted = false;
       unsubInterrupt?.();
+      unsubVoice?.();
       onPlayingChange?.(false);
       engineRef.current?.stop();
     };
@@ -743,6 +866,20 @@ export function PlayerView({
         }
       }
 
+      // Soft-landing Voice Concierge whisper 12s before full-session completion (>= 5 min)
+      if (
+        plannedSec >= 300 &&
+        plannedSec - next <= 12 &&
+        plannedSec - next >= 9 &&
+        !voiceOutroSentRef.current &&
+        voiceGuideEnabledRef.current &&
+        layerMonitorRef.current !== 'science_only' &&
+        (isPro || effectiveFreeLimitSec - dailyFreeUsedRef.current > 14)
+      ) {
+        voiceOutroSentRef.current = true;
+        triggerVoiceCueRef.current('outro_landing');
+      }
+
       if (plannedSec > 0 && next >= plannedSec) {
         stopped = true;
         window.clearInterval(id);
@@ -794,6 +931,14 @@ export function PlayerView({
       );
       setAudioStarted(true);
       setIsPlaying(true);
+      if (
+        !voiceIntroSentRef.current &&
+        carrierMode !== 'pure_stimulus' &&
+        voiceGuideEnabledRef.current
+      ) {
+        voiceIntroSentRef.current = true;
+        triggerVoiceCueRef.current(consumeDailyVoiceIntroType());
+      }
       return;
     }
     if (isPlaying) {
@@ -899,6 +1044,10 @@ export function PlayerView({
       return;
     }
     setLayerMonitor(nextMode);
+    layerMonitorRef.current = nextMode;
+    if (nextMode === 'science_only') {
+      engineRef.current?.stopVoiceConcierge(0.15);
+    }
     if (!audioStarted) {
       await engineRef.current?.start(
         recommendation.params,
@@ -956,6 +1105,8 @@ export function PlayerView({
       engineRef.current?.setLayerMonitorMode('full_mix');
     } else if (nextMode === 'pure_stimulus') {
       setLayerMonitor('science_only');
+      layerMonitorRef.current = 'science_only';
+      engineRef.current?.stopVoiceConcierge(0.15);
     }
     if (nextMode === 'lyria_realtime') {
       if (!isPro && dailyLyriaUsedRef.current >= FREE_LYRIA_PREVIEW_SEC) {
@@ -1094,6 +1245,26 @@ export function PlayerView({
     setCarrierMode(nextMode);
     setAudioSource(nextMode);
     engineRef.current?.setCarrierMode(nextMode);
+  };
+
+  const handleToggleVoiceGuide = () => {
+    const next = !voiceGuideEnabled;
+    setVoiceGuideEnabled(next);
+    voiceGuideEnabledRef.current = next;
+    writeVoiceGuideEnabled(next);
+    if (!next) {
+      engineRef.current?.stopVoiceConcierge(0.18);
+      setVoiceSpeaking(false);
+    } else if (
+      audioStarted &&
+      isPlaying &&
+      elapsedRef.current < 25 &&
+      !voiceIntroSentRef.current &&
+      layerMonitorRef.current !== 'science_only'
+    ) {
+      voiceIntroSentRef.current = true;
+      triggerVoiceCueRef.current('intro_full');
+    }
   };
 
   const handleVolume = (v: number) => {
@@ -1449,6 +1620,26 @@ export function PlayerView({
           </div>
         </div>
 
+        {/* Soft Intimate Voice Concierge Live Whisper Bar (only visible during 6-8s spoken cue) */}
+        {voiceSpeaking && voiceTranscript && (
+          <div className="animate-rise flex items-center justify-between gap-3 rounded-xl border border-emerald-400/25 bg-emerald-500/[0.06] px-3.5 py-2 text-xs text-[#E8E6DF]">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#34D399] opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#34D399]" />
+              </span>
+              <p className="truncate italic text-[#D9F3E7]/95">“{voiceTranscript}”</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => engineRef.current?.stopVoiceConcierge(0.18)}
+              className="shrink-0 rounded-md border border-white/12 bg-white/[0.05] px-2 py-0.5 font-mono-tech text-[10px] text-[#A3A39E] transition hover:border-white/25 hover:text-[#F3F1EC]"
+            >
+              Skip
+            </button>
+          </div>
+        )}
+
         {/* Centerpiece #1 Hero Instrument: Live HiDPI Dual-Trace Web Audio Oscilloscope */}
         <LiveEnvelopeProof
           engine={engineRef.current}
@@ -1559,14 +1750,41 @@ export function PlayerView({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleEndSession}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3.5 py-2 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1C1F24]"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5 text-[#34D399]" />
-                {isEphemeral ? 'End Session' : 'End & Rate'}
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleVoiceGuide}
+                  aria-pressed={voiceGuideEnabled}
+                  title={
+                    voiceGuideEnabled
+                      ? 'Studio Voice Concierge ON — soft personalized session intro & landing (tap to mute)'
+                      : 'Studio Voice Concierge OFF — tap to enable personalized voice intro'
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 font-mono-tech text-[11px] font-medium transition ${
+                    voiceGuideEnabled
+                      ? voiceSpeaking
+                        ? 'border-emerald-400/55 bg-emerald-500/15 text-[#34D399]'
+                        : 'border-white/15 bg-[#14161A] text-[#D4D4CE] hover:border-emerald-400/40 hover:text-[#F3F1EC]'
+                      : 'border-white/10 bg-[#101215] text-[#7E7E78] hover:border-white/20 hover:text-[#A3A39E]'
+                  }`}
+                >
+                  {voiceGuideEnabled ? (
+                    <Mic className="h-3.5 w-3.5 text-[#34D399]" />
+                  ) : (
+                    <MicOff className="h-3.5 w-3.5 text-[#7E7E78]" />
+                  )}
+                  <span>Voice {voiceGuideEnabled ? 'ON' : 'OFF'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleEndSession}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3.5 py-2 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1C1F24]"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 text-[#34D399]" />
+                  {isEphemeral ? 'End Session' : 'End & Rate'}
+                </button>
+              </div>
             </div>
 
             {!isPro && shareBonusSec === 0 && !shareBonusUsedToday && remainingFreeSec <= 90 && remainingFreeSec > 60 && (

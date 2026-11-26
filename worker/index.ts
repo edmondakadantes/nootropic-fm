@@ -61,6 +61,7 @@ import type { D1Database, Env, ExecutionContext } from './env';
 import { fetchVerifiedLiveLiterature } from './literature';
 import { resolveMusicProvider } from './musicProviders';
 import { compileMedicalStudy, searchLiveMedicalStudies } from './studyCompiler';
+import { resolveVoiceConciergeAudio } from './voiceConcierge';
 import {
   createStripeCheckoutSession,
   createStripePortalSession,
@@ -1367,6 +1368,19 @@ export default {
         }
 
         return json({ spec: recommendation.executableSpec ?? spec, recommendation, fromCache }, 200, request);
+      }
+
+      // POST /api/voice/concierge — Zero-cost R2-cached personalized session Voice Concierge (2-part greeting + science bridge)
+      if (url.pathname === '/api/voice/concierge' && request.method === 'POST') {
+        const reqOrigin = request.headers.get('origin') ?? '';
+        if (reqOrigin && !isTrustedOrigin(reqOrigin)) {
+          return json({ available: false, error: 'Untrusted request origin' }, 403, request);
+        }
+        const rawBody = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const voiceResp = await resolveVoiceConciergeAudio(env, rawBody, () =>
+          checkDailyRateLimit(env.DB, request, 'voice_concierge_synth', 80)
+        );
+        return json(voiceResp, 200, request);
       }
 
       // POST /api/music/realtime-token — Mints a short-lived HMAC ticket for our secure Lyria RealTime WS proxy

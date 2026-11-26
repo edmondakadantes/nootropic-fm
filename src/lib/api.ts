@@ -498,4 +498,30 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ profileId }),
     }),
+
+  getVoiceConciergeCue: (payload: {
+    cueType: 'intro_full' | 'intro_short' | 'outro_landing';
+    firstName?: string | null;
+    currentState: CurrentState;
+    targetState: TargetState;
+    armId: string;
+    modulationHz: number;
+    genre: ResolvedGenre;
+    isDriving: boolean;
+    timeBucket?: string;
+    durationMin?: number;
+  }) =>
+    apiFetch<{
+      available: boolean;
+      cueType: 'intro_full' | 'intro_short' | 'outro_landing';
+      greetingUrl?: string;
+      bodyUrl?: string;
+      breathPauseMs: number;
+      transcript: string;
+      fromCache?: boolean;
+      provider?: string;
+    }>('/api/voice/concierge', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 };

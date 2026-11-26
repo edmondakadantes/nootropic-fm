@@ -31,6 +31,7 @@ import { LyriaRealtimeClient, type LyriaRealtimeStatus } from './LyriaRealtimeCl
 import { createCalibratedNoiseBuffer, MedicalStimulusRack, type GammaStimulusMode } from './MedicalStimulusRack';
 import { canUseWebCodecsOpus, streamOpusIntoWorklet } from './ProgressiveStemDecoder';
 import { StereoRainBed } from './StereoRainBed';
+import { VoiceConciergePlayer } from './VoiceConciergePlayer';
 import {
   bindNativeMediaActionHandler,
   isNativeMobileApp,
@@ -413,6 +414,9 @@ export class PsychoacousticEngine {
   private stimulusRack = new MedicalStimulusRack();
   private lyriaClient = new LyriaRealtimeClient();
   private rainBed = new StereoRainBed();
+  private voicePlayer = new VoiceConciergePlayer();
+  private musicMasterBus: GainNode | null = null;
+  private voiceSpeakingListeners = new Set<(speaking: boolean) => void>();
 
   // Mobile background bridge, iOS 'interrupted' recovery & wake lock
   private audioEl: HTMLAudioElement | null = null;
@@ -583,6 +587,22 @@ export class PsychoacousticEngine {
     masterSumBus.gain.value = 1.0;
     const musicMasterBus = ctx.createGain();
     musicMasterBus.gain.value = 1.0;
+    this.musicMasterBus = musicMasterBus;
+
+    this.voicePlayer.attach(ctx, masterSumBus, null, (speaking) => {
+      if (this.ctx && this.musicMasterBus) {
+        const now = this.ctx.currentTime;
+        // Sidechain duck Layer-2 music softly (-6.7 dB -> 0.46) while Voice Concierge speaks, then swell back over 1.2s
+        smoothSetParam(this.musicMasterBus.gain, speaking ? 0.46 : 1.0, now, speaking ? 0.36 : 0.95);
+      }
+      for (const cb of this.voiceSpeakingListeners) {
+        try {
+          cb(speaking);
+        } catch {
+          // ignore
+        }
+      }
+    });
 
     if (this.workletsReady) {
       const musicPreLim = new AudioWorkletNode(ctx, 'nootropic-lookahead-limiter', {
@@ -1918,6 +1938,27 @@ export class PsychoacousticEngine {
       this.bluetoothSafeActive = opts.bluetoothHighLatency;
       this.stimulusRack.setBluetoothSafe(opts.bluetoothHighLatency);
     }
+  }
+
+  public onVoiceSpeakingChange(listener: (speaking: boolean) => void): () => void {
+    this.voiceSpeakingListeners.add(listener);
+    return () => {
+      this.voiceSpeakingListeners.delete(listener);
+    };
+  }
+
+  public async playVoiceConciergeCue(opts: {
+    greetingUrl: string;
+    bodyUrl: string;
+    breathPauseMs?: number;
+    initialDelayMs?: number;
+  }): Promise<boolean> {
+    if (!this.ctx || !this.isPlaying || this.layerMonitorMode === 'science_only') return false;
+    return this.voicePlayer.playTwoPartCue(opts);
+  }
+
+  public stopVoiceConcierge(fadeSec = 0.2): void {
+    this.voicePlayer.cancelActiveVoices(fadeSec);
   }
 
   public getMomentaryLufs(): number | null {
@@ -4166,6 +4207,7 @@ export class PsychoacousticEngine {
       this.activeStudioAppliedBpm = 0;
       // Pause note scheduling immediately while letting audio fade smoothly over 500 ms
       this.composer.pause();
+      this.voicePlayer.cancelActiveVoices(0.18);
       if (this.envFollowerNode) {
         this.envFollowerNode.port.onmessage = null;
       }
@@ -4198,6 +4240,7 @@ export class PsychoacousticEngine {
       this.musicEnvAnalyser = null;
       this.musicEnvBuf = null;
       this.musicEnvSmoothedRms = 0.165;
+      this.musicMasterBus = null;
 
       this.pendingCloseCtx = ctxRef;
       this.pendingCloseTimer = window.setTimeout(() => {
@@ -4207,6 +4250,7 @@ export class PsychoacousticEngine {
         this.stimulusRack.stop();
         this.lyriaClient.stop();
         this.rainBed.stop();
+        this.voicePlayer.stop();
         this.clearStudioDeck(0.02);
         this.teardownMediaDeckPool();
         audioElRef?.pause();
@@ -4260,6 +4304,8 @@ export class PsychoacousticEngine {
     this.stimulusRack.stop();
     this.lyriaClient.stop();
     this.rainBed.stop();
+    this.voicePlayer.stop();
+    this.musicMasterBus = null;
     this.clearStudioDeck(0.1);
     this.teardownMediaDeckPool();
     if (this.visibilityHandler) {
