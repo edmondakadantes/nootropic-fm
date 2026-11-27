@@ -815,6 +815,12 @@ export function HeroLandingView({
               : '5-min free calibration · Share for +30 min free · No signup required · 18+'}
           </span>
           <div className="flex flex-wrap items-center gap-4">
+            <a
+              href="mailto:founders@nootropic.fm"
+              className="font-mono-tech text-[11px] text-[#A3A39E] transition hover:text-[#34D399]"
+            >
+              founders@nootropic.fm
+            </a>
             <button
               type="button"
               onClick={onStartCustomize}

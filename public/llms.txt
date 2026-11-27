@@ -12,6 +12,7 @@ nootropic.fm (`app.nootropic.fm`) runs client-side 48 kHz AudioWorklet DSP (`~$0
 - [Audio Studio Web App (app.nootropic.fm)](https://app.nootropic.fm/): Live interactive 48 kHz psychoacoustic studio, Study Lab, and Research Brain.
 - [Privacy Policy](https://www.nootropic.fm/privacy/): Zero-tracker, opt-in EEA/UK/CH privacy architecture and passwordless Neural Sync Pass details.
 - [Terms & Wellness Disclaimer](https://www.nootropic.fm/terms/): General wellness positioning, safe listening limits, and Driving Safety Mode boundaries.
+- Founder & Institutional Contact: Vasi Cicarac — mailto:founders@nootropic.fm
 
 ## Key Capabilities
 - **Dual-Layer 48 kHz WebAudio Engine**: Layer 1 scientific entrainment (`40 Hz` Gamma-MBI, 3-Band Linkwitz-Riley LR4 `190–4,500 Hz` cortical amplitude modulation, `0.10 Hz` HRV paced breathing, `600 Hz` Huggins dichotic headphone verification, ITU-R BS.1770-4 dynamic SNR follower) fused live into Layer 2 music.

@@ -201,6 +201,15 @@ export function DatasetInquiryModal({
               <Lock className="h-3.5 w-3.5" />
               {submitting ? 'Submitting Request...' : 'Request Full Dataset Access & Pricing'}
             </button>
+            <p className="text-center text-[11px] text-[#8E8E88]">
+              Prefer direct email? Write to{' '}
+              <a
+                href="mailto:founders@nootropic.fm"
+                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
+              >
+                founders@nootropic.fm
+              </a>
+            </p>
           </form>
         )}
       </div>

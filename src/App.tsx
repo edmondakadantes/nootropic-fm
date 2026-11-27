@@ -1546,6 +1546,13 @@ export default function App() {
               >
                 Delete Data via Sync Key
               </a>
+              <span className="text-[#555550]">·</span>
+              <a
+                href="mailto:founders@nootropic.fm"
+                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
+              >
+                founders@nootropic.fm
+              </a>
             </div>
 
             {privacyStatus && (
@@ -1631,6 +1638,12 @@ export default function App() {
                 className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
               >
                 Delete Data
+              </a>
+              <a
+                href="mailto:founders@nootropic.fm"
+                className="text-[#34D399] underline-offset-2 hover:underline"
+              >
+                founders@nootropic.fm
               </a>
             </div>
           </footer>

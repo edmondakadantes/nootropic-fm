@@ -92,7 +92,7 @@ function makeFakeMp3Bytes(length = 2048) {
 }
 
 test('sanitizeSpokenFirstName normalizes real names and blocks placeholders or injections', () => {
-  assert.equal(sanitizeSpokenFirstName('edmond dantes'), 'Edmond');
+  assert.equal(sanitizeSpokenFirstName('vasi cicarac'), 'Vasi');
   assert.equal(sanitizeSpokenFirstName('  Ștefan Popescu '), 'Stefan');
   assert.equal(sanitizeSpokenFirstName('Mădălina-Ioana'), 'Madalina-ioana');
   assert.equal(sanitizeSpokenFirstName('ALEX'), 'Alex');
@@ -112,7 +112,7 @@ test('sanitizeSpokenFirstName normalizes real names and blocks placeholders or i
 test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across modes', () => {
   const trancePlan = buildVoiceConciergePlan({
     cueType: 'intro_full',
-    firstName: 'Edmond',
+    firstName: 'Vasi',
     currentState: 'distracted',
     targetState: 'deep_flow',
     armId: 'nootropic-trance-6x40hz',
@@ -121,7 +121,7 @@ test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across
     isDriving: false,
     timeBucket: 'morning',
   });
-  assert.equal(trancePlan.greetingText, 'Good morning, Edmond.');
+  assert.equal(trancePlan.greetingText, 'Good morning, Vasi.');
   assert.match(trancePlan.bodyText, /mental scatter/i);
   assert.match(trancePlan.bodyText, /six-by-forty hertz trance rhythm/i);
   assert.match(trancePlan.bodyText, /Nootropic F M pulse/);
@@ -148,7 +148,7 @@ test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across
   // Returning session on same day uses concise intro_short
   const shortPlan = buildVoiceConciergePlan({
     cueType: 'intro_short',
-    firstName: 'Edmond',
+    firstName: 'Vasi',
     currentState: 'fatigued',
     targetState: 'alert_focus',
     armId: 'beta-16hz',
@@ -156,14 +156,14 @@ test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across
     genre: 'deep_electronic',
     isDriving: false,
   });
-  assert.equal(shortPlan.greetingText, 'Welcome back, Edmond.');
+  assert.equal(shortPlan.greetingText, 'Welcome back, Vasi.');
   assert.equal(shortPlan.breathPauseMs, 380);
   assert.match(shortPlan.bodyText, /Deep Electronic groove focus flow/);
 
   // Driving Safety Mode overrides calming language with road-safe alertness cue
   const drivePlan = buildVoiceConciergePlan({
     cueType: 'intro_full',
-    firstName: 'Edmond',
+    firstName: 'Vasi',
     currentState: 'fatigued',
     targetState: 'alert_focus',
     armId: 'beta-16hz',
@@ -171,14 +171,14 @@ test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across
     genre: 'lofi_keys',
     isDriving: true,
   });
-  assert.equal(drivePlan.greetingText, 'Eyes on the road, Edmond.');
+  assert.equal(drivePlan.greetingText, 'Eyes on the road, Vasi.');
   assert.match(drivePlan.bodyText, /Traffic frequencies stay wide open/);
   assert.match(drivePlan.bodyText, /Drive safe/);
 
   // Soft-landing outro cue
   const outroPlan = buildVoiceConciergePlan({
     cueType: 'outro_landing',
-    firstName: 'Edmond',
+    firstName: 'Vasi',
     currentState: 'distracted',
     targetState: 'deep_flow',
     armId: 'gamma-40hz',
@@ -187,7 +187,7 @@ test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across
     isDriving: false,
     durationMin: 25,
   });
-  assert.equal(outroPlan.greetingText, '25 minutes complete, Edmond.');
+  assert.equal(outroPlan.greetingText, '25 minutes complete, Vasi.');
   assert.match(outroPlan.bodyText, /gently bring your focus back/);
 });
 
@@ -213,9 +213,9 @@ test('resolveVoiceConciergeAudio caches immutable segments in R2 and shares scen
     return true;
   };
 
-  const payloadEdmond = {
+  const payloadVasi = {
     cueType: 'intro_full',
-    firstName: 'Edmond',
+    firstName: 'Vasi',
     currentState: 'distracted',
     targetState: 'deep_flow',
     armId: 'nootropic-trance-6x40hz',
@@ -226,7 +226,7 @@ test('resolveVoiceConciergeAudio caches immutable segments in R2 and shares scen
   };
 
   // 1st call: synthesizes greeting + body (2 AI calls) and stores in R2
-  const first = await resolveVoiceConciergeAudio(env, payloadEdmond, checkQuota);
+  const first = await resolveVoiceConciergeAudio(env, payloadVasi, checkQuota);
   assert.equal(first.available, true);
   assert.equal(first.fromCache, false);
   assert.equal(aiCalls, 2);
@@ -236,7 +236,7 @@ test('resolveVoiceConciergeAudio caches immutable segments in R2 and shares scen
   assert.match(first.bodyUrl, /^\/api\/audio\/stream\/voice\/v1\/body_/);
 
   // 2nd identical call: 100% R2 cache hit (0 AI calls, 0 quota consumption!)
-  const second = await resolveVoiceConciergeAudio(env, payloadEdmond, checkQuota);
+  const second = await resolveVoiceConciergeAudio(env, payloadVasi, checkQuota);
   assert.equal(second.available, true);
   assert.equal(second.fromCache, true);
   assert.equal(second.provider, 'r2_cache');
@@ -249,7 +249,7 @@ test('resolveVoiceConciergeAudio caches immutable segments in R2 and shares scen
   // Reuses the cached scenario body from R2 and only synthesizes Maria's 1.2s greeting (1 AI call)!
   const third = await resolveVoiceConciergeAudio(
     env,
-    { ...payloadEdmond, firstName: 'Maria' },
+    { ...payloadVasi, firstName: 'Maria' },
     checkQuota
   );
   assert.equal(third.available, true);
@@ -321,7 +321,7 @@ test('resolveVoiceConciergeAudio falls back cleanly to Gemini 3.8 Flash-Lite TTS
 test('sanitizeVoiceRequestPayload + vocal headroom math strictly preserve Layer-1 limiter invariance', () => {
   const sanitized = sanitizeVoiceRequestPayload({
     cueType: 'invalid_mode',
-    firstName: 'Edmond',
+    firstName: 'Vasi',
     currentState: 'not_a_state',
     targetState: 'not_a_target',
     armId: 'bad/../arm!!',
@@ -496,7 +496,7 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs Alanya at 0.96x into
       env,
       {
         cueType: 'intro_full',
-        firstName: 'Edmond',
+        firstName: 'Vasi',
         currentState: 'distracted',
         targetState: 'deep_flow',
         armId: 'nootropic-trance-6x40hz',
@@ -518,7 +518,7 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs Alanya at 0.96x into
       env,
       {
         cueType: 'intro_full',
-        firstName: 'Edmond',
+        firstName: 'Vasi',
         voiceId: 'gYGXjks6FzTWwNQ6X7hC',
         currentState: 'distracted',
         targetState: 'deep_flow',
@@ -535,14 +535,14 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs Alanya at 0.96x into
     assert.equal(second.greetingUrl, first.greetingUrl);
     assert.equal(elevenTtsCalls, 2);
 
-    // Partial-cache scenario under ElevenLabs quota exhaustion: 'Edmond' greeting IS cached as Alanya,
+    // Partial-cache scenario under ElevenLabs quota exhaustion: 'Vasi' greeting IS cached as Alanya,
     // while target 'sleep_winddown' body misses cache and triggers 429 -> BOTH segments unify onto aura_luna!
     simulateQuotaOut = true;
     const partialFallback = await resolveVoiceConciergeAudio(
       env,
       {
         cueType: 'intro_full',
-        firstName: 'Edmond',
+        firstName: 'Vasi',
         currentState: 'distracted',
         targetState: 'sleep_winddown',
         armId: 'delta-2hz-sleep',

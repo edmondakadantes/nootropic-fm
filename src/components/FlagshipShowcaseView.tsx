@@ -11,6 +11,7 @@ import {
   Headphones,
   KeyRound,
   Layers,
+  Mail,
   Moon,
   Pause,
   Play,
@@ -1049,6 +1050,15 @@ export function FlagshipShowcaseView({
                   queue slot and receive private invitation pricing ($119 Pre-Order Bundle w/ 1 Yr
                   NootropicFM Pro).
                 </p>
+                <p className="text-[11px] text-[#A3A39E]">
+                  Direct founder &amp; partnership desk:{' '}
+                  <a
+                    href="mailto:founders@nootropic.fm"
+                    className="font-mono-tech font-semibold text-[#34D399] underline-offset-2 hover:underline"
+                  >
+                    founders@nootropic.fm
+                  </a>
+                </p>
               </div>
 
               <div className="lg:col-span-6">
@@ -1364,6 +1374,13 @@ export function FlagshipShowcaseView({
           </a>
           <a href="/llms.txt" className="text-[#A3A39E] underline-offset-2 hover:underline">
             llms.txt
+          </a>
+          <a
+            href="mailto:founders@nootropic.fm"
+            className="inline-flex items-center gap-1 font-medium text-[#34D399] underline-offset-2 hover:underline"
+          >
+            <Mail className="h-3 w-3" />
+            <span>founders@nootropic.fm</span>
           </a>
         </div>
       </footer>

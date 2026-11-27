@@ -225,7 +225,7 @@ test('Worker sets Domain=.nootropic.fm cookie and hydrates GET /api/identity/me 
     method: 'POST',
     headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.2' },
     body: JSON.stringify({
-      displayName: 'Edmond',
+      displayName: 'Vasi',
       age: 34,
       role: 'entrepreneur',
       researchConsent: true,
@@ -249,7 +249,7 @@ test('Worker sets Domain=.nootropic.fm cookie and hydrates GET /api/identity/me 
   assert.equal(meRes.status, 200);
   const meJson = await meRes.json();
   assert.equal(meJson.authenticated, true);
-  assert.equal(meJson.profile.displayName, 'Edmond');
+  assert.equal(meJson.profile.displayName, 'Vasi');
   assert.equal(meJson.profile.planTier, 'pro');
 
   // Signout clears cookie across .nootropic.fm

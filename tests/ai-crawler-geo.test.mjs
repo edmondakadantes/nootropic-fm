@@ -112,3 +112,63 @@ test('public/investors/index.html and public/partners/index.html are CSP-safe, e
     assert.ok(!/ATECC608B|T_pcb|59\.70|62\.40|dT_core/i.test(html), 'Must never leak Pre-NNN IP or COGS figures');
   }
 });
+
+test('founder identity is strictly Vasi Cicarac (zero Edmond/Vasile), founders@nootropic.fm is surfaced site-wide, and BIMI SVG Tiny-PS logo exists', () => {
+  const noOldNameTargets = [
+    ['index.html'],
+    ['public', 'investors', 'index.html'],
+    ['public', 'partners', 'index.html'],
+    ['public', 'privacy', 'index.html'],
+    ['public', 'terms', 'index.html'],
+    ['public', 'delete-data', 'index.html'],
+    ['public', 'llms.txt'],
+    ['public', 'llms-full.txt'],
+    ['tests', 'voice-concierge.test.mjs'],
+    ['tests', 'circadian-earbuds-trance.test.mjs'],
+    ['tests', 'split-domain-showcase.test.mjs'],
+  ];
+  for (const rel of noOldNameTargets) {
+    const content = fs.readFileSync(path.join(ROOT, ...rel), 'utf8');
+    assert.ok(!/\bedmond\b/i.test(content), `Found forbidden "Edmond" in ${rel.join('/')}`);
+    assert.ok(!/\bvasile\b/i.test(content), `Found forbidden "Vasile" in ${rel.join('/')}`);
+  }
+
+  for (const rel of [
+    ['index.html'],
+    ['public', 'investors', 'index.html'],
+    ['public', 'partners', 'index.html'],
+    ['public', 'llms.txt'],
+  ]) {
+    const content = fs.readFileSync(path.join(ROOT, ...rel), 'utf8');
+    assert.ok(content.includes('Vasi Cicarac'), `Missing Vasi Cicarac in ${rel.join('/')}`);
+  }
+
+  for (const rel of [
+    ['index.html'],
+    ['public', 'investors', 'index.html'],
+    ['public', 'partners', 'index.html'],
+    ['public', 'privacy', 'index.html'],
+    ['public', 'terms', 'index.html'],
+    ['public', 'delete-data', 'index.html'],
+    ['public', 'llms.txt'],
+    ['public', 'llms-full.txt'],
+    ['src', 'components', 'FlagshipShowcaseView.tsx'],
+    ['src', 'components', 'HeroLandingView.tsx'],
+    ['src', 'components', 'DatasetInquiryModal.tsx'],
+    ['src', 'App.tsx'],
+  ]) {
+    const content = fs.readFileSync(path.join(ROOT, ...rel), 'utf8');
+    assert.ok(content.includes('founders@nootropic.fm'), `Missing founders@nootropic.fm in ${rel.join('/')}`);
+  }
+
+  for (const dir of [path.join(ROOT, 'public'), path.join(ROOT, 'dist', 'client')]) {
+    const bimiPath = path.join(dir, 'brand', 'bimi-logo.svg');
+    assert.ok(fs.existsSync(bimiPath), `Missing brand/bimi-logo.svg in ${dir}`);
+    const bimiSvg = fs.readFileSync(bimiPath, 'utf8');
+    assert.match(bimiSvg, /baseProfile="tiny-ps"/);
+    assert.match(bimiSvg, /<title>nootropic\.fm<\/title>/);
+  }
+
+  const headers = fs.readFileSync(path.join(ROOT, 'public', '_headers'), 'utf8');
+  assert.match(headers, /\/brand\/bimi-logo\.svg[\s\S]*?Content-Type:\s*image\/svg\+xml/);
+});

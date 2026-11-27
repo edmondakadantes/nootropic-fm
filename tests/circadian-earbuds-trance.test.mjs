@@ -53,7 +53,7 @@ test('STUDIO_MIX_GENRES cleanly isolates standalone NootropicFM Mode from the 10
 test('Standalone NootropicFM Mode locks 6x40 Hz arm across targets and strictly disables 25% sham control dilution', () => {
   const dummyProfile = {
     id: 'anon_trance_test',
-    displayName: 'Edmond',
+    displayName: 'Vasi',
     age: 34,
     ageBand: '25-34',
     role: 'entrepreneur',
@@ -92,7 +92,7 @@ test('Standalone NootropicFM Mode locks 6x40 Hz arm across targets and strictly 
 test('Voice Concierge explicitly reinforces In-Ear Buds seal and warns gently when on degraded speakers', () => {
   const earbudsTrance = buildVoiceConciergePlan({
     cueType: 'intro_full',
-    firstName: 'Edmond',
+    firstName: 'Vasi',
     currentState: 'calm_neutral',
     targetState: 'deep_flow',
     armId: 'nootropic-trance-6x40hz',
@@ -106,7 +106,7 @@ test('Voice Concierge explicitly reinforces In-Ear Buds seal and warns gently wh
 
   const degradedSpeakers = buildVoiceConciergePlan({
     cueType: 'intro_full',
-    firstName: 'Edmond',
+    firstName: 'Vasi',
     currentState: 'distracted',
     targetState: 'alert_focus',
     armId: 'beta-16hz',
