@@ -104,6 +104,8 @@ test('public/investors/index.html and public/partners/index.html are CSP-safe, e
     assert.ok(Array.isArray(parsed['@graph']) && parsed['@graph'].length >= 2);
 
     assert.match(html, expectedMatch);
+    assert.match(html, /founders@nootropic\.fm/i);
+    assert.ok(!/nootropic\.fm@gmail\.com/i.test(html), `Replace personal gmail with founders@nootropic.fm on ${rel.join('/')}`);
     assert.ok(!/\$1,000|\$5,000/i.test(html), `Avoid diluting institutional positioning with small microgrant figures on ${rel.join('/')}`);
     assert.ok(!/\b(treats|cures|diagnoses)\s+(adhd|insomnia|alzheimer|depression|tinnitus)\b/i.test(html));
     assert.ok(!/\baddictive\b/i.test(html), 'Must never use clinical term addictive in public copy');
