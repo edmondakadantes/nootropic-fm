@@ -75,5 +75,5 @@ Open desk speakers introduce `~0.26 ms` inter-aural acoustic crosstalk (`1,914.8
 
 ## 5. Plans, Pricing & Privacy
 - **Free Calibration Tier**: 5 minutes daily full-DSP access (`+30 minutes` unlocked when sharing a public 1-of-1 Neural Fingerprint Card) + 90s daily Endless Stream preview.
-- **NootropicFM Pro**: 7-day free trial, then `$9/month` or `$59/year` (`$4.92/month` billed annually) for unlimited sessions, unlimited Endless Stream, Study Lab compiler, and full biometric Insights.
+- **NootropicFM Pro**: 7-day free trial, then `$9.99/month` or `$59/year` (`$4.92/month` billed annually) for unlimited sessions, unlimited Endless Stream, Study Lab compiler, and full biometric Insights.
 - **Passwordless Privacy Architecture**: No email or password required for web sessions; uses an anonymous local identity + optional scannable QR Sync Key (`NFM-XXXX-XXXX`), zero third-party ad trackers, self-hosted fonts on Cloudflare edge, and genuine EEA/UK/CH/GPC opt-in consent.

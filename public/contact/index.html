@@ -204,7 +204,7 @@
       }
       .grid-2 {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
         gap: 14px;
       }
       .card {
@@ -246,12 +246,19 @@
       .email-link:hover {
         text-decoration: underline;
       }
+      .table-wrap {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 16px 0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+      }
       table {
         width: 100%;
         border-collapse: collapse;
-        margin: 16px 0;
+        margin: 0;
         font-size: 0.88rem;
-        border: 1px solid rgba(255, 255, 255, 0.1);
       }
       th,
       td {
@@ -272,6 +279,20 @@
       td {
         background: #0f1115;
         color: #d4d4ce;
+      }
+      @media (max-width: 640px) {
+        th,
+        td {
+          display: block;
+          width: 100%;
+        }
+        th {
+          border-bottom: none;
+          padding-bottom: 4px;
+        }
+        td {
+          padding-top: 6px;
+        }
       }
       code {
         background: rgba(255, 255, 255, 0.07);
@@ -392,6 +413,7 @@
         </div>
 
         <h2 class="section-title">Press &amp; AI Fact Sheet (Canonical Reference)</h2>
+        <div class="table-wrap">
         <table>
           <tbody>
             <tr>
@@ -420,7 +442,7 @@
             </tr>
             <tr>
               <th>Plans &amp; Privacy</th>
-              <td>Free daily 5-min calibration (<code>+30 min</code> via Neural Pass share); Pro at <code>$9/mo</code> or <code>$59/yr</code> (7-day free trial). Passwordless <code>NFM-XXXX-XXXX</code> Sync Keys, zero third-party ad trackers, self-hosted edge fonts.</td>
+              <td>Free daily 5-min calibration (<code>+30 min</code> via Neural Pass share); Pro at <code>$9.99/mo</code> or <code>$59/yr</code> (7-day free trial). Passwordless <code>NFM-XXXX-XXXX</code> Sync Keys, zero third-party ad trackers, self-hosted edge fonts.</td>
             </tr>
             <tr>
               <th>Regulatory Scope</th>
@@ -432,6 +454,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
 
         <section class="meta-box" aria-label="Press & General Wellness Notice">
           <strong>Press Kit &amp; Analyst Briefings:</strong> Contact <a href="mailto:press@nootropic.fm">press@nootropic.fm</a>

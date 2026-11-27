@@ -9,7 +9,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -161,6 +164,13 @@ test('SEO + GEO pages (/science/, /compare/, /contact/) are crawlable, CSP-safe,
         `Missing @type ${typeName} in JSON-LD of ${page.rel.join('/')}`
       );
     }
+    const techArticle = parsed['@graph'].find((n) => n['@type'] === 'TechArticle');
+    if (techArticle) {
+      assert.ok(techArticle.image, `TechArticle missing image in ${page.rel.join('/')}`);
+      assert.ok(techArticle.datePublished, `TechArticle missing datePublished in ${page.rel.join('/')}`);
+      assert.ok(techArticle.dateModified, `TechArticle missing dateModified in ${page.rel.join('/')}`);
+      assert.ok(techArticle.mainEntityOfPage, `TechArticle missing mainEntityOfPage in ${page.rel.join('/')}`);
+    }
 
     for (const rx of page.mustMatch) {
       assert.match(html, rx, `Expected ${rx} in ${page.rel.join('/')}`);
@@ -230,12 +240,20 @@ test('department email suite is routed by role with zero vasi@nootropic.fm anywh
   assert.ok(datasetModal.includes('research@nootropic.fm'), 'DatasetInquiryModal must route direct emails to research@nootropic.fm');
 
   const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'App.tsx'), 'utf8');
-  for (const email of ['hello@nootropic.fm', 'research@nootropic.fm', 'support@nootropic.fm', 'privacy@nootropic.fm', 'founders@nootropic.fm']) {
+  for (const email of deptEmails) {
     assert.ok(appSrc.includes(email), `Missing ${email} in src/App.tsx`);
+  }
+  for (const roleLabel of ['General:', 'Research:', 'Support:', 'Privacy:', 'Founders:']) {
+    assert.ok(appSrc.includes(roleLabel), `Missing role label "${roleLabel}" in src/App.tsx`);
   }
   for (const link of ['/science/', '/compare/', '/contact/']) {
     assert.ok(appSrc.includes(link), `Missing ${link} in src/App.tsx`);
   }
+
+  const rootHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  assert.ok(rootHtml.includes('"price": "9.99"'), 'index.html Schema.org Offer must reflect $9.99/mo');
+  const contactHtml = fs.readFileSync(path.join(ROOT, 'public', 'contact', 'index.html'), 'utf8');
+  assert.ok(contactHtml.includes('$9.99/mo'), 'contact/index.html Fact Sheet must reflect $9.99/mo');
 });
 
 test('founder identity is strictly Vasi Cicarac (zero Edmond/Vasile), founders@nootropic.fm is surfaced site-wide, and BIMI SVG Tiny-PS logo exists', () => {
@@ -304,4 +322,197 @@ test('founder identity is strictly Vasi Cicarac (zero Edmond/Vasile), founders@n
 
   const headers = fs.readFileSync(path.join(ROOT, 'public', '_headers'), 'utf8');
   assert.match(headers, /\/brand\/bimi-logo\.svg[\s\S]*?Content-Type:\s*image\/svg\+xml/);
+});
+
+test('Headless Edge: /science/, /compare/, and /contact/ pass 375px mobile viewport (zero zoom-out) + WCAG contrast + zero runtime errors', async (t) => {
+  const edgePath = [
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  ].find((p) => fs.existsSync(p));
+  if (!edgePath) {
+    t.skip('Edge/Chrome binary not found');
+    return;
+  }
+
+  const distDir = path.join(ROOT, 'dist', 'client');
+  const mimeMap = {
+    '.html': 'text/html; charset=utf-8',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.txt': 'text/plain; charset=utf-8',
+    '.xml': 'application/xml; charset=utf-8',
+  };
+
+  const server = http.createServer((req, res) => {
+    const cleanUrl = (req.url || '/').split('?')[0];
+    let relPath = cleanUrl === '/' ? 'index.html' : cleanUrl.replace(/^\/+/, '');
+    let filePath = path.resolve(distDir, relPath);
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+      filePath = path.join(filePath, 'index.html');
+    }
+    if (!filePath.startsWith(distDir) || !fs.existsSync(filePath)) {
+      res.writeHead(404, { Connection: 'close' });
+      res.end('Not found');
+      return;
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, { 'Content-Type': mimeMap[ext] || 'application/octet-stream', Connection: 'close' });
+    fs.createReadStream(filePath).pipe(res);
+  });
+
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address();
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nfm-seo-geo-e2e-'));
+
+  let resolvePort;
+  const cdpPortPromise = new Promise((res) => {
+    resolvePort = res;
+  });
+  const child = spawn(
+    edgePath,
+    [
+      '--headless=new',
+      '--disable-gpu',
+      '--no-first-run',
+      '--remote-debugging-port=0',
+      `--user-data-dir=${userDataDir}`,
+      'about:blank',
+    ],
+    { stdio: ['ignore', 'ignore', 'pipe'] }
+  );
+
+  let stderrBuf = '';
+  child.stderr.on('data', (chunk) => {
+    stderrBuf += chunk.toString('utf8');
+    const m = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//.exec(stderrBuf);
+    if (m) resolvePort(Number(m[1]));
+  });
+
+  try {
+    const debugPort = await cdpPortPromise;
+    let targets = null;
+    for (let i = 0; i < 25; i++) {
+      await new Promise((r) => setTimeout(r, 150));
+      const res = await fetch(`http://127.0.0.1:${debugPort}/json/list`).catch(() => null);
+      if (res?.ok) {
+        const list = await res.json();
+        if (list.some((x) => x.type === 'page')) {
+          targets = list;
+          break;
+        }
+      }
+    }
+    const pageTarget = targets.find((x) => x.type === 'page') ?? targets[0];
+    const ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
+    await new Promise((r, rej) => {
+      ws.addEventListener('open', r, { once: true });
+      ws.addEventListener('error', rej, { once: true });
+    });
+
+    let msgId = 0;
+    const sendCdp = (method, params = {}) =>
+      new Promise((res, rej) => {
+        const id = ++msgId;
+        const onMsg = (evt) => {
+          const msg = JSON.parse(String(evt.data));
+          if (msg.id === id) {
+            ws.removeEventListener('message', onMsg);
+            if (msg.error) rej(new Error(JSON.stringify(msg.error)));
+            else res(msg.result);
+          }
+        };
+        ws.addEventListener('message', onMsg);
+        ws.send(JSON.stringify({ id, method, params }));
+      });
+
+    const runtimeExceptions = [];
+    ws.addEventListener('message', (evt) => {
+      const msg = JSON.parse(String(evt.data));
+      if (msg.method === 'Runtime.exceptionThrown') {
+        runtimeExceptions.push(JSON.stringify(msg.params));
+      }
+    });
+
+    await sendCdp('Page.enable');
+    await sendCdp('Runtime.enable');
+
+    for (const vp of [
+      { width: 375, height: 812, mobile: true },
+      { width: 1280, height: 900, mobile: false },
+    ]) {
+      await sendCdp('Emulation.setDeviceMetricsOverride', { ...vp, deviceScaleFactor: 1 });
+      for (const slug of ['/science/', '/compare/', '/contact/']) {
+        await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}${slug}` });
+        await new Promise((r) => setTimeout(r, 400));
+        const evalOut = await sendCdp('Runtime.evaluate', {
+          returnByValue: true,
+          expression: `(() => {
+            const parseRgb = (str) => {
+              const m = str.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/);
+              if (!m) return null;
+              return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: m[4] !== undefined ? Number(m[4]) : 1 };
+            };
+            const relLum = ({ r, g, b }) => {
+              const f = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+              return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+            };
+            const blend = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a), a: 1 });
+            const effectiveBg = (el) => {
+              const layers = [];
+              let cur = el;
+              while (cur && cur.nodeType === 1) {
+                const c = parseRgb(getComputedStyle(cur).backgroundColor);
+                if (c && c.a > 0) layers.push(c);
+                cur = cur.parentElement;
+              }
+              let res = { r: 10, g: 11, b: 12, a: 1 };
+              for (let i = layers.length - 1; i >= 0; i--) res = blend(layers[i], res);
+              return res;
+            };
+            const bad = [];
+            for (const el of document.querySelectorAll('a, h1, h2, h3, p, td, th, div, span, code, strong')) {
+              const rect = el.getBoundingClientRect();
+              if (rect.width < 8 || rect.height < 8) continue;
+              const hasDirectText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && (n.textContent || '').trim().length > 0);
+              if (!hasDirectText && el.tagName !== 'A') continue;
+              if (!(el.innerText || '').trim()) continue;
+              const st = getComputedStyle(el);
+              const fgRaw = parseRgb(st.color);
+              const bg = effectiveBg(el);
+              if (!fgRaw) continue;
+              const fg = fgRaw.a < 1 ? blend(fgRaw, bg) : fgRaw;
+              const l1 = Math.max(relLum(fg), relLum(bg));
+              const l2 = Math.min(relLum(fg), relLum(bg));
+              const ratio = (l1 + 0.05) / (l2 + 0.05);
+              const fs = parseFloat(st.fontSize) || 14;
+              const minReq = fs >= 18 ? 3.0 : 4.5;
+              if (ratio < minReq) bad.push({ tag: el.tagName, text: (el.innerText || '').trim().slice(0, 28), ratio: Number(ratio.toFixed(2)), minReq });
+            }
+            return {
+              innerW: window.innerWidth,
+              scrollW: document.documentElement.scrollWidth,
+              bad,
+            };
+          })()`,
+        });
+        const metrics = evalOut.result.value;
+        assert.equal(metrics.innerW, vp.width, `${slug} at ${vp.width}px expanded viewport to ${metrics.innerW}px`);
+        assert.ok(metrics.scrollW <= vp.width, `${slug} at ${vp.width}px overflowed horizontally: ${metrics.scrollW} > ${vp.width}`);
+        assert.deepEqual(metrics.bad, [], `${slug} at ${vp.width}px had WCAG contrast issues: ${JSON.stringify(metrics.bad)}`);
+      }
+    }
+    assert.deepEqual(runtimeExceptions, [], `Unexpected runtime exceptions: ${JSON.stringify(runtimeExceptions)}`);
+    ws.close();
+  } finally {
+    try {
+      child.kill('SIGKILL');
+    } catch {}
+    await new Promise((r) => server.close(r));
+    await new Promise((r) => setTimeout(r, 250));
+    try {
+      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 120 });
+    } catch {}
+  }
 });

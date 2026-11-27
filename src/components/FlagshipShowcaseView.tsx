@@ -1455,10 +1455,10 @@ export function FlagshipShowcaseView({
           <a href="/contact/" className="text-[#A3A39E] underline-offset-2 hover:underline">
             Contact Directory
           </a>
-          <a href="/privacy" className="text-[#A3A39E] underline-offset-2 hover:underline">
+          <a href="/privacy/" className="text-[#A3A39E] underline-offset-2 hover:underline">
             Privacy Policy
           </a>
-          <a href="/terms" className="text-[#A3A39E] underline-offset-2 hover:underline">
+          <a href="/terms/" className="text-[#A3A39E] underline-offset-2 hover:underline">
             Terms
           </a>
           <a href="/llms.txt" className="text-[#A3A39E] underline-offset-2 hover:underline">

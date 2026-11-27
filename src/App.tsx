@@ -1521,7 +1521,7 @@ export default function App() {
 
             <div className="flex flex-wrap items-center gap-3 pt-1 text-xs">
               <a
-                href="/privacy"
+                href="/privacy/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-[#34D399] underline-offset-2 hover:underline"
@@ -1530,7 +1530,7 @@ export default function App() {
               </a>
               <span className="text-[#555550]">·</span>
               <a
-                href="/terms"
+                href="/terms/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-[#34D399] underline-offset-2 hover:underline"
@@ -1539,34 +1539,41 @@ export default function App() {
               </a>
               <span className="text-[#555550]">·</span>
               <a
-                href="/delete-data"
+                href="/delete-data/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-[#34D399] underline-offset-2 hover:underline"
               >
                 Delete Data via Sync Key
               </a>
-              <span className="text-[#555550]">·</span>
-              <a
-                href="mailto:privacy@nootropic.fm"
-                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
-              >
-                privacy@nootropic.fm
-              </a>
-              <span className="text-[#555550]">·</span>
-              <a
-                href="mailto:support@nootropic.fm"
-                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
-              >
-                support@nootropic.fm
-              </a>
-              <span className="text-[#555550]">·</span>
-              <a
-                href="mailto:founders@nootropic.fm"
-                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
-              >
-                founders@nootropic.fm
-              </a>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3 space-y-2">
+              <div className="font-mono-tech text-[10px] font-bold uppercase tracking-wider text-[#A3A39E]">
+                Official Department Channels
+              </div>
+              <div className="grid grid-cols-1 gap-1.5 text-[11px] sm:grid-cols-2">
+                {[
+                  { role: 'General & Product', email: 'hello@nootropic.fm' },
+                  { role: 'Partnerships & OEM', email: 'partners@nootropic.fm' },
+                  { role: 'Research & Datasets', email: 'research@nootropic.fm' },
+                  { role: 'Press & Briefings', email: 'press@nootropic.fm' },
+                  { role: 'Investor Relations', email: 'investors@nootropic.fm' },
+                  { role: 'Founder Desk', email: 'founders@nootropic.fm' },
+                  { role: 'Listener Support', email: 'support@nootropic.fm' },
+                  { role: 'Privacy & Data Rights', email: 'privacy@nootropic.fm' },
+                ].map((dept) => (
+                  <div key={dept.email} className="flex items-center justify-between gap-2">
+                    <span className="text-[#A3A39E]">{dept.role}:</span>
+                    <a
+                      href={`mailto:${dept.email}`}
+                      className="font-mono-tech font-medium text-[#34D399] underline-offset-2 hover:underline"
+                    >
+                      {dept.email}
+                    </a>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {privacyStatus && (
@@ -1600,14 +1607,14 @@ export default function App() {
       )}
 
       {screen !== 'player' && (
-        <footer className="relative z-10 border-t border-white/[0.06] px-4 py-5 text-center text-[11px] text-[#6E6E68]">
+        <footer className="relative z-10 border-t border-white/[0.06] px-4 py-5 text-center text-[11px] text-[#8E8E88]">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
             <span>
               nootropic.fm · Tune your mind · Psychoacoustic cognitive wellness, focus, and relaxation
               audio (not a medical device). Not intended to diagnose, treat, cure, or prevent any
               medical condition. Listeners 18+.
             </span>
-            <span className="text-[#555550]">
+            <span className="text-[#8E8E88]">
               Samples: Salamander Grand Piano &amp; FluidR3 GM (CC-BY 3.0)
             </span>
             <button
@@ -1630,13 +1637,13 @@ export default function App() {
               Privacy, Credits &amp; Delete My Data
             </button>
             <a
-              href="/privacy"
+              href="/privacy/"
               className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
             >
               Privacy Policy
             </a>
             <a
-              href="/terms"
+              href="/terms/"
               className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
             >
               Terms
@@ -1666,41 +1673,56 @@ export default function App() {
                 Departments
               </a>
               <a
-                href="/delete-data"
+                href="/delete-data/"
                 className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
               >
                 Delete Data
               </a>
-              <a
-                href="mailto:hello@nootropic.fm"
-                className="text-[#34D399] underline-offset-2 hover:underline"
-              >
-                hello@nootropic.fm
-              </a>
-              <a
-                href="mailto:research@nootropic.fm"
-                className="text-[#34D399] underline-offset-2 hover:underline"
-              >
-                research@nootropic.fm
-              </a>
-              <a
-                href="mailto:support@nootropic.fm"
-                className="text-[#34D399] underline-offset-2 hover:underline"
-              >
-                support@nootropic.fm
-              </a>
-              <a
-                href="mailto:privacy@nootropic.fm"
-                className="text-[#34D399] underline-offset-2 hover:underline"
-              >
-                privacy@nootropic.fm
-              </a>
-              <a
-                href="mailto:founders@nootropic.fm"
-                className="text-[#34D399] underline-offset-2 hover:underline"
-              >
-                founders@nootropic.fm
-              </a>
+              <span>
+                General:{' '}
+                <a
+                  href="mailto:hello@nootropic.fm"
+                  className="text-[#34D399] underline-offset-2 hover:underline"
+                >
+                  hello@nootropic.fm
+                </a>
+              </span>
+              <span>
+                Research:{' '}
+                <a
+                  href="mailto:research@nootropic.fm"
+                  className="text-[#34D399] underline-offset-2 hover:underline"
+                >
+                  research@nootropic.fm
+                </a>
+              </span>
+              <span>
+                Support:{' '}
+                <a
+                  href="mailto:support@nootropic.fm"
+                  className="text-[#34D399] underline-offset-2 hover:underline"
+                >
+                  support@nootropic.fm
+                </a>
+              </span>
+              <span>
+                Privacy:{' '}
+                <a
+                  href="mailto:privacy@nootropic.fm"
+                  className="text-[#34D399] underline-offset-2 hover:underline"
+                >
+                  privacy@nootropic.fm
+                </a>
+              </span>
+              <span>
+                Founders:{' '}
+                <a
+                  href="mailto:founders@nootropic.fm"
+                  className="text-[#34D399] underline-offset-2 hover:underline"
+                >
+                  founders@nootropic.fm
+                </a>
+              </span>
             </div>
           </footer>
         )}

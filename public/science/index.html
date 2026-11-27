@@ -37,6 +37,10 @@
             "headline": "Human Frequency Atlas: 40 Hz Gamma-MBI, 6×40 Hz Theta-Gamma CFC, 16 Hz Beta LR4, 0.10 Hz HRV Mayer & 600 Hz Huggins",
             "description": "Technical overview of the peer-reviewed human auditory frequencies, 3-Band Linkwitz-Riley (LR4) cortical modulation matrix, and blind sham / PVT telemetry running at 48 kHz Float64 in nootropic.fm.",
             "url": "https://www.nootropic.fm/science/",
+            "mainEntityOfPage": "https://www.nootropic.fm/science/",
+            "image": "https://www.nootropic.fm/brand/og-banner.png",
+            "datePublished": "2026-11-27",
+            "dateModified": "2026-11-27",
             "author": {
               "@type": "Person",
               "name": "Vasi Cicarac"
@@ -256,12 +260,12 @@
       }
       .grid-2 {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr));
         gap: 16px;
       }
       .grid-3 {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
         gap: 16px;
       }
       .card {
@@ -306,14 +310,20 @@
       .doi a:hover {
         text-decoration: underline;
       }
-      table {
+      .table-wrap {
         width: 100%;
-        border-collapse: collapse;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
         margin: 16px 0;
-        font-size: 0.88rem;
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 12px;
-        overflow: hidden;
+      }
+      table {
+        width: 100%;
+        min-width: 600px;
+        border-collapse: collapse;
+        margin: 0;
+        font-size: 0.88rem;
       }
       th,
       td {
@@ -402,6 +412,7 @@
         </div>
 
         <h2 class="section-title">Core Human Acoustic Bands &amp; Executable Parameters</h2>
+        <div class="table-wrap">
         <table>
           <thead>
             <tr>
@@ -444,6 +455,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
 
         <h2 class="section-title">Five Foundational Mechanisms in Detail</h2>
         <div class="grid-2">

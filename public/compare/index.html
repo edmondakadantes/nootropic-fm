@@ -37,6 +37,10 @@
             "headline": "40 Hz Focus Audio & Binaural Beats vs. Cortical Amplitude Modulation and Lossy Playlist Compression",
             "description": "Engineering comparison explaining how MP3/AAC psychoacoustic masking and open-speaker crosstalk degrade -20 dBc neural modulations compared to client-side 48 kHz Float64 LR4 synthesis with 25% blind sham and 20-Trial PVT verification.",
             "url": "https://www.nootropic.fm/compare/",
+            "mainEntityOfPage": "https://www.nootropic.fm/compare/",
+            "image": "https://www.nootropic.fm/brand/og-banner.png",
+            "datePublished": "2026-11-27",
+            "dateModified": "2026-11-27",
             "author": {
               "@type": "Person",
               "name": "Vasi Cicarac"
@@ -241,7 +245,7 @@
       }
       .grid-2 {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr));
         gap: 16px;
       }
       .card {
@@ -273,14 +277,20 @@
         font-size: 0.89rem;
         color: #b8b8b2;
       }
-      table {
+      .table-wrap {
         width: 100%;
-        border-collapse: collapse;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
         margin: 16px 0;
-        font-size: 0.86rem;
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 12px;
-        overflow: hidden;
+      }
+      table {
+        width: 100%;
+        min-width: 640px;
+        border-collapse: collapse;
+        margin: 0;
+        font-size: 0.86rem;
       }
       th,
       td {
@@ -372,6 +382,7 @@
         </div>
 
         <h2 class="section-title">Side-by-Side Signal Architecture Matrix</h2>
+        <div class="table-wrap">
         <table>
           <thead>
             <tr>
@@ -414,6 +425,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
 
         <h2 class="section-title">Why -20 dBc Neural Modulations Disappear in Everyday Audio</h2>
         <div class="grid-2">
