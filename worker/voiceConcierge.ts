@@ -60,13 +60,9 @@ const VALID_TIME_BUCKETS = new Set<TimeOfDayBucket>([
 ]);
 const VALID_GENRES = new Set<string>(Object.keys(GENRE_META));
 
-const EXCLUDED_VOICE_RX =
-  /\b(horror|crime|thriller|excited|hype|screaming|shout|advertisement|announcer|characters_animation|monster|villain)\b/i;
-const CALM_VOICE_RX =
-  /\b(meditat|serene|calm|gentle|smooth|velvet|sooth|whisper|soft|warm|relax|grounded|empathetic|nurturing)\b/i;
-
 const VOICE_CATALOG_TTL_MS = 10 * 60 * 1000;
 const ELEVENLABS_QUOTA_COOLDOWN_MS = 5 * 60 * 1000;
+export const ELEVENLABS_CONCIERGE_SPEED = 0.96;
 let elevenLabsQuotaCooldownUntil = 0;
 let cachedCatalog: {
   keyHash: string;
@@ -169,8 +165,7 @@ export async function listAvailableConciergeVoices(
   }
 
   const keyHash = await sha256Short(apiKey);
-  const preferredVoiceId = env.ELEVENLABS_VOICE_ID?.trim() || DEFAULT_ELEVENLABS_VOICE_ID;
-  const cacheKey = `${keyHash}|${preferredVoiceId}`;
+  const cacheKey = `${keyHash}|alanya_only_v4`;
   const now = Date.now();
   if (cachedCatalog && cachedCatalog.keyHash === cacheKey && cachedCatalog.expiresAt > now) {
     return cachedCatalog.data;
@@ -187,66 +182,38 @@ export async function listAvailableConciergeVoices(
     const payload = (await res.json()) as { voices?: RawElevenLabsVoice[] };
     const rawVoices = Array.isArray(payload.voices) ? payload.voices : [];
 
-    const scored: Array<{ score: number; option: ConciergeVoiceOption }> = [];
-    for (const v of rawVoices) {
-      const voiceId = typeof v.voice_id === 'string' ? v.voice_id.trim() : '';
-      const rawName = typeof v.name === 'string' ? v.name.replace(/\s+/g, ' ').trim() : '';
-      if (!voiceId || !rawName) continue;
+    const matched = rawVoices.find((v) => {
+      const id = typeof v.voice_id === 'string' ? v.voice_id.trim() : '';
+      const name = typeof v.name === 'string' ? v.name.replace(/\s+/g, ' ').trim() : '';
+      return id === DEFAULT_ELEVENLABS_VOICE_ID || /\balanya\b/i.test(name);
+    });
 
-      const labels = v.labels ?? {};
-      const lang = (labels.language ?? '').trim().toLowerCase();
-      if (lang && !lang.startsWith('en')) continue;
-
-      const metaBlob = `${rawName} ${labels.descriptive ?? ''} ${labels.use_case ?? ''}`;
-      if (EXCLUDED_VOICE_RX.test(metaBlob)) continue;
-
-      let score = 0;
-      if (voiceId === preferredVoiceId || /\bmonique\b/i.test(rawName)) {
-        score += 2000;
-      } else if (/\bserene\b/i.test(rawName)) {
-        score += 500;
-      }
-      const isPremade = (v.category ?? '').toLowerCase() === 'premade';
-      if (!isPremade) {
-        score += 200;
-      }
-      if (CALM_VOICE_RX.test(metaBlob)) {
-        score += 80;
-      }
-      if (labels.use_case === 'narrative_story' || labels.use_case === 'conversational') {
-        score += 20;
-      }
-
-      scored.push({
-        score,
-        option: {
-          voiceId,
-          name: rawName,
-          shortLabel: formatCleanVoiceShortLabel(rawName, labels.descriptive),
-          category: isPremade ? 'premade' : 'custom',
-          gender: labels.gender,
-          accent: labels.accent,
-          descriptive: labels.descriptive,
-        },
-      });
-    }
-
-    scored.sort((a, b) => b.score - a.score || a.option.name.localeCompare(b.option.name));
-    const curated = scored.slice(0, 10).map((item) => item.option);
-
-    if (curated.length === 0) {
+    if (!matched && rawVoices.length === 0) {
       return FALLBACK_CATALOG;
     }
 
-    const defaultVoiceId = curated.some((v) => v.voiceId === preferredVoiceId)
-      ? preferredVoiceId
-      : curated[0].voiceId;
+    const resolvedId =
+      (typeof matched?.voice_id === 'string' && matched.voice_id.trim()) ||
+      DEFAULT_ELEVENLABS_VOICE_ID;
+    const resolvedName =
+      (typeof matched?.name === 'string' && matched.name.replace(/\s+/g, ' ').trim()) ||
+      'Alanya - Smooth';
+    const isPremade = (matched?.category ?? '').toLowerCase() === 'premade';
+    const alanyaOption: ConciergeVoiceOption = {
+      voiceId: resolvedId,
+      name: resolvedName,
+      shortLabel: 'Alanya · Smooth',
+      category: isPremade ? 'premade' : 'custom',
+      gender: matched?.labels?.gender || 'female',
+      accent: matched?.labels?.accent || 'american',
+      descriptive: matched?.labels?.descriptive || 'smooth',
+    };
 
     const catalog: ConciergeVoiceCatalogResponse = {
       available: true,
       provider: 'elevenlabs',
-      defaultVoiceId,
-      voices: curated,
+      defaultVoiceId: alanyaOption.voiceId,
+      voices: [alanyaOption],
     };
 
     cachedCatalog = {
@@ -261,9 +228,6 @@ export async function listAvailableConciergeVoices(
 }
 
 async function resolveDefaultElevenLabsVoiceId(env: Env): Promise<string> {
-  if (env.ELEVENLABS_VOICE_ID?.trim()) {
-    return env.ELEVENLABS_VOICE_ID.trim();
-  }
   const catalog = await listAvailableConciergeVoices(env);
   if (catalog.provider === 'elevenlabs' && catalog.defaultVoiceId) {
     return catalog.defaultVoiceId;
@@ -303,10 +267,10 @@ async function synthesizeViaElevenLabs(
             text,
             model_id: modelId,
             voice_settings: {
-              stability: 0.70,
+              stability: 0.68,
               similarity_boost: 0.82,
-              style: 0.08,
-              speed: 0.78,
+              style: 0.06,
+              speed: ELEVENLABS_CONCIERGE_SPEED,
               use_speaker_boost: true,
             },
           }),
@@ -515,10 +479,10 @@ async function getOrCreateSegmentUrl(
 ): Promise<{ url: string; fromCache: boolean; provider: string; voiceId?: string } | null> {
   if (!env.AUDIO_BUCKET) return null;
 
-  // 1. Primary path: ElevenLabs per-voice immutable R2 cache (`voice/v3/...` @ slow 0.78x cadence)
+  // 1. Primary path: ElevenLabs Alanya-only immutable R2 cache (`voice/v4/...` @ natural 0.96x cadence)
   if (elevenLabsVoiceId && env.ELEVENLABS_API_KEY?.trim()) {
-    const elDigest = await sha256Short(`v3|11labs:${elevenLabsVoiceId}:s078|${text}`);
-    const elPrefix = `voice/v3/${kind}_${slug.slice(0, 36)}_${elDigest}`;
+    const elDigest = await sha256Short(`v4|11labs:${elevenLabsVoiceId}:s096|${text}`);
+    const elPrefix = `voice/v4/${kind}_${slug.slice(0, 36)}_${elDigest}`;
     const elCached = await findCachedVoiceKey(env, elPrefix);
     if (elCached) {
       const encoded = elCached.split('/').map((s) => encodeURIComponent(s)).join('/');
@@ -639,7 +603,7 @@ export async function resolveVoiceConciergeAudio(
 
   let elevenLabsVoiceId: string | null = null;
   if (env.ELEVENLABS_API_KEY?.trim() && cleanReq.voiceId !== 'aura_luna') {
-    elevenLabsVoiceId = cleanReq.voiceId || (await resolveDefaultElevenLabsVoiceId(env));
+    elevenLabsVoiceId = await resolveDefaultElevenLabsVoiceId(env);
   }
 
   let quotaChecked = false;

@@ -8,7 +8,8 @@ import {
 
 export type VoiceCueType = 'intro_full' | 'intro_short' | 'outro_landing';
 
-export const DEFAULT_ELEVENLABS_VOICE_ID = 'gYGXjks6FzTWwNQ6X7hC'; // Monique - Empathetic, Calm & Nurturing
+export const ALANYA_ELEVENLABS_VOICE_ID = 'iRb5bX2IzJDUAwy4jeki'; // Alanya - Smooth
+export const DEFAULT_ELEVENLABS_VOICE_ID = ALANYA_ELEVENLABS_VOICE_ID;
 
 export interface ConciergeVoiceOption {
   voiceId: string;
@@ -244,6 +245,6 @@ export function buildVoiceConciergePlan(req: VoiceConciergeRequest): VoiceConcie
     fullTranscript: `${greetingText} ${bodyText}`,
     greetingCacheSlug: greetingBucketKey.replace(/[^a-z0-9_-]/g, ''),
     bodyCacheSlug: bodyBucketKey.replace(/[^a-z0-9_-]/g, ''),
-    breathPauseMs: req.cueType === 'intro_short' ? 520 : 720,
+    breathPauseMs: req.cueType === 'intro_short' ? 380 : 500,
   };
 }

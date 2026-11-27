@@ -42,6 +42,7 @@ const {
   sanitizeVoiceRequestPayload,
   listAvailableConciergeVoices,
   clearVoiceCatalogCacheForTests,
+  ELEVENLABS_CONCIERGE_SPEED,
 } = await import('../worker/voiceConcierge.ts');
 const {
   VOCAL_PEAK_CEILING,
@@ -122,7 +123,7 @@ test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across
   assert.match(trancePlan.bodyText, /six-by-forty hertz trance rhythm/i);
   assert.match(trancePlan.bodyText, /Nootropic F M pulse/);
   assert.match(trancePlan.bodyText, /let us take care of the rest/i);
-  assert.equal(trancePlan.breathPauseMs, 720);
+  assert.equal(trancePlan.breathPauseMs, 500);
 
   // Anonymous listener never hears "null" or awkward trailing commas
   const anonCalm = buildVoiceConciergePlan({
@@ -153,7 +154,7 @@ test('buildVoiceConciergePlan crafts empathetic named & anonymous scripts across
     isDriving: false,
   });
   assert.equal(shortPlan.greetingText, 'Welcome back, Edmond.');
-  assert.equal(shortPlan.breathPauseMs, 520);
+  assert.equal(shortPlan.breathPauseMs, 380);
   assert.match(shortPlan.bodyText, /Deep Electronic groove focus flow/);
 
   // Driving Safety Mode overrides calming language with road-safe alertness cue
@@ -365,8 +366,10 @@ test('sanitizeVoiceRequestPayload + vocal headroom math strictly preserve Layer-
 });
 
 
-test('listAvailableConciergeVoices prioritizes Monique, keeps calm English voices, and filters horror/non-English', async () => {
+test('listAvailableConciergeVoices returns ONLY Alanya at 0.96x natural pace and excludes other voices', async () => {
   clearVoiceCatalogCacheForTests();
+  assert.equal(DEFAULT_ELEVENLABS_VOICE_ID, 'iRb5bX2IzJDUAwy4jeki');
+  assert.equal(ELEVENLABS_CONCIERGE_SPEED, 0.96);
   const origFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     assert.match(String(url), /api\.elevenlabs\.io\/v1\/voices$/);
@@ -387,21 +390,21 @@ test('listAvailableConciergeVoices prioritizes Monique, keeps calm English voice
             labels: { language: 'en', descriptive: 'serious', use_case: 'narrative_story' },
           },
           {
-            voice_id: 'calm_02',
+            voice_id: DEFAULT_ELEVENLABS_VOICE_ID,
             name: 'Alanya - Smooth',
-            category: 'professional',
-            labels: { language: 'en', gender: 'female', descriptive: 'calm', use_case: 'narrative_story' },
+            category: 'custom',
+            labels: { language: 'en', gender: 'female', accent: 'american', descriptive: 'smooth', use_case: 'narrative_story' },
           },
           {
             voice_id: 'pysCEvZRsl1S0ifPp4IM',
-            name: 'Serene Presence -  Calm & Grounded',
-            category: 'professional',
+            name: 'Serene Presence - Calm & Grounded',
+            category: 'custom',
             labels: { language: 'en', gender: 'female', descriptive: 'meditative', use_case: 'narrative_story' },
           },
           {
-            voice_id: DEFAULT_ELEVENLABS_VOICE_ID,
+            voice_id: 'gYGXjks6FzTWwNQ6X7hC',
             name: 'Monique - Empathetic, Calm & Nurturing',
-            category: 'professional',
+            category: 'custom',
             labels: { language: 'en', gender: 'female', descriptive: 'calm', use_case: 'conversational' },
           },
         ],
@@ -411,22 +414,23 @@ test('listAvailableConciergeVoices prioritizes Monique, keeps calm English voice
   };
 
   try {
-    const catalog = await listAvailableConciergeVoices({ ELEVENLABS_API_KEY: 'test-el-key' });
+    const catalog = await listAvailableConciergeVoices({
+      ELEVENLABS_API_KEY: 'test-el-key',
+      ELEVENLABS_VOICE_ID: 'gYGXjks6FzTWwNQ6X7hC',
+    });
     assert.equal(catalog.available, true);
     assert.equal(catalog.provider, 'elevenlabs');
     assert.equal(catalog.defaultVoiceId, DEFAULT_ELEVENLABS_VOICE_ID);
-    assert.equal(catalog.voices.length, 3);
+    assert.equal(catalog.voices.length, 1);
     assert.equal(catalog.voices[0].voiceId, DEFAULT_ELEVENLABS_VOICE_ID);
-    assert.match(catalog.voices[0].shortLabel, /Monique/);
-    assert.equal(catalog.voices[1].voiceId, 'pysCEvZRsl1S0ifPp4IM');
-    assert.ok(!catalog.voices.some((v) => v.voiceId === 'ro_dj_01' || v.voiceId === 'horror_01'));
+    assert.equal(catalog.voices[0].shortLabel, 'Alanya · Smooth');
   } finally {
     clearVoiceCatalogCacheForTests();
     globalThis.fetch = origFetch;
   }
 });
 
-test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache per voiceId, and falls back on 429', async () => {
+test('resolveVoiceConciergeAudio synthesizes via ElevenLabs Alanya at 0.96x into v4 R2 cache and falls back on 429', async () => {
   clearVoiceCatalogCacheForTests();
   const bucket = createMockR2Bucket();
   const mp3Bytes = makeFakeMp3Bytes(2600);
@@ -434,8 +438,9 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache p
   let elevenTtsCalls = 0;
   let aiFallbackCalls = 0;
   let simulateQuotaOut = false;
+  const observedSpeeds = [];
 
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const u = String(url);
     if (u.endsWith('/v1/voices')) {
       return new Response(
@@ -443,8 +448,14 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache p
           voices: [
             {
               voice_id: DEFAULT_ELEVENLABS_VOICE_ID,
+              name: 'Alanya - Smooth',
+              category: 'custom',
+              labels: { language: 'en', descriptive: 'smooth' },
+            },
+            {
+              voice_id: 'gYGXjks6FzTWwNQ6X7hC',
               name: 'Monique - Empathetic, Calm & Nurturing',
-              category: 'professional',
+              category: 'custom',
               labels: { language: 'en', descriptive: 'calm' },
             },
           ],
@@ -454,6 +465,10 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache p
     }
     if (u.includes('/v1/text-to-speech/')) {
       elevenTtsCalls++;
+      if (init?.body) {
+        const parsed = JSON.parse(String(init.body));
+        observedSpeeds.push(parsed.voice_settings?.speed);
+      }
       if (simulateQuotaOut) {
         return new Response('quota_exceeded', { status: 429 });
       }
@@ -492,14 +507,16 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache p
     assert.equal(first.provider, 'elevenlabs');
     assert.equal(first.voiceId, DEFAULT_ELEVENLABS_VOICE_ID);
     assert.equal(elevenTtsCalls, 2);
-    assert.match(first.greetingUrl, /^\/api\/audio\/stream\/voice\/v3\/greet_/);
+    assert.deepEqual(observedSpeeds, [0.96, 0.96]);
+    assert.match(first.greetingUrl, /^\/api\/audio\/stream\/voice\/v4\/greet_/);
 
-    // Repeat call hits R2 with 0 ElevenLabs calls
+    // Repeat call (even with legacy Monique voiceId from older client cache) normalizes to Alanya and hits v4 R2 cache with 0 ElevenLabs calls
     const second = await resolveVoiceConciergeAudio(
       env,
       {
         cueType: 'intro_full',
         firstName: 'Edmond',
+        voiceId: 'gYGXjks6FzTWwNQ6X7hC',
         currentState: 'distracted',
         targetState: 'deep_flow',
         armId: 'nootropic-trance-6x40hz',
@@ -511,9 +528,11 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs, isolates R2 cache p
     );
     assert.equal(second.fromCache, true);
     assert.equal(second.provider, 'r2_cache');
+    assert.equal(second.voiceId, DEFAULT_ELEVENLABS_VOICE_ID);
+    assert.equal(second.greetingUrl, first.greetingUrl);
     assert.equal(elevenTtsCalls, 2);
 
-    // Partial-cache scenario under ElevenLabs quota exhaustion: 'Edmond' greeting IS cached as Monique,
+    // Partial-cache scenario under ElevenLabs quota exhaustion: 'Edmond' greeting IS cached as Alanya,
     // while target 'sleep_winddown' body misses cache and triggers 429 -> BOTH segments unify onto aura_luna!
     simulateQuotaOut = true;
     const partialFallback = await resolveVoiceConciergeAudio(

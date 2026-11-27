@@ -57,7 +57,7 @@ flowchart TD
 
     O1 -->|"Studio CTA (Cookie .nootropic.fm) -> Pasul 1 Onboarding"| O2
     O2 -->|"Identity + State A + Target B + Music Carrier"| O3
-    O3 -->|"48 kHz In-Ear Stimulus + Endless Stream + Monique"| O2
+    O3 -->|"48 kHz In-Ear Stimulus + Endless Stream + Alanya"| O2
     O2 -->|"Telemetry (PVT, Tapping, Live Edits, Retention, HRV)"| O4
     O4 -->|"Posterior Update + Visible AI Brain Memory"| O2
     O4 -->|"Acoustic Validation & Hardware Calibration Loops"| O1
@@ -76,7 +76,7 @@ flowchart TD
 |---|---|---|---|
 | **`[0]`** | **Founder & Chief Neural Architect** | Direcția viziunii, protejarea celor 10 Piloni, porțile de capital (`Stage-Gates` hardware) și disciplina *General Wellness*. | `docs/NOOTROPIC_FM_SECRET_FORMULA.md`, `docs/NOOTROPIC_FM_UNICORN_STRATEGY_BIBLE.md` |
 | **`[1]`** | **Neuroscience & Study Compiler Lab** | Curarea studiilor umane auditive `DOI/PMID`, validarea `ExecutableStudySpec`, blocarea automată a studiilor pe șoareci sau stimulare vizuală. | `shared/protocols.ts`, `shared/studies.ts`, `shared/studySpec.ts`, `shared/studyCompilerCore.ts`, `worker/literature.ts` |
-| **`[2]`** | **48 kHz DSP, Music Carriers & Circadian Studio** | Integritatea matematică a stimulului (`LR4`, `Flattener`, `BS.1770-4`), aliniere sub-armonică `BPM`, `Endless Stream`, *Monique*, `Daylight Slate` & `Nocturnal Silk`. | `src/audio/PsychoacousticEngine.ts`, `dspWorklets.ts`, `GenerativeComposer.ts`, `LyriaRealtimeClient.ts`, `VoiceConciergePlayer.ts`, `shared/subharmonicGrid.ts` |
+| **`[2]`** | **48 kHz DSP, Music Carriers & Circadian Studio** | Integritatea matematică a stimulului (`LR4`, `Flattener`, `BS.1770-4`), aliniere sub-armonică `BPM`, `Endless Stream`, *Alanya*, `Daylight Slate` & `Nocturnal Silk`. | `src/audio/PsychoacousticEngine.ts`, `dspWorklets.ts`, `GenerativeComposer.ts`, `LyriaRealtimeClient.ts`, `VoiceConciergePlayer.ts`, `shared/subharmonicGrid.ts` |
 | **`[3]`** | **Closed-Loop Bayesian AI & Blind Psychometrics** | `Research Brain`, `Hierarchical Empirical-Bayes` (`5D -> personal`), control orb `25% Sham`, `PVT` (`1/RT ms`), `Tapping CV`, retenție și **Memoria Vizibilă a AI-ului**. | `shared/psychometrics.ts`, `worker/index.ts`, `InsightsView.tsx`, `PvtBenchmarkModal.tsx`, `TappingTestModal.tsx`, `DebriefView.tsx` |
 | **`[4]`** | **NOOTROPIC FM SOUND SYSTEMS Hardware & Growth** | `www.nootropic.fm`, design industrial *Orbital Phase-Ring*, calificare ODM/OEM (`EVT/DVT/PVT`), pre-orders `Earbuds Pro` (`\$249`), `HSA/FSA` și licențiere B2B/academică. | `FlagshipShowcaseView.tsx`, `SoundSystemsModal.tsx`, `public/brand/hardware/*`, `worker/stripeBilling.ts`, `CohortIntelligenceShowcase.tsx` |
 
@@ -122,7 +122,7 @@ flowchart TD
 
 1. **Contrastul Fizic în Primele `90 de Secunde` (*The 90-Second „Acoustic Airlock & Tunnel Lock-In”*):**
    - Sistemul reticular activator (`RAS`) nu reacționează la stimuli plați, ci la **gradientul `Δ`** dintre zgomotul mental inițial și intrarea în tunel:
-     - **`0–12s` (*Acoustic Airlock*):** Sub-basul cald neatins (`<190 Hz`) + liniștea de `3.4s` a lui *Monique* creează senzația fizică imediată că s-a închis ușa grea a unui studio antifonat.
+     - **`0–12s` (*Acoustic Airlock*):** Sub-basul cald neatins (`<190 Hz`) + liniștea de `3.4s` a lui *Alanya* creează senzația fizică imediată că s-a închis ușa grea a unui studio antifonat.
      - **`12–60s` (*Stereo-to-Midline Tunnel Pull*):** Puntea `Iso-Bridge` strânge progresiv câmpul spre centrul fantomă inter-aural pe banda `190–4,500 Hz`, generând senzația palpabilă de *tunnel vision* și adunare a gândurilor între tâmple.
      - **`60–90s` (*The Neural Click*):** Cuplajul în fază al grilei `120.000 BPM` cu Layer-1 la adâncimea calibrată + comutatorul live **`Full Mix | Pure Science Signal`** (`layerMonitorMode` în `PlayerView.tsx`), unde ascultătorul poate auzi instant forța brută a semnalului de sub muzică (*Zero Placebos Allowed*).
 2. **Ancora Pavloviană de `1.8 Secunde` (*Conditioned Neural Trigger — „Efectul Mirosului de Espresso”*):**
@@ -169,7 +169,7 @@ Pentru ca utilizatorul nu doar să „accepte” muzica de fundal, ci să o simt
 3. **Biometrie Optical PPG în Concha Cavum cu Gating IMU pe 3 Axe (`GH3026 / PAH8112 + ST LSM6DSO`):**
    - Fereastra optică este poziționată în **concha cavum / antihelix** (departe de peretele mobil al articulației temporo-mandibulare `TMJ`, ca vorbitul/mestecatul să nu rupă bătăile `PP-intervals`), cu excludere dinamică a artefactelor pe `IMU` în `app.nootropic.fm` înainte de calculul `ln(RMSSD)` și al coerenței `0.10 Hz`.
 4. **Cele 3 Reflexe Automate în Buclă Închisă & Inelul `Orbital Phase-Ring` (`< 0.40 mA`):**
-   - Firmware-ul raportează via `BLE` la `1 Hz` (`0x180D` + GATT custom telemetry), iar `app.nootropic.fm` evaluează la ferestre glisante cu histerezis `>= 45–60s` (*zero oscilație sau hunting acustic*, `0.000 dB` invariant pe Layer-1, **100% General Wellness** fără diagnostic medical):
+   - Firmware-ul raportează via `BLE` la `1 Hz` (`0x180D` + GATT custom telemetry), iar `app.nootropic.fm` evaluează la ferestre glisante cu histerezis `>= 45–60s` (*zero oscilație sau hunting acustic*, `0.000 dB` invariant pe Layer-1, **100% General Wellness** fără diagnostic medical, și tranziții muzicale invizibile + indicator vizual discret în UI fără întreruperi vocale în timpul sesiunii):
      - **Scut Anti-Somnolență (*Circadian Dip Shield*):** când `dT_core/dt < -0.12°C/h` + creștere a varianței `PP` / micro-noduri `IMU` -> urcare lină `Iso-Bridge` către `16–18 Hz Beta Vigilance` cu `15–20` min înaintea prăbușirii post-prânz.
      - **Frână Anti-Suprasolicitare (*Cognitive Overheat Brake*):** când `ΔT_core > +0.10°C` + prăbușire `ln(RMSSD) > 1.2σ` -> `4` minute automate de răcire vagală `10 Hz Alpha + 0.10 Hz` înainte de revenirea în `Gamma/Beta`.
      - **Stare `Verified Flow-Lock` & Inel Social `0.10 Hz`:** când `IMU` confirmă nemișcare + `ln(RMSSD)` stabil în zona țintă + platou termic -> aplicația încuie groove-ul și trimite `SET_FLOW_RING = 1`; `2×` micro-LED-uri `0201 InGaN 525 nm` (`0.35 mA` medie PWM prin ghid optic) respiră discret la `0.10 Hz` (*„Nu mă întrerupe, sunt în Flow”*), consumând `<4%` dintr-o baterie de `55 mAh` (`5.5–6.2h` autonomie).
@@ -207,9 +207,9 @@ Fiecare funcție nouă, protocol acustic, pachet hardware sau test trebuie să r
 - **Legea `nootropic.fm`:** Stems-urile de studio sunt normalizate la `-15.5 LUFS` și blocate matematic pe o grilă sub-armonică întreagă (ex.: `120.000 BPM = 2.000 Hz` în raport întreg exact `1:3` cu unda Theta de `6 Hz` și `1:20` cu purtătoarea Gamma de `40 Hz` în `Signature Mode`). Pentru a preveni habituarea pe termen lung, purtătoarea evoluează organic prin sinteză procedurală și **`Endless Stream` generativ**, fără să rupă faza Layer-1.
 - **Ancoră în cod:** `shared/subharmonicGrid.ts`, `shared/studioStemManifest.ts`, `src/audio/GenerativeComposer.ts`, `src/audio/LyriaRealtimeClient.ts`.
 
-### Pilonul 5 — Ritualul Vocal *Monique* & Ergonomia Circadiană
+### Pilonul 5 — Ritualul Vocal *Alanya* & Ergonomia Circadiană
 - **Capcana industriei:** Vocea de ghidaj întrerupe brusc muzica sau începe înainte ca ascultătorul să își regleze postura, iar interfețele galbene/albastre puternice noaptea distrug ritmul circadian.
-- **Legea `nootropic.fm`:** Concierge-ul vocal **Monique** respectă o coregrafie calmă invariantă: `3.4s` de liniște inițială, cadență vorbită rară la `0.78×`, așezată într-un buzunar spectral dedicat de `-20 dB`, urmată de un fade-in muzical catifelat de `6.0s`. Vizual, aplicația aplică strict **`Daylight Slate`** (`0%` galben) ziua și **`Nocturnal Silk`** cu atenuare acustică `>3.2 kHz` seara.
+- **Legea `nootropic.fm`:** Concierge-ul vocal exclusiv **Alanya** (*Smooth*) respectă o coregrafie calmă invariantă: `3.4s` de liniște inițială, cadență naturală și fluidă la `0.96×`, așezată într-un buzunar spectral dedicat de `-20 dB`, urmată de un fade-in muzical catifelat de `6.0s`. Vizual, aplicația aplică strict **`Daylight Slate`** (`0%` galben) ziua și **`Nocturnal Silk`** cu atenuare acustică `>3.2 kHz` seara.
 - **Ancoră în cod:** `src/audio/VoiceConciergePlayer.ts`, `shared/voiceConcierge.ts`, `worker/voiceConcierge.ts`, `src/components/AmbientField.tsx`.
 
 ### Pilonul 6 — Adevărul Cauzal Orb (*`25%` Active Aperiodic Sham + Biomarkeri Obiectivi*)
@@ -250,7 +250,7 @@ Nicio funcție nouă pe `app.nootropic.fm`, niciun protocol acustic, niciun stem
 3. **Puritate `DOI/PMID` & `0` Claim-uri Medicale Interzise:** Niciun studiu pe rozătoare/optic fără mapare auditivă umană; niciun termen medical de tratament/vindecare și zero folosire publică a cuvântului *„addictive”* (`FDA General Wellness` + `18+`).
 4. **Intactitatea Onboarding-ului `CheckInView`:** Niciun link din `www.nootropic.fm` și niciun deep-link nu are voie să sară peste captarea `Cine ești × Starea A -> Starea B`.
 5. **Înrolarea în Bucla `Research Brain`:** Protocolul este înrolat complet în `Thompson Sampling`, raportează telemetria `PVT / Tapping / retenție` și respectă politica `25% Blind Sham` (cu excepția declarată `Signature Mode`).
-6. **Aliniere Sub-Armonică `-15.5 LUFS` & Ritual *Monique*:** Coerență `BPM` întreagă acolo unde e cazul, `3.4s` pre-roll liniște + voce `0.78×` în buzunar `-20 dB` + fade-in `6.0s`.
+6. **Aliniere Sub-Armonică `-15.5 LUFS` & Ritual *Alanya*:** Coerență `BPM` întreagă acolo unde e cazul, `3.4s` pre-roll liniște + voce `Alanya` la `0.96×` în buzunar `-20 dB` + fade-in `6.0s`.
 7. **Audit Vizual Headless Circadian & Mobile (`375px` & `1440px`):** `0` tonuri galbene/chihlimbar în `Daylight Slate`, contrast WCAG AAA, butoane tactile `>= 44px` pe mobil.
 8. **Ierarhie Hardware *Wireless-First*:** `NootropicFM Earbuds Pro` (`Orbital Phase-Ring`, `PPG · HRV`) în spotlight `#1`; varianta wired niciodată în fața wireless-ului.
 9. **Securitate CSP, Secrete & Intimitate SEE/UK:** Zero secrete în client/git, zero `'unsafe-inline'` în `script-src`, cookie `.nootropic.fm` strict `HttpOnly; Secure; SameSite=Lax`, și funcționare corectă în modul fără consimțământ `SEE/UK`.
@@ -266,7 +266,7 @@ Nicio funcție nouă pe `app.nootropic.fm`, niciun protocol acustic, niciun stem
 | **2. Compilator Study-to-Sound** | **95% Live** | `StudyCompilerCore`, `StudyLabView`, `PubMed/OpenAlex`, `StudyFidelityMatrix`, zero pseudo-știință. | Expunerea unui card sumar „Study Chain Verified” pe pagina `www.nootropic.fm`. |
 | **3. Invarianță `48 kHz` Dual-Layer** | **100% Live** | `LR4 190–4,500 Hz`, `Envelope Flattener`, `musicPreLimiter` (`0.000 dB` ducking Layer-1), `-1.0 dBTP`, teste DSP verzi. | Păstrat ca invariant automatizat în CI/release gate. |
 | **4. Grilă Sub-Armonică, Muzică Dopaminergică & `Endless Stream`** | **100% Live** | **`32-Bar Striatal Arc` (`V9sus4 -> Drop`), `E(5,16)` sub-bas + `-1.8 dB` Ghost Sidechain, buzunar voce interioară `1,650 Hz`, curba Wundt `<= cvintă`, 3-Stage Ignition (`0–20–75–95s`), Analog Warmth & 3D Air `>4.5 kHz`, plus Track-Level Bandit Darwinian (`profile_track` / `global_track`) & `120.000 BPM` stems.** | Extinderea continuă a catalogului de stems & R2 cache. |
-| **5. *Monique* & Ergonomie Circadiană** | **95% Live** | `3.4s` + `0.78×` + `6.0s`, `Daylight Slate` (0 galben), `Nocturnal Silk` + roll-off `>3.2 kHz` verificat Headless Edge. | Micro-adaptări vocale ale *Monique* legate de progresul AI-ului personal. |
+| **5. *Alanya* & Ergonomie Circadiană** | **95% Live** | `3.4s` + `Alanya` (`0.96×`) + `6.0s`, `Daylight Slate` (0 galben), `Nocturnal Silk` + roll-off `>3.2 kHz` verificat Headless Edge. | Micro-adaptări vocale ale *Alanya* legate de progresul AI-ului personal. |
 | **6. Control Orb `25% Sham` & `PVT/Tapping`** | **95% Live** | `assignStratifiedShamControl()`, `computePvtMetrics()`, `TappingTestModal`, `Signature Mode` nediluat, D1 analytics. | Prag vizual public „Causal Proof Meter” pe măsură ce cohorte reale ating `392 / 648` sesiuni. |
 | **7. Memoria Neuronală Vizibilă** | **100% Live** | **`PersonalNeuralMemory` continuă** (`personalIafHz`, `focusOffsetHz`, `focusModMult` vs `calmModMult`, `preferredNoiseMult`, `fatigueDipMinute` autopilot, `profile_chrono` + **Active vs Sham PVT Proof**) vizibilă în `CheckInView`, `ProtocolRevealView` și `DebriefView`. | Conectarea viitoare directă a streamului `PPG · HRV` din `Earbuds Pro` pe același `ingestLiveHrvMetrics()`. |
 | **8. Doctrina *In-Ear* & Test Huggins `600 Hz`** | **95% Live** | `HugginsCheckModal` (`564–636 Hz`), comparator live `30s` pe `www.nootropic.fm`, excepție `Driving Safety Mode`. | Sugestie automată *In-Ear* pe rezultatul slab la Huggins legată cu lista `Earbuds Pro`. |

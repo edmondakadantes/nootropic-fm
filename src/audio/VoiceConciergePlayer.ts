@@ -13,8 +13,8 @@ export const VOCAL_TARGET_RMS = 0.195; // -14.2 dBFS clear upfront close-mic spe
 export const VOCAL_PEAK_CEILING = 0.56; // Worst-case sum: 0.56*(0.85+0.04) + 0.68*0.10 + 0.19 = 0.7564 < 0.8913
 export const VOICE_DRY_GAIN = 0.85;
 export const VOICE_EARLY_GAIN = 0.04;
-export const MUSIC_VOICE_DUCK_GAIN = 0.10; // -20.0 dB soft velvet background bed while Monique speaks
-export const MUSIC_FADE_IN_AFTER_VOICE_SEC = 6.0; // Smooth 6.0s dB-linear swell after Monique finishes
+export const MUSIC_VOICE_DUCK_GAIN = 0.10; // -20.0 dB soft velvet background bed while Alanya speaks
+export const MUSIC_FADE_IN_AFTER_VOICE_SEC = 6.0; // Smooth 6.0s dB-linear swell after Alanya finishes
 export const SESSION_INTRO_VOICE_DELAY_MS = 3400; // 3.4s calm arrival cushion after session start
 
 function trimAndNormalizeVocalBuffer(ctx: AudioContext, raw: AudioBuffer): AudioBuffer {

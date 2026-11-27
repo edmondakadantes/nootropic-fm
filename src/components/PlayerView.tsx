@@ -81,7 +81,7 @@ const SHARE_BONUS_SEC = 1800; // +30 minutes free when sharing your 1-of-1 Neura
 const SHARE_BONUS_DAY_KEY = 'nootropic_fm_share_bonus_day_v1';
 const FREE_USAGE_STORAGE_KEY = 'nootropic_fm_free_usage_v1';
 const VOICE_GUIDE_STORAGE_KEY = 'nootropic_fm_voice_guide_v1';
-const VOICE_ID_STORAGE_KEY = 'nootropic_fm_voice_id_v3';
+const VOICE_ID_STORAGE_KEY = 'nootropic_fm_voice_id_v4';
 const VOICE_DAY_COUNT_KEY = 'nootropic_fm_voice_day_v1';
 
 function readSavedVoiceId(): string | null {
@@ -1958,7 +1958,7 @@ export function PlayerView({
               </div>
 
               <div className="flex flex-wrap shrink-0 items-center justify-end gap-2">
-                {voiceGuideEnabled && conciergeVoices.length > 0 && (
+                {voiceGuideEnabled && conciergeVoices.length > 1 && (
                   <select
                     aria-label="Studio Concierge Voice"
                     value={selectedVoiceId ?? conciergeVoices[0].voiceId}
@@ -1992,8 +1992,8 @@ export function PlayerView({
                   aria-pressed={voiceGuideEnabled}
                   title={
                     voiceGuideEnabled
-                      ? 'Studio Voice Concierge ON — soft personalized session intro & landing (tap to mute)'
-                      : 'Studio Voice Concierge OFF — tap to enable personalized voice intro'
+                      ? 'Alanya Studio Voice ON — smooth natural session intro & landing (tap to mute)'
+                      : 'Alanya Studio Voice OFF — tap to enable personalized voice intro'
                   }
                   className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 font-mono-tech text-[11px] font-medium transition ${
                     voiceGuideEnabled
@@ -2008,7 +2008,7 @@ export function PlayerView({
                   ) : (
                     <MicOff className="h-3.5 w-3.5 text-[#7E7E78]" />
                   )}
-                  <span>Voice {voiceGuideEnabled ? 'ON' : 'OFF'}</span>
+                  <span>{voiceGuideEnabled ? 'Alanya ON' : 'Voice OFF'}</span>
                 </button>
 
                 <button
