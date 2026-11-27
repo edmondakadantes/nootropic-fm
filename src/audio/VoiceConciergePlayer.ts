@@ -16,8 +16,10 @@ export const VOICE_EARLY_GAIN = 0.04;
 export const MUSIC_VOICE_DUCK_GAIN = 0.10; // -20.0 dB soft velvet background bed while Alanya speaks
 export const MUSIC_FADE_IN_AFTER_VOICE_SEC = 6.0; // Smooth 6.0s dB-linear swell after Alanya finishes
 export const SESSION_INTRO_VOICE_DELAY_MS = 3400; // 3.4s calm arrival cushion after session start
+export const VOCAL_LEAD_PAD_SEC = 0.045; // 45 ms guaranteed breath cushion before first syllable
+export const VOCAL_FADE_IN_SEC = 0.012; // 12 ms anti-click ramp completed 33 ms before first consonant
 
-function trimAndNormalizeVocalBuffer(ctx: AudioContext, raw: AudioBuffer): AudioBuffer {
+export function trimAndNormalizeVocalBuffer(ctx: AudioContext, raw: AudioBuffer): AudioBuffer {
   const channels = raw.numberOfChannels;
   const totalLen = raw.length;
   const sr = raw.sampleRate;
@@ -45,10 +47,16 @@ function trimAndNormalizeVocalBuffer(ctx: AudioContext, raw: AudioBuffer): Audio
 
   if (firstActive >= lastActive) return raw;
 
-  const padSamples = Math.floor(sr * 0.02); // 20 ms natural breath cushion on each side
-  const startIdx = Math.max(0, firstActive - padSamples);
-  const endIdx = Math.min(totalLen, lastActive + padSamples);
-  const outLen = Math.max(1, endIdx - startIdx);
+  const leadPadSamples = Math.floor(sr * VOCAL_LEAD_PAD_SEC);
+  const tailPadSamples = Math.floor(sr * 0.035);
+  const availLead = Math.min(firstActive, leadPadSamples);
+  const missingLead = leadPadSamples - availLead;
+  const startIdx = firstActive - availLead;
+  const endIdx = Math.min(totalLen, lastActive + tailPadSamples);
+  const copyLen = Math.max(1, endIdx - startIdx);
+  const availTail = endIdx - lastActive;
+  const missingTail = Math.max(0, tailPadSamples - availTail);
+  const outLen = missingLead + copyLen + missingTail;
 
   let sumSq = 0;
   let count = 0;
@@ -75,9 +83,10 @@ function trimAndNormalizeVocalBuffer(ctx: AudioContext, raw: AudioBuffer): Audio
   for (let ch = 0; ch < channels; ch++) {
     const src = raw.getChannelData(ch);
     const dst = out.getChannelData(ch);
-    for (let i = 0; i < outLen; i++) {
+    for (let i = 0; i < copyLen; i++) {
       const v = src[startIdx + i] * scale;
-      dst[i] = Math.abs(v) > VOCAL_PEAK_CEILING ? Math.tanh(v / VOCAL_PEAK_CEILING) * VOCAL_PEAK_CEILING : v;
+      dst[missingLead + i] =
+        Math.abs(v) > VOCAL_PEAK_CEILING ? Math.tanh(v / VOCAL_PEAK_CEILING) * VOCAL_PEAK_CEILING : v;
     }
   }
   return out;
@@ -245,9 +254,11 @@ export class VoiceConciergePlayer {
     const greetSrc = ctx.createBufferSource();
     greetSrc.buffer = greetBuf;
     const greetEnv = ctx.createGain();
+    const greetFadeIn = Math.min(VOCAL_FADE_IN_SEC, greetBuf.duration * 0.2);
+    const greetFadeOut = Math.min(0.025, greetBuf.duration * 0.2);
     greetEnv.gain.setValueAtTime(0.0001, startAt);
-    greetEnv.gain.linearRampToValueAtTime(1.0, startAt + Math.min(0.045, greetBuf.duration * 0.2));
-    greetEnv.gain.setValueAtTime(1.0, Math.max(startAt + 0.045, startAt + greetBuf.duration - 0.055));
+    greetEnv.gain.linearRampToValueAtTime(1.0, startAt + greetFadeIn);
+    greetEnv.gain.setValueAtTime(1.0, Math.max(startAt + greetFadeIn, startAt + greetBuf.duration - greetFadeOut));
     greetEnv.gain.linearRampToValueAtTime(0.0001, startAt + greetBuf.duration);
     greetSrc.connect(greetEnv);
     greetEnv.connect(this.inputNode ?? this.voiceGain);
@@ -255,9 +266,11 @@ export class VoiceConciergePlayer {
     const bodySrc = ctx.createBufferSource();
     bodySrc.buffer = bodyBuf;
     const bodyEnv = ctx.createGain();
+    const bodyFadeIn = Math.min(VOCAL_FADE_IN_SEC, bodyBuf.duration * 0.15);
+    const bodyFadeOut = Math.min(0.028, bodyBuf.duration * 0.15);
     bodyEnv.gain.setValueAtTime(0.0001, bodyStartAt);
-    bodyEnv.gain.linearRampToValueAtTime(1.0, bodyStartAt + Math.min(0.055, bodyBuf.duration * 0.15));
-    bodyEnv.gain.setValueAtTime(1.0, Math.max(bodyStartAt + 0.055, totalEndAt - 0.075));
+    bodyEnv.gain.linearRampToValueAtTime(1.0, bodyStartAt + bodyFadeIn);
+    bodyEnv.gain.setValueAtTime(1.0, Math.max(bodyStartAt + bodyFadeIn, totalEndAt - bodyFadeOut));
     bodyEnv.gain.linearRampToValueAtTime(0.0001, totalEndAt);
     bodySrc.connect(bodyEnv);
     bodyEnv.connect(this.inputNode ?? this.voiceGain);

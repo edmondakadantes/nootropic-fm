@@ -52,6 +52,9 @@ const {
   MUSIC_VOICE_DUCK_GAIN,
   MUSIC_FADE_IN_AFTER_VOICE_SEC,
   SESSION_INTRO_VOICE_DELAY_MS,
+  VOCAL_LEAD_PAD_SEC,
+  VOCAL_FADE_IN_SEC,
+  trimAndNormalizeVocalBuffer,
 } = await import('../src/audio/VoiceConciergePlayer.ts');
 const { LIMITER_CEILING_LINEAR } = await import('../src/audio/dspMath.ts');
 
@@ -580,4 +583,51 @@ test('resolveVoiceConciergeAudio synthesizes via ElevenLabs Alanya at 0.96x into
     clearVoiceCatalogCacheForTests();
     globalThis.fetch = origFetch;
   }
+});
+
+test('trimAndNormalizeVocalBuffer prepends 45 ms lead cushion so 12 ms fade-in never clips initial consonant', () => {
+  assert.equal(VOCAL_LEAD_PAD_SEC, 0.045);
+  assert.equal(VOCAL_FADE_IN_SEC, 0.012);
+  assert.ok(VOCAL_FADE_IN_SEC < VOCAL_LEAD_PAD_SEC);
+
+  const sr = 48000;
+  const totalLen = Math.floor(sr * 0.25);
+  const makeMockBuffer = (channels, length, sampleRate) => {
+    const channelData = Array.from({ length: channels }, () => new Float32Array(length));
+    return {
+      numberOfChannels: channels,
+      length,
+      sampleRate,
+      getChannelData(ch) {
+        return channelData[ch];
+      },
+    };
+  };
+
+  const rawBuf = makeMockBuffer(1, totalLen, sr);
+  const src = rawBuf.getChannelData(0);
+  // Active consonant begins right at sample 0!
+  for (let i = 0; i < totalLen - Math.floor(sr * 0.05); i++) {
+    src[i] = 0.2 * Math.sin((2 * Math.PI * 220 * i) / sr);
+  }
+  // Sample 0 had zero sine value above; force active sample right at index 0
+  src[0] = 0.18;
+
+  const mockCtx = {
+    createBuffer(channels, length, sampleRate) {
+      return makeMockBuffer(channels, length, sampleRate);
+    },
+  };
+
+  const out = trimAndNormalizeVocalBuffer(mockCtx, rawBuf);
+  const dst = out.getChannelData(0);
+  const expectedLeadSamples = Math.floor(sr * VOCAL_LEAD_PAD_SEC); // 2160
+  const fadeSamples = Math.floor(sr * VOCAL_FADE_IN_SEC); // 576
+
+  assert.ok(expectedLeadSamples > fadeSamples);
+  // Entire 45 ms pre-consonant lead cushion is silent (0) so the 12 ms anti-click ramp finishes cleanly before sample 2160
+  for (let i = 0; i < expectedLeadSamples; i++) {
+    assert.equal(dst[i], 0, `Expected 0 lead cushion at sample ${i}`);
+  }
+  assert.ok(Math.abs(dst[expectedLeadSamples]) > 0.05, 'First consonant sample must remain intact after lead pad');
 });
