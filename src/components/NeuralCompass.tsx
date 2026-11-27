@@ -261,7 +261,7 @@ export function NeuralCompassSelector({
                     className={`h-7 w-7 rounded-lg border font-mono-tech text-[11px] font-bold transition ${
                       baselineScore === n
                         ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
-                        : 'border-white/[0.08] bg-[#141518] text-[#7E7E78] hover:border-white/25 hover:text-[#D4D4CE]'
+                        : 'border-white/[0.08] bg-[#141518] text-[#8E8E88] hover:border-white/25 hover:text-[#D4D4CE]'
                     }`}
                   >
                     {n}

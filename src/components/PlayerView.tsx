@@ -645,7 +645,22 @@ export function PlayerView({
     milestonesSentRef.current = new Set();
     endedByUserRef.current = false;
     const unsubInterrupt = engineRef.current?.onInterruptionChange((interrupted) => {
-      if (mounted) setAudioInterrupted(interrupted);
+      if (!mounted) return;
+      setAudioInterrupted(interrupted);
+      if (interrupted) {
+        setIsPlaying(false);
+        return;
+      }
+      setIsPlaying(true);
+      setAudioStarted(true);
+      if (
+        !voiceIntroSentRef.current &&
+        carrierModeRef.current !== 'pure_stimulus' &&
+        voiceGuideEnabledRef.current
+      ) {
+        voiceIntroSentRef.current = true;
+        triggerVoiceCueRef.current(consumeDailyVoiceIntroType());
+      }
     });
     const unsubVoice = engineRef.current?.onVoiceSpeakingChange((speaking) => {
       if (mounted) setVoiceSpeaking(speaking);
@@ -737,12 +752,15 @@ export function PlayerView({
         if (engineRef.current) {
           setTelemetry(engineRef.current.updateElapsed(0));
         }
-        setIsPlaying(true);
-        setAudioStarted(true);
+        const blockedAtStart = Boolean(engineRef.current?.isAudioInterrupted());
+        setAudioInterrupted(blockedAtStart);
+        setIsPlaying(!blockedAtStart);
+        setAudioStarted(!blockedAtStart);
         if (engineRef.current) {
           setGenre(engineRef.current.getGenre());
         }
         if (
+          !blockedAtStart &&
           !voiceIntroSentRef.current &&
           initialCarrier !== 'pure_stimulus' &&
           voiceGuideEnabledRef.current
@@ -1080,6 +1098,13 @@ export function PlayerView({
     if (isPlaying) {
       await engineRef.current?.pause();
       setIsPlaying(false);
+    } else if (audioInterrupted || engineRef.current?.isAudioInterrupted()) {
+      const ok = await engineRef.current?.resumeFromInterruption();
+      if (ok) {
+        setAudioInterrupted(false);
+        setIsPlaying(true);
+        setAudioStarted(true);
+      }
     } else {
       await engineRef.current?.resume();
       setIsPlaying(true);
@@ -1709,12 +1734,16 @@ export function PlayerView({
         </div>
       )}
 
-      {(audioInterrupted || telemetry.audioInterrupted) && isPlaying && (
+      {(audioInterrupted || telemetry.audioInterrupted) && (
         <button
           type="button"
           onClick={() => {
             void engineRef.current?.resumeFromInterruption().then((ok) => {
-              if (ok) setAudioInterrupted(false);
+              if (ok) {
+                setAudioInterrupted(false);
+                setIsPlaying(true);
+                setAudioStarted(true);
+              }
             });
           }}
           className="animate-rise flex w-full items-center justify-between gap-3 rounded-xl border border-amber-400/45 bg-amber-500/15 px-4 py-3 text-left text-xs text-amber-100 transition hover:bg-amber-500/20"
@@ -2251,7 +2280,7 @@ export function PlayerView({
                     className={`mt-0.5 truncate font-mono-tech text-[9px] ${
                       active && opt.mode === 'music_only' && themeMode === 'daylight'
                         ? 'text-white/80'
-                        : 'text-[#7E7E78]'
+                        : 'text-[#A3A39E]'
                     }`}
                   >
                     {opt.sub}
@@ -2515,7 +2544,7 @@ export function PlayerView({
                     Soon
                   </span>
                 </div>
-                <div className="mt-0.5 text-[10px] text-[#6E6E68]">More curated genres coming soon</div>
+                <div className="mt-0.5 text-[10px] text-[#8E8E88]">More curated genres coming soon</div>
               </div>
             </div>
           </div>
@@ -2697,7 +2726,7 @@ export function PlayerView({
                     {bleHrvState.connected ? 'Disconnect' : 'Connect'}
                   </button>
                 ) : (
-                  <span className="shrink-0 font-mono-tech text-[10px] text-[#6E6E68]">Chrome/Edge</span>
+                  <span className="shrink-0 font-mono-tech text-[10px] text-[#8E8E88]">Chrome/Edge</span>
                 )}
               </div>
             </div>

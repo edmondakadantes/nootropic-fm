@@ -92,12 +92,15 @@ test('Bundle splitting keeps every client JS chunk under 500 kB and enforces Ala
 
 test('Worker API handles malformed URI-encoded path segments cleanly with HTTP 400 (never 500)', async () => {
   const fakeDb = {
-    prepare() {
+    prepare(sql) {
       return {
         bind() {
           return this;
         },
         async first() {
+          if (typeof sql === 'string' && sql.includes('rate_limits')) {
+            return { hits: 1 };
+          }
           return null;
         },
         async all() {
@@ -136,6 +139,13 @@ test('Worker API handles malformed URI-encoded path segments cleanly with HTTP 4
     ctx
   );
   assert.equal(badProfileRes.status, 400);
+
+  const badDeleteProfileRes = await worker.fetch(
+    new Request('https://app.nootropic.fm/api/profile/%ZZbad', { method: 'DELETE' }),
+    env,
+    ctx
+  );
+  assert.equal(badDeleteProfileRes.status, 400);
 });
 
 function findEdgeExecutable() {
@@ -372,6 +382,7 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     [
       '--headless=new',
       '--disable-gpu',
+      '--disable-extensions',
       '--no-first-run',
       '--autoplay-policy=no-user-gesture-required',
       '--remote-debugging-port=0',
@@ -460,48 +471,136 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
           })
           .map((el) => {
             const r = el.getBoundingClientRect();
-            return { text: (el.innerText || el.getAttribute('aria-label') || '').trim(), left: Math.round(r.left), right: Math.round(r.right) };
+            return {
+              text: (el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim(),
+              left: Math.round(r.left),
+              right: Math.round(r.right),
+              inScrollNav: Boolean(el.closest('nav.overflow-x-auto')),
+            };
           });
-        const clipped = headerButtons.filter((b) => {
-          const inScrollNav = false;
-          return !inScrollNav && (b.left < 0 || b.right > ${viewportW} + 2);
-        });
+        const clipped = headerButtons.filter((b) => !b.inScrollNav && (b.left < -1 || b.right > ${viewportW} + 1));
         return { scrollWidth: sw, headerButtons, clipped };
       })()`);
       assert.ok(
         audit.scrollWidth <= viewportW,
         `Horizontal overflow in ${label}: scrollWidth=${audit.scrollWidth} > ${viewportW}`
       );
-      // Top header row controls (non-scrollable row) must never clip past viewport
-      const topBarClipped = await evalJs(`(() => {
-        const topRow = document.querySelector('header > div');
-        if (!topRow) return [];
-        return Array.from(topRow.querySelectorAll('button, a'))
-          .filter((el) => {
-            const st = getComputedStyle(el);
-            const r = el.getBoundingClientRect();
-            return st.display !== 'none' && r.width > 0 && r.height > 0 && (r.left < 0 || r.right > ${viewportW} + 1);
-          })
-          .map((el) => ({ text: (el.innerText || el.getAttribute('aria-label') || '').trim(), right: Math.round(el.getBoundingClientRect().right) }));
-      })()`);
       assert.deepEqual(
-        topBarClipped,
+        audit.clipped,
         [],
-        `Clipped top header buttons on ${label} (${viewportW}px): ${JSON.stringify(topBarClipped)}`
+        `Clipped header controls on ${label} (${viewportW}px): ${JSON.stringify(audit.clipped)}`
       );
+    };
+
+    const setThemeAndWait = async (mode) => {
+      await evalJs(`(() => {
+        const isDay = document.documentElement.getAttribute('data-theme') === 'daylight';
+        if (${mode === 'daylight'} !== isDay) {
+          const b = Array.from(document.querySelectorAll('header button')).find((x) =>
+            /${mode === 'daylight' ? 'Daylight Mode' : 'Night Mode'}/i.test(x.getAttribute('aria-label') || '')
+          );
+          if (b) b.click();
+          else document.documentElement.setAttribute('data-theme', '${mode}');
+        }
+      })()`);
+      await new Promise((r) => setTimeout(r, 550));
+    };
+
+    const assertContrastWcag = async (label, modes = ['night', 'daylight']) => {
+      for (const mode of modes) {
+        await setThemeAndWait(mode);
+        const low = await evalJs(`(() => {
+          const cvs = document.createElement('canvas');
+          cvs.width = 1; cvs.height = 1;
+          const ctx = cvs.getContext('2d', { willReadFrequently: true });
+          const parseCssColor = (s) => {
+            if (!s || s === 'transparent') return [0, 0, 0, 0];
+            ctx.clearRect(0, 0, 1, 1);
+            ctx.fillStyle = 'rgba(0,0,0,0)';
+            ctx.fillStyle = s;
+            ctx.fillRect(0, 0, 1, 1);
+            const d = ctx.getImageData(0, 0, 1, 1).data;
+            return [d[0], d[1], d[2], d[3] / 255];
+          };
+          const lum = ([r, g, b]) =>
+            [r, g, b]
+              .map((v) => {
+                v /= 255;
+                return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+              })
+              .reduce((a, c, i) => a + c * [0.2126, 0.7152, 0.0722][i], 0);
+          const cr = (a, b) => {
+            const l1 = lum(a), l2 = lum(b);
+            return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+          };
+          const blend = (fg, bg) =>
+            fg[3] >= 0.99
+              ? fg
+              : [fg[0] * fg[3] + bg[0] * (1 - fg[3]), fg[1] * fg[3] + bg[1] * (1 - fg[3]), fg[2] * fg[3] + bg[2] * (1 - fg[3]), 1];
+          const isDay = document.documentElement.getAttribute('data-theme') === 'daylight';
+          const getBg = (el) => {
+            const layers = [];
+            for (let cur = el; cur; cur = cur.parentElement) {
+              const bg = parseCssColor(getComputedStyle(cur).backgroundColor);
+              if (bg && bg[3] > 0.01) layers.unshift(bg);
+            }
+            let cur = isDay ? [246, 247, 249, 1] : [10, 11, 12, 1];
+            for (const l of layers) cur = blend(l, cur);
+            return cur;
+          };
+          const topModal = document.querySelector('div.fixed.inset-0.z-50');
+          const lowContrast = [];
+          const w = document.createTreeWalker(topModal || document.body, NodeFilter.SHOW_TEXT);
+          let n;
+          while ((n = w.nextNode())) {
+            if (!n.nodeValue || !n.nodeValue.trim()) continue;
+            const el = n.parentElement;
+            if (!el) continue;
+            const cs = getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.2) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) continue;
+            const fg = parseCssColor(cs.color);
+            if (!fg || fg[3] < 0.05) continue;
+            const bg = getBg(el);
+            const actualFg = blend(fg, bg);
+            const ratio = cr(actualFg, bg);
+            const fs = parseFloat(cs.fontSize);
+            const fw = parseInt(cs.fontWeight, 10) || 400;
+            const minReq = fs >= 24 || (fs >= 18.66 && fw >= 700) ? 3.0 : 4.5;
+            if (ratio < minReq) {
+              lowContrast.push({
+                text: n.nodeValue.trim().slice(0, 45),
+                ratio: +ratio.toFixed(2),
+                minReq,
+                fg: actualFg.map(Math.round).slice(0, 3).join(','),
+                bg: bg.map(Math.round).slice(0, 3).join(','),
+                cls: String(el.className).slice(0, 60),
+              });
+            }
+          }
+          return lowContrast.slice(0, 8);
+        })()`);
+        assert.deepEqual(
+          low,
+          [],
+          `WCAG contrast failures on ${label} (${mode}): ${JSON.stringify(low)}`
+        );
+      }
+      await setThemeAndWait('night');
     };
 
     await sendCdp('Runtime.enable');
     await sendCdp('Page.enable');
 
     // =========================================================================
-    // 1) MOBILE 375x812: Flagship Showcase (www.nootropic.fm)
+    // 1) MOBILE 375px + TABLET/DESKTOP 640/768/1024/1280px: Flagship Showcase
     // =========================================================================
     await sendCdp('Emulation.setDeviceMetricsOverride', {
       width: 375,
       height: 812,
-      deviceScaleFactor: 2,
-      mobile: true,
+      deviceScaleFactor: 1,
+      mobile: false,
     });
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=showcase` });
     await waitUntil(
@@ -511,6 +610,26 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     );
     assert.equal(await evalJs(`/monique/i.test(document.body.innerText)`), false);
     await assertNoOverflowAndClippedHeader('Showcase 375px', 375);
+    await assertContrastWcag('Showcase 375px');
+
+    for (const bp of [640, 768, 1024, 1280]) {
+      await sendCdp('Emulation.setDeviceMetricsOverride', {
+        width: bp,
+        height: 844,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await new Promise((r) => setTimeout(r, 120));
+      await assertNoOverflowAndClippedHeader(`Showcase ${bp}px`, bp);
+    }
+
+    await sendCdp('Emulation.setDeviceMetricsOverride', {
+      width: 375,
+      height: 812,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await new Promise((r) => setTimeout(r, 100));
 
     // Mobile quick-access nav strip must be visible with Investors & Science
     const mobileNavLinks = await evalJs(`Array.from(document.querySelectorAll('nav[aria-label="Mobile Showcase Sections"] a, nav[aria-label="Mobile Showcase Sections"] button')).map(el => el.innerText.trim())`);
@@ -530,9 +649,31 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     );
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Stop Proof/i.test(b.innerText || ''))?.click()`);
 
+    // Clicking Open Studio locally updates history URL so reloads remain in Studio
+    await evalJs(`Array.from(document.querySelectorAll('header a')).find(a => /Open Studio/i.test(a.innerText || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('input[type="number"]'))`, 6000, 'Transition Showcase -> Studio');
+    assert.match(await evalJs(`window.location.search`), /surface=studio/);
+
     // =========================================================================
-    // 2) MOBILE 375x812: Audio Studio 90-second Local-Only Flow + Modals
+    // 2) STUDIO RESPONSIVE HEADER (375/640/768/1024/1280) + 90s LOCAL-ONLY FLOW
     // =========================================================================
+    for (const bp of [375, 640, 768, 1024, 1280]) {
+      await sendCdp('Emulation.setDeviceMetricsOverride', {
+        width: bp,
+        height: 844,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await new Promise((r) => setTimeout(r, 120));
+      await assertNoOverflowAndClippedHeader(`Studio ${bp}px`, bp);
+    }
+
+    await sendCdp('Emulation.setDeviceMetricsOverride', {
+      width: 375,
+      height: 812,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio` });
     await waitUntil(
       `Boolean(document.querySelector('input[type="number"]'))`,
@@ -540,8 +681,9 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
       'Studio Beat 1 on 375px'
     );
     await assertNoOverflowAndClippedHeader('Studio Beat 1 375px', 375);
+    await assertContrastWcag('Studio Beat 1 375px');
 
-    // Fill Age 29, Gender Female, Role Entrepreneur, LEAVE checkbox UNCHECKED (genuine EEA/GPC opt-out!)
+    // Fill Age 29, Gender Female, Role Founder, LEAVE checkbox UNCHECKED (genuine EEA/GPC opt-out!)
     await evalJs(`(() => {
       const ageInput = document.querySelector('input[type="number"]');
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -565,6 +707,7 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
       return Boolean(Array.from(document.querySelectorAll('button')).find(b => /Sharp Alert Focus|Deep Uninterrupted Flow/i.test(b.textContent || '')));
     })()`, 5000, 'Beat 3 375px');
     await assertNoOverflowAndClippedHeader('Studio Beat 3 375px', 375);
+    await assertContrastWcag('Studio Beat 3 375px');
 
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Deep Uninterrupted Flow/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`(() => {
@@ -579,32 +722,44 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
       return Boolean(Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || '')));
     })()`, 8000, 'Reveal 375px');
     await assertNoOverflowAndClippedHeader('Studio Reveal 375px', 375);
+    await assertContrastWcag('Studio Reveal 375px');
 
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || '')))`, 8000, 'PlayerView 375px');
     await assertNoOverflowAndClippedHeader('Studio PlayerView 375px', 375);
+    await assertContrastWcag('Studio PlayerView 375px');
 
-    // Open & Escape-close PVT, Tapping, and Huggins modals on 375px
+    // Open & Escape-close PVT, Tapping, Huggins, and UpgradePro modals on 375px
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Run PVT/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Visual 1/RT Vigilance Check'))`, 4000, 'PVT Modal');
+    await assertContrastWcag('PVT Modal 375px');
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.body.innerText.includes('Visual 1/RT Vigilance Check')`, 4000, 'PVT Modal closed via Escape');
 
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Run \\(15s\\)/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Intrinsic Motor Rhythm Check'))`, 4000, 'Tapping Modal');
+    await assertContrastWcag('Tapping Modal 375px');
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.body.innerText.includes('Intrinsic Motor Rhythm Check')`, 4000, 'Tapping Modal closed via Escape');
 
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Verify Headphones/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Huggins Pitch'))`, 4000, 'Huggins Modal');
+    await assertContrastWcag('Huggins Modal 375px');
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.body.innerText.includes('35s Dichotic Headphone Check')`, 4000, 'Huggins Modal closed via Escape');
+
+    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Go Pro/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Unlimited') || document.body.innerText.includes('Pro'))`, 4000, 'UpgradePro Modal');
+    await assertContrastWcag('UpgradePro Modal 375px');
+    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await waitUntil(`!document.querySelector('div.fixed.inset-0.z-50')`, 4000, 'UpgradePro Modal closed via Escape');
 
     // End Session -> Local-Only Debrief Summary
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /End Session/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('See Local Session Summary'))`, 5000, 'Local-only Debrief');
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /See Local Session Summary/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Local-Only Privacy Mode'))`, 5000, 'Local-Only Privacy Summary');
+    await assertContrastWcag('Local-Only Debrief 375px');
 
     // =========================================================================
     // 3) DESKTOP 1280x900: Outcome Deep-Link + Study Lab & Insights + Escape Modals
@@ -617,14 +772,22 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     });
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio&target=deep_flow&duration=45` });
     await waitUntil(`Boolean(document.body.innerText.includes('Selected shift:') && document.body.innerText.includes('Deep Flow State (45m)'))`, 6000, 'Outcome Deep-Link pre-selection');
+    await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /Continue:\\s*Choose Music Style/i.test(b.textContent || '')))`, 4000, 'Beat 1 Deep-Link CTA matches destination Beat 4');
 
-    // Open Study Lab -> verify accurate 20-trial (~75s) PVT text
+    // Open Study Lab -> verify accurate 20-trial (~75s) PVT text + WCAG contrast
     await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('20-trial (~75s) Pre/Post PVT'))`, 5000, 'Study Lab updated PVT text');
+    await assertContrastWcag('StudyLab 1280px');
 
-    // Open Sound Systems -> Escape close
+    // Open Research Brain (Insights) -> verify WCAG contrast
+    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Research/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Research Brain') || document.body.innerText.includes('Cohort'))`, 5000, 'InsightsView 1280px');
+    await assertContrastWcag('InsightsView 1280px');
+
+    // Open Sound Systems -> WCAG + Escape close
     await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`/Acoustic Hardware Lab/i.test(document.body.innerText)`, 6000, 'Sound Systems modal');
+    await assertContrastWcag('SoundSystems Modal 1280px');
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.body.innerText.includes('Why NootropicFM Is Engineered Exclusively')`, 4000, 'Sound Systems closed via Escape');
 

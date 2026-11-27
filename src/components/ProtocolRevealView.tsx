@@ -844,7 +844,7 @@ export function ProtocolRevealView({
               <span
                 aria-disabled="true"
                 title="More genres & custom styles coming soon"
-                className="inline-flex cursor-not-allowed select-none items-center gap-1 rounded-lg border border-dashed border-white/12 bg-[#0B0C0E] px-3 py-1.5 text-xs font-medium text-[#6E6E68]"
+                className="inline-flex cursor-not-allowed select-none items-center gap-1 rounded-lg border border-dashed border-white/12 bg-[#0B0C0E] px-3 py-1.5 text-xs font-medium text-[#8E8E88]"
               >
                 <span>Other</span>
                 <span className="rounded border border-white/10 bg-[#141518] px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#8E8E88]">

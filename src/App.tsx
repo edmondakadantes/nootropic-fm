@@ -38,6 +38,7 @@ import { CheckInView, type MoodPresetSelection } from './components/CheckInView'
 import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFingerprintPass';
 import {
   buildShowcaseUrl,
+  buildStudioUrl,
   resolveLegacyShowcaseRedirect,
   resolveSurfaceMode,
   type SurfaceMode,
@@ -893,6 +894,17 @@ export default function App() {
       screen?: 'studylab' | 'insights';
     }) => {
       setSurfaceMode('studio');
+      const nextUrl = buildStudioUrl(opts);
+      if (typeof window !== 'undefined') {
+        try {
+          const parsed = new URL(nextUrl, window.location.href);
+          if (parsed.origin === window.location.origin) {
+            window.history.replaceState({}, '', `${parsed.pathname}${parsed.search}${parsed.hash}`);
+          }
+        } catch {
+          /* ignore history errors */
+        }
+      }
       if (opts?.screen === 'studylab') {
         setFieldMood('focus');
         setScreen('studylab');
@@ -1017,7 +1029,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setScreen(activeRec ? 'player' : 'checkin')}
-                className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:inline-flex sm:px-3 ${
+                className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition lg:inline-flex lg:px-3 ${
                   screen === 'checkin' || screen === 'reveal' || screen === 'player' || screen === 'debrief'
                     ? themeMode === 'daylight'
                       ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
@@ -1027,7 +1039,7 @@ export default function App() {
                 title="Active Session"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
-                <span className="hidden md:inline">Session</span>
+                <span>Session</span>
               </button>
             )}
 
@@ -1037,7 +1049,7 @@ export default function App() {
                 setFieldMood('focus');
                 setScreen('studylab');
               }}
-              className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:inline-flex sm:px-3 ${
+              className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition lg:inline-flex lg:px-3 ${
                 screen === 'studylab'
                   ? themeMode === 'daylight'
                     ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
@@ -1056,7 +1068,7 @@ export default function App() {
                 setFieldMood('flow');
                 setScreen('insights');
               }}
-              className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:inline-flex sm:px-3 ${
+              className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition lg:inline-flex lg:px-3 ${
                 screen === 'insights'
                   ? themeMode === 'daylight'
                     ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
@@ -1066,19 +1078,19 @@ export default function App() {
               title="Research Brain & Live Outcomes"
             >
               <BarChart3 className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden md:inline">Research Brain</span>
-              <span className="md:hidden">Research</span>
+              <span className="hidden xl:inline">Research Brain</span>
+              <span className="xl:hidden">Research</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShowSoundSystemsModal(true)}
-              className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-2.5 py-1.5 text-xs font-medium text-[#34D399] transition hover:border-emerald-400/60 hover:bg-emerald-500/15 sm:inline-flex sm:px-3"
+              className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-2.5 py-1.5 text-xs font-medium text-[#34D399] transition hover:border-emerald-400/60 hover:bg-emerald-500/15 lg:inline-flex lg:px-3"
               title="NootropicFM Sound Systems — Engineered Exclusively for In-Ear Buds & Upcoming Hardware"
             >
               <Headphones className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
-              <span className="hidden lg:inline">Sound Systems</span>
-              <span className="lg:hidden">Earbuds</span>
+              <span className="hidden xl:inline">Sound Systems</span>
+              <span className="xl:hidden">Earbuds</span>
             </button>
 
             <div
@@ -1163,9 +1175,9 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Mobile Secondary Quick-Nav Row (<640px) — keeps all destinations 1-tap & zero clipping */}
+        {/* Mobile & Tablet Quick-Nav Row (<1024px) — keeps all destinations 1-tap & zero clipping */}
         <nav
-          className="flex items-center gap-1.5 overflow-x-auto border-t border-white/[0.06] px-3 py-1.5 sm:hidden"
+          className="flex items-center gap-1.5 overflow-x-auto border-t border-white/[0.06] px-3 py-1.5 lg:hidden"
           aria-label="Studio Mobile Navigation"
         >
           <button

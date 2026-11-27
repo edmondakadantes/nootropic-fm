@@ -1066,7 +1066,7 @@ export function CheckInView({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
             <div className="sm:col-span-8">
               <label className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
-                First name / Callsign <span className="text-[#6E6E68]">(optional, anonymous by default)</span>
+                First name / Callsign <span className="text-[#8E8E88]">(optional, anonymous by default)</span>
               </label>
               <input
                 type="text"
@@ -1239,7 +1239,9 @@ export function CheckInView({
             onClick={handleAdvanceFromBeat1}
             className="btn-aurora flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold sm:text-base"
           >
-            Continue: Current State
+            {initialPreset && selectedMicroState && neuralCoords
+              ? 'Continue: Choose Music Style'
+              : 'Continue: Current State'}
             <ArrowRight className="h-5 w-5" />
           </button>
         </div>
@@ -1770,7 +1772,7 @@ export function CheckInView({
               <span
                 aria-disabled="true"
                 title="Additional music styles are coming soon"
-                className="inline-flex cursor-not-allowed select-none items-center gap-1.5 rounded-lg border border-dashed border-white/12 bg-[#0B0C0E] px-3.5 py-2 text-xs font-medium text-[#6E6E68]"
+                className="inline-flex cursor-not-allowed select-none items-center gap-1.5 rounded-lg border border-dashed border-white/12 bg-[#0B0C0E] px-3.5 py-2 text-xs font-medium text-[#8E8E88]"
               >
                 <span>Other</span>
                 <span className="rounded border border-white/10 bg-[#141518] px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#8E8E88]">

@@ -794,7 +794,7 @@ export function NeuralPassCard({ profile, syncCode }: NeuralPassCardProps) {
               />
             </div>
           ) : (
-            <div className="flex h-28 w-28 items-center justify-center rounded-lg border border-white/10 text-[#6E6E68]">
+            <div className="flex h-28 w-28 items-center justify-center rounded-lg border border-white/10 text-[#8E8E88]">
               <QrCode className="h-8 w-8" />
             </div>
           )}

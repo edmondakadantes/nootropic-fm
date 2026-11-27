@@ -42,6 +42,8 @@ export function PvtBenchmarkModal({
   const rafRef = useRef<number | null>(null);
   const totalTrialsRef = useRef(totalTrials);
   totalTrialsRef.current = totalTrials;
+  const trialsRef = useRef<number[]>(trials);
+  trialsRef.current = trials;
 
   const clearPendingTimers = useCallback(() => {
     if (timerRef.current !== null) {
@@ -117,16 +119,15 @@ export function PvtBenchmarkModal({
         setStage('false_start');
         return;
       }
+      const next = [...trialsRef.current, rt];
+      trialsRef.current = next;
       setLastMs(rt);
-      setTrials((prev) => {
-        const next = [...prev, rt];
-        if (next.length >= totalTrialsRef.current) {
-          setStage('done');
-        } else {
-          scheduleNextTrial();
-        }
-        return next;
-      });
+      setTrials(next);
+      if (next.length >= totalTrialsRef.current) {
+        setStage('done');
+      } else {
+        scheduleNextTrial();
+      }
     }
   }, [stage, scheduleNextTrial, clearPendingTimers]);
 

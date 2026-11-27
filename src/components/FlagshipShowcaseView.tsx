@@ -437,7 +437,7 @@ export function FlagshipShowcaseView({
             </div>
           </button>
 
-          <nav className="hidden items-center gap-1 md:flex" aria-label="Showcase Sections">
+          <nav className="hidden items-center gap-1 xl:flex" aria-label="Showcase Sections">
             <a
               href="#hardware"
               className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
@@ -557,9 +557,9 @@ export function FlagshipShowcaseView({
           </div>
         </div>
 
-        {/* Mobile Quick-Access Strip (<768px) — 1-tap navigation to every showcase section & institutional page */}
+        {/* Compact & Tablet Quick-Access Strip (<1280px) — 1-tap navigation to every showcase section & institutional page */}
         <nav
-          className="flex items-center gap-1.5 overflow-x-auto border-t border-white/[0.06] px-3 py-1.5 md:hidden"
+          className="flex items-center gap-1.5 overflow-x-auto border-t border-white/[0.06] px-3 py-1.5 xl:hidden"
           aria-label="Mobile Showcase Sections"
         >
           <a
@@ -615,7 +615,7 @@ export function FlagshipShowcaseView({
           <button
             type="button"
             onClick={onOpenIdentityModal}
-            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-white/10 bg-[#131518] px-2.5 py-1 text-[11px] font-medium text-[#D4D4CE]"
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-white/10 bg-[#131518] px-2.5 py-1 text-[11px] font-medium text-[#D4D4CE] sm:hidden"
           >
             <KeyRound className="h-3 w-3 text-[#34D399]" />
             <span>{profile ? 'Pass' : 'Sync QR'}</span>
@@ -688,7 +688,7 @@ export function FlagshipShowcaseView({
                   <div className="font-mono-tech text-[10px] font-bold uppercase tracking-wider text-[#34D399]">
                     25% Blind Sham
                   </div>
-                  <div className="mt-0.5 text-[11px] text-[#A3A399]">
+                  <div className="mt-0.5 text-[11px] text-[#A3A39E]">
                     Verified via 20-Trial PVT &amp; HRV
                   </div>
                 </div>
@@ -869,7 +869,7 @@ export function FlagshipShowcaseView({
         </section>
 
         {/* SECTION 2: 30-SECOND INTERACTIVE IN-EAR SOUND PROOF */}
-        <section id="demo" className="glass-stage rounded-3xl p-5 sm:p-8 space-y-5">
+        <section id="demo" className="glass-stage scroll-mt-28 rounded-3xl p-5 sm:p-8 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 font-mono-tech text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
@@ -983,7 +983,7 @@ export function FlagshipShowcaseView({
         </section>
 
         {/* SECTION 3: NOOTROPIC FM SOUND SYSTEMS HARDWARE + PHYSICS */}
-        <section id="hardware" className="space-y-6">
+        <section id="hardware" className="scroll-mt-28 space-y-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="space-y-1.5">
               <div className="inline-flex items-center gap-1.5 font-mono-tech text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
@@ -1112,7 +1112,7 @@ export function FlagshipShowcaseView({
           </div>
 
           {/* Inline Founding Batch Waitlist */}
-          <div id="waitlist-form" className="glass-stage rounded-3xl p-5 sm:p-7">
+          <div id="waitlist-form" className="glass-stage scroll-mt-28 rounded-3xl p-5 sm:p-7">
             <div className="grid grid-cols-1 items-center gap-5 lg:grid-cols-12">
               <div className="space-y-1.5 lg:col-span-6">
                 <div className="font-mono-tech text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
@@ -1199,7 +1199,7 @@ export function FlagshipShowcaseView({
         </section>
 
         {/* SECTION 4: THE AUDIO STUDIO PLATFORM (app.nootropic.fm) */}
-        <section id="platform" className="glass-stage rounded-3xl p-5 sm:p-8 space-y-6">
+        <section id="platform" className="glass-stage scroll-mt-28 rounded-3xl p-5 sm:p-8 space-y-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 font-mono-tech text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
@@ -1338,7 +1338,7 @@ export function FlagshipShowcaseView({
         </section>
 
         {/* SECTION 5: PRICING & BUNDLES */}
-        <section id="pricing" className="space-y-5">
+        <section id="pricing" className="scroll-mt-28 space-y-5">
           <div className="space-y-1 text-center">
             <div className="font-mono-tech text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
               TRANSPARENT ECOSYSTEM PRICING
@@ -1424,7 +1424,7 @@ export function FlagshipShowcaseView({
           </div>
         </section>
         {/* SECTION 6: OFFICIAL DEPARTMENT DIRECTORY & SEO/SCIENCE RESOURCES */}
-        <section id="contact" className="glass-stage rounded-3xl p-5 sm:p-8 space-y-5">
+        <section id="contact" className="glass-stage scroll-mt-28 rounded-3xl p-5 sm:p-8 space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="space-y-1">
               <div className="font-mono-tech text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
