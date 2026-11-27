@@ -21,6 +21,12 @@ import type {
 } from '../../shared/types';
 import { api } from '../lib/api';
 import {
+  computeDisclosurePrompts,
+  dismissDisclosurePrompt,
+  recordCompletedLocalSession,
+} from '../lib/disclosureScheduler';
+import { isNativePlayStoreApp } from '../lib/platform';
+import {
   NeuralFingerprintSigil,
   sharePublicNeuralFingerprint,
 } from './NeuralFingerprintPass';
@@ -72,8 +78,11 @@ interface DebriefViewProps {
   profile?: UserProfile | null;
   syncCode?: string | null;
   isPro?: boolean;
+  freeQuotaReached?: boolean;
   themeMode?: 'daylight' | 'night';
   onUpgradePro?: () => void;
+  onOpenOnboarding?: () => void;
+  onUnlockShareBonus?: () => void;
   onLearningApplied?: (update: DebriefLearningUpdate) => void;
   onStartNew: () => void;
   onViewInsights: () => void;
@@ -117,8 +126,11 @@ export function DebriefView({
   profile = null,
   syncCode = null,
   isPro = false,
+  freeQuotaReached = false,
   themeMode = 'night',
   onUpgradePro,
+  onOpenOnboarding,
+  onUnlockShareBonus,
   onLearningApplied,
   onStartNew,
   onViewInsights,
@@ -141,8 +153,17 @@ export function DebriefView({
   const [sharingCard, setSharingCard] = useState(false);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [learningUpdate, setLearningUpdate] = useState<DebriefLearningUpdate | null>(null);
+  const [bonusUnlocked, setBonusUnlocked] = useState(false);
+  const [disclosure, setDisclosure] = useState(() =>
+    computeDisclosurePrompts({ profile, syncCode })
+  );
 
   const isStudyLabTrial = sessionId.startsWith('eph_study_');
+
+  useEffect(() => {
+    recordCompletedLocalSession();
+    setDisclosure(computeDisclosurePrompts({ profile, syncCode }));
+  }, [sessionId]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -168,12 +189,19 @@ export function DebriefView({
         },
       });
       if (outcome === 'cancelled') return;
+      try {
+        localStorage.setItem('nootropic_fm_share_bonus_day_v1', new Date().toISOString().slice(0, 10));
+      } catch {
+        // ignore
+      }
+      setBonusUnlocked(true);
+      onUnlockShareBonus?.();
       setShareNote(
         outcome === 'shared'
-          ? 'Shared your public Neural Fingerprint card!'
-          : 'Public Card PNG saved and link copied (private sync key hidden).'
+          ? 'Shared your public Neural Fingerprint card · +30m bonus ready!'
+          : 'Public Card PNG saved and link copied · +30m bonus unlocked (zero private key).'
       );
-      window.setTimeout(() => setShareNote(null), 4000);
+      window.setTimeout(() => setShareNote(null), 5000);
     } finally {
       setSharingCard(false);
     }
@@ -265,6 +293,79 @@ export function DebriefView({
                 : 'Because research telemetry was opted out, nothing from this session was saved to your browser or to our servers. You can opt in anytime on the next session to unlock personal Bandit adaptation.'}
             </p>
           </div>
+          {freeQuotaReached && !isPro && (
+            <div
+              data-testid="soft-landing-unlock-card"
+              className="rounded-xl border border-emerald-400/35 bg-emerald-500/[0.08] p-4 text-left space-y-3"
+            >
+              <div className="text-xs font-semibold text-[#F3F1EC]">
+                {bonusUnlocked
+                  ? 'Bonus +30 Minutes Unlocked Today'
+                  : 'Your 5-minute daily preview wrapped smoothly'}
+              </div>
+              <p className="text-[11px] leading-relaxed text-[#A3A39E]">
+                Share your public Neural Fingerprint card (zero private sync keys) to unlock +30
+                extra minutes right now, or start a 7-day free trial for unlimited full sessions.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {!bonusUnlocked && (
+                  <button
+                    type="button"
+                    disabled={sharingCard}
+                    onClick={() => void handleShareFingerprint(deltaPreview)}
+                    className="btn-aurora inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold disabled:opacity-60"
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    {sharingCard ? 'Preparing...' : 'Unlock +30m Free via Card Share'}
+                  </button>
+                )}
+                {!isNativePlayStoreApp() && onUpgradePro && (
+                  <button
+                    type="button"
+                    onClick={onUpgradePro}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-400/15 px-3.5 py-2 text-xs font-bold text-amber-200 hover:bg-amber-400/25"
+                  >
+                    <Crown className="h-3.5 w-3.5" />
+                    Start 7-Day Free Trial · $59/yr ($0 Today)
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {disclosure.showSelfStudyOptInPrompt && onOpenOnboarding && (
+            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/12 bg-[#121417] p-3.5 text-left text-xs">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="font-semibold text-[#F3F1EC]">
+                  Join Personal Blinded N-of-1 Self-Study
+                </div>
+                <p className="text-[11px] text-[#A3A39E]">
+                  Save age/role priors + 25% Sham blinding across sessions to unlock your 8-session
+                  causal lift proof in Memory.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={onOpenOnboarding}
+                  className="rounded-lg border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-[#34D399]"
+                >
+                  Enable
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissDisclosurePrompt('self_study');
+                    setDisclosure(computeDisclosurePrompts({ profile, syncCode }));
+                  }}
+                  className="rounded-lg px-2 py-1.5 text-[11px] text-[#8E8E88] hover:text-[#F3F1EC]"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
             <button
               type="button"
@@ -313,7 +414,7 @@ export function DebriefView({
             )}
           </div>
 
-          {!isPro && onUpgradePro && (
+          {!isPro && onUpgradePro && !freeQuotaReached && !isNativePlayStoreApp() && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/35 bg-amber-400/[0.08] px-4 py-3 text-left">
               <div className="text-xs text-amber-100">
                 <strong className="text-[#F3F1EC]">Felt the difference?</strong> Unlock full sessions
@@ -386,19 +487,20 @@ export function DebriefView({
             </div>
           </div>
 
-          {learningUpdate.wasControlTrial && (
-            <div className="rounded-xl border border-white/12 bg-[#121417] p-4 text-left text-xs text-[#D4D4CE] space-y-1">
-              <div className="inline-flex items-center gap-1.5 font-semibold text-[#34D399]">
-                <FlaskConical className="h-4 w-4" />
-                Scientific Calibration Bonus · Blind Pure-Music Control Trial
-              </div>
-              <p className="leading-relaxed text-[#A3A39E]">
-                This session played pure 3-Band studio audio (0% AM modulation) as part of our
-                transparent Open Research Beta. Your honest rating directly powers our live{' '}
-                <strong className="text-[#F3F1EC]">Active AM vs. Pure-Music Control</strong> benchmark in Research Brain!
-              </p>
+          <div
+            data-testid="blinded-self-study-pill"
+            className="rounded-xl border border-white/12 bg-[#121417] p-4 text-left text-xs text-[#D4D4CE] space-y-1"
+          >
+            <div className="inline-flex items-center gap-1.5 font-semibold text-[#34D399]">
+              <FlaskConical className="h-4 w-4" />
+              Blinded N-of-1 Self-Study · Session{' '}
+              {Math.max(1, learningUpdate.neuralMemory?.learnedSessions ?? learningUpdate.profileTrials)} of 8 Logged
             </div>
-          )}
+            <p className="leading-relaxed text-[#A3A39E]">
+              Active vs. 25% Sham masking stays preserved across individual sessions so expectations
+              never bias your ratings. Aggregate personal effect unlocks in <strong className="text-[#F3F1EC]">Memory</strong> once you reach 8 logged sessions.
+            </p>
+          </div>
 
           <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-[#101114] px-4 py-3 text-xs text-[#D4D4CE]">
             <span>
@@ -484,7 +586,7 @@ export function DebriefView({
                   >
                     Dose {Math.round(mem.focusModMult * 100)}% / Calm {Math.round(mem.calmModMult * 100)}%
                   </span>
-                  {mem.causalLiftMs !== null && (
+                  {mem.causalLiftMs !== null && mem.learnedSessions >= 8 && (
                     <span
                       className={`rounded border px-2 py-0.5 font-bold ${
                         isDay
@@ -504,6 +606,79 @@ export function DebriefView({
               </div>
             );
           })()}
+
+          {freeQuotaReached && !isPro && (
+            <div
+              data-testid="soft-landing-unlock-card"
+              className="rounded-xl border border-emerald-400/35 bg-emerald-500/[0.08] p-4 text-left space-y-3"
+            >
+              <div className="text-xs font-semibold text-[#F3F1EC]">
+                {bonusUnlocked
+                  ? 'Bonus +30 Minutes Unlocked Today'
+                  : 'Your 5-minute daily preview wrapped smoothly'}
+              </div>
+              <p className="text-[11px] leading-relaxed text-[#A3A39E]">
+                Share your public Neural Fingerprint card (zero private sync keys) to unlock +30
+                extra minutes right now, or start a 7-day free trial for unlimited full sessions.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {!bonusUnlocked && (
+                  <button
+                    type="button"
+                    disabled={sharingCard}
+                    onClick={() => void handleShareFingerprint(deltaPreview)}
+                    className="btn-aurora inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold disabled:opacity-60"
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    {sharingCard ? 'Preparing...' : 'Unlock +30m Free via Card Share'}
+                  </button>
+                )}
+                {!isNativePlayStoreApp() && onUpgradePro && (
+                  <button
+                    type="button"
+                    onClick={onUpgradePro}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-400/15 px-3.5 py-2 text-xs font-bold text-amber-200 hover:bg-amber-400/25"
+                  >
+                    <Crown className="h-3.5 w-3.5" />
+                    Start 7-Day Free Trial · $59/yr ($0 Today)
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {disclosure.showSelfStudyOptInPrompt && onOpenOnboarding && (
+            <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/12 bg-[#121417] p-3.5 text-left text-xs">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="font-semibold text-[#F3F1EC]">
+                  Join Personal Blinded N-of-1 Self-Study
+                </div>
+                <p className="text-[11px] text-[#A3A39E]">
+                  Save age/role priors + 25% Sham blinding across sessions to unlock your 8-session
+                  causal lift proof in Memory.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={onOpenOnboarding}
+                  className="rounded-lg border border-emerald-400/50 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-[#34D399]"
+                >
+                  Enable
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissDisclosurePrompt('self_study');
+                    setDisclosure(computeDisclosurePrompts({ profile, syncCode }));
+                  }}
+                  className="rounded-lg px-2 py-1.5 text-[11px] text-[#8E8E88] hover:text-[#F3F1EC]"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
             <button
@@ -553,7 +728,7 @@ export function DebriefView({
             )}
           </div>
 
-          {!isPro && onUpgradePro && (
+          {!isPro && onUpgradePro && !freeQuotaReached && !isNativePlayStoreApp() && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/35 bg-amber-400/[0.08] px-4 py-3 text-left">
               <div className="text-xs text-amber-100">
                 <strong className="text-[#F3F1EC]">Felt the difference?</strong> Unlock full sessions

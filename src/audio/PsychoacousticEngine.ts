@@ -348,6 +348,55 @@ function createSilentKeepAliveWavUrl(sampleRate = 48000): string {
   return URL.createObjectURL(new Blob([wavBytes], { type: 'audio/wav' }));
 }
 
+let primedGestureAudioCtx: AudioContext | null = null;
+
+/**
+ * Synchronously creates and unlocks a 48 kHz AudioContext inside a direct user click/tap
+ * handler so iOS Safari/WebKit grants immediate playback permission before React mounts PlayerView.
+ */
+export function primeGestureAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    if ('audioSession' in navigator) {
+      try {
+        (navigator as unknown as { audioSession?: { type: string } }).audioSession!.type = 'playback';
+      } catch {
+        // ignore unsupported browser
+      }
+    }
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return null;
+    if (!primedGestureAudioCtx || primedGestureAudioCtx.state === 'closed') {
+      primedGestureAudioCtx = new AudioCtx({ latencyHint: 'playback' });
+    }
+    const ctx = primedGestureAudioCtx;
+    if (ctx.state === 'suspended') {
+      void ctx.resume().catch(() => {});
+    }
+    try {
+      const unlockBuf = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const unlockSrc = ctx.createBufferSource();
+      unlockSrc.buffer = unlockBuf;
+      unlockSrc.connect(ctx.destination);
+      unlockSrc.start(0);
+    } catch {
+      // ignore if browser defers buffer creation until running
+    }
+    return ctx;
+  } catch {
+    return null;
+  }
+}
+
+export function consumePrimedAudioContext(): AudioContext | null {
+  const ctx = primedGestureAudioCtx;
+  primedGestureAudioCtx = null;
+  if (!ctx || ctx.state === 'closed') return null;
+  return ctx;
+}
+
 /**
  * nootropic.fm v3.0 Study-to-Sound Audio Engine.
  * Unifies:
@@ -533,6 +582,7 @@ export class PsychoacousticEngine {
   private volume = 0.74;
   private intensityMultiplier = 1.0;
   private modDepthMultiplier = 1.0;
+  private manualRainLevel: number | null = null;
   private elapsedSec = 0;
   private plannedSec = 1500;
   private lyriaStatus: LyriaRealtimeStatus = 'idle';
@@ -591,7 +641,7 @@ export class PsychoacousticEngine {
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new AudioCtx({ latencyHint: 'playback' });
+    const ctx = consumePrimedAudioContext() ?? new AudioCtx({ latencyHint: 'playback' });
     this.ctx = ctx;
     if (ctx.state === 'suspended') {
       await Promise.race([
@@ -2392,14 +2442,41 @@ export class PsychoacousticEngine {
   }
 
   private syncRainBed(): void {
+    const wantsRain =
+      this.manualRainLevel !== null ? this.manualRainLevel > 0.005 : this.genre === 'nature_rain';
     const shouldPlayRain =
-      this.genre === 'nature_rain' &&
+      wantsRain &&
       this.carrierMode !== 'pure_stimulus' &&
       this.layerMonitorMode !== 'science_only';
     this.rainBed.setStudioTrackHasEmbeddedRain(
       this.carrierMode === 'studio_library' && this.usingStudioAudio && !this.usingCustomTrack
     );
     this.rainBed.setActive(shouldPlayRain);
+  }
+
+  public setRainOverlayLevel(level: number | null): void {
+    this.manualRainLevel = level === null ? null : Math.max(0, Math.min(1, level));
+    this.rainBed.setManualLevel(this.manualRainLevel);
+    this.syncRainBed();
+  }
+
+  public getRainOverlayLevel(): number | null {
+    return this.manualRainLevel;
+  }
+
+  public setTuning432(enabled: boolean): void {
+    const hz: 432 | 440 = enabled ? 432 : 440;
+    if (this.studySpec) {
+      this.studySpec.music.tuningA4Hz = hz;
+    }
+    this.composer.setTuningA4Hz(hz);
+    if (this.isPlaying) {
+      this.updateElapsed(this.elapsedSec, 0.08);
+    }
+  }
+
+  public isTuning432(): boolean {
+    return this.studySpec?.music.tuningA4Hz === 432;
   }
 
   /**

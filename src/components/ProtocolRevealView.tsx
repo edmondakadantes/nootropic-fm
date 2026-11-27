@@ -31,6 +31,7 @@ import {
   formatProfileSummary,
 } from '../../shared/types';
 import type { FieldMood } from './AmbientField';
+import { primeGestureAudioContext } from '../audio/PsychoacousticEngine';
 import { SonicOrb } from './SonicOrb';
 import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
@@ -382,6 +383,7 @@ export function ProtocolRevealView({
   const peakMin = Math.max(1, recommendation.plannedDurationMin - entryMin - landingMin);
 
   const handleLaunchClick = () => {
+    primeGestureAudioContext();
     onLaunchAudio();
   };
 

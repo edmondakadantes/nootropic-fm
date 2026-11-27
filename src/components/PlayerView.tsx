@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  CloudRain,
   CreditCard,
   Crown,
   ExternalLink,
@@ -18,16 +19,15 @@ import {
   Lock,
   Mic,
   MicOff,
-  Music2,
+  Minimize2,
   Pause,
   Play,
-  Radio,
   Share2,
   ShieldAlert,
   ShieldCheck,
   Sliders,
-  Sparkles,
   Volume2,
+  X,
   Zap,
 } from 'lucide-react';
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
@@ -46,7 +46,6 @@ import type {
 import {
   DEVICE_LABELS,
   GENRE_META,
-  STATE_LABELS,
   STUDIO_MIX_GENRES,
   TARGET_LABELS,
   type OutputDevice,
@@ -64,6 +63,7 @@ import { TappingTestModal } from './TappingTestModal';
 import type { GammaStimulusMode } from '../audio/MedicalStimulusRack';
 import { API_BASE, api, saveStoredProfileAuth } from '../lib/api';
 import type { ConciergeVoiceOption } from '../../shared/voiceConcierge';
+import { markSilentHintShown } from '../lib/disclosureScheduler';
 import { isNativePlayStoreApp } from '../lib/platform';
 import { HugginsCheckModal } from './HugginsCheckModal';
 import { LiveEnvelopeProof } from './LiveEnvelopeProof';
@@ -188,6 +188,21 @@ function writeDailyFreeUsage(usedSec: number, lyriaSec: number): void {
   }
 }
 
+export interface PlayerControlBridge {
+  togglePlay: () => Promise<void>;
+  endSession: () => void;
+  unlockBonusAndResume: () => Promise<void>;
+}
+
+export interface PlayerMiniSnapshot {
+  title: string;
+  genreLabel: string;
+  modulationHz: number;
+  elapsedSec: number;
+  plannedDurationMin: number;
+  isPlaying: boolean;
+}
+
 interface PlayerViewProps {
   recommendation: ProtocolRecommendation;
   profile?: UserProfile | null;
@@ -196,6 +211,13 @@ interface PlayerViewProps {
   isPro?: boolean;
   stripeAvailable?: boolean;
   themeMode?: 'daylight' | 'night';
+  minimized?: boolean;
+  showSessionOneSilentToast?: boolean;
+  showPvtLabBadge?: boolean;
+  controlRef?: React.MutableRefObject<PlayerControlBridge | null>;
+  onMinimize?: () => void;
+  onSnapshot?: (snap: PlayerMiniSnapshot) => void;
+  onHugginsVerified?: (passed: boolean) => void;
   onOpenSoundSystems?: () => void;
   onUpgradePro?: () => void;
   onStartDirectCheckout?: (plan: 'annual' | 'monthly') => Promise<void>;
@@ -222,6 +244,7 @@ interface PlayerViewProps {
     activeTrackKey?: string | null;
     sessionIdOverride?: string;
     ephemeralOverride?: boolean;
+    freeQuotaReached?: boolean;
   }) => void;
 }
 
@@ -239,6 +262,13 @@ export function PlayerView({
   isPro = false,
   stripeAvailable = false,
   themeMode = 'night',
+  minimized = false,
+  showSessionOneSilentToast = false,
+  showPvtLabBadge = false,
+  controlRef,
+  onMinimize,
+  onSnapshot,
+  onHugginsVerified,
   onOpenSoundSystems,
   onUpgradePro,
   onStartDirectCheckout,
@@ -369,7 +399,13 @@ export function PlayerView({
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [paywallSyncKey, setPaywallSyncKey] = useState('');
   const [redeemingSyncKey, setRedeemingSyncKey] = useState(false);
-  const [openDrawer, setOpenDrawer] = useState<'none' | 'tune' | 'science'>('tune');
+  const [isLabOpen, setIsLabOpen] = useState(false);
+  const [showBlueprintSheet, setShowBlueprintSheet] = useState(false);
+  const [rainOverlayPct, setRainOverlayPct] = useState<number | null>(null);
+  const [tuning432, setTuning432] = useState<boolean>(
+    () => recommendation.executableSpec?.music.tuningA4Hz === 432
+  );
+  const [silentToastDismissed, setSilentToastDismissed] = useState(false);
   const [audioInterrupted, setAudioInterrupted] = useState(false);
   const [voiceGuideEnabled, setVoiceGuideEnabled] = useState<boolean>(() => readVoiceGuideEnabled());
   const [conciergeVoices, setConciergeVoices] = useState<ConciergeVoiceOption[]>([]);
@@ -462,6 +498,8 @@ export function PlayerView({
   });
   const dailyFreeUsedRef = useRef(dailyFreeUsedSec);
   const dailyLyriaUsedRef = useRef(dailyLyriaUsedSec);
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
   const carrierModeRef = useRef<CarrierEngineMode>(carrierMode);
   const modMultRef = useRef<number>(modMult);
   modMultRef.current = modMult;
@@ -996,12 +1034,19 @@ export function PlayerView({
           );
         }
 
+        const secsRemaining = effectiveFreeLimitSec - nextDailyUsed;
+        if (secsRemaining > 0 && secsRemaining <= 12) {
+          engineRef.current?.setVolume(
+            Number((volumeRef.current * Math.max(0.16, secsRemaining / 12)).toFixed(3))
+          );
+        }
+
         if (nextDailyUsed >= effectiveFreeLimitSec) {
           stopped = true;
           window.clearInterval(id);
+          endedByUserRef.current = true;
+          engineRef.current?.stop();
           setIsPlaying(false);
-          setPreviewLocked(true);
-          void engineRef.current?.fadeOutAndPause(2.0);
           if (!isEphemeral) {
             void api
               .saveProgress({
@@ -1011,6 +1056,22 @@ export function PlayerView({
               })
               .catch(() => {});
           }
+          onFinishToDebrief({
+            actualDurationSec: next,
+            liveAdjustments: adjustmentsRef.current,
+            pvtPreMs: pvtPreRef.current.medianMs,
+            pvtLapsesPre: pvtPreRef.current.lapses,
+            pvtPreInvRt: pvtPreRef.current.meanInvRt,
+            pvtTrialCount: pvtPreRef.current.trialCount,
+            tappingCvPct: tappingResultRef.current?.cvPct ?? null,
+            tappingMeanItiMs: tappingResultRef.current?.meanItiMs ?? null,
+            hrvRmssdMs: bleHrvMetricsRef.current?.rmssdMs ?? null,
+            hrvLfRatio: bleHrvMetricsRef.current?.lfPowerRatio ?? null,
+            activeTrackKey: activeTrackKeyRef.current,
+            sessionIdOverride: liveSessionId,
+            ephemeralOverride: isEphemeral,
+            freeQuotaReached: true,
+          });
           return;
         }
       }
@@ -1188,6 +1249,7 @@ export function PlayerView({
     setShowHugginsCheck(false);
     if (result) {
       engineRef.current?.applyAcousticProfile({ hugginsPassed: result.passed });
+      onHugginsVerified?.(result.passed);
       setTelemetry((prev) => ({
         ...prev,
         hugginsStatus: result.passed ? 'verified_stereo' : 'monaural_safe',
@@ -1671,6 +1733,20 @@ export function PlayerView({
     });
   };
 
+  const handleRainOverlayChange = (pct: number | null) => {
+    setRainOverlayPct(pct);
+    engineRef.current?.setRainOverlayLevel(pct === null ? null : pct / 100);
+  };
+
+  const handleToggleTuning432 = () => {
+    const next = !tuning432;
+    setTuning432(next);
+    engineRef.current?.setTuning432(next);
+    if (engineRef.current) {
+      setTelemetry(engineRef.current.updateElapsed(elapsedRef.current));
+    }
+  };
+
   const progressPct = Math.min(100, (elapsedSec / plannedSec) * 100);
   const livePapers = recommendation.livePubMedPapers ?? [];
   const activeVibeDisplay = activeCustomLabel
@@ -1692,8 +1768,54 @@ export function PlayerView({
                 ? `${activeVibeDisplay.label} · Studio`
                 : activeVibeDisplay.label;
 
+  useEffect(() => {
+    if (controlRef) {
+      controlRef.current = {
+        togglePlay: () => togglePlayRef.current(),
+        endSession: handleEndSession,
+        unlockBonusAndResume: async () => {
+          setShareBonusUsedToday(true);
+          setShareBonusSec(SHARE_BONUS_SEC);
+          setPreviewLocked(false);
+          await engineRef.current?.resume();
+          setIsPlaying(true);
+        },
+      };
+    }
+  });
+
+  useEffect(() => {
+    onSnapshot?.({
+      title: TARGET_LABELS[recommendation.targetState],
+      genreLabel: activeSourceShort,
+      modulationHz: telemetry.currentModHz,
+      elapsedSec,
+      plannedDurationMin: recommendation.plannedDurationMin,
+      isPlaying,
+    });
+  }, [
+    onSnapshot,
+    recommendation.targetState,
+    recommendation.plannedDurationMin,
+    activeSourceShort,
+    telemetry.currentModHz,
+    elapsedSec,
+    isPlaying,
+  ]);
+
+  const primaryStudy = recommendation.studies[0];
+  const shortStudyCite = primaryStudy
+    ? `${primaryStudy.authors.split(',')[0]} ${primaryStudy.year}`
+    : recommendation.arm.name;
+
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-4">
+    <div
+      className={
+        minimized
+          ? 'hidden'
+          : `mx-auto w-full ${isLabOpen ? 'max-w-6xl' : 'max-w-2xl'} space-y-4`
+      }
+    >
       {recommendation.safetyMode ? (
         <div className="animate-rise rounded-xl border border-amber-400/40 bg-amber-500/10 p-3.5">
           <div className="flex items-start gap-2.5">
@@ -1793,61 +1915,168 @@ export function PlayerView({
         </button>
       )}
 
-      {/* STANDALONE STUDIO PLAYER CONSOLE */}
-      <div className="animate-rise glass-stage rounded-2xl p-4 sm:p-6 space-y-4">
-        {/* Minimal Header: Goal + Active Source Tag + Timer */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1.5">
-            <div className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-white/10 bg-[#14161A] px-2.5 py-1 font-mono-tech text-[11px] text-[#D4D4CE]">
-              <Music2 className="h-3 w-3 shrink-0 text-[#34D399]" />
-              <span className="truncate">{activeSourceShort}</span>
-              {telemetry.currentModHz > 0 && layerMonitor !== 'music_only' ? (
-                <span className="shrink-0 text-[#34D399]">· {telemetry.currentModHz} Hz</span>
-              ) : layerMonitor === 'music_only' ? (
-                <span className="shrink-0 text-[#8E8E88]">· 0% Mod</span>
-              ) : null}
-              {telemetry.currentBpm > 0 && layerMonitor !== 'science_only' && (
-                <span className="shrink-0 text-[#A3A39E]">· {telemetry.currentBpm} BPM</span>
-              )}
-            </div>
-            <h1 className="font-display text-xl font-semibold text-[#F3F1EC] sm:text-2xl leading-tight">
-              {TARGET_LABELS[recommendation.targetState]}
-            </h1>
-            <p className="text-[11px] text-[#8E8E88]">
-              {STATE_LABELS[recommendation.currentState]} → {TARGET_LABELS[recommendation.targetState]} ·{' '}
-              {DEVICE_LABELS[activeDevice]}
-              {!recommendation.safetyMode && activeDevice === 'headphones' && (
-                <span className="ml-1.5 font-mono-tech text-[10px] text-[#34D399]">
-                  · Earbuds Dichotic Lock
-                </span>
-              )}
-            </p>
+      {/* Session #1 Touch/iOS Silent-Mode Hint Toast (t = 4s..18s) */}
+      {showSessionOneSilentToast && !silentToastDismissed && elapsedSec >= 4 && elapsedSec <= 20 && (
+        <div
+          data-testid="silent-mode-hint-toast"
+          className="animate-rise flex items-center justify-between gap-3 rounded-xl border border-emerald-400/35 bg-emerald-500/[0.09] px-4 py-2.5 text-xs text-[#D4D4CE]"
+        >
+          <span className="inline-flex items-center gap-2">
+            <Headphones className="h-4 w-4 shrink-0 text-[#34D399]" />
+            <span>
+              <strong className="text-[#F3F1EC]">Tip for iPhone / iPad:</strong> Flip the side{' '}
+              <em>Silent</em> switch off and keep both earbuds sealed for full 48 kHz phase-lock.
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSilentToastDismissed(true);
+              markSilentHintShown();
+            }}
+            aria-label="Dismiss audio tip"
+            className="rounded-lg p-1 text-[#A3A39E] hover:bg-white/10 hover:text-[#F3F1EC]"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* RESPONSIVE TWO-TIER STUDIO WORKSPACE */}
+      <div
+        className={
+          isLabOpen
+            ? 'grid grid-cols-1 gap-4 xl:grid-cols-12 xl:items-start'
+            : 'space-y-4'
+        }
+      >
+        {/* =============================================================== */}
+        {/* TIER 1: CALM INSTRUMENT COCKPIT (Always Visible in Zen Focus)   */}
+        {/* =============================================================== */}
+        <div
+          data-testid="tier1-calm-cockpit"
+          className={`animate-rise glass-stage rounded-2xl p-4 sm:p-6 space-y-5 ${
+            isLabOpen ? 'xl:col-span-6' : ''
+          }`}
+        >
+          {/* Zen Cockpit Header: Minimize · InlineProtocolPill · End */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {onMinimize ? (
+              <button
+                type="button"
+                data-testid="minimize-player-btn"
+                onClick={onMinimize}
+                aria-label="Minimize player and browse tabs"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/12 bg-[#14161A] px-3 py-2 text-xs font-semibold text-[#D4D4CE] transition hover:border-emerald-400/45 hover:text-[#F3F1EC]"
+              >
+                <Minimize2 className="h-3.5 w-3.5 text-[#34D399]" />
+                <span>Minimize</span>
+              </button>
+            ) : (
+              <span />
+            )}
+
+            <button
+              type="button"
+              data-testid="inline-protocol-pill"
+              onClick={() => setShowBlueprintSheet(true)}
+              className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-emerald-400/35 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10.5px] font-semibold text-[#34D399] transition hover:border-emerald-400/65 hover:bg-emerald-500/15"
+              title="Open protocol citations & fidelity blueprint"
+            >
+              <BookOpen className="h-3 w-3 shrink-0" />
+              <span className="truncate">
+                {telemetry.currentModHz > 0 && layerMonitor !== 'music_only'
+                  ? `${telemetry.currentModHz} Hz`
+                  : activeVibeDisplay.label}{' '}
+                · {shortStudyCite} · DOI ↗
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleEndSession}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/15 bg-[#16181C] px-3 py-2 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1C1F24]"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 text-[#34D399]" />
+              {isEphemeral ? 'End Session' : 'End & Rate'}
+            </button>
           </div>
 
-          <div className="shrink-0 text-right space-y-1">
-            <div className="font-mono-tech text-3xl font-bold tracking-tight text-[#F3F1EC] sm:text-4xl leading-none">
-              {formatTimer(elapsedSec)}
+          {/* Centerpiece Breathing & Progress Ring */}
+          <div className="flex flex-col items-center justify-center py-2 text-center space-y-3">
+            <div className="relative flex h-44 w-44 items-center justify-center">
+              <svg
+                viewBox="0 0 180 180"
+                className="h-full w-full -rotate-90"
+                aria-label="Session Progress Ring"
+              >
+                <circle
+                  cx="90"
+                  cy="90"
+                  r="78"
+                  fill="none"
+                  stroke="rgba(148,163,184,0.18)"
+                  strokeWidth="6"
+                />
+                <circle
+                  cx="90"
+                  cy="90"
+                  r="78"
+                  fill="none"
+                  stroke="#34D399"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                  strokeDasharray={2 * Math.PI * 78}
+                  strokeDashoffset={
+                    2 * Math.PI * 78 * (1 - Math.max(0.02, progressPct / 100))
+                  }
+                  className="transition-all duration-500"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center px-3">
+                <span className="font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#34D399]">
+                  {telemetry.hrvActive && telemetry.hrvBreathPhase
+                    ? telemetry.hrvBreathPhase === 'inhale'
+                      ? 'Inhale · 0.10 Hz'
+                      : 'Exhale · 0.10 Hz'
+                    : telemetry.phaseLabel}
+                </span>
+                <div className="font-mono-tech mt-1 text-3xl font-bold tracking-tight text-[#F3F1EC]">
+                  {formatTimer(elapsedSec)}
+                </div>
+                <div className="font-mono-tech mt-0.5 text-[11px] text-[#8E8E88]">
+                  of {recommendation.plannedDurationMin}:00 min
+                </div>
+              </div>
             </div>
-            <div className="font-mono-tech text-[11px] text-[#8E8E88]">
-              of {recommendation.plannedDurationMin}:00 min
+
+            <div className="space-y-1">
+              <h1 className="font-display text-xl font-semibold text-[#F3F1EC] sm:text-2xl">
+                {TARGET_LABELS[recommendation.targetState]}
+              </h1>
+              <p className="text-[11px] text-[#8E8E88]">
+                {activeSourceShort} · {DEVICE_LABELS[activeDevice]}
+                {telemetry.currentBpm > 0 && layerMonitor !== 'science_only'
+                  ? ` · ${telemetry.currentBpm} BPM`
+                  : ''}
+                {telemetry.activeTrackKeyLabel && layerMonitor !== 'science_only' && (
+                  <> · Key-locked · {telemetry.activeTrackKeyLabel}</>
+                )}
+              </p>
             </div>
+
             {!isPro && (
-              <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => onUpgradePro?.()}
-                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono-tech text-[10px] font-semibold transition ${
                     shareBonusSec > 0
-                      ? 'border-emerald-400/40 bg-emerald-500/12 text-[#34D399] hover:bg-emerald-500/20'
+                      ? 'border-emerald-400/40 bg-emerald-500/12 text-[#34D399]'
                       : remainingFreeSec <= 45
                         ? 'border-amber-400/60 bg-amber-400/18 text-amber-200'
-                        : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
+                        : 'border-amber-400/35 bg-amber-400/10 text-amber-200'
                   }`}
-                  title={
-                    shareBonusSec > 0
-                      ? '+30 min Share Bonus active! Upgrade to Pro for unlimited full sessions.'
-                      : 'Free daily calibration lasts 5 minutes. Share your Neural Fingerprint for +30 min free or try Pro free for 7 days.'
-                  }
                 >
                   <Clock className="h-3 w-3" />
                   {previewLocked
@@ -1861,8 +2090,7 @@ export function PlayerView({
                     type="button"
                     disabled={sharingForBonus}
                     onClick={() => void handleShareFor30MinBonus()}
-                    className="inline-flex items-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-500/12 px-2 py-0.5 font-mono-tech text-[10px] font-semibold text-[#34D399] transition hover:bg-emerald-500/20 disabled:opacity-60"
-                    title="Share your public Neural Fingerprint card to unlock +30 extra minutes free"
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/12 px-2.5 py-1 font-mono-tech text-[10px] font-semibold text-[#34D399] transition hover:bg-emerald-500/20 disabled:opacity-60"
                   >
                     <Share2 className="h-2.5 w-2.5" />
                     {sharingForBonus ? 'Sharing...' : '+30m Share'}
@@ -1871,147 +2099,56 @@ export function PlayerView({
               </div>
             )}
           </div>
-        </div>
 
-        {/* Soft Intimate Voice Concierge Live Whisper Bar (only visible during 6-8s spoken cue) */}
-        {voiceSpeaking && voiceTranscript && (
-          <div className="animate-rise flex items-center justify-between gap-3 rounded-xl border border-emerald-400/25 bg-emerald-500/[0.06] px-3.5 py-2 text-xs text-[#E8E6DF]">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span className="relative flex h-2 w-2 shrink-0">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#34D399] opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#34D399]" />
-              </span>
-              <p className="truncate italic text-[#D9F3E7]/95">“{voiceTranscript}”</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => engineRef.current?.stopVoiceConcierge(0.18)}
-              className="shrink-0 rounded-md border border-white/12 bg-white/[0.05] px-2 py-0.5 font-mono-tech text-[10px] text-[#A3A39E] transition hover:border-white/25 hover:text-[#F3F1EC]"
-            >
-              Skip
-            </button>
-          </div>
-        )}
-
-        {/* Centerpiece #1 Hero Instrument: Live HiDPI Dual-Trace Web Audio Oscilloscope */}
-        <LiveEnvelopeProof
-          engine={engineRef.current}
-          isPlaying={isPlaying}
-          entrainmentType={telemetry.entrainmentType}
-          frequencyHz={telemetry.currentModHz}
-          depth={telemetry.currentModDepth}
-          carrierLabel={activeSourceShort}
-          tuningA4Hz={telemetry.tuningA4Hz}
-          layerMode={layerMonitor}
-          isPureWave={layerMonitor === 'science_only'}
-          themeMode={themeMode}
-          onTogglePureWave={() =>
-            void handleLayerMonitorChange(
-              layerMonitor === 'science_only' ? 'full_mix' : 'science_only'
-            )
-          }
-        />
-
-        {/* Sleek 36-Band Studio Spectrum Analyzer directly under Oscilloscope */}
-        <NeuralVisualizer
-          engine={engineRef.current}
-          isPlaying={isPlaying}
-          safetyMode={recommendation.safetyMode}
-          modulationHz={telemetry.currentModHz}
-          themeMode={themeMode}
-        />
-
-        {/* Synchronized 0.1 Hz HRV Breathing Guide (only shown on calm breathing protocols) */}
-        {telemetry.hrvActive && telemetry.hrvBreathPhase && (
-          <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/[0.06] px-4 py-2.5 space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-[#34D399]">
-                Breathe with the wave ·{' '}
-                <span className="uppercase tracking-wider text-[#F3F1EC]">
-                  {telemetry.hrvBreathPhase === 'inhale' ? 'Inhale Slowly (5s)' : 'Exhale Smoothly (5s)'}
+          {/* Voice Concierge Whisper Strip */}
+          {voiceSpeaking && voiceTranscript && (
+            <div className="animate-rise flex items-center justify-between gap-3 rounded-xl border border-emerald-400/25 bg-emerald-500/[0.06] px-3.5 py-2 text-xs text-[#E8E6DF]">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#34D399] opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#34D399]" />
                 </span>
-              </span>
-              <span className="font-mono-tech text-[10px] text-[#34D399]">6 breaths/min</span>
+                <p className="truncate italic text-[#D9F3E7]/95">“{voiceTranscript}”</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => engineRef.current?.stopVoiceConcierge(0.18)}
+                className="shrink-0 rounded-md border border-white/12 bg-white/[0.05] px-2 py-0.5 font-mono-tech text-[10px] text-[#A3A39E] transition hover:text-[#F3F1EC]"
+              >
+                Skip
+              </button>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-[#34D399] transition-all duration-300"
-                style={{ width: `${Math.max(8, Math.round(telemetry.hrvBreathProgress * 100))}%` }}
-              />
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Unified Compact Hardware Transport & Session Progress Deck */}
-        <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0B0C0E]">
-          {/* Edge-to-Edge Thin Progress Rail */}
-          <div className="h-1 w-full bg-white/[0.07]">
-            <div
-              className="h-full bg-[#34D399] transition-all duration-500"
-              style={{ width: `${Math.max(2, progressPct)}%` }}
-            />
-          </div>
-
-          <div className="px-3.5 py-2.5 sm:px-4 space-y-2">
-            {/* Compact Phase + Progress Telemetry Row */}
-            <div className="flex items-center justify-between gap-2 text-[10px]">
-              <span className="inline-flex items-center gap-1.5 font-medium text-[#34D399]">
-                <Activity className="h-3 w-3 shrink-0" />
-                <span className="truncate">{telemetry.phaseLabel}</span>
-                {telemetry.antiMonotonyActive && (
-                  <span
-                    className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${
-                      themeMode === 'daylight'
-                        ? 'border-slate-300 bg-slate-100 text-[#1E40AF]'
-                        : 'border-sky-400/35 bg-sky-400/15 text-sky-200'
-                    }`}
-                  >
-                    {telemetry.autopilotLiftActive ? 'AI Autopilot · Pre-Dip Lift' : 'Fresh pulse'}
-                  </span>
-                )}
-                {telemetry.dopamineArcPhase === 'drop' && (
-                  <span
-                    className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${
-                      themeMode === 'daylight'
-                        ? 'border-emerald-600/30 bg-emerald-50 text-[#047857]'
-                        : 'border-emerald-400/35 bg-emerald-500/15 text-[#34D399]'
-                    }`}
-                  >
-                    Flow-Lock Drop
-                  </span>
-                )}
-              </span>
-              <span className="font-mono-tech text-[#8E8E88]">{Math.round(progressPct)}%</span>
-            </div>
-
-            {/* Compact Transport Row: 40px Play/Pause + Volume Slider + End Session */}
+          {/* Primary Hardware Transport Deck */}
+          <div className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3.5 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-1 items-center gap-3 min-w-[180px]">
                 <button
                   type="button"
                   onClick={() => void togglePlay()}
-                  className="btn-aurora inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#0A0B0C]"
+                  className="btn-aurora inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-[#0A0B0C]"
                   aria-label={isPlaying ? 'Pause' : 'Play'}
                 >
                   {isPlaying ? (
-                    <Pause className="h-4 w-4 fill-[#0A0B0C]" />
+                    <Pause className="h-5 w-5 fill-[#0A0B0C]" />
                   ) : (
-                    <Play className="h-4 w-4 translate-x-0.5 fill-[#0A0B0C]" />
+                    <Play className="h-5 w-5 translate-x-0.5 fill-[#0A0B0C]" />
                   )}
                 </button>
 
-                <div className="flex-1 max-w-[210px] space-y-1">
+                <div className="flex-1 max-w-[230px] space-y-1">
                   <div className="flex items-center justify-between text-[10px] text-[#8E8E88]">
                     <span className="inline-flex items-center gap-1.5">
                       <Volume2 className="h-3 w-3" /> Volume
-                      <kbd className="hidden rounded border border-white/12 bg-[#141518] px-1 py-0.5 font-mono-tech text-[8.5px] text-[#8E8E88] sm:inline">
-                        SPACE
-                      </kbd>
                     </span>
-                    <span className="font-mono-tech text-[#D4D4CE]">{Math.round(volume * 100)}%</span>
+                    <span className="font-mono-tech text-[#D4D4CE]">
+                      {Math.round(volume * 100)}%
+                    </span>
                   </div>
                   <input
                     type="range"
+                    aria-label="Master Volume"
                     min={0.05}
                     max={1}
                     step={0.01}
@@ -2022,7 +2159,7 @@ export function PlayerView({
                 </div>
               </div>
 
-              <div className="flex flex-wrap shrink-0 items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {voiceGuideEnabled && conciergeVoices.length > 1 && (
                   <select
                     aria-label="Studio Concierge Voice"
@@ -2040,8 +2177,7 @@ export function PlayerView({
                         triggerVoiceCueRef.current('intro_short', true);
                       }
                     }}
-                    title="Select Studio Concierge voice from your ElevenLabs library"
-                    className="max-w-[185px] truncate rounded-lg border border-white/15 bg-[#14161A] px-2.5 py-2 font-mono-tech text-[11px] font-medium text-[#D4D4CE] transition hover:border-emerald-400/40 focus:border-emerald-400/60 focus:outline-none"
+                    className="max-w-[155px] truncate rounded-lg border border-white/15 bg-[#14161A] px-2 py-2 font-mono-tech text-[11px] font-medium text-[#D4D4CE] focus:border-emerald-400/60 focus:outline-none"
                   >
                     {conciergeVoices.map((v) => (
                       <option key={v.voiceId} value={v.voiceId}>
@@ -2055,17 +2191,10 @@ export function PlayerView({
                   type="button"
                   onClick={handleToggleVoiceGuide}
                   aria-pressed={voiceGuideEnabled}
-                  title={
-                    voiceGuideEnabled
-                      ? 'Alanya Studio Voice ON — smooth natural session intro & landing (tap to mute)'
-                      : 'Alanya Studio Voice OFF — tap to enable personalized voice intro'
-                  }
                   className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-2 font-mono-tech text-[11px] font-medium transition ${
                     voiceGuideEnabled
-                      ? voiceSpeaking
-                        ? 'border-emerald-400/55 bg-emerald-500/15 text-[#34D399]'
-                        : 'border-white/15 bg-[#14161A] text-[#D4D4CE] hover:border-emerald-400/40 hover:text-[#F3F1EC]'
-                      : 'border-white/10 bg-[#101215] text-[#8E8E88] hover:border-white/20 hover:text-[#A3A39E]'
+                      ? 'border-emerald-400/45 bg-emerald-500/12 text-[#34D399]'
+                      : 'border-white/10 bg-[#101215] text-[#8E8E88] hover:text-[#F3F1EC]'
                   }`}
                 >
                   {voiceGuideEnabled ? (
@@ -2075,765 +2204,597 @@ export function PlayerView({
                   )}
                   <span>{voiceGuideEnabled ? 'Alanya ON' : 'Voice OFF'}</span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={handleEndSession}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#16181C] px-3.5 py-2 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1C1F24]"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5 text-[#34D399]" />
-                  {isEphemeral ? 'End Session' : 'End & Rate'}
-                </button>
               </div>
             </div>
 
-            {!isPro && shareBonusSec === 0 && !shareBonusUsedToday && remainingFreeSec <= 90 && remainingFreeSec > 60 && (
-              <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-[#34D399]">
-                {formatTimer(remainingFreeSec)} remaining in today&apos;s 5-min free calibration · Tap +30m Share above anytime for 30 extra minutes free
+            {/* Compact Genre & Neural Effect Controls */}
+            <div className="grid grid-cols-1 gap-2 border-t border-white/[0.06] pt-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label
+                  htmlFor="player-genre-select"
+                  className="block font-mono-tech text-[9.5px] uppercase tracking-wider text-[#8E8E88]"
+                >
+                  Carrier Style &amp; Mode
+                </label>
+                <div className="flex gap-1.5">
+                  <select
+                    id="player-genre-select"
+                    value={genre}
+                    onChange={(e) => switchGenre(e.target.value as ResolvedGenre)}
+                    className="min-w-0 flex-1 rounded-lg border border-white/15 bg-[#14161A] px-2.5 py-1.5 text-xs font-semibold text-[#F3F1EC] focus:border-emerald-400/60 focus:outline-none"
+                  >
+                    <option value="nootropic_trance">Signature · 6×40 Hz CFC</option>
+                    {STUDIO_MIX_GENRES.map((g) => (
+                      <option key={g} value={g}>
+                        {GENRE_META[g].label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleCarrierSwitch(
+                        carrierMode === 'lyria_realtime' ? 'studio_library' : 'lyria_realtime'
+                      )
+                    }
+                    disabled={connectingLyria}
+                    className={`shrink-0 rounded-lg border px-2.5 py-1.5 font-mono-tech text-[10px] font-semibold transition ${
+                      carrierMode === 'lyria_realtime'
+                        ? 'border-emerald-400/55 bg-emerald-500/15 text-[#34D399]'
+                        : 'border-white/12 bg-[#14161A] text-[#A3A39E] hover:text-[#F3F1EC]'
+                    }`}
+                  >
+                    {connectingLyria ? 'Sync...' : carrierMode === 'lyria_realtime' ? 'Stream ON' : 'Endless'}
+                  </button>
+                </div>
               </div>
-            )}
-            {!isPro && shareBonusSec > 0 && elapsedSec >= 300 && elapsedSec < 325 && remainingFreeSec > 0 && (
-              <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-[#34D399]">
-                5:00 Entrainment Phase-Locked · {formatTimer(remainingFreeSec)} remaining in your +30m bonus session
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between font-mono-tech text-[9.5px] uppercase tracking-wider text-[#8E8E88]">
+                  <span>Neural Effect</span>
+                  <span className="text-[#34D399]">
+                    {layerMonitor === 'music_only'
+                      ? '0% Bypass'
+                      : `${Math.round(telemetry.currentModDepth * 100)}%`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1 rounded-lg border border-white/12 bg-[#141518] p-0.5 text-[10.5px] font-semibold">
+                  {[
+                    { label: 'Min', val: NEURAL_EFFECT_MULT.min, active: modMult <= 0.78 },
+                    {
+                      label: 'Standard',
+                      val: NEURAL_EFFECT_MULT.standard,
+                      active: modMult > 0.78 && modMult < 1.24,
+                    },
+                    { label: 'Max', val: NEURAL_EFFECT_MULT.max, active: modMult >= 1.24 },
+                  ].map((tier) => (
+                    <button
+                      key={tier.label}
+                      type="button"
+                      onClick={() => setDirectModDepth(tier.val)}
+                      className={`rounded-md py-1 transition ${
+                        tier.active
+                          ? 'bg-[#22252A] text-[#F3F1EC]'
+                          : 'text-[#8E8E88] hover:text-[#F3F1EC]'
+                      }`}
+                    >
+                      {tier.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {lyriaNotice && (
+              <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                {lyriaNotice}
               </div>
             )}
           </div>
-        </div>
 
-        {/* Standalone Flagship NootropicFM Mode + 2-Button Carrier Engine Selector */}
-        <div className="space-y-2.5">
+          {/* Tier-2 Lab & Telemetry Toggle Handle */}
           <button
             type="button"
-            onClick={() => switchGenre('nootropic_trance')}
-            className={`flex w-full items-center justify-between gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
-              genre === 'nootropic_trance' && !telemetry.usingCustomTrack
-                ? 'border-emerald-400/75 bg-emerald-500/[0.11] text-[#F3F1EC] shadow-[0_0_20px_rgba(52,211,153,0.14)]'
-                : 'border-emerald-400/30 bg-[#0F1013] text-[#D4D4CE] hover:border-emerald-400/60 hover:text-[#F3F1EC]'
+            data-testid="toggle-lab-drawer"
+            aria-expanded={isLabOpen}
+            onClick={() => setIsLabOpen((v) => !v)}
+            className={`flex w-full items-center justify-between gap-2 rounded-xl border px-4 py-3 text-xs font-semibold transition ${
+              isLabOpen
+                ? 'border-emerald-400/55 bg-emerald-500/12 text-[#F3F1EC]'
+                : 'border-white/12 bg-[#131518] text-[#D4D4CE] hover:border-emerald-400/45 hover:text-[#F3F1EC]'
             }`}
           >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold sm:text-sm">
-                <Sparkles className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
-                <span>NootropicFM Signature Mode</span>
-                <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
-                  Standalone 6×40 Hz
-                </span>
-              </div>
-              <p className="mt-0.5 truncate text-[11px] text-[#8E8E88]">
-                Dedicated 120 BPM hypnotic neural lock · Engineered for sealed in-ear buds
-              </p>
-            </div>
-            <span className="shrink-0 rounded-md border border-white/12 bg-[#14161A] px-2 py-1 font-mono-tech text-[9.5px] font-bold uppercase tracking-wider text-[#34D399]">
-              {genre === 'nootropic_trance' && !telemetry.usingCustomTrack ? '✓ Locked' : 'Activate'}
-            </span>
-          </button>
-
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-              {/* Button 1: Studio Mix */}
-              <button
-                type="button"
-                onClick={() => void handleCarrierSwitch('studio_library')}
-                className={`group relative flex flex-col justify-between rounded-xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
-                  carrierMode === 'studio_library'
-                    ? themeMode === 'daylight'
-                      ? 'border-emerald-400/75 bg-emerald-500/[0.11] text-[#F3F1EC] shadow-sm'
-                      : 'border-white/35 bg-[#17191E] text-[#F3F1EC]'
-                    : 'border-white/[0.08] bg-[#0F1013] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
-                }`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-1.5">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold sm:text-sm">
-                    <Music2
-                      className={`h-4 w-4 shrink-0 ${
-                        carrierMode === 'studio_library'
-                          ? 'text-[#34D399]'
-                          : 'text-[#8E8E88] group-hover:text-[#F3F1EC]'
-                      }`}
-                    />
-                    <span>Studio Mix</span>
-                  </span>
-                  {carrierMode === 'studio_library' && (
-                    <span className="inline-flex items-center gap-1 rounded border border-emerald-400/40 bg-emerald-400/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#34D399]">
-                      <Check className="h-2.5 w-2.5" />
-                      ON
-                    </span>
-                  )}
-                </div>
-                <p
-                  className={`mt-1.5 text-[11px] leading-snug ${
-                    carrierMode === 'studio_library' ? 'text-[#D4D4CE]' : 'text-[#8E8E88]'
-                  }`}
-                >
-                  {carrierMode === 'studio_library'
-                    ? 'Curated tracks · Smooth crossfade'
-                    : 'Curated tracks · Instant start'}
-                </p>
-              </button>
-
-              {/* Button 2: Endless Stream */}
-              <button
-                type="button"
-                disabled={connectingLyria}
-                onClick={() => void handleCarrierSwitch('lyria_realtime')}
-                className={`group relative flex flex-col justify-between rounded-xl border p-3 sm:px-4 sm:py-3.5 text-left transition-all ${
-                  carrierMode === 'lyria_realtime'
-                    ? 'border-emerald-400/55 bg-emerald-500/[0.09] text-[#F3F1EC]'
-                    : connectingLyria
-                      ? 'border-emerald-400/40 bg-emerald-500/[0.06] text-[#F3F1EC]'
-                      : 'border-white/[0.08] bg-[#0F1013] text-[#D4D4CE] hover:border-emerald-400/45 hover:bg-emerald-500/[0.06] hover:text-[#F3F1EC]'
-                }`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-1.5">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold sm:text-sm">
-                    {connectingLyria ? (
-                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#34D399]" />
-                    ) : (
-                      <Radio
-                        className={`h-4 w-4 shrink-0 ${
-                          carrierMode === 'lyria_realtime'
-                            ? 'text-[#34D399]'
-                            : 'text-[#8E8E88] group-hover:text-[#34D399]'
-                        }`}
-                      />
-                    )}
-                    <span>Endless Stream</span>
-                  </span>
-                  {connectingLyria ? (
-                    <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-[#34D399]">
-                      Syncing…
-                    </span>
-                  ) : carrierMode === 'lyria_realtime' ? (
-                    <span className="inline-flex items-center gap-1 rounded border border-emerald-400/45 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9px] font-bold uppercase tracking-wider text-emerald-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[#34D399] animate-pulse" />
-                      {!isPro
-                        ? `Live · ${Math.max(0, FREE_LYRIA_PREVIEW_SEC - dailyLyriaUsedSec)}s`
-                        : 'Live'}
-                    </span>
-                  ) : (
-                    <span className="rounded border border-white/12 bg-white/[0.05] px-1.5 py-0.5 font-mono-tech text-[9px] font-semibold uppercase tracking-wider text-[#A3A39E]">
-                      {!isPro
-                        ? dailyLyriaUsedSec >= FREE_LYRIA_PREVIEW_SEC
-                          ? '90s Used'
-                          : '90s Preview'
-                        : 'No Loops'}
-                    </span>
-                  )}
-                </div>
-                <p
-                  className={`mt-1.5 text-[11px] leading-snug ${
-                    carrierMode === 'lyria_realtime'
-                      ? 'text-[#D4D4CE]'
-                      : 'text-[#8E8E88]'
-                  }`}
-                >
-                  {connectingLyria
-                    ? 'Connecting live stream…'
-                    : carrierMode === 'lyria_realtime'
-                      ? 'Streaming live · Never repeats'
-                      : 'Generated live · Never repeats'}
-                </p>
-              </button>
-            </div>
-
-          {lyriaNotice && (
-            <div className="rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-              {lyriaNotice}
-            </div>
-          )}
-        </div>
-
-        {/* 3-Way Audio Layer Monitor: Compare Nootropic Mix vs Science Only (Layer 1) vs Plain Music (Layer 2) */}
-        <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2 font-mono-tech text-[10px]">
-            <span className="uppercase tracking-[0.14em] text-[#8E8E88]">
-              Audio Layer Monitor · A/B Compare
-            </span>
-            {layerMonitor === 'full_mix' ? (
-              <span className="text-[#34D399]">Layer 1 + 2 Active</span>
-            ) : layerMonitor === 'science_only' ? (
-              <span className="text-[#F59E0B]">
-                Isolating {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz ` : ''}Science Wave
+            <span className="inline-flex items-center gap-2">
+              <Sliders className="h-4 w-4 text-[#34D399]" />
+              <span>
+                Lab &amp; Telemetry ·{' '}
+                {layerMonitor === 'music_only'
+                  ? 'Plain Music'
+                  : layerMonitor === 'science_only'
+                    ? 'Science Only'
+                    : 'Nootropic Mix'}{' '}
+                · 48 kHz
               </span>
-            ) : (
-              <span className="text-[#D4D4CE]">Science Bypassed (Plain Music)</span>
-            )}
-          </div>
-
-          <div className="grid grid-cols-3 gap-1.5">
-            {(
-              [
-                {
-                  mode: 'full_mix' as const,
-                  title: 'Nootropic Mix',
-                  sub: 'Layer 1 + 2',
-                  dot: 'bg-[#34D399]',
-                  activeCls: 'border-emerald-400/55 bg-emerald-500/[0.10] text-[#F3F1EC]',
-                },
-                {
-                  mode: 'science_only' as const,
-                  title: 'Science Only',
-                  sub: telemetry.currentModHz > 0 ? `Layer 1 · ${telemetry.currentModHz} Hz` : 'Layer 1 · Wave',
-                  dot: 'bg-[#F59E0B]',
-                  activeCls: 'border-amber-400/60 bg-amber-400/[0.12] text-[#F3F1EC]',
-                },
-                {
-                  mode: 'music_only' as const,
-                  title: 'Plain Music',
-                  sub: 'Layer 2 · Raw',
-                  dot: 'bg-[#D4D4CE]',
-                  activeCls:
-                    themeMode === 'daylight'
-                      ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
-                      : 'border-white/35 bg-[#191C22] text-[#F3F1EC]',
-                },
-              ]
-            ).map((opt) => {
-              const active = layerMonitor === opt.mode;
-              const activeDotCls =
-                active && opt.mode === 'music_only' && themeMode === 'daylight'
-                  ? 'bg-emerald-300/60'
-                  : active
-                    ? opt.dot
-                    : 'bg-white/25';
-              return (
-                <button
-                  key={opt.mode}
-                  type="button"
-                  onClick={() => void handleLayerMonitorChange(opt.mode)}
-                  className={`rounded-lg border px-2.5 py-2 text-left transition-all ${
-                    active
-                      ? opt.activeCls
-                      : 'border-white/[0.08] bg-[#121418] text-[#9E9E98] hover:border-white/20 hover:text-[#F3F1EC]'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold leading-tight">
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${activeDotCls}`} />
-                    <span className="truncate">{opt.title}</span>
-                  </div>
-                  <div
-                    className={`mt-0.5 truncate font-mono-tech text-[9px] ${
-                      active && opt.mode === 'music_only' && themeMode === 'daylight'
-                        ? 'text-white/80'
-                        : 'text-[#A3A39E]'
-                    }`}
-                  >
-                    {opt.sub}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Smart Calibrated Neural Effect Selector (Min Effect ~35% / Standard ~65% / Max Effect ~94%) */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-white/[0.08] bg-[#0B0C0E] px-3.5 py-2.5">
-          <div className="flex flex-wrap items-center gap-2 font-mono-tech text-[10px]">
-            <span className="uppercase tracking-[0.14em] text-[#8E8E88]">Neural Effect</span>
-            {layerMonitor === 'music_only' ? (
-              <span className="text-[#8E8E88]">Bypassed · 0%</span>
-            ) : (
-              <span className="text-[#34D399]">
-                {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz · ` : ''}
-                {Math.round(telemetry.currentModDepth * 100)}%
-              </span>
-            )}
-            {effectAutoTag && layerMonitor !== 'music_only' && (
-              <span className="rounded border border-emerald-400/25 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-200/90">
-                {effectAutoTag}
-              </span>
-            )}
-          </div>
-          <div className="inline-flex rounded-lg border border-white/12 bg-[#141518] p-0.5 text-[11px] font-semibold">
-            {[
-              { label: 'Min Effect', val: NEURAL_EFFECT_MULT.min, active: modMult <= 0.78 },
-              {
-                label: 'Standard',
-                val: NEURAL_EFFECT_MULT.standard,
-                active: modMult > 0.78 && modMult < 1.24,
-              },
-              { label: 'Max Effect', val: NEURAL_EFFECT_MULT.max, active: modMult >= 1.24 },
-            ].map((tier) => (
-              <button
-                key={tier.label}
-                type="button"
-                onClick={() => setDirectModDepth(tier.val)}
-                className={`rounded-md px-2.5 py-1 transition sm:px-3 ${
-                  tier.active
-                    ? 'bg-[#22252A] text-[#F3F1EC] ring-1 ring-white/15'
-                    : 'text-[#8E8E88] hover:text-[#D4D4CE]'
-                }`}
-              >
-                {tier.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Optional 5-Second Profession Claim (only if entering from an anonymous quick-try link) */}
-        {!recommendation.safetyMode &&
-          recommendation.sessionId.startsWith('eph_quick_') &&
-          (claimedSyncCode ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-400/35 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-100">
-              <span className="inline-flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-emerald-300" />
-                <strong>Saved ({claimProfession.trim()})</strong>
-              </span>
-              <span className="font-mono-tech text-[11px] text-emerald-200">{claimedSyncCode}</span>
-            </div>
-          ) : (
-            <form
-              onSubmit={(e) => void handleClaimProfile(e)}
-              className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3 space-y-2"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-[#D4D4CE]">
-                  Save your progress while you listen (anonymous):
-                </span>
-                {onOpenCustomCheckIn && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      engineRef.current?.stop();
-                      onOpenCustomCheckIn();
-                    }}
-                    className="font-mono-tech text-[10px] font-semibold text-[#34D399] hover:text-emerald-300"
-                  >
-                    Full 4-Step Calibration →
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="text"
-                  maxLength={40}
-                  value={claimProfession}
-                  onChange={(e) => {
-                    setClaimProfession(e.target.value);
-                    setClaimError(null);
-                  }}
-                  placeholder="Profession (e.g. Doctor, Programmer, Student)"
-                  className="flex-1 rounded-xl border border-white/12 bg-[#141518] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
-                />
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={18}
-                  max={95}
-                  value={claimAge}
-                  onChange={(e) => {
-                    setClaimAge(e.target.value);
-                    setClaimError(null);
-                  }}
-                  placeholder="Age 18+"
-                  className="font-mono-tech w-full rounded-xl border border-white/12 bg-[#141518] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none sm:w-24"
-                />
-                <button
-                  type="submit"
-                  disabled={claimingProfile}
-                  className="btn-aurora shrink-0 rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-60"
-                >
-                  {claimingProfile ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-              {claimError && <p className="text-[11px] text-rose-300">{claimError}</p>}
-            </form>
-          ))}
-      </div>
-
-      {/* 2 Discreet Collapsible Drawer Triggers */}
-      <div className="flex flex-wrap items-center justify-center gap-2.5">
-        <button
-          type="button"
-          onClick={() => setOpenDrawer((prev) => (prev === 'tune' ? 'none' : 'tune'))}
-          className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-semibold transition ${
-            openDrawer === 'tune'
-              ? themeMode === 'daylight'
-                ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
-                : 'border-white/30 bg-[#181A1F] text-[#F3F1EC]'
-              : 'border-white/10 bg-[#111215] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
-          }`}
-        >
-          <Sliders
-            className={`h-3.5 w-3.5 ${
-              openDrawer === 'tune' && themeMode === 'daylight' ? 'text-white' : 'text-[#34D399]'
-            }`}
-          />
-          <span>Tune Sound &amp; Music</span>
-          {openDrawer === 'tune' ? (
-            <ChevronUp className="h-3.5 w-3.5 opacity-75" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5 opacity-75" />
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setOpenDrawer((prev) => (prev === 'science' ? 'none' : 'science'))}
-          className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-xs font-semibold transition ${
-            openDrawer === 'science'
-              ? themeMode === 'daylight'
-                ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
-                : 'border-white/30 bg-[#181A1F] text-[#F3F1EC]'
-              : 'border-white/10 bg-[#111215] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
-          }`}
-        >
-          <BookOpen
-            className={`h-3.5 w-3.5 ${
-              openDrawer === 'science' && themeMode === 'daylight' ? 'text-white' : 'text-[#34D399]'
-            }`}
-          />
-          <span>Verified Science &amp; Studies</span>
-          {openDrawer === 'science' ? (
-            <ChevronUp className="h-3.5 w-3.5 opacity-75" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5 opacity-75" />
-          )}
-        </button>
-      </div>
-
-      {/* Collapsible Drawer 1: Live Sound Balance, Genre Switcher & 15s Reaction Test */}
-      {openDrawer === 'tune' && (
-        <div className="animate-step glass-card rounded-2xl p-5 sm:p-6 space-y-5">
-          {/* Fine Live Tweaks */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
-              <Sliders className="h-3.5 w-3.5 text-[#34D399]" /> Live Sound Balance
-            </span>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => tweakIntensity(-0.15)}
-                className="subtle-chip rounded-lg px-3 py-1.5 text-xs font-medium"
-              >
-                Calmer
-              </button>
-              <button
-                type="button"
-                onClick={() => tweakIntensity(0.15)}
-                className="subtle-chip rounded-lg px-3 py-1.5 text-xs font-medium"
-              >
-                More drive
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  void handleCarrierSwitch(
-                    carrierMode === 'generative_live' ? 'studio_library' : 'generative_live'
-                  )
-                }
-                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
-                  carrierMode === 'generative_live'
-                    ? 'border-emerald-400/55 bg-emerald-400/12 text-[#34D399]'
-                    : 'border-white/10 bg-[#14161A] text-[#A3A39E] hover:border-white/25 hover:text-[#F3F1EC]'
-                }`}
-              >
-                {carrierMode === 'generative_live' ? '✓ Live Synth' : 'Live Synth'}
-              </button>
-            </div>
-          </div>
-
-          {/* Music Style Switcher (10 Standard Studio Mix Genres — NootropicFM Mode separated above) */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 font-medium text-[#D4D4CE]">
-                <Music2 className="h-3.5 w-3.5 text-[#34D399]" />
-                Switch Studio Mix Genre Live (10 Styles)
-              </span>
-              {telemetry.backgroundAudioActive && (
-                <span className="inline-flex items-center gap-1 rounded border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 font-mono-tech text-[10px] font-medium text-[#34D399]">
-                  <Radio className="h-3 w-3" />
-                  Background Audio Ready
+              {showPvtLabBadge && !isLabOpen && (
+                <span className="rounded border border-emerald-400/35 bg-emerald-500/12 px-1.5 py-0.5 font-mono-tech text-[9.5px] font-bold text-[#34D399]">
+                  Measure PVT
                 </span>
               )}
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {STUDIO_MIX_GENRES.map((style) => {
-                const meta = GENRE_META[style];
-                const active = !telemetry.usingCustomTrack && genre === style;
-                return (
-                  <button
-                    key={style}
-                    type="button"
-                    onClick={() => switchGenre(style)}
-                    className={`rounded-xl border px-3 py-2 text-left transition-all ${
-                      active
-                        ? 'border-emerald-400/65 bg-emerald-400/12 text-[#F3F1EC] shadow-[0_0_16px_rgba(52,211,153,0.14)]'
-                        : 'border-white/[0.08] bg-[#131417] text-[#A3A39E] hover:border-white/20 hover:text-[#F3F1EC]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-xs font-semibold">{meta.label}</span>
-                    </div>
-                    <div className="mt-0.5 text-[10px] text-[#8E8E88]">{meta.shortDesc}</div>
-                  </button>
-                );
-              })}
-              <div
-                aria-disabled="true"
-                className="cursor-not-allowed select-none rounded-xl border border-dashed border-white/10 bg-[#0B0C0E] px-3 py-2 text-left"
-              >
-                <div className="flex items-center justify-between gap-1 text-xs font-semibold text-[#8E8E88]">
-                  <span>Other Styles</span>
-                  <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono-tech text-[8px] font-bold uppercase tracking-wider text-[#A3A39E]">
-                    Soon
-                  </span>
-                </div>
-                <div className="mt-0.5 text-[10px] text-[#8E8E88]">More curated genres coming soon</div>
+            </span>
+            {isLabOpen ? (
+              <ChevronDown className="h-4 w-4 text-[#34D399]" />
+            ) : (
+              <ChevronUp className="h-4 w-4 text-[#34D399]" />
+            )}
+          </button>
+        </div>
+
+        {/* =============================================================== */}
+        {/* TIER 2: EXPANDABLE LAB & TELEMETRY DRAWER                       */}
+        {/* Renders oscilloscope canvases ONLY when open & not minimized    */}
+        {/* =============================================================== */}
+        {isLabOpen && (
+          <div
+            data-testid="tier2-lab-drawer"
+            className="animate-step glass-card rounded-2xl p-4 sm:p-5 space-y-4 xl:col-span-6"
+          >
+            {/* 1) 3-Way A/B/C Audio Layer Monitor */}
+            <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 font-mono-tech text-[10px]">
+                <span className="uppercase tracking-[0.14em] text-[#8E8E88]">
+                  Audio Layer Monitor · A/B Compare
+                </span>
+                <span className="text-[#34D399]">
+                  {layerMonitor === 'full_mix'
+                    ? 'Layer 1 + 2 Active'
+                    : layerMonitor === 'science_only'
+                      ? `Isolating ${telemetry.currentModHz} Hz Wave`
+                      : 'Science Bypassed (Plain Music)'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    {
+                      mode: 'full_mix' as const,
+                      title: 'Nootropic Mix',
+                      sub: 'Layer 1 + 2',
+                      activeCls: 'border-emerald-400/55 bg-emerald-500/[0.10] text-[#F3F1EC]',
+                    },
+                    {
+                      mode: 'science_only' as const,
+                      title: 'Science Only',
+                      sub: `${telemetry.currentModHz} Hz Wave`,
+                      activeCls: 'border-amber-400/60 bg-amber-400/[0.12] text-[#F3F1EC]',
+                    },
+                    {
+                      mode: 'music_only' as const,
+                      title: 'Plain Music',
+                      sub: 'Layer 2 · Raw',
+                      activeCls:
+                        themeMode === 'daylight'
+                          ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                          : 'border-white/35 bg-[#191C22] text-[#F3F1EC]',
+                    },
+                  ]
+                ).map((opt) => {
+                  const active = layerMonitor === opt.mode;
+                  return (
+                    <button
+                      key={opt.mode}
+                      type="button"
+                      onClick={() => void handleLayerMonitorChange(opt.mode)}
+                      className={`rounded-lg border px-2.5 py-2 text-left transition-all ${
+                        active
+                          ? opt.activeCls
+                          : 'border-white/[0.08] bg-[#121418] text-[#9E9E98] hover:border-white/20 hover:text-[#F3F1EC]'
+                      }`}
+                    >
+                      <div className="truncate text-[11px] font-semibold leading-tight">
+                        {opt.title}
+                      </div>
+                      <div className="mt-0.5 truncate font-mono-tech text-[9px] text-[#A3A39E]">
+                        {opt.sub}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          </div>
 
-          {/* Neuro-Acoustic Calibration Controls: Huggins Pitch Check, Gamma-MBI vs Clicks, Alpha IAF */}
-          <div className="rounded-xl border border-white/10 bg-[#121417] p-3.5 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2.5">
-              <div className="space-y-0.5">
+            {/* 2) Live Oscilloscope Y(t) / X/Y Lissajous + 36-Band Spectrum */}
+            {!minimized && (
+              <>
+                <LiveEnvelopeProof
+                  engine={engineRef.current}
+                  isPlaying={isPlaying}
+                  entrainmentType={telemetry.entrainmentType}
+                  frequencyHz={telemetry.currentModHz}
+                  depth={telemetry.currentModDepth}
+                  carrierLabel={activeSourceShort}
+                  tuningA4Hz={telemetry.tuningA4Hz}
+                  layerMode={layerMonitor}
+                  isPureWave={layerMonitor === 'science_only'}
+                  themeMode={themeMode}
+                  onTogglePureWave={() =>
+                    void handleLayerMonitorChange(
+                      layerMonitor === 'science_only' ? 'full_mix' : 'science_only'
+                    )
+                  }
+                />
+                <NeuralVisualizer
+                  engine={engineRef.current}
+                  isPlaying={isPlaying}
+                  safetyMode={recommendation.safetyMode}
+                  modulationHz={telemetry.currentModHz}
+                  themeMode={themeMode}
+                />
+              </>
+            )}
+
+            {/* 3) Live Sound Modifiers: Balance + Rain Overlay + 432 Hz + Live Synth */}
+            <div className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3.5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                  <Sliders className="h-3.5 w-3.5 text-[#34D399]" />
+                  Acoustic Modifiers
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => tweakIntensity(-0.15)}
+                    className="subtle-chip rounded-lg px-2.5 py-1 text-[11px] font-medium"
+                  >
+                    Calmer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => tweakIntensity(0.15)}
+                    className="subtle-chip rounded-lg px-2.5 py-1 text-[11px] font-medium"
+                  >
+                    More drive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleCarrierSwitch(
+                        carrierMode === 'generative_live' ? 'studio_library' : 'generative_live'
+                      )
+                    }
+                    className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+                      carrierMode === 'generative_live'
+                        ? 'border-emerald-400/55 bg-emerald-400/12 text-[#34D399]'
+                        : 'border-white/10 bg-[#14161A] text-[#A3A39E] hover:text-[#F3F1EC]'
+                    }`}
+                  >
+                    {carrierMode === 'generative_live' ? '✓ Live Synth' : 'Live Synth'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Rain Layer Fader + 432 Hz Tuning */}
+              <div className="grid grid-cols-1 gap-3 border-t border-white/[0.06] pt-2.5 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="inline-flex items-center gap-1.5 font-medium text-[#D4D4CE]">
+                      <CloudRain className="h-3.5 w-3.5 text-[#34D399]" />
+                      Rain Overlay
+                    </span>
+                    <div className="flex items-center gap-2 font-mono-tech text-[10px] text-[#34D399]">
+                      <span>{rainOverlayPct === null ? 'Auto' : `${rainOverlayPct}%`}</span>
+                      {rainOverlayPct !== null && (
+                        <button
+                          type="button"
+                          onClick={() => handleRainOverlayChange(null)}
+                          className="text-[#8E8E88] hover:text-[#F3F1EC]"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    aria-label="Rain Layer Volume"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={rainOverlayPct ?? (genre === 'nature_rain' ? 70 : 0)}
+                    onChange={(e) => handleRainOverlayChange(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#131518] px-3 py-2">
+                  <div>
+                    <div className="text-xs font-semibold text-[#F3F1EC]">432 Hz Natural Tuning</div>
+                    <div className="font-mono-tech text-[10px] text-[#8E8E88]">
+                      Active: A={telemetry.tuningA4Hz} Hz
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleToggleTuning432}
+                    aria-pressed={tuning432}
+                    className={`rounded-lg border px-2.5 py-1 font-mono-tech text-[11px] font-semibold transition ${
+                      tuning432
+                        ? 'border-emerald-400/55 bg-emerald-500/15 text-[#34D399]'
+                        : 'border-white/12 bg-[#14161A] text-[#A3A39E] hover:text-[#F3F1EC]'
+                    }`}
+                  >
+                    {tuning432 ? '432 Hz ON' : '440 Hz'}
+                  </button>
+                </div>
+              </div>
+
+              {effectAutoTag && (
+                <div className="text-[10.5px] font-mono-tech text-[#8E8E88]">
+                  Effect Note: {effectAutoTag}
+                </div>
+              )}
+            </div>
+
+            {/* 4) Huggins Earbud Seal + Gamma/IAF + Biomarkers (PVT / Tapping / BLE 0x180D) */}
+            <div className="rounded-xl border border-white/10 bg-[#121417] p-3.5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="inline-flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
                   <Headphones className="h-3.5 w-3.5 text-[#34D399]" />
-                  <span>Dichotic Headphone Check (Huggins Pitch)</span>
+                  <span>600 Hz Dichotic Seal</span>
                   {telemetry.hugginsStatus === 'verified_stereo' && (
-                    <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9.5px] font-semibold text-[#34D399]">
+                    <span className="rounded border border-emerald-400/40 bg-emerald-500/15 px-1.5 py-0.5 font-mono-tech text-[9.5px] text-[#34D399]">
                       Stereo Verified
                     </span>
                   )}
-                  {telemetry.hugginsStatus === 'monaural_safe' && (
-                    <span className="rounded border border-amber-400/40 bg-amber-500/15 px-1.5 py-0.5 font-mono-tech text-[9.5px] font-semibold text-amber-200">
-                      Monaural-Safe Active
-                    </span>
-                  )}
-                  {telemetry.bluetoothSafeActive && (
-                    <span className="rounded border border-sky-400/35 bg-sky-500/10 px-1.5 py-0.5 font-mono-tech text-[9.5px] font-semibold text-sky-200">
-                      BT Guard
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-[#8E8E88]">
-                  Detects Apple Spatial Audio or mono crosstalk in 35s and auto-locks safe phase routing.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void openHugginsModal()}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#181A1F] px-3 py-1.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1E2128]"
-              >
-                <Headphones className="h-3.5 w-3.5 text-[#34D399]" />
-                {telemetry.hugginsStatus === 'untested' ? 'Verify Headphones (35s)' : 'Recheck'}
-              </button>
-            </div>
-
-            {telemetry.entrainmentType === 'gamma_40hz_clicks' && (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2.5">
-                <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
-                  40 Hz Gamma Delivery
-                </span>
-                <div className="inline-flex rounded-lg border border-white/12 bg-[#0B0C0E] p-0.5 text-[11px] font-semibold">
-                  {(
-                    [
-                      { id: 'harmonic_mbi' as const, label: 'Harmonic Gamma-MBI' },
-                      { id: 'gamma_chirp' as const, label: '40 Hz Chirp' },
-                      { id: 'clinical_clicks' as const, label: 'Lab Clicks' },
-                    ]
-                  ).map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => handleGammaModeSwitch(opt.id)}
-                      className={`rounded-md px-2.5 py-1 transition ${
-                        telemetry.gammaMode === opt.id
-                          ? 'bg-[#22252A] text-[#34D399] ring-1 ring-emerald-400/30'
-                          : 'text-[#8E8E88] hover:text-[#D4D4CE]'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {((spec && spec.entrainment.frequencyHz >= 8 && spec.entrainment.frequencyHz <= 12) ||
-              (telemetry.currentModHz >= 8 && telemetry.currentModHz <= 12)) && (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2.5">
-                <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
-                  Alpha IAF Peak ({alphaIafHz.toFixed(1)} Hz)
-                </span>
-                <div className="flex flex-wrap gap-1">
-                  {[8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5].map((hz) => (
-                    <button
-                      key={hz}
-                      type="button"
-                      onClick={() => handleAlphaIafSelect(hz)}
-                      className={`rounded-md border px-2 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
-                        Math.abs(alphaIafHz - hz) < 0.1
-                          ? 'border-emerald-400/50 bg-emerald-500/15 text-[#34D399]'
-                          : 'border-white/10 bg-[#0B0C0E] text-[#8E8E88] hover:text-[#F3F1EC]'
-                      }`}
-                    >
-                      {hz.toFixed(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Optional 20-Trial Visual 1/RT Reaction Speed Check */}
-          {!recommendation.safetyMode && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#121417] px-4 py-3">
-              <div className="space-y-0.5">
-                <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
-                  <Zap className="h-3.5 w-3.5 text-[#34D399]" />
-                  {pvtPreMs !== null
-                    ? `Baseline Recorded: ${pvtPreInvRt !== null ? `${pvtPreInvRt.toFixed(2)} s⁻¹ · ` : ''}${pvtPreMs} ms`
-                    : '20-Trial Visual 1/RT Brain Benchmark'}
-                </div>
-                <p className="text-[11px] text-[#8E8E88]">
-                  {pvtPreMs !== null
-                    ? 'Retest at debrief to measure your inverse reaction speed (1/RT) shift.'
-                    : 'Run 20 rAF-synced visual flashes (~75s) for psychometrically powered pre/post delta.'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPrePvt(true)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/15 bg-[#181A1F] px-3 py-1.5 text-xs font-semibold text-[#F3F1EC] transition hover:border-emerald-400/50 hover:bg-[#1E2128]"
-              >
-                <Zap className="h-3.5 w-3.5 text-[#34D399]" />
-                {pvtPreMs !== null ? 'Retake' : 'Run PVT (~75s)'}
-              </button>
-            </div>
-          )}
-
-          {/* Optional Extra Biomarkers: 15s Continuation Tapping CV & Web Bluetooth HRV */}
-          {!recommendation.safetyMode && (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#121417] px-3.5 py-2.5">
-                <div className="min-w-0 space-y-0.5">
-                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
-                    <Activity className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
-                    <span className="truncate">
-                      {tappingResult
-                        ? `Tapping CV ${tappingResult.cvPct.toFixed(1)}% (${tappingResult.stabilityScore}/100)`
-                        : '15s Motor Tapping CV'}
-                    </span>
-                  </div>
-                  <p className="truncate text-[10px] text-[#8E8E88]">
-                    Synchronization-continuation rhythm stability
-                  </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowTappingCheck(true)}
-                  className="shrink-0 rounded-lg border border-white/15 bg-[#181A1F] px-2.5 py-1.5 text-[11px] font-semibold text-[#F3F1EC] hover:border-emerald-400/50"
+                  onClick={() => void openHugginsModal()}
+                  className="rounded-lg border border-white/15 bg-[#181A1F] px-3 py-1.5 text-xs font-semibold text-[#F3F1EC] hover:border-emerald-400/50"
                 >
-                  {tappingResult ? 'Retest' : 'Run (15s)'}
+                  {telemetry.hugginsStatus === 'untested' ? 'Verify Headphones (35s)' : 'Recheck'}
                 </button>
               </div>
 
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#121417] px-3.5 py-2.5">
-                <div className="min-w-0 space-y-0.5">
-                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
-                    <HeartPulse className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
-                    <span className="truncate">
-                      {bleHrvState.connected
-                        ? bleHrvState.metrics
-                          ? `HRV ${Math.round(bleHrvState.metrics.rmssdMs)} ms · ${Math.round(bleHrvState.metrics.meanHrBpm)} BPM`
-                          : `${bleHrvState.latestHrBpm ?? '--'} BPM · Syncing RR`
-                        : 'Web Bluetooth HRV'}
-                    </span>
+              {telemetry.entrainmentType === 'gamma_40hz_clicks' && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2.5">
+                  <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
+                    40 Hz Gamma Delivery
+                  </span>
+                  <div className="inline-flex rounded-lg border border-white/12 bg-[#0B0C0E] p-0.5 text-[10.5px] font-semibold">
+                    {(
+                      [
+                        { id: 'harmonic_mbi' as const, label: 'Harmonic' },
+                        { id: 'gamma_chirp' as const, label: '40 Hz Chirp' },
+                        { id: 'clinical_clicks' as const, label: 'Lab Clicks' },
+                      ]
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleGammaModeSwitch(opt.id)}
+                        className={`rounded-md px-2 py-1 transition ${
+                          telemetry.gammaMode === opt.id
+                            ? 'bg-[#22252A] text-[#34D399]'
+                            : 'text-[#8E8E88] hover:text-[#F3F1EC]'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
-                  <p className="truncate text-[10px] text-[#8E8E88]">
-                    {bleHrvState.connected && bleHrvState.metrics
-                      ? `0.1 Hz LF ratio ${(bleHrvState.metrics.lfPowerRatio * 100).toFixed(0)}%`
-                      : 'Optional chest strap (0x180D) RMSSD & LF'}
-                  </p>
                 </div>
-                {isWebBluetoothSupported() ? (
+              )}
+
+              {((spec && spec.entrainment.frequencyHz >= 8 && spec.entrainment.frequencyHz <= 12) ||
+                (telemetry.currentModHz >= 8 && telemetry.currentModHz <= 12)) && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2.5">
+                  <span className="font-mono-tech text-[10px] uppercase tracking-wider text-[#8E8E88]">
+                    Alpha IAF ({alphaIafHz.toFixed(1)} Hz)
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {[8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5].map((hz) => (
+                      <button
+                        key={hz}
+                        type="button"
+                        onClick={() => handleAlphaIafSelect(hz)}
+                        className={`rounded-md border px-2 py-0.5 font-mono-tech text-[10px] font-semibold transition ${
+                          Math.abs(alphaIafHz - hz) < 0.1
+                            ? 'border-emerald-400/50 bg-emerald-500/15 text-[#34D399]'
+                            : 'border-white/10 bg-[#0B0C0E] text-[#8E8E88] hover:text-[#F3F1EC]'
+                        }`}
+                      >
+                        {hz.toFixed(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {!recommendation.safetyMode && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#121417] px-3.5 py-2.5">
+                  <div className="space-y-0.5">
+                    <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#F3F1EC]">
+                      <Zap className="h-3.5 w-3.5 text-[#34D399]" />
+                      {pvtPreMs !== null
+                        ? `Baseline Recorded: ${pvtPreInvRt !== null ? `${pvtPreInvRt.toFixed(2)} s⁻¹ · ` : ''}${pvtPreMs} ms`
+                        : '20-Trial Visual 1/RT Brain Benchmark'}
+                    </div>
+                    <p className="text-[10.5px] text-[#8E8E88]">
+                      Measure pre/post reaction speed delta (~75s).
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => void handleToggleBleHrv()}
-                    className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
-                      bleHrvState.connected
-                        ? 'border-emerald-400/50 bg-emerald-500/15 text-[#34D399]'
-                        : 'border-white/15 bg-[#181A1F] text-[#F3F1EC] hover:border-emerald-400/50'
-                    }`}
+                    onClick={() => setShowPrePvt(true)}
+                    className="rounded-lg border border-white/15 bg-[#181A1F] px-3 py-1.5 text-xs font-semibold text-[#F3F1EC] hover:border-emerald-400/50"
                   >
-                    {bleHrvState.connected ? 'Disconnect' : 'Connect'}
+                    {pvtPreMs !== null ? 'Retake' : 'Run PVT (~75s)'}
                   </button>
-                ) : (
-                  <span className="shrink-0 font-mono-tech text-[10px] text-[#8E8E88]">Chrome/Edge</span>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+                </div>
 
-      {/* Collapsible Drawer 2: Acoustic Telemetry & Verified Studies */}
-      {openDrawer === 'science' && (
-        <div className="animate-step glass-card rounded-2xl p-5 sm:p-6 space-y-5">
-          {/* Compact Telemetry Strip */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Wave</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#34D399]">
-                {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz` : `A=${telemetry.tuningA4Hz} Hz`}
-              </div>
-              {telemetry.usingStudioAudio && telemetry.activeTrackKeyLabel && (
-                <div className="mt-0.5 font-mono-tech text-[10px] text-[#8E8E88]">
-                  Key-locked · {telemetry.activeTrackKeyLabel}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#121417] px-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-[#F3F1EC]">
+                        {tappingResult
+                          ? `Tapping CV ${tappingResult.cvPct.toFixed(1)}%`
+                          : '15s Motor Tapping CV'}
+                      </div>
+                      <p className="truncate text-[10px] text-[#8E8E88]">Motor rhythm stability</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowTappingCheck(true)}
+                      className="shrink-0 rounded-lg border border-white/15 bg-[#181A1F] px-2.5 py-1.5 text-[11px] font-semibold text-[#F3F1EC] hover:border-emerald-400/50"
+                    >
+                      {tappingResult ? 'Retest' : 'Run (15s)'}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#121417] px-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="inline-flex items-center gap-1.5 truncate text-xs font-semibold text-[#F3F1EC]">
+                        <HeartPulse className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
+                        <span className="truncate">
+                          {bleHrvState.connected
+                            ? bleHrvState.metrics
+                              ? `HRV ${Math.round(bleHrvState.metrics.rmssdMs)} ms`
+                              : `${bleHrvState.latestHrBpm ?? '--'} BPM`
+                            : 'BLE HRV (0x180D)'}
+                        </span>
+                      </div>
+                      <p className="truncate text-[10px] text-[#8E8E88]">
+                        {isWebBluetoothSupported()
+                          ? 'Optional HR strap RMSSD'
+                          : 'Web BLE unavailable on iOS'}
+                      </p>
+                    </div>
+                    {isWebBluetoothSupported() ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleBleHrv()}
+                        className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold ${
+                          bleHrvState.connected
+                            ? 'border-emerald-400/50 bg-emerald-500/15 text-[#34D399]'
+                            : 'border-white/15 bg-[#181A1F] text-[#F3F1EC]'
+                        }`}
+                      >
+                        {bleHrvState.connected ? 'Disconnect' : 'Connect'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onOpenSoundSystems?.()}
+                        className="shrink-0 rounded-lg border border-emerald-400/40 bg-emerald-500/12 px-2 py-1 text-[10px] font-semibold text-[#34D399]"
+                      >
+                        Earbuds Pro →
+                      </button>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-            <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Depth</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#F3F1EC]">
-                {Math.round(telemetry.currentModDepth * 100)}%
               </div>
-            </div>
-            <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Tempo</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#F3F1EC]">
-                {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Beatless'}
-              </div>
-              {telemetry.stemCodecLabel && telemetry.usingStudioAudio && (
-                <div className="mt-0.5 font-mono-tech text-[10px] text-[#34D399]">
-                  {telemetry.stemCodecLabel}
+            )}
+
+            {/* Optional 5-second Anonymous Save form */}
+            {!recommendation.safetyMode &&
+              recommendation.sessionId.startsWith('eph_quick_') &&
+              !profile &&
+              (claimedSyncCode ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                  <span>Saved ({claimProfession.trim()})</span>
+                  <span className="font-mono-tech text-[11px]">{claimedSyncCode}</span>
                 </div>
-              )}
-              {recommendation.executableSpec?.music.bpmRamp && (
-                <div className="mt-0.5 font-mono-tech text-[10px] text-[#8E8E88]">
-                  Ramp {recommendation.executableSpec.music.bpmRamp.start} →{' '}
-                  {recommendation.executableSpec.music.bpmRamp.end} BPM
-                </div>
-              )}
-            </div>
-            <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Noise Bed</div>
-              <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#D4D4CE] capitalize">
-                {telemetry.noiseColor === 'none' ? 'Clean' : telemetry.noiseColor.replace('_', ' ')}
-              </div>
-              <div className="mt-0.5 font-mono-tech text-[10px] text-[#8E8E88]">
-                {telemetry.momentaryLufs !== null
-                  ? `${telemetry.momentaryLufs.toFixed(1)} LUFS · ≤ -1.0 dBTP`
-                  : 'True-Peak ≤ -1.0 dBTP'}
-              </div>
-            </div>
+              ) : (
+                <form
+                  onSubmit={(e) => void handleClaimProfile(e)}
+                  className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3 space-y-2"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#D4D4CE]">
+                    <span className="font-semibold">Save progress anonymously (optional):</span>
+                    {onOpenCustomCheckIn && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          engineRef.current?.stop();
+                          onOpenCustomCheckIn();
+                        }}
+                        className="font-mono-tech text-[10px] font-semibold text-[#34D399]"
+                      >
+                        Full Calibration →
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      type="text"
+                      maxLength={40}
+                      value={claimProfession}
+                      onChange={(e) => {
+                        setClaimProfession(e.target.value);
+                        setClaimError(null);
+                      }}
+                      placeholder="Profession"
+                      className="flex-1 rounded-xl border border-white/12 bg-[#141518] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:outline-none"
+                    />
+                    <input
+                      type="number"
+                      min={18}
+                      max={95}
+                      value={claimAge}
+                      onChange={(e) => {
+                        setClaimAge(e.target.value);
+                        setClaimError(null);
+                      }}
+                      placeholder="Age 18+"
+                      className="font-mono-tech w-full rounded-xl border border-white/12 bg-[#141518] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] sm:w-24 focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={claimingProfile}
+                      className="btn-aurora rounded-xl px-4 py-2 text-xs font-semibold"
+                    >
+                      {claimingProfile ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                  {claimError && <p className="text-[11px] text-rose-300">{claimError}</p>}
+                </form>
+              ))}
           </div>
+        )}
+      </div>
 
-          {/* Verified Peer-Reviewed Studies */}
-          <div className="space-y-3 border-t border-white/[0.08] pt-4">
-            <div className="flex items-center gap-2 text-[#34D399]">
-              <BookOpen className="h-4 w-4" />
-              <h2 className="text-sm font-semibold text-[#F3F1EC]">
-                Peer-Reviewed Science Powering This Sound
-              </h2>
+      {/* Study Blueprint Sheet Modal (opened from InlineProtocolPill) */}
+      {showBlueprintSheet && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-md"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowBlueprintSheet(false);
+          }}
+        >
+          <div className="animate-step glass-stage my-auto max-h-[88dvh] w-full max-w-2xl overflow-y-auto rounded-2xl p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-[#34D399]">
+                <BookOpen className="h-5 w-5" />
+                <h2 className="text-base font-semibold text-[#F3F1EC]">
+                  Verified Science &amp; Acoustic Blueprint
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBlueprintSheet(false)}
+                aria-label="Close protocol blueprint"
+                className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
             <p className="text-xs leading-relaxed text-[#A3A39E]">{recommendation.rationale}</p>
-
             {recommendation.executableSpec && (
               <StudyFidelityMatrix spec={recommendation.executableSpec} />
             )}
-
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {recommendation.studies.map((study) => (
                 <a
@@ -2849,40 +2810,27 @@ export function PlayerView({
                     </div>
                     <ExternalLink className="h-3 w-3 shrink-0 text-[#8E8E88] group-hover:text-[#34D399]" />
                   </div>
-                  <div className="text-xs font-medium text-[#F3F1EC] group-hover:text-white">
-                    {study.title}
-                  </div>
+                  <div className="text-xs font-medium text-[#F3F1EC]">{study.title}</div>
                   <p className="text-[11px] leading-relaxed text-[#8E8E88]">{study.summary}</p>
                 </a>
               ))}
             </div>
-
             {livePapers.length > 0 && (
-              <div className="space-y-2 border-t border-white/[0.08] pt-3">
-                <div className="font-mono-tech text-[10px] font-semibold uppercase tracking-wider text-[#34D399]">
-                  Live Matched Studies (NIH PubMed &amp; OpenAlex)
-                </div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {livePapers.map((paper) => (
-                    <a
-                      key={paper.pmid}
-                      href={paper.doiUrl || paper.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group block rounded-xl border border-white/[0.08] bg-[#131417] p-3 space-y-1 transition hover:border-emerald-400/45"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono-tech text-[9px] font-semibold uppercase text-[#34D399]">
-                          {paper.source === 'openalex' ? 'OpenAlex' : 'NIH PubMed'} · {paper.year}
-                        </span>
-                        <ExternalLink className="h-3 w-3 shrink-0 text-[#8E8E88] group-hover:text-[#34D399]" />
-                      </div>
-                      <div className="text-xs font-medium leading-snug text-[#F3F1EC]">
-                        {paper.title}
-                      </div>
-                    </a>
-                  ))}
-                </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {livePapers.map((paper) => (
+                  <a
+                    key={paper.pmid}
+                    href={paper.doiUrl || paper.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-xl border border-white/[0.08] bg-[#131417] p-3 space-y-1"
+                  >
+                    <div className="font-mono-tech text-[9.5px] font-semibold text-[#34D399]">
+                      {paper.source === 'openalex' ? 'OpenAlex' : 'NIH PubMed'} · {paper.year}
+                    </div>
+                    <div className="text-xs font-medium text-[#F3F1EC]">{paper.title}</div>
+                  </a>
+                ))}
               </div>
             )}
           </div>

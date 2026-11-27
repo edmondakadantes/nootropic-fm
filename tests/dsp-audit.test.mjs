@@ -1870,8 +1870,21 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
       throw new Error(`Timed out waiting for ${desc}`);
     };
 
-    // Walk the real 5-step platform flow:
-    // Step 1: Onboarding on Main Page -> Step 2: 2D Brain Map -> Step 3: Target -> Step 4: Music -> Scientific Studies Reveal -> Player
+    // Walk the real platform flow:
+    // StudioHomeView -> Open Precision Check-In -> Optional Beat 1 Priors -> Beat 2 Brain Map -> Beat 3 -> Beat 4 -> Reveal -> PlayerView
+    await waitUntil(
+      `Boolean(document.querySelector('[data-testid="open-precision-checkin"]'))`,
+      8000,
+      'StudioHomeView'
+    );
+    await evalJs(`document.querySelector('[data-testid="open-precision-checkin"]')?.click()`);
+    await waitUntil(
+      `Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'))`,
+      5000,
+      'Beat 2 Compass'
+    );
+    await evalJs(`Array.from(document.querySelectorAll('button')).find((b) => /Add Age & Role Priors/i.test(b.textContent || ''))?.click()`);
+
     await waitUntil(
       `(() => {
         const ageInput = document.querySelector('input[type="number"]');
@@ -1990,6 +2003,14 @@ test('8. Live Headless Edge CDP E2E Smoke Test against Built App (dist/client)',
       10000,
       'Scientific Studies Blueprint -> Apply Layers & Start'
     );
+
+    // Open Tier-2 Lab & Telemetry Drawer so oscilloscope canvases & 3-Way Monitor are mounted
+    await waitUntil(
+      `Boolean(document.querySelector('[data-testid="toggle-lab-drawer"]'))`,
+      8000,
+      'PlayerView Tier-1 Cockpit'
+    );
+    await evalJs(`document.querySelector('[data-testid="toggle-lab-drawer"]')?.click()`);
 
     // Wait for PlayerView + running AudioContext + worklets initialized
     const initialPlayback = await waitUntil(

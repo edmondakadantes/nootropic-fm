@@ -93,6 +93,7 @@ interface CheckInViewProps {
   onSaveProfileStep?: (data: Partial<UserProfile>) => Promise<void>;
   onMoodChange?: (mood: FieldMood) => void;
   onOpenSoundSystems?: () => void;
+  onBackToStudio?: () => void;
   onLaunchUnifiedSession: (payload: {
     profileUpdate?: Partial<UserProfile>;
     ephemeralMode: boolean;
@@ -152,6 +153,7 @@ export function CheckInView({
   onSaveProfileStep,
   onMoodChange,
   onOpenSoundSystems,
+  onBackToStudio,
   onLaunchUnifiedSession,
 }: CheckInViewProps) {
   const onboardingComplete = isProfileOnboardingComplete(profile);
@@ -159,9 +161,7 @@ export function CheckInView({
   const presetMicro = initialPreset
     ? NEURAL_MICRO_STATES.find((s) => s.id === initialPreset.microStateId) ?? null
     : null;
-  const [beat, setBeat] = useState<1 | 2 | 3 | 4>(
-    onboardingComplete ? (initialPreset ? 4 : 2) : 1
-  );
+  const [beat, setBeat] = useState<1 | 2 | 3 | 4>(initialPreset ? 4 : 2);
 
   // Beat 1: Neural Identity & Demographics (ZERO pre-filled fields until real Onboarding is completed!)
   const [introText, setIntroText] = useState('');
@@ -258,9 +258,9 @@ export function CheckInView({
       setGender(null);
       setRole(null);
       setOccupationLabel('');
-      setBeat(1);
+      setBeat((prev) => (prev === 1 ? (initialPreset ? 4 : 2) : prev));
     }
-  }, [profile?.id, onboardingComplete]);
+  }, [profile?.id, onboardingComplete, initialPreset]);
 
   useEffect(() => {
     if (selectedGoalSlug === 'trance_lock') {
@@ -522,16 +522,9 @@ export function CheckInView({
 
   const handleLaunch = async (genreOverride?: MusicGenreChoice) => {
     const activeGenreChoice = genreOverride ?? genreChoice;
-    if (isFirstVisit) {
-      const err = validateBeat1();
-      if (err) {
-        setBeat(1);
-        setAgeError(err);
-        return;
-      }
-    } else if (!Number.isFinite(parsedAge) || parsedAge < 18 || parsedAge > 95) {
+    if (researchConsent && !onboardingComplete && Number.isFinite(parsedAge) && (parsedAge < 18 || parsedAge > 95)) {
       setBeat(1);
-      setAgeError('Please enter your age (18+ required to continue).');
+      setAgeError('Please enter your age (18–95 required for consented research tracking).');
       return;
     }
 
@@ -624,8 +617,8 @@ export function CheckInView({
     }
   };
 
-  const totalBeats = isFirstVisit ? 4 : 3;
-  const visibleStepNum = isFirstVisit ? beat : Math.max(1, beat - 1);
+  const totalBeats = 3;
+  const visibleStepNum = beat === 1 ? 1 : Math.max(1, beat - 1);
   const presetDurations = [15, 20, 30, 40, 60];
   const durationOptions = presetDurations.includes(durationMin)
     ? presetDurations
@@ -633,6 +626,32 @@ export function CheckInView({
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center space-y-5">
+      {/* Studio Top Return + Optional Local-Only Priors Pill */}
+      <div className="flex w-full flex-wrap items-center justify-between gap-2">
+        {onBackToStudio ? (
+          <button
+            type="button"
+            onClick={onBackToStudio}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-[#131518] px-3 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:border-emerald-400/50 hover:text-[#F3F1EC]"
+          >
+            <ArrowLeft className="h-3.5 w-3.5 text-[#34D399]" />
+            <span>Back to Studio</span>
+          </button>
+        ) : (
+          <span />
+        )}
+        {!profile && beat !== 1 && (
+          <button
+            type="button"
+            onClick={() => setBeat(1)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/12 bg-[#131518] px-3 py-1.5 font-mono-tech text-[10.5px] font-medium text-[#A3A39E] transition hover:border-emerald-400/45 hover:text-[#34D399]"
+          >
+            <UserCog className="h-3.5 w-3.5 text-[#34D399]" />
+            <span>Local-Only · Optional: Add Age &amp; Role Priors</span>
+          </button>
+        )}
+      </div>
+
       {/* Explicit Platform Acoustic Law: Engineered Exclusively for In-Ear Buds + Sound Systems Lab */}
       {!isDriving && (
         <div className="animate-rise flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/35 bg-emerald-500/[0.07] px-3.5 py-2 text-[11px] text-[#D4D4CE]">
@@ -1234,16 +1253,26 @@ export function CheckInView({
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleAdvanceFromBeat1}
-            className="btn-aurora flex w-full items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold sm:text-base"
-          >
-            {initialPreset && selectedMicroState && neuralCoords
-              ? 'Continue: Choose Music Style'
-              : 'Continue: Current State'}
-            <ArrowRight className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setBeat(initialPreset ? 4 : 2)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#141518] px-4 py-4 text-xs font-medium text-[#D4D4CE] hover:border-white/25 hover:text-[#F3F1EC]"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Skip Priors
+            </button>
+            <button
+              type="button"
+              onClick={handleAdvanceFromBeat1}
+              className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-xl px-6 py-4 text-sm font-semibold sm:text-base"
+            >
+              {initialPreset && selectedMicroState && neuralCoords
+                ? 'Continue: Choose Music Style'
+                : 'Continue: Current State'}
+              <ArrowRight className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -1295,15 +1324,26 @@ export function CheckInView({
           {stateError && <p className="text-xs font-medium text-amber-300">{stateError}</p>}
 
           <div className="flex items-center gap-2.5">
-            {isFirstVisit && (
+            {onBackToStudio ? (
               <button
                 type="button"
-                onClick={() => setBeat(1)}
+                onClick={onBackToStudio}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#141518] px-4 py-4 text-xs font-medium text-[#D4D4CE] hover:border-white/25 hover:text-[#F3F1EC]"
               >
                 <ArrowLeft className="h-4 w-4" />
-                Back
+                Studio
               </button>
+            ) : (
+              isFirstVisit && (
+                <button
+                  type="button"
+                  onClick={() => setBeat(1)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/12 bg-[#141518] px-4 py-4 text-xs font-medium text-[#D4D4CE] hover:border-white/25 hover:text-[#F3F1EC]"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Priors
+                </button>
+              )
             )}
             <button
               type="button"

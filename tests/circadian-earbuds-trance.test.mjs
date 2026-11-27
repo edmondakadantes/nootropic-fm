@@ -524,7 +524,15 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await waitUntil(`Boolean(document.querySelector('button[aria-label="Daylight Mode"]'))`, 8000, 'reload Daylight');
     assert.equal(await evalJs(`document.documentElement.dataset.theme`), 'daylight');
 
-    // Beat 1 contrast check
+    // StudioHomeView contrast check in Daylight Mode
+    await waitUntil(`Boolean(document.querySelector('[data-testid="open-precision-checkin"]'))`, 5000, 'Daylight StudioHomeView');
+    await assertContrastClean('Daylight StudioHomeView');
+
+    // Open Precision Check-In (starts at Beat 2 with zero Beat 1 wall), then open optional Beat 1 Priors
+    await evalJs(`document.querySelector('[data-testid="open-precision-checkin"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'))`, 5000, 'Beat 2');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Add Age & Role Priors/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('input[type="number"]'))`, 5000, 'Optional Beat 1 Priors');
     await assertContrastClean('Daylight Beat 1');
 
     // Walk to Beat 2 (2D Brain Map) -> verify contrast + visible studio-grid stroke
@@ -581,7 +589,17 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || '')))`, 8000, 'PlayerView');
     await new Promise((r) => setTimeout(r, 250));
-    await assertContrastClean('Daylight PlayerView');
+    await assertContrastClean('Daylight PlayerView Tier-1');
+
+    // Tier-1 Calm Cockpit starts with isLabOpen=false (0 active canvases) -> expand Tier-2 Lab Drawer
+    assert.equal(
+      await evalJs(`document.querySelectorAll('main canvas').length`),
+      0,
+      'Tier-1 Calm Cockpit must mount 0 GPU canvases until Lab Drawer opens'
+    );
+    await evalJs(`document.querySelector('[data-testid="toggle-lab-drawer"]')?.click()`);
+    await waitUntil(`document.querySelectorAll('main canvas').length >= 2`, 4000, 'Tier-2 Lab Drawer Canvases');
+    await new Promise((r) => setTimeout(r, 250));
 
     // Verify both Oscillator & Spectrum Bar canvases switched to Daylight lab surface (#E8EFF7 -> r>=224,g>=232,b>=240)
     const canvasAudit = await evalJs(`(() => {
@@ -603,44 +621,55 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
       assert.ok(c.r >= 224 && c.g >= 232 && c.b >= 240, `Canvas stayed dark in Daylight Mode: ${JSON.stringify(c)}`);
     }
 
-    // Verify X/Y Lissajous toggle & Verified Science drawer in Daylight Mode (wait >150ms CSS transition)
+    // Verify X/Y Lissajous toggle, Inline Protocol Blueprint modal & Plain Music monitor in Daylight Mode
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /X\\/Y Lissajous/i.test(b.textContent || ''))?.click()`);
     await new Promise((r) => setTimeout(r, 260));
     await assertContrastClean('Daylight PlayerView X/Y Lissajous');
 
-    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Verified Science/i.test(b.textContent || ''))?.click()`);
-    await new Promise((r) => setTimeout(r, 260));
-    await assertContrastClean('Daylight PlayerView Science Drawer');
-
-    // Verify Plain Music layer monitor active contrast + dot visibility
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Plain Music/i.test(b.textContent || ''))?.click()`);
     await new Promise((r) => setTimeout(r, 260));
     await assertContrastClean('Daylight PlayerView Plain Music');
 
-    // Verify Sound Systems & Go Pro modals in Daylight Mode
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
+    await evalJs(`document.querySelector('[data-testid="inline-protocol-pill"]')?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Verified Science & Acoustic Blueprint'))`, 4000, 'Daylight Blueprint Modal');
+    await assertContrastClean('Daylight PlayerView Blueprint Modal');
+    await evalJs(`document.querySelector('button[aria-label="Close protocol blueprint"]')?.click()`);
+    await new Promise((r) => setTimeout(r, 150));
+
+    // Minimize PlayerView -> exit Zen Focus Lock -> reveal AppShell nav + MiniPlayerBar + SystemPillDrawer
+    await evalJs(`document.querySelector('[data-testid="minimize-player-btn"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="mini-player-bar"]'))`, 4000, 'MiniPlayerBar visible');
+
+    // Verify SystemPillDrawer, Sound Systems, and Go Pro modals in Daylight Mode
+    await evalJs(`document.querySelector('[data-testid="system-pill-trigger"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="system-pill-drawer"]'))`, 4000, 'SystemPillDrawer');
+    await assertContrastClean('Daylight SystemPillDrawer');
+
+    await evalJs(`Array.from(document.querySelectorAll('[data-testid="system-pill-drawer"] button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`/Acoustic Hardware Lab/i.test(document.body.innerText)`, 4000, 'SoundSystemsModal');
     await assertContrastClean('Daylight SoundSystemsModal');
     await evalJs(`document.querySelector('button[aria-label="Close Sound Systems modal"]')?.click()`);
     await new Promise((r) => setTimeout(r, 100));
 
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /PRO|Go Pro/i.test(b.textContent || ''))?.click()`);
+    await evalJs(`document.querySelector('[data-testid="system-pill-trigger"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="system-pill-drawer"]'))`, 4000, 'SystemPillDrawer for Pro Modal');
+    await evalJs(`Array.from(document.querySelectorAll('[data-testid="system-pill-drawer"] button')).find(b => /NootropicFM Pro Active|Unlock Pro/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`/Pro Subscription|Unlock Full Sessions/i.test(document.body.innerText)`, 4000, 'UpgradeProModal');
     await assertContrastClean('Daylight UpgradeProModal');
-    await evalJs(`document.querySelector('div.fixed button')?.click()`);
-    await new Promise((r) => setTimeout(r, 100));
+    await evalJs(`document.querySelector('button[aria-label="Close Pro modal"]')?.click()`);
+    await waitUntil(`!document.querySelector('button[aria-label="Close Pro modal"]')`, 3000, 'UpgradeProModal closed');
 
-    // Verify Study Lab & Research Brain contrast in Daylight Mode too
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
+    // Verify Study Lab & Memory tabs in Daylight Mode while MiniPlayerBar stays docked
+    await evalJs(`Array.from(document.querySelectorAll('aside button, nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Turn Published'))`, 5000, 'StudyLabView');
     await assertContrastClean('Daylight StudyLabView');
 
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Research/i.test(b.textContent || ''))?.click()`);
-    await waitUntil(`Boolean(document.body.innerText.includes('Research Brain') || document.body.innerText.includes('Unable to load'))`, 5000, 'InsightsView');
+    await evalJs(`Array.from(document.querySelectorAll('aside button, nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Memory/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Personal Neural Memory') || document.body.innerText.includes('Research Brain'))`, 5000, 'InsightsView');
     await assertContrastClean('Daylight InsightsView');
 
-    // Return to active PlayerView -> End & Rate -> verify DebriefView contrast
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Session/i.test(b.textContent || ''))?.click()`);
+    // Expand MiniPlayerBar back to PlayerView -> End & Rate -> verify DebriefView contrast
+    await evalJs(`document.querySelector('[data-testid="mini-player-bar"] button[aria-label="Expand player"]')?.click()`);
     await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || '')))`, 4000, 'Return to PlayerView');
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('How did your mind'))`, 5000, 'DebriefView');

@@ -239,15 +239,18 @@ test('department email suite is routed by role with zero vasi@nootropic.fm anywh
   const datasetModal = fs.readFileSync(path.join(ROOT, 'src', 'components', 'DatasetInquiryModal.tsx'), 'utf8');
   assert.ok(datasetModal.includes('research@nootropic.fm'), 'DatasetInquiryModal must route direct emails to research@nootropic.fm');
 
-  const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'App.tsx'), 'utf8');
+  const appSrc =
+    fs.readFileSync(path.join(ROOT, 'src', 'App.tsx'), 'utf8') +
+    '\n' +
+    fs.readFileSync(path.join(ROOT, 'src', 'components', 'AppShell.tsx'), 'utf8');
   for (const email of deptEmails) {
-    assert.ok(appSrc.includes(email), `Missing ${email} in src/App.tsx`);
+    assert.ok(appSrc.includes(email), `Missing ${email} in src/App.tsx + src/components/AppShell.tsx`);
   }
   for (const roleLabel of ['General:', 'Research:', 'Support:', 'Privacy:', 'Founders:']) {
-    assert.ok(appSrc.includes(roleLabel), `Missing role label "${roleLabel}" in src/App.tsx`);
+    assert.ok(appSrc.includes(roleLabel), `Missing role label "${roleLabel}" in src/App.tsx + src/components/AppShell.tsx`);
   }
   for (const link of ['/science/', '/compare/', '/contact/']) {
-    assert.ok(appSrc.includes(link), `Missing ${link} in src/App.tsx`);
+    assert.ok(appSrc.includes(link), `Missing ${link} in src/App.tsx + src/components/AppShell.tsx`);
   }
 
   const rootHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');

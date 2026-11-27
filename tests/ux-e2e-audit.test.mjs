@@ -396,14 +396,14 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
       res.end(testWavBuf);
       return;
     }
-    if (cleanUrl === '/api/protocol/start' && req.method === 'POST') {
+    if ((cleanUrl === '/api/protocol/start' || cleanUrl === '/api/studies/compile') && req.method === 'POST') {
       req.resume();
       req.on('end', () => {
         res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
         res.end(
           JSON.stringify({
             recommendation: {
-              sessionId: 'eph_e2e_audit_01',
+              sessionId: cleanUrl === '/api/studies/compile' ? 'eph_study_pin_01' : 'eph_e2e_audit_01',
               ephemeralMode: true,
               isControlTrial: false,
               isExploration: false,
@@ -782,7 +782,10 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
             /${mode === 'daylight' ? 'Daylight Mode' : 'Night Mode'}/i.test(x.getAttribute('aria-label') || '')
           );
           if (b) b.click();
-          else document.documentElement.setAttribute('data-theme', '${mode}');
+          else {
+            document.documentElement.setAttribute('data-theme', '${mode}');
+            document.documentElement.classList.toggle('dark', '${mode}' === 'night');
+          }
         }
       })()`);
       await new Promise((r) => setTimeout(r, 550));
@@ -957,13 +960,13 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     );
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Stop Proof/i.test(b.innerText || ''))?.click()`);
 
-    // Clicking Open Studio locally updates history URL so reloads remain in Studio
+    // Clicking Open Studio locally updates history URL so reloads remain in Studio Home
     await evalJs(`Array.from(document.querySelectorAll('header a')).find(a => /Open Studio/i.test(a.innerText || ''))?.click()`);
-    await waitUntil(`Boolean(document.querySelector('input[type="number"]'))`, 6000, 'Transition Showcase -> Studio');
+    await waitUntil(`Boolean(document.querySelector('[data-testid="open-precision-checkin"]'))`, 6000, 'Transition Showcase -> StudioHomeView');
     assert.match(await evalJs(`window.location.search`), /surface=studio/);
 
     // =========================================================================
-    // 2) STUDIO RESPONSIVE HEADER (375/640/768/1024/1280) + 90s LOCAL-ONLY FLOW
+    // 2) STUDIO RESPONSIVE SHELL (375/640/768/1024/1280) + ZERO-WALL FLOW + PERSISTENT MINIPLAYER
     // =========================================================================
     for (const bp of [375, 640, 768, 1024, 1280]) {
       await sendCdp('Emulation.setDeviceMetricsOverride', {
@@ -984,10 +987,24 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     });
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio` });
     await waitUntil(
-      `Boolean(document.querySelector('input[type="number"]'))`,
+      `Boolean(document.querySelector('[data-testid="open-precision-checkin"]'))`,
       8000,
-      'Studio Beat 1 on 375px'
+      'StudioHomeView on 375px'
     );
+    const dayOneCount375 = await evalJs(`(() => {
+      const labels = ['Deep Flow', 'Sharp Focus', 'Calm Reset', 'Sleep Wind-Down'];
+      const txt = document.body.innerText;
+      return labels.filter(l => txt.includes(l)).length;
+    })()`);
+    assert.equal(dayOneCount375, 4, 'StudioHomeView Day-1 must expose all 4 instant goal cards');
+    await assertNoOverflowAndClippedHeader('StudioHomeView 375px', 375);
+    await assertContrastWcag('StudioHomeView 375px');
+
+    // Open Precision Check-In (zero mandatory Beat 1 gate; starts at Beat 2 Compass), then test optional Beat 1 EEA opt-out
+    await evalJs(`document.querySelector('[data-testid="open-precision-checkin"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'))`, 5000, 'Beat 2 direct entry');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Add Age & Role Priors/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('input[type="number"]'))`, 5000, 'Optional Beat 1 Priors 375px');
     await assertNoOverflowAndClippedHeader('Studio Beat 1 375px', 375);
     await assertContrastWcag('Studio Beat 1 375px');
 
@@ -1034,8 +1051,15 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
 
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || '')))`, 8000, 'PlayerView 375px');
-    await assertNoOverflowAndClippedHeader('Studio PlayerView 375px', 375);
-    await assertContrastWcag('Studio PlayerView 375px');
+    await assertNoOverflowAndClippedHeader('Studio PlayerView Tier-1 375px', 375);
+    await assertContrastWcag('Studio PlayerView Tier-1 375px');
+
+    // Verify Tier-1 defaults to isLabOpen=false (0 canvases), then expand Tier-2 Lab Drawer
+    assert.equal(await evalJs(`document.querySelectorAll('main canvas').length`), 0, 'Tier-1 must hide GPU canvases by default');
+    await evalJs(`document.querySelector('[data-testid="toggle-lab-drawer"]')?.click()`);
+    await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /Run PVT/i.test(b.textContent || '')))`, 4000, 'Tier-2 Lab Drawer expanded');
+    await assertNoOverflowAndClippedHeader('Studio PlayerView Tier-2 375px', 375);
+    await assertContrastWcag('Studio PlayerView Tier-2 375px');
 
     // Open & test PvtBenchmarkModal: 60-trial Lab switcher + false_start (<100ms / early tap) retry + 20-trial completion
     await evalJs(`(() => {
@@ -1133,13 +1157,34 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await waitUntil(`!document.body.innerText.includes('35s Dichotic Headphone Check')`, 4000, 'Huggins Modal closed after completion');
     await evalJs(`(() => { if (window.__origSetTimeout) window.setTimeout = window.__origSetTimeout; })()`);
 
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Go Pro/i.test(b.textContent || ''))?.click()`);
+    // Minimize PlayerView -> test MiniPlayerBar + SystemPillDrawer + UpgradeProModal on 375px -> Expand -> End Session
+    await evalJs(`document.querySelector('[data-testid="minimize-player-btn"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="mini-player-bar"]'))`, 4000, 'MiniPlayerBar docked on 375px');
+    await assertContrastWcag('MiniPlayerBar 375px');
+
+    // Verify persistent Study Lab & Pin to Studio while MiniPlayerBar remains live across tabs
+    await evalJs(`Array.from(document.querySelectorAll('nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Verified Landmark Acoustic Protocols'))`, 5000, 'StudyLab on 375px during MiniPlayer');
+    assert.ok(await evalJs(`Boolean(document.querySelector('[data-testid="mini-player-bar"]'))`), 'MiniPlayerBar must stay visible across Study Lab tab');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /^Pin$/i.test((b.textContent || '').trim()))?.click()`);
+    await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /^Pinned$/i.test((b.textContent || '').trim())))`, 4000, 'Study Lab Pin to Studio');
+
+    await evalJs(`Array.from(document.querySelectorAll('nav[aria-label="Studio Mobile Navigation"] button')).find(b => /^Studio$/i.test((b.textContent || '').trim()))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Pinned from Study Lab'))`, 4000, 'Pinned protocol visible on Studio Home');
+
+    await evalJs(`document.querySelector('[data-testid="system-pill-trigger"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="system-pill-drawer"]'))`, 4000, 'SystemPillDrawer 375px');
+    await assertContrastWcag('SystemPillDrawer 375px');
+    await evalJs(`Array.from(document.querySelectorAll('[data-testid="system-pill-drawer"] button')).find(b => /7-Day Free Trial|Go Pro|Manage Subscription/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Unlimited') || document.body.innerText.includes('Pro'))`, 4000, 'UpgradePro Modal');
     await assertContrastWcag('UpgradePro Modal 375px');
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.querySelector('div.fixed.inset-0.z-50')`, 4000, 'UpgradePro Modal closed via Escape');
 
-    // End Session -> Local-Only Debrief Summary -> Start a New Session -> HeroLandingView (375px & 1280px)
+    await evalJs(`document.querySelector('[data-testid="mini-player-bar"] button[aria-label="Expand player"]')?.click()`);
+    await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End Session/i.test(b.textContent || '')))`, 4000, 'Expand MiniPlayerBar back to PlayerView');
+
+    // End Session -> Local-Only Debrief Summary -> Start a New Session -> StudioHomeView (375px & 1280px)
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /End Session/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('See Local Session Summary'))`, 5000, 'Local-only Debrief');
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /See Local Session Summary/i.test(b.textContent || ''))?.click()`);
@@ -1147,17 +1192,23 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await assertContrastWcag('Local-Only Debrief 375px');
 
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Start a New Session/i.test(b.textContent || ''))?.click()`);
-    await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural Brain Map"]'))`, 6000, 'HeroLandingView 375px');
-    const quickCount375 = await evalJs(`(() => {
-      const labels = ['Stressed', 'Tired', 'Brain Fog', 'Distracted', 'Anxious', 'Calm'];
+    await waitUntil(`Boolean(document.querySelector('[data-testid="open-precision-checkin"]'))`, 6000, 'StudioHomeView 375px');
+    const returningCheck375 = await evalJs(`(() => {
+      const pills = ['Brain Fog', 'Wired & Anxious', 'Scattered', 'Steady · Flow'];
       const txt = document.body.innerText;
-      return labels.filter(l => txt.includes(l)).length;
+      return {
+        pillCount: pills.filter(l => txt.includes(l)).length,
+        hasHugginsInvite: txt.includes('Verify Headphones (35s)'),
+      };
     })()`);
-    assert.equal(quickCount375, 6, 'HeroLandingView must expose all 6 quick starter states');
-    await assertNoOverflowAndClippedHeader('HeroLandingView 375px', 375);
-    await assertContrastWcag('HeroLandingView 375px');
+    assert.equal(returningCheck375.pillCount, 4, 'StudioHomeView after Session 1 must expose Returning quick-feeling pills');
+    assert.equal(returningCheck375.hasHugginsInvite, false, 'Huggins prompt must stay suppressed after user already completed 600 Hz verification in PlayerView');
+    await assertNoOverflowAndClippedHeader('StudioHomeView 375px after Debrief', 375);
+    await assertContrastWcag('StudioHomeView 375px after Debrief');
 
-    // Also test DatasetInquiryModal from HeroLandingView CohortIntelligenceShowcase at 375px & 1280px
+    // Verify DatasetInquiryModal from Memory (Insights) CohortIntelligenceShowcase at 375px & 1280px
+    await evalJs(`Array.from(document.querySelectorAll('nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Memory/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Personal Neural Memory'))`, 5000, 'Memory / Insights 375px');
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /License Full Dataset/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Unlock Full Aggregated Cohort Datasets'))`, 4000, 'DatasetInquiryModal 375px');
     await assertNoOverflowAndClippedHeader('DatasetInquiryModal 375px', 375);
@@ -1182,9 +1233,8 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Return to nootropic\\.fm/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`!document.querySelector('div.fixed.inset-0.z-50')`, 4000, 'DatasetInquiryModal closed');
 
-    // HeroLandingView 1280px WCAG + 2D Map Step 1 + Step 2 -> Discover
-    await assertNoOverflowAndClippedHeader('HeroLandingView 1280px', 1280);
-    await assertContrastWcag('HeroLandingView 1280px');
+    await assertNoOverflowAndClippedHeader('Memory & Brain 1280px', 1280);
+    await assertContrastWcag('Memory & Brain 1280px');
 
     // =========================================================================
     // 3) DESKTOP 1280x900 & MOBILE 375x812: Outcome Deep-Link + Study Lab + Insights (Admin Export Modal) + OnboardingView
@@ -1197,11 +1247,11 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     });
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio&target=deep_flow&duration=45` });
     await waitUntil(`Boolean(document.body.innerText.includes('Selected shift:') && document.body.innerText.includes('Deep Flow State (45m)'))`, 6000, 'Outcome Deep-Link pre-selection');
-    await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /Continue:\\s*Choose Music Style/i.test(b.textContent || '')))`, 4000, 'Beat 1 Deep-Link CTA matches destination Beat 4');
+    await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /Lock NootropicFM Mode/i.test(b.textContent || '')))`, 4000, 'Deep-Link skips straight to Beat 4');
 
-    // Restore sync pass to access OnboardingView ('Edit Profile Details') & verify both 375px and 1280px
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Restore Sync QR|Neural Fingerprint Pass/i.test(b.getAttribute('aria-label') || ''))?.click()`);
-    await waitUntil(`Boolean(document.body.innerText.includes('Restore your Neural Pass on this device'))`, 4000, 'Identity Restore Modal');
+    // Restore sync pass via SystemPillDrawer to access OnboardingView ('Edit Profile Details') & verify both 375px and 1280px
+    await evalJs(`document.querySelector('[data-testid="system-pill-trigger"]')?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Restore Neural Pass via Sync Key'))`, 4000, 'SystemPillDrawer Restore Pass');
     await evalJs(`(() => {
       const inp = document.querySelector('div.fixed.inset-0.z-50 input[placeholder="NFM-XXXX-XXXX"]');
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -1210,9 +1260,7 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
       inp.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
     await evalJs(`Array.from(document.querySelectorAll('div.fixed.inset-0.z-50 button')).find(b => /^Restore$/i.test((b.textContent || '').trim()))?.click()`);
-    await waitUntil(`Boolean(document.body.innerText.includes('Welcome back, Elena'))`, 5000, 'Profile restored');
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Neural Fingerprint Pass/i.test(b.getAttribute('aria-label') || ''))?.click()`);
-    await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /Edit Profile Details/i.test(b.textContent || '')))`, 4000, 'Neural Pass Modal with Edit Profile');
+    await waitUntil(`Boolean(document.body.innerText.includes('Elena') && Array.from(document.querySelectorAll('button')).find(b => /Edit Profile Details/i.test(b.textContent || '')))`, 5000, 'SystemPillDrawer restored Elena with Edit Profile');
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Edit Profile Details/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Refine your Neural Identity'))`, 5000, 'OnboardingView 1280px');
     await assertNoOverflowAndClippedHeader('OnboardingView 1280px', 1280);
@@ -1247,13 +1295,13 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
       inp.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
 
-    // Save Onboarding changes -> cleanly returns to CheckInView
+    // Save Onboarding changes -> cleanly returns to StudioHomeView
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Save Profile Changes/i.test(b.textContent || ''))?.click()`);
-    await waitUntil(`Boolean(document.body.innerText.includes('Welcome back, Elena'))`, 5000, 'OnboardingView save -> CheckInView');
+    await waitUntil(`Boolean(document.body.innerText.includes('Elena'))`, 5000, 'OnboardingView save -> StudioHomeView');
 
-    // Open Research Brain (Insights) on 375px AND 1280px + Admin Dataset Export Modal
-    await evalJs(`Array.from(document.querySelectorAll('nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Research/i.test(b.textContent || ''))?.click()`);
-    await waitUntil(`Boolean(document.body.innerText.includes('Research Brain') && document.body.innerText.includes('Implicit Retention'))`, 5000, 'InsightsView 375px');
+    // Open Memory & Research Brain (Insights) on 375px AND 1280px + Admin Dataset Export Modal
+    await evalJs(`Array.from(document.querySelectorAll('nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Memory/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Research Brain') && document.body.innerText.includes('Personal Neural Memory'))`, 5000, 'InsightsView 375px');
     await assertNoOverflowAndClippedHeader('InsightsView 375px', 375);
     await assertContrastWcag('InsightsView 375px');
 
@@ -1271,7 +1319,7 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await assertContrastWcag('InsightsView 1280px');
 
     // Open Study Lab -> verify 375px & 1280px layout + WCAG contrast + accurate 20-trial (~75s) PVT text
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
+    await evalJs(`Array.from(document.querySelectorAll('aside button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('20-trial (~75s) Pre/Post PVT'))`, 5000, 'Study Lab updated PVT text');
     await assertNoOverflowAndClippedHeader('StudyLab 1280px', 1280);
     await assertContrastWcag('StudyLab 1280px');
@@ -1287,10 +1335,12 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.body.innerText.includes('Official Department Channels')`, 4000, 'Privacy Modal closed via Escape');
 
-    // Open Sound Systems -> WCAG + Escape close
+    // Open Sound Systems via SystemPillDrawer -> WCAG + Escape close
     await sendCdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await new Promise((r) => setTimeout(r, 120));
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
+    await evalJs(`document.querySelector('[data-testid="system-pill-trigger"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="system-pill-drawer"]'))`, 4000, 'SystemPillDrawer 1280px');
+    await evalJs(`Array.from(document.querySelectorAll('[data-testid="system-pill-drawer"] button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`/Acoustic Hardware Lab/i.test(document.body.innerText)`, 6000, 'Sound Systems modal');
     await assertContrastWcag('SoundSystems Modal 1280px');
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
@@ -1547,20 +1597,8 @@ test('Headless Edge E2E: PlayerView suspended-AudioContext autoplay recovery + d
 
     await sendCdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio` });
-    await waitUntil(`Boolean(document.querySelector('input[type="number"]'))`, 8000, 'Beat 1');
-
-    // Fill Beat 1 -> Beat 2 -> Beat 3 -> Beat 4 -> Reveal -> Apply & Start
-    await evalJs(`(() => {
-      const ageInput = document.querySelector('input[type="number"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      if (ageInput._valueTracker) ageInput._valueTracker.setValue('');
-      setter.call(ageInput, '31');
-      ageInput.dispatchEvent(new Event('input', { bubbles: true }));
-      const btns = Array.from(document.querySelectorAll('button'));
-      btns.find(b => /^female$/i.test((b.textContent || '').trim()))?.click();
-      btns.find(b => /Founder/i.test(b.textContent || ''))?.click();
-    })()`);
-    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /continue:\\s*current state/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="open-precision-checkin"]'))`, 8000, 'StudioHomeView');
+    await evalJs(`document.querySelector('[data-testid="open-precision-checkin"]')?.click()`);
     await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'))`, 5000, 'Beat 2');
     await evalJs(`document.querySelector('button[data-landmark="true"]')?.click()`);
     await waitUntil(`(() => {
@@ -1602,20 +1640,23 @@ test('Headless Edge E2E: PlayerView suspended-AudioContext autoplay recovery + d
 
     await waitUntil(`!/00:00/.test(document.body.innerText.match(/\\d{2}:\\d{2}/)?.[0] || '00:00')`, 4000, 'Session timer advancing after audio resume');
 
+    // Minimize -> switch to Memory tab -> verify AudioContext stays running & MiniPlayerBar visible -> Expand back to PlayerView!
+    await evalJs(`document.querySelector('[data-testid="minimize-player-btn"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="mini-player-bar"]'))`, 4000, 'MiniPlayerBar visible during live session');
+    await evalJs(`Array.from(document.querySelectorAll('nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Memory/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Personal Neural Memory'))`, 4000, 'Memory tab active while minimized');
+    await new Promise((r) => setTimeout(r, 250));
+    assert.ok(
+      await evalJs(`Boolean(document.querySelector('[data-testid="mini-player-bar"] button[aria-label="Pause mini player"]'))`),
+      'Audio playback must remain unbroken (Pause button active) after Minimize + Memory navigation'
+    );
+    await evalJs(`document.querySelector('[data-testid="mini-player-bar"] button[aria-label="Expand player"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('button[aria-label="Pause"]'))`, 4000, 'Expanded back to running PlayerView seamlessly');
+
     // Also verify tapping the Play button directly (rather than the banner) while AudioContext is suspended does NOT self-pause
     await sendCdp('Page.reload', { ignoreCache: false });
-    await waitUntil(`Boolean(document.querySelector('input[type="number"]'))`, 8000, 'Reload Beat 1 for Play-button autoplay test');
-    await evalJs(`(() => {
-      const ageInput = document.querySelector('input[type="number"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      if (ageInput._valueTracker) ageInput._valueTracker.setValue('');
-      setter.call(ageInput, '31');
-      ageInput.dispatchEvent(new Event('input', { bubbles: true }));
-      const btns = Array.from(document.querySelectorAll('button'));
-      btns.find(b => /^female$/i.test((b.textContent || '').trim()))?.click();
-      btns.find(b => /Founder/i.test(b.textContent || ''))?.click();
-    })()`);
-    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /continue:\\s*current state/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="open-precision-checkin"]'))`, 8000, 'Reload StudioHomeView for Play-button autoplay test');
+    await evalJs(`document.querySelector('[data-testid="open-precision-checkin"]')?.click()`);
     await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'))`, 5000, 'Beat 2 (Play-button test)');
     await evalJs(`document.querySelector('button[data-landmark="true"]')?.click()`);
     await waitUntil(`(() => {

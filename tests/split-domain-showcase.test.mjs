@@ -558,12 +558,12 @@ test('Headless Edge: Flagship Showcase renders branded hardware, CAD X-Ray, WCAG
       assert.ok(!href.includes('launch=') && !href.includes('target='), `Expected onboarding link without player skip, got: ${href}`);
     }
 
-    // 2. Verify entering Audio Studio opens the full original CheckInView onboarding (NOT skipping straight to PlayerView)
+    // 2. Verify entering Audio Studio opens the Studio Home cockpit (NOT skipping straight to PlayerView)
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio` });
     await waitUntil(
-      `Boolean(document.body && document.body.innerText && document.body.innerText.includes('Study Lab') && !document.body.innerText.includes('ORBITAL PHASE-RING') && document.querySelector('input, textarea'))`,
+      `Boolean(document.body && document.body.innerText && document.body.innerText.includes('Study Lab') && !document.body.innerText.includes('ORBITAL PHASE-RING') && document.querySelector('[data-testid="open-precision-checkin"]'))`,
       8000,
-      'Full original CheckInView onboarding rendered on Studio entry'
+      'StudioHomeView rendered on Studio entry'
     );
     assert.equal(await evalJs(`document.body.innerText.includes('Pause Session')`), false);
 

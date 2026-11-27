@@ -253,6 +253,7 @@ export class StereoRainBed {
   private speakerSafe = false;
   private studioTrackHasRain = false;
   private intensityMult = 1.0;
+  private manualLevel: number | null = null;
   private attachToken = 0;
 
   public attach(
@@ -382,6 +383,15 @@ export class StereoRainBed {
     this.applyGain();
   }
 
+  public setManualLevel(level: number | null): void {
+    this.manualLevel = level === null ? null : Math.max(0, Math.min(1, level));
+    this.applyGain();
+  }
+
+  public getManualLevel(): number | null {
+    return this.manualLevel;
+  }
+
   private applyGain(): void {
     if (!this.ctx || !this.rainGain) return;
     const now = this.ctx.currentTime;
@@ -394,9 +404,17 @@ export class StereoRainBed {
       : this.speakerSafe
         ? 0.48
         : 0.74;
-    const target = this.active
-      ? Math.min(0.92, baseGain * (0.82 + 0.18 * this.intensityMult))
-      : 0.0001;
+    let target = 0.0001;
+    if (this.active) {
+      if (this.manualLevel !== null) {
+        target =
+          this.manualLevel <= 0.005
+            ? 0.0001
+            : Math.min(0.92, this.manualLevel * (this.speakerSafe ? 0.62 : 0.88));
+      } else {
+        target = Math.min(0.92, baseGain * (0.82 + 0.18 * this.intensityMult));
+      }
+    }
     this.rainGain.gain.setTargetAtTime(target, now, this.active ? 0.55 : 0.4);
   }
 

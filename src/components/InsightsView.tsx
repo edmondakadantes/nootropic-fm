@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import {
   Activity,
   Brain,
+  Cpu,
   Database,
   Download,
   FlaskConical,
+  Headphones,
   Layers,
   Lock,
   Music2,
@@ -15,15 +17,33 @@ import {
   X,
 } from 'lucide-react';
 import { getGenreDisplayMeta } from '../../shared/promptComposer';
-import { STATE_LABELS, TARGET_LABELS, type ResearchInsights } from '../../shared/types';
+import {
+  GENRE_META,
+  STATE_LABELS,
+  TARGET_LABELS,
+  type ResearchInsights,
+  type UserProfile,
+} from '../../shared/types';
 import { API_BASE, api } from '../lib/api';
+import {
+  readDisclosureState,
+  resolveMemoryMaturityStage,
+} from '../lib/disclosureScheduler';
 import { CohortIntelligenceShowcase } from './CohortIntelligenceShowcase';
 
 interface InsightsViewProps {
   profileId?: string;
+  profile?: UserProfile | null;
+  onOpenOnboarding?: () => void;
+  onOpenSoundSystems?: () => void;
 }
 
-export function InsightsView({ profileId }: InsightsViewProps) {
+export function InsightsView({
+  profileId,
+  profile = null,
+  onOpenOnboarding,
+  onOpenSoundSystems,
+}: InsightsViewProps) {
   const [insights, setInsights] = useState<ResearchInsights | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +51,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
   const [adminKey, setAdminKey] = useState('');
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [memoryScope, setMemoryScope] = useState<'all' | 'personal' | 'collective'>('all');
 
   const handleAdminExport = async (format: 'csv' | 'json') => {
     if (!adminKey.trim()) {
@@ -91,31 +112,18 @@ export function InsightsView({ profileId }: InsightsViewProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [showExportModal]);
 
-  if (loading && !insights) {
-    return (
-      <div className="mx-auto max-w-5xl py-16 text-center font-mono-tech text-xs uppercase tracking-[0.18em] text-[#8E8E88]">
-        Loading live data from Cloudflare D1 research database...
-      </div>
-    );
-  }
-
-  if (error || !insights) {
-    return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-center space-y-3 text-sm text-rose-200">
-        <p>{error ?? 'Unable to load research metrics.'}</p>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-[#14161A] px-4 py-2 text-xs font-semibold text-[#F3F1EC] hover:border-white/30"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Retry Loading Insights
-        </button>
-      </div>
-    );
-  }
-
-  const ret = insights.retentionMetrics;
+  const ret = insights?.retentionMetrics;
+  const localCompleted = readDisclosureState().completedSessions;
+  const mem = profile?.neuralMemory;
+  const learnedSessions = Math.max(
+    mem?.learnedSessions ?? 0,
+    profile?.sessionCount ?? 0,
+    localCompleted
+  );
+  const maturityStage = resolveMemoryMaturityStage(learnedSessions);
+  const hasConsentedProfile = Boolean(profile?.id && profile.researchConsent);
+  const activePvtN = mem?.activePvtCount ?? 0;
+  const shamPvtN = mem?.shamPvtCount ?? 0;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -124,18 +132,39 @@ export function InsightsView({ profileId }: InsightsViewProps) {
         <div>
           <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/[0.08] px-3 py-1 font-mono-tech text-[11px] font-medium text-[#34D399]">
             <Database className="h-3.5 w-3.5" />
-            Live Data Flywheel · Cloudflare D1 SQLite (Aggregated &amp; Pseudonymized)
+            Personal Neural Memory + Collective Research Brain · Cloudflare D1
           </div>
           <h1 className="font-display mt-2.5 text-2xl font-bold text-[#F3F1EC] sm:text-3xl">
-            Research Brain · <span className="text-[#34D399]">nootropic.fm</span>
+            Memory &amp; Research Brain · <span className="text-[#34D399]">nootropic.fm</span>
           </h1>
           <p className="mt-1 text-sm text-[#A3A39E]">
-            Hybrid Bayesian Contextual Bandit combining explicit debrief ratings (weight 1.0) with
-            real behavioral retention &amp; D1/D7 return signals (weight 0.45). Zero synthetic data.
+            Your N-of-1 blinded calibration alongside our collective Bayesian Contextual Bandit. Zero synthetic data.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl border border-white/12 bg-[#131518] p-0.5 text-[11px] font-semibold">
+            {(
+              [
+                { id: 'all', label: 'All' },
+                { id: 'personal', label: 'Personal Memory' },
+                { id: 'collective', label: 'Collective Brain' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setMemoryScope(opt.id)}
+                className={`rounded-lg px-2.5 py-1.5 transition ${
+                  memoryScope === opt.id
+                    ? 'bg-emerald-500/15 text-[#34D399]'
+                    : 'text-[#8E8E88] hover:text-[#F3F1EC]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => void load()}
@@ -158,71 +187,190 @@ export function InsightsView({ profileId }: InsightsViewProps) {
         </div>
       </div>
 
-      {/* Blurred B2B Cohort Intelligence Matrix & Real 25/50/75/90% Retention Funnel */}
-      <CohortIntelligenceShowcase mode="full" />
-
-      {/* Admin-Protected Dataset Export Modal */}
-      {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-md">
-          <div className="animate-step glass-stage my-auto w-full max-w-md rounded-2xl border border-white/15 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[#34D399]">
-                <Lock className="h-4 w-4" />
-                <h3 className="text-base font-semibold text-[#F3F1EC]">Protected Research Export</h3>
+      {/* PRIMARY ZONE: Personal Neural Memory (3 Honest Statistical Maturity Stages) */}
+      {memoryScope !== 'collective' && (
+        <div
+          data-testid="personal-memory-zone"
+          className="animate-rise glass-stage rounded-2xl border border-emerald-400/25 p-5 sm:p-6 space-y-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-[#34D399]">
+              <Cpu className="h-5 w-5" />
+              <div>
+                <h2 className="text-base font-semibold text-[#F3F1EC]">
+                  Personal Neural Memory (N-of-1 Self-Study)
+                </h2>
+                <p className="text-xs text-[#8E8E88]">
+                  {maturityStage === 'cold_start'
+                    ? `Cold Start · ${Math.min(8, learnedSessions)} / 8 blinded sessions logged`
+                    : maturityStage === 'calibrating'
+                      ? `Preliminary Signals · Calibrating (Low Confidence · ${learnedSessions} / 8 sessions)`
+                      : `Validated Personal Proof (${learnedSessions} blinded sessions completed)`}
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowExportModal(false)}
-                aria-label="Close export modal"
-                className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
-            <p className="text-xs leading-relaxed text-[#A3A39E]">
-              Raw session datasets are protected with your Cloudflare Worker secret{' '}
-              <code className="font-mono-tech text-[#34D399]">ADMIN_EXPORT_KEY</code> so only you can
-              download the collected training data.
-            </p>
-            <div className="glow-input-wrap">
-              <label htmlFor="insights-admin-key" className="sr-only">
-                Researcher Admin Key
-              </label>
-              <input
-                id="insights-admin-key"
-                type="password"
-                value={adminKey}
-                onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Enter your Researcher Admin Key..."
-                className="w-full rounded-xl bg-[#0B0C0E] px-4 py-3 text-sm text-[#F3F1EC] placeholder-[#8E8E88] focus:outline-none"
+
+            <span className="font-mono-tech rounded-full border border-emerald-400/35 bg-emerald-500/12 px-3 py-1 text-[10.5px] font-bold text-[#34D399]">
+              {maturityStage === 'cold_start'
+                ? `${Math.min(8, learnedSessions)} / 8 Sessions`
+                : maturityStage === 'calibrating'
+                  ? 'Calibrating · Low Confidence'
+                  : '8+ Validated Proof'}
+            </span>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between font-mono-tech text-[11px] text-[#A3A39E]">
+              <span>Blinded N-of-1 Power Threshold (25% Sham Control)</span>
+              <span className="text-[#34D399]">
+                {Math.min(100, Math.round((learnedSessions / 8) * 100))}%
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-[#34D399] transition-all duration-500"
+                style={{ width: `${Math.max(4, Math.min(100, (learnedSessions / 8) * 100))}%` }}
               />
             </div>
-            {exportStatus && <p className="text-xs text-amber-300">{exportStatus}</p>}
-            <div className="grid grid-cols-2 gap-2.5 pt-1">
-              <button
-                type="button"
-                disabled={exporting}
-                onClick={() => void handleAdminExport('csv')}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/12 px-4 py-2.5 text-xs font-semibold text-[#34D399] hover:bg-emerald-500/20 disabled:opacity-50"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download CSV
-              </button>
-              <button
-                type="button"
-                disabled={exporting}
-                onClick={() => void handleAdminExport('json')}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-[#14161A] px-4 py-2.5 text-xs font-semibold text-[#D4D4CE] hover:border-white/30 hover:text-[#F3F1EC] disabled:opacity-50"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download JSON
-              </button>
-            </div>
           </div>
+
+          {maturityStage === 'cold_start' && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#0B0C0E] p-4 text-xs">
+              <div className="space-y-1 max-w-xl">
+                <div className="font-semibold text-[#F3F1EC]">
+                  Collecting unbiased baseline sessions before unblinding
+                </div>
+                <p className="text-[#A3A39E] leading-relaxed">
+                  Complete {Math.max(1, 8 - learnedSessions)} more blinded session
+                  {8 - learnedSessions === 1 ? '' : 's'} with post-session debriefs (and optional
+                  20-trial PVT checks) to unlock your statistically powered Active vs. Sham lift.
+                  {profile?.favoriteGenres?.[0]
+                    ? ` Top observed carrier so far: ${GENRE_META[profile.favoriteGenres[0]].label}.`
+                    : ''}
+                </p>
+              </div>
+              {!hasConsentedProfile && onOpenOnboarding && (
+                <button
+                  type="button"
+                  onClick={onOpenOnboarding}
+                  className="btn-aurora shrink-0 rounded-xl px-4 py-2 text-xs font-semibold"
+                >
+                  Enable Blinded Self-Study
+                </button>
+              )}
+            </div>
+          )}
+
+          {maturityStage === 'calibrating' && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3.5">
+                <div className="text-[11px] text-[#8E8E88]">Estimated Alpha Peak (IAF)</div>
+                <div className="font-mono-tech mt-1 text-xl font-bold text-[#F3F1EC]">
+                  {(mem?.personalIafHz ?? 10.0).toFixed(1)} Hz
+                </div>
+                <div className="text-[10px] text-[#8E8E88]">Preliminary · Low Confidence</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3.5">
+                <div className="text-[11px] text-[#8E8E88]">Preferred AM Dose</div>
+                <div className="font-mono-tech mt-1 text-xl font-bold text-[#34D399]">
+                  {Math.round((mem?.focusModMult ?? profile?.preferredModMult ?? 1) * 100)}%
+                </div>
+                <div className="text-[10px] text-[#8E8E88]">
+                  Active vs. Sham remains blinded until Session 8
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#0B0C0E] p-3.5">
+                <div className="text-[11px] text-[#8E8E88]">Leading Carrier Genre</div>
+                <div className="mt-1 text-base font-bold text-[#F3F1EC]">
+                  {profile?.favoriteGenres?.[0]
+                    ? GENRE_META[profile.favoriteGenres[0]].label
+                    : 'Calibrating'}
+                </div>
+                <div className="text-[10px] text-[#8E8E88]">
+                  {Math.max(1, 8 - learnedSessions)} sessions to Validated Proof
+                </div>
+              </div>
+            </div>
+          )}
+
+          {maturityStage === 'validated_proof' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/[0.07] p-4 space-y-1">
+                  <div className="text-[11px] text-[#D4D4CE]">Validated Active vs. Sham Delta</div>
+                  <div className="font-mono-tech text-2xl font-bold text-[#34D399]">
+                    {typeof mem?.causalLiftMs === 'number'
+                      ? mem.causalLiftMs > 0
+                        ? `${mem.causalLiftMs} ms faster`
+                        : `${mem.causalLiftMs} ms`
+                      : 'Active Blinded'}
+                  </div>
+                  <div className="font-mono-tech text-[10px] text-[#8E8E88]">
+                    Active n={activePvtN} · Sham n={shamPvtN} · N={learnedSessions}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-[#0B0C0E] p-4 space-y-1">
+                  <div className="text-[11px] text-[#8E8E88]">Circadian Focus Curve</div>
+                  <div className="font-mono-tech text-xl font-bold capitalize text-[#F3F1EC]">
+                    {mem?.peakChronoBucket ?? 'Morning'} Peak
+                  </div>
+                  <div className="text-[10px] text-[#8E8E88]">
+                    IAF {(mem?.personalIafHz ?? 10.0).toFixed(1)} Hz ·{' '}
+                    {mem?.fatigueDipMinute
+                      ? `Pre-dip lift @ ${mem.fatigueDipMinute}m`
+                      : 'Stable plateau'}
+                  </div>
+                </div>
+                <div className="flex flex-col justify-between rounded-xl border border-emerald-400/30 bg-[#0D110F] p-4 space-y-2">
+                  <div>
+                    <div className="text-xs font-semibold text-[#F3F1EC]">
+                      Closed-Loop Optical HRV Ready
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-[#A3A39E]">
+                      Stream real-time ear-canal PPG without chest straps or iOS BLE blocks.
+                    </p>
+                  </div>
+                  {onOpenSoundSystems && (
+                    <button
+                      type="button"
+                      onClick={onOpenSoundSystems}
+                      className="inline-flex items-center gap-1.5 font-mono-tech text-[11px] font-semibold text-[#34D399] hover:underline"
+                    >
+                      <Headphones className="h-3.5 w-3.5" />
+                      Reserve Earbuds Pro ($249) →
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* KPI Row */}
+      {memoryScope !== 'personal' && (
+        <>
+          {/* Blurred B2B Cohort Intelligence Matrix & Real 25/50/75/90% Retention Funnel */}
+          <CohortIntelligenceShowcase mode="full" />
+
+          {loading && !insights ? (
+            <div className="py-12 text-center font-mono-tech text-xs uppercase tracking-[0.18em] text-[#8E8E88]">
+              Loading live data from Cloudflare D1 research database...
+            </div>
+          ) : error || !insights ? (
+            <div className="mx-auto max-w-2xl rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-center space-y-3 text-sm text-rose-200">
+              <p>{error ?? 'Unable to load research metrics.'}</p>
+              <button
+                type="button"
+                onClick={() => void load()}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-[#14161A] px-4 py-2 text-xs font-semibold text-[#F3F1EC] hover:border-white/30"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Retry Loading Insights
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* KPI Row */}
       <div className="animate-rise delay-75 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className="glass-card rounded-xl p-4">
           <div className="flex items-center gap-1.5 text-[11px] text-[#8E8E88]">
@@ -715,6 +863,75 @@ export function InsightsView({ profileId }: InsightsViewProps) {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* Admin-Protected Dataset Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage my-auto w-full max-w-md rounded-2xl border border-white/15 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[#34D399]">
+                <Lock className="h-4 w-4" />
+                <h3 className="text-base font-semibold text-[#F3F1EC]">Protected Research Export</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExportModal(false)}
+                aria-label="Close export modal"
+                className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-xs leading-relaxed text-[#A3A39E]">
+              Raw session datasets are protected with your Cloudflare Worker secret{' '}
+              <code className="font-mono-tech text-[#34D399]">ADMIN_EXPORT_KEY</code> so only you can
+              download the collected training data.
+            </p>
+            <div className="glow-input-wrap">
+              <label htmlFor="insights-admin-key" className="sr-only">
+                Researcher Admin Key
+              </label>
+              <input
+                id="insights-admin-key"
+                type="password"
+                value={adminKey}
+                onChange={(e) => setAdminKey(e.target.value)}
+                placeholder="Enter ADMIN_EXPORT_KEY..."
+                className="w-full rounded-[0.8rem] bg-[#0B0C0E] px-4 py-3 text-sm text-[#F3F1EC] placeholder-[#5F605C] focus:outline-none"
+              />
+            </div>
+            {exportStatus && (
+              <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                {exportStatus}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void handleAdminExport('json')}
+                className="btn-aurora inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-semibold disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download JSON
+              </button>
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void handleAdminExport('csv')}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-[#14161A] px-4 py-2.5 text-xs font-semibold text-[#F3F1EC] hover:border-emerald-400/50 disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5 text-[#34D399]" />
+                Download CSV
+              </button>
+            </div>
           </div>
         </div>
       )}

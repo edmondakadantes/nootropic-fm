@@ -107,13 +107,13 @@ function measureEnvelopeDepthAtHz(samples, sampleRate, targetHz) {
 test('1. Logo navigation in App.tsx always routes to main landing page even when profile exists', () => {
   const appSrc = fs.readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
   assert.ok(
-    !appSrc.includes("onClick={() => {\n              setSelectedPreset(null);\n              setScreen(profile ? 'checkin' : 'landing');"),
+    !appSrc.includes("onLogoClick={() => {\n            if (activeRec && screen === 'player') {\n              setSessionDisplay('minimized');\n            }\n            setSelectedPreset(null);\n            setScreen(profile ? 'checkin' : 'studio_home');"),
     'Header logo must not trap logged-in profiles on checkin screen'
   );
   assert.match(
     appSrc,
-    /title="Return to nootropic\.fm main page"[\s\S]{0,120}|setScreen\('landing'\);\s*window\.scrollTo\(\{\s*top:\s*0/,
-    'Header logo click must unconditionally setScreen("landing") and scroll to top'
+    /onLogoClick=\{\(\)\s*=>\s*\{[\s\S]{0,420}setScreen\('studio_home'\);\s*\r?\n\s*window\.scrollTo\(\{\s*top:\s*0/,
+    'Header logo click must unconditionally setScreen("studio_home") and scroll to top'
   );
 });
 

@@ -435,6 +435,12 @@ export class GenerativeComposer {
     return this.striatalArcPhase;
   }
 
+  public setTuningA4Hz(hz: 432 | 440): void {
+    if (this.musicSpec) {
+      this.musicSpec.tuningA4Hz = hz;
+    }
+  }
+
   public getCurrentBpm(): number {
     if (!this.musicSpec) return 0;
     if (this.musicSpec.bpmRamp) {

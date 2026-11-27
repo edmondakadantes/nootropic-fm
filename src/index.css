@@ -251,8 +251,10 @@ html[data-theme='daylight'] .bg-\[\#0A0B0C\] {
   background-color: #E2E8F0 !important;
 }
 
-html[data-theme='daylight'] .bg-\[\#0A0B0C\]\/90 {
-  background-color: rgba(241, 245, 249, 0.94) !important;
+html[data-theme='daylight'] .bg-\[\#0A0B0C\]\/90,
+html[data-theme='daylight'] .lg\:bg-\[\#0B0C0E\]\/90,
+html[data-theme='daylight'] aside[aria-label='Desktop Studio Rail'] {
+  background-color: rgba(241, 245, 249, 0.96) !important;
 }
 
 html[data-theme='daylight'] .bg-\[\#0A0B0C\]\/45 {
@@ -308,6 +310,7 @@ html[data-theme='daylight'] .bg-\[\#060807\] {
 }
 
 /* Tier 3A: Outer Section Containers (#101114 / #101216) */
+html[data-theme='daylight'] .bg-\[\#101114\]\/95,
 html[data-theme='daylight'] .bg-\[\#101114\],
 html[data-theme='daylight'] .bg-\[\#101216\] {
   background-color: #F8FAFC !important;

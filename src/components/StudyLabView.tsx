@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Headphones,
   Loader2,
+  Pin,
   Play,
   Search,
   Sparkles,
@@ -27,7 +28,13 @@ import type {
   SessionEnvironment,
   StudyLeaderboardEntry,
 } from '../../shared/types';
+import { primeGestureAudioContext } from '../audio/PsychoacousticEngine';
 import { api } from '../lib/api';
+import {
+  readPinnedProtocols,
+  togglePinStudyProtocol,
+  type PinnedStudyProtocol,
+} from '../lib/pinnedProtocols';
 import { StudyFidelityMatrix } from './StudyFidelityMatrix';
 
 interface StudyLabViewProps {
@@ -83,6 +90,33 @@ export function StudyLabView({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [leaderboard, setLeaderboard] = useState<StudyLeaderboardEntry[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(
+    () => new Set(readPinnedProtocols().map((p) => p.id))
+  );
+
+  const syncPinsState = (items: PinnedStudyProtocol[]) => {
+    setPinnedIds(new Set(items.map((p) => p.id)));
+  };
+
+  const handleTogglePinCompiled = (
+    spec: ExecutableStudySpec,
+    recommendation: ProtocolRecommendation
+  ) => {
+    const citation = `${spec.studyRef.authors.split(',')[0]} (${spec.studyRef.year})`;
+    const res = togglePinStudyProtocol({
+      id: spec.id,
+      title: spec.shortLabel,
+      citation,
+      doi: spec.studyRef.doi,
+      targetState: recommendation.targetState,
+      modulationHz: spec.entrainment.frequencyHz ?? recommendation.params.modulationHz,
+      durationMin: recommendation.plannedDurationMin,
+      requestedGenre: recommendation.params.genre,
+      recommendationTemplate: structuredClone(recommendation),
+      pinnedAt: new Date().toISOString(),
+    });
+    syncPinsState(res.items);
+  };
 
   useEffect(() => {
     let active = true;
@@ -292,6 +326,20 @@ export function StudyLabView({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={() =>
+                  handleTogglePinCompiled(compiledResult.spec, compiledResult.recommendation)
+                }
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-xs font-semibold transition ${
+                  pinnedIds.has(compiledResult.spec.id)
+                    ? 'border-emerald-400/55 bg-emerald-500/15 text-[#34D399]'
+                    : 'border-white/15 bg-[#14161A] text-[#D4D4CE] hover:border-emerald-400/50 hover:text-[#F3F1EC]'
+                }`}
+              >
+                <Pin className="h-3.5 w-3.5" />
+                <span>{pinnedIds.has(compiledResult.spec.id) ? '✓ Pinned to Studio' : 'Pin to Studio'}</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => onExecuteRecommendation(compiledResult.recommendation, false)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-[#14161A] px-3.5 py-2.5 text-xs font-semibold text-[#D4D4CE] transition hover:border-emerald-400/50 hover:text-[#F3F1EC]"
               >
@@ -300,7 +348,10 @@ export function StudyLabView({
               </button>
               <button
                 type="button"
-                onClick={() => onExecuteRecommendation(compiledResult.recommendation, true)}
+                onClick={() => {
+                  primeGestureAudioContext();
+                  onExecuteRecommendation(compiledResult.recommendation, true);
+                }}
                 className="btn-aurora inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold text-[#0A0B0C]"
               >
                 <Play className="h-4 w-4 fill-[#0A0B0C]" />
@@ -542,7 +593,7 @@ export function StudyLabView({
                       onClick={() =>
                         void handleCompile({ queryOrText: preset.id, presetId: preset.id }, preset.id)
                       }
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-[#14161A] px-3 py-2 text-[11px] font-semibold text-[#D4D4CE] transition hover:border-white/30 hover:text-[#F3F1EC] disabled:opacity-50"
+                      className="inline-flex items-center justify-center gap-1 rounded-xl border border-white/12 bg-[#14161A] px-2.5 py-2 text-[11px] font-semibold text-[#D4D4CE] transition hover:border-white/30 hover:text-[#F3F1EC] disabled:opacity-50"
                     >
                       {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookOpen className="h-3.5 w-3.5" />}
                       <span>Inspect</span>
@@ -551,6 +602,52 @@ export function StudyLabView({
                       type="button"
                       disabled={compilingId !== null}
                       onClick={async () => {
+                        if (pinnedIds.has(preset.id)) {
+                          const res = togglePinStudyProtocol({
+                            id: preset.id,
+                            title: preset.shortLabel,
+                            citation: `${preset.studyRef.authors.split(',')[0]} (${preset.studyRef.year})`,
+                            targetState: preset.protocol.targetState,
+                            modulationHz: preset.entrainment.frequencyHz,
+                            durationMin: preset.protocol.recommendedDurationMin,
+                            requestedGenre: 'deep_electronic',
+                            recommendationTemplate: {} as ProtocolRecommendation,
+                            pinnedAt: new Date().toISOString(),
+                          });
+                          syncPinsState(res.items);
+                          return;
+                        }
+                        setCompilingId(`pin:${preset.id}`);
+                        try {
+                          const compiled = await api.compileMedicalStudy({
+                            queryOrText: preset.id,
+                            presetId: preset.id,
+                            device,
+                            environment,
+                            profileId,
+                            ephemeralMode,
+                          });
+                          handleTogglePinCompiled(preset, compiled.recommendation);
+                        } catch {
+                          // ignore transient error
+                        } finally {
+                          setCompilingId(null);
+                        }
+                      }}
+                      className={`inline-flex items-center justify-center gap-1 rounded-xl border px-2.5 py-2 text-[11px] font-semibold transition disabled:opacity-50 ${
+                        pinnedIds.has(preset.id)
+                          ? 'border-emerald-400/55 bg-emerald-500/15 text-[#34D399]'
+                          : 'border-white/12 bg-[#14161A] text-[#D4D4CE] hover:border-emerald-400/45 hover:text-[#F3F1EC]'
+                      }`}
+                    >
+                      <Pin className="h-3 w-3" />
+                      <span>{pinnedIds.has(preset.id) ? 'Pinned' : 'Pin'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={compilingId !== null}
+                      onClick={async () => {
+                        primeGestureAudioContext();
                         setCompilingId(`play:${preset.id}`);
                         try {
                           const res = await api.compileMedicalStudy({
