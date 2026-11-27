@@ -139,7 +139,7 @@ export function CohortIntelligenceShowcase({ mode = 'compact' }: CohortIntellige
                 Avg completion: <strong className="text-[#F3F1EC]">{globalRetention.avgCompletionPct}%</strong>
               </span>
             </div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {[
                 { label: 'Stayed 25%+', val: globalRetention.pct25, color: 'text-[#D4D4CE]' },
                 { label: 'Halfway (50%+)', val: globalRetention.pct50, color: 'text-[#D4D4CE]' },

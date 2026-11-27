@@ -1256,6 +1256,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setQrToast(null)}
+              aria-label="Dismiss notification"
               className="rounded-lg p-1 text-emerald-200/70 hover:bg-emerald-500/20 hover:text-white"
             >
               <X className="h-3.5 w-3.5" />
@@ -1524,6 +1525,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowIdentityModal(false)}
+                aria-label="Close Neural Fingerprint modal"
                 className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/[0.06] hover:text-[#F3F1EC]"
               >
                 <X className="h-4 w-4" />
@@ -1615,6 +1617,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowPrivacyModal(false)}
+                aria-label="Close Privacy modal"
                 className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
               >
                 <X className="h-4 w-4" />
@@ -1652,7 +1655,7 @@ export default function App() {
               >
                 Full Privacy Policy
               </a>
-              <span className="text-[#555550]">·</span>
+              <span aria-hidden="true" className="text-[#8E8E88]">·</span>
               <a
                 href="/terms/"
                 target="_blank"
@@ -1661,7 +1664,7 @@ export default function App() {
               >
                 Terms &amp; Wellness Disclaimer
               </a>
-              <span className="text-[#555550]">·</span>
+              <span aria-hidden="true" className="text-[#8E8E88]">·</span>
               <a
                 href="/delete-data/"
                 target="_blank"

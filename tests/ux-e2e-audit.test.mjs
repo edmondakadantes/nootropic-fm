@@ -617,7 +617,19 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     }
     if (cleanUrl === '/api/intelligence/cohorts') {
       res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
-      res.end(JSON.stringify({ cohorts: [], globalRetention: null }));
+      res.end(
+        JSON.stringify({
+          cohorts: [],
+          globalRetention: {
+            measuredSessions: 36,
+            avgCompletionPct: 58,
+            pct25: 69,
+            pct50: 54,
+            pct75: 42,
+            pct90: 36,
+          },
+        })
+      );
       return;
     }
     if (cleanUrl.startsWith('/api/')) {
@@ -1025,11 +1037,11 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await assertNoOverflowAndClippedHeader('Studio PlayerView 375px', 375);
     await assertContrastWcag('Studio PlayerView 375px');
 
-    // Open & complete full 20-trial PVT flow ('ready' -> 20x 'waiting'->'go' -> 'done' -> save), then Tapping, Huggins, and UpgradePro modals on 375px
+    // Open & test PvtBenchmarkModal: 60-trial Lab switcher + false_start (<100ms / early tap) retry + 20-trial completion
     await evalJs(`(() => {
       if (!window.__origSetTimeout) window.__origSetTimeout = window.setTimeout.bind(window);
       window.setTimeout = (fn, delay, ...args) => {
-        const d = typeof delay === 'number' && delay >= 1000 && delay <= 4500 ? 18 : delay;
+        const d = typeof delay === 'number' && delay >= 500 && delay <= 4500 ? 22 : delay;
         return window.__origSetTimeout(fn, d, ...args);
       };
     })()`);
@@ -1037,8 +1049,20 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await waitUntil(`Boolean(document.body.innerText.includes('Visual 1/RT Vigilance Check'))`, 4000, 'PVT Modal');
     await assertContrastWcag('PVT Modal 375px');
 
-    // Run all 20 visual trials genuinely through waiting -> rAF go -> realistic >=120ms tap -> done
+    // Verify 60-trial Lab mode switcher & revert back to 20-trial Standard
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Lab \\(60 trials/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Trial 1 / 60'))`, 3000, 'PVT 60-trial Lab mode');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Standard \\(20 trials/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Trial 1 / 20'))`, 3000, 'PVT 20-trial Standard mode');
+
+    // Trigger false_start by tapping early during 'waiting', verify recovery -> then complete 20 valid trials
     await evalJs(`document.querySelector('button[data-pvt-target="true"]')?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Hold steady'))`, 2500, 'PVT waiting stage');
+    await evalJs(`document.querySelector('button[data-pvt-target="true"]')?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Too early (< 100 ms)!'))`, 2500, 'PVT false_start stage');
+    await assertContrastWcag('PVT False Start 375px');
+    await evalJs(`document.querySelector('button[data-pvt-target="true"]')?.click()`);
+
     for (let trial = 0; trial < 20; trial++) {
       await waitUntil(`Boolean(document.body.innerText.includes('TAP NOW!'))`, 2500, `PVT trial ${trial + 1} flash`);
       await new Promise((r) => setTimeout(r, 125));
@@ -1053,17 +1077,61 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await waitUntil(`Boolean(document.body.innerText.includes('Baseline Recorded:'))`, 4000, 'PVT baseline saved on PlayerView');
     await evalJs(`(() => { if (window.__origSetTimeout) window.setTimeout = window.__origSetTimeout; })()`);
 
+    // Drive TappingTestModal end-to-end (pacing -> continuation taps -> result -> Done)
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Run \\(15s\\)/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Intrinsic Motor Rhythm Check'))`, 4000, 'Tapping Modal');
     await assertContrastWcag('Tapping Modal 375px');
-    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
-    await waitUntil(`!document.body.innerText.includes('Intrinsic Motor Rhythm Check')`, 4000, 'Tapping Modal closed via Escape');
+    await evalJs(`(() => {
+      window.__origPerfNow = performance.now.bind(performance);
+      window.__origRaf = window.requestAnimationFrame.bind(window);
+      const basePerf = window.__origPerfNow();
+      window.__fakeTappingMs = 0;
+      performance.now = () => basePerf + window.__fakeTappingMs;
+      window.requestAnimationFrame = (cb) => window.__origRaf(() => cb(basePerf + window.__fakeTappingMs));
+    })()`);
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Start 15s Tapping Check/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('button[data-tapping-target="true"]'))`, 3000, 'Tapping running stage');
+    // Jump into continuation phase (5200 ms) and deliver 7 steady 600 ms continuation taps, then complete >=15100 ms
+    for (let k = 0; k < 7; k++) {
+      const tMs = 5400 + k * 600;
+      await evalJs(`(() => {
+        window.__fakeTappingMs = ${tMs};
+        document.querySelector('button[data-tapping-target="true"]')?.click();
+      })()`);
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    await evalJs(`(() => { window.__fakeTappingMs = 15200; })()`);
+    await waitUntil(`Boolean(/Stability/i.test(document.body.innerText) && /ITI CV%/i.test(document.body.innerText))`, 4000, 'Tapping Modal result');
+    await evalJs(`(() => {
+      if (window.__origPerfNow) performance.now = window.__origPerfNow;
+      if (window.__origRaf) window.requestAnimationFrame = window.__origRaf;
+    })()`);
+    await assertContrastWcag('Tapping Modal Result 375px');
+    await evalJs(`Array.from(document.querySelectorAll('div.fixed.inset-0.z-50 button')).find(b => /^Done$/i.test((b.textContent || '').trim()))?.click()`);
+    await waitUntil(`!document.body.innerText.includes('Intrinsic Motor Rhythm Check')`, 4000, 'Tapping Modal closed via Done');
+    await waitUntil(`Boolean(document.body.innerText.includes('Tapping CV'))`, 4000, 'Tapping CV recorded on PlayerView');
 
+    // Drive HugginsCheckModal end-to-end (6 rounds -> result -> Apply Profile & Resume)
+    await evalJs(`(() => {
+      if (!window.__origSetTimeout) window.__origSetTimeout = window.setTimeout.bind(window);
+      window.setTimeout = (fn, delay, ...args) => {
+        const d = typeof delay === 'number' && delay >= 400 && delay <= 3000 ? 15 : delay;
+        return window.__origSetTimeout(fn, d, ...args);
+      };
+    })()`);
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Verify Headphones/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Huggins Pitch'))`, 4000, 'Huggins Modal');
     await assertContrastWcag('Huggins Modal 375px');
-    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
-    await waitUntil(`!document.body.innerText.includes('35s Dichotic Headphone Check')`, 4000, 'Huggins Modal closed via Escape');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Start 6-Round Check/i.test(b.textContent || ''))?.click()`);
+    for (let round = 0; round < 6; round++) {
+      await waitUntil(`Boolean(document.body.innerText.includes('Pick the sound that contained'))`, 4000, `Huggins round ${round + 1} choose`);
+      await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Sound 1/i.test(b.textContent || ''))?.click()`);
+    }
+    await waitUntil(`Boolean(document.body.innerText.includes('Apply Profile & Resume'))`, 4000, 'Huggins Modal result stage');
+    await assertContrastWcag('Huggins Modal Result 375px');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Apply Profile & Resume/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`!document.body.innerText.includes('35s Dichotic Headphone Check')`, 4000, 'Huggins Modal closed after completion');
+    await evalJs(`(() => { if (window.__origSetTimeout) window.setTimeout = window.__origSetTimeout; })()`);
 
     await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Go Pro/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Unlimited') || document.body.innerText.includes('Pro'))`, 4000, 'UpgradePro Modal');
@@ -1155,6 +1223,30 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await assertNoOverflowAndClippedHeader('OnboardingView 375px', 375);
     await assertContrastWcag('OnboardingView 375px');
 
+    // Verify OnboardingView age backspace stays '' (never snaps to 0) & 'Other' role renders single profession box
+    const onbCheck = await evalJs(`(() => {
+      const ageIn = document.getElementById('onb-age');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      if (ageIn._valueTracker) ageIn._valueTracker.setValue('34');
+      setter.call(ageIn, '');
+      ageIn.dispatchEvent(new Event('input', { bubbles: true }));
+      const emptyVal = ageIn.value;
+      setter.call(ageIn, '32');
+      ageIn.dispatchEvent(new Event('input', { bubbles: true }));
+      const otherBtn = Array.from(document.querySelectorAll('button')).find(b => /^Other$/i.test((b.textContent || '').trim()));
+      otherBtn?.click();
+      return { emptyVal };
+    })()`);
+    assert.equal(onbCheck.emptyVal, '', 'Clearing OnboardingView age input must stay empty instead of snapping to 0');
+    await waitUntil(`Boolean(document.getElementById('onb-custom-role') && !document.getElementById('onb-occupation'))`, 3000, 'OnboardingView single profession input for Other role');
+    await evalJs(`(() => {
+      const inp = document.getElementById('onb-custom-role');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      if (inp._valueTracker) inp._valueTracker.setValue('');
+      setter.call(inp, 'Acoustic Engineer');
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+
     // Save Onboarding changes -> cleanly returns to CheckInView
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Save Profile Changes/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Welcome back, Elena'))`, 5000, 'OnboardingView save -> CheckInView');
@@ -1178,12 +1270,26 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await assertNoOverflowAndClippedHeader('InsightsView 1280px', 1280);
     await assertContrastWcag('InsightsView 1280px');
 
-    // Open Study Lab -> verify accurate 20-trial (~75s) PVT text + WCAG contrast
+    // Open Study Lab -> verify 375px & 1280px layout + WCAG contrast + accurate 20-trial (~75s) PVT text
     await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('20-trial (~75s) Pre/Post PVT'))`, 5000, 'Study Lab updated PVT text');
+    await assertNoOverflowAndClippedHeader('StudyLab 1280px', 1280);
     await assertContrastWcag('StudyLab 1280px');
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 120));
+    await assertNoOverflowAndClippedHeader('StudyLab 375px', 375);
+    await assertContrastWcag('StudyLab 375px');
+
+    // Open Privacy & Delete Data modal -> WCAG + Escape close
+    await evalJs(`Array.from(document.querySelectorAll('footer button')).find(b => /Privacy, Credits/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Privacy & Your Data'))`, 4000, 'Privacy Modal');
+    await assertContrastWcag('Privacy Modal 375px');
+    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await waitUntil(`!document.body.innerText.includes('Official Department Channels')`, 4000, 'Privacy Modal closed via Escape');
 
     // Open Sound Systems -> WCAG + Escape close
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 120));
     await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`/Acoustic Hardware Lab/i.test(document.body.innerText)`, 6000, 'Sound Systems modal');
     await assertContrastWcag('SoundSystems Modal 1280px');
@@ -1495,6 +1601,51 @@ test('Headless Edge E2E: PlayerView suspended-AudioContext autoplay recovery + d
     assert.equal(voiceCalls[0].cueType, 'intro_full');
 
     await waitUntil(`!/00:00/.test(document.body.innerText.match(/\\d{2}:\\d{2}/)?.[0] || '00:00')`, 4000, 'Session timer advancing after audio resume');
+
+    // Also verify tapping the Play button directly (rather than the banner) while AudioContext is suspended does NOT self-pause
+    await sendCdp('Page.reload', { ignoreCache: false });
+    await waitUntil(`Boolean(document.querySelector('input[type="number"]'))`, 8000, 'Reload Beat 1 for Play-button autoplay test');
+    await evalJs(`(() => {
+      const ageInput = document.querySelector('input[type="number"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      if (ageInput._valueTracker) ageInput._valueTracker.setValue('');
+      setter.call(ageInput, '31');
+      ageInput.dispatchEvent(new Event('input', { bubbles: true }));
+      const btns = Array.from(document.querySelectorAll('button'));
+      btns.find(b => /^female$/i.test((b.textContent || '').trim()))?.click();
+      btns.find(b => /Founder/i.test(b.textContent || ''))?.click();
+    })()`);
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /continue:\\s*current state/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'))`, 5000, 'Beat 2 (Play-button test)');
+    await evalJs(`document.querySelector('button[data-landmark="true"]')?.click()`);
+    await waitUntil(`(() => {
+      Array.from(document.querySelectorAll('button')).find(b => /next:\\s*target/i.test(b.textContent || ''))?.click();
+      return Boolean(Array.from(document.querySelectorAll('button')).find(b => /Deep Uninterrupted Flow/i.test(b.textContent || '')));
+    })()`, 5000, 'Beat 3 (Play-button test)');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Deep Uninterrupted Flow/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`(() => {
+      Array.from(document.querySelectorAll('button')).find(b => /next:\\s*music style/i.test(b.textContent || ''))?.click();
+      return Boolean(Array.from(document.querySelectorAll('button')).find(b => /Lock NootropicFM Mode/i.test(b.textContent || '')));
+    })()`, 5000, 'Beat 4 (Play-button test)');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Lock NootropicFM Mode/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`(() => {
+      Array.from(document.querySelectorAll('button')).find(b => /^skip/i.test((b.textContent || '').trim()))?.click();
+      return Boolean(Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || '')));
+    })()`, 8000, 'Reveal (Play-button test)');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Start Audio') && document.querySelector('button[aria-label="Play"]'))`, 6000, 'Play button visible while suspended');
+    const playBtnBox = await evalJs(`(() => {
+      const b = document.querySelector('button[aria-label="Play"]');
+      const r = b.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    await sendCdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: playBtnBox.x, y: playBtnBox.y, button: 'left', clickCount: 1 });
+    await sendCdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: playBtnBox.x, y: playBtnBox.y, button: 'left', clickCount: 1 });
+    await waitUntil(`Boolean(document.querySelector('button[aria-label="Pause"]') && !document.body.innerText.includes('Browser audio is awaiting a quick tap to start'))`, 5000, 'Play button tap transitions to playing without self-pausing');
+    await new Promise((r) => setTimeout(r, 250));
+    assert.ok(await evalJs(`Boolean(document.querySelector('button[aria-label="Pause"]'))`), 'Play button must remain in Pause (playing) state after click completes');
+    assert.equal(voiceCalls.length, 2, 'Deferred Alanya voice cue must fire on Play button resume too');
+
     assert.deepEqual(runtimeErrors, [], `Unexpected browser runtime errors: ${JSON.stringify(runtimeErrors)}`);
     ws.close();
   } finally {

@@ -360,7 +360,7 @@ export function DebriefView({
               >
                 {learningUpdate.delta >= 0 ? `+${learningUpdate.delta}` : learningUpdate.delta}
               </div>
-              <div className="text-[11px] text-[#7E7E78]">
+              <div className="text-[11px] text-[#8E8E88]">
                 Bandit Reward: {Math.round(learningUpdate.reward * 100)}/100
               </div>
             </div>
@@ -370,7 +370,7 @@ export function DebriefView({
               <div className="font-mono-tech mt-1 text-3xl font-bold text-[#F3F1EC]">
                 {learningUpdate.profileSuccessRatePct}%
               </div>
-              <div className="text-[11px] text-[#7E7E78]">
+              <div className="text-[11px] text-[#8E8E88]">
                 from {learningUpdate.profileTrials} personal trials
               </div>
             </div>
@@ -380,7 +380,7 @@ export function DebriefView({
               <div className="font-mono-tech mt-1 text-3xl font-bold text-[#34D399]">
                 {learningUpdate.cohortSuccessRatePct}%
               </div>
-              <div className="text-[11px] text-[#7E7E78]">
+              <div className="text-[11px] text-[#8E8E88]">
                 from {learningUpdate.cohortTrials} real sessions
               </div>
             </div>

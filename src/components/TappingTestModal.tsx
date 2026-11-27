@@ -40,6 +40,7 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
   const clickCtxRef = useRef<AudioContext | null>(null);
   const beatFlashTimerRef = useRef<number | null>(null);
   const tapPulseTimerRef = useRef<number | null>(null);
+  const pointerHandledRef = useRef(false);
 
   const playSoftTick = () => {
     try {
@@ -100,10 +101,24 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
   };
 
   const startTest = () => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (beatFlashTimerRef.current !== null) {
+      window.clearTimeout(beatFlashTimerRef.current);
+      beatFlashTimerRef.current = null;
+    }
+    if (tapPulseTimerRef.current !== null) {
+      window.clearTimeout(tapPulseTimerRef.current);
+      tapPulseTimerRef.current = null;
+    }
     continuationTapsRef.current = [];
     pacingTapsRef.current = [];
     lastBeatIdxRef.current = -1;
     startTimeRef.current = performance.now();
+    setBeatFlash(false);
+    setTapPulse(false);
     setTapCount(0);
     setElapsedMs(0);
     setResult(null);
@@ -111,7 +126,7 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
 
     const loop = (now: number) => {
       const elapsed = now - startTimeRef.current;
-      setElapsedMs(Math.min(TOTAL_MS, elapsed));
+      setElapsedMs(Math.min(TOTAL_MS, Math.max(0, elapsed)));
       if (elapsed < PACING_MS) {
         const beatIdx = Math.floor(elapsed / beatMs);
         if (beatIdx !== lastBeatIdxRef.current) {
@@ -160,6 +175,7 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
       }
       if (phase === 'running' && e.code === 'Space') {
         e.preventDefault();
+        if (e.repeat) return;
         recordTap();
       }
     };
@@ -230,7 +246,19 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
 
             <button
               type="button"
-              onPointerDown={() => recordTap()}
+              data-tapping-target="true"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                pointerHandledRef.current = true;
+                recordTap();
+              }}
+              onClick={() => {
+                if (pointerHandledRef.current) {
+                  pointerHandledRef.current = false;
+                  return;
+                }
+                recordTap();
+              }}
               className={`flex h-36 w-full flex-col items-center justify-center gap-2 rounded-2xl border transition-all select-none ${
                 tapPulse
                   ? 'scale-[0.98] border-emerald-400 bg-emerald-500/25 text-[#F3F1EC]'

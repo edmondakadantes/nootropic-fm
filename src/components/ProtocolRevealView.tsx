@@ -318,7 +318,7 @@ export function ProtocolRevealView({
                     ) : isActive ? (
                       <Loader2 className="h-5 w-5 animate-spin text-[#34D399]" />
                     ) : (
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/15 text-[10px] text-[#7E7E78]">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/15 text-[10px] text-[#8E8E88]">
                         {st.idx + 1}
                       </span>
                     )}
@@ -326,7 +326,7 @@ export function ProtocolRevealView({
                   <div className="min-w-0 flex-1 space-y-1">
                     <div
                       className={`text-xs font-semibold ${
-                        isWaiting ? 'text-[#7E7E78]' : 'text-[#F3F1EC]'
+                        isWaiting ? 'text-[#8E8E88]' : 'text-[#F3F1EC]'
                       }`}
                     >
                       {st.title}
@@ -595,7 +595,7 @@ export function ProtocolRevealView({
                       <span className="font-mono-tech uppercase">
                         {p.source === 'openalex' ? 'OpenAlex · DOI' : `NIH PubMed · ${p.pmid}`} · {p.year}
                       </span>
-                      <ExternalLink className="h-3.5 w-3.5 text-[#7E7E78] group-hover:text-[#34D399]" />
+                      <ExternalLink className="h-3.5 w-3.5 text-[#8E8E88] group-hover:text-[#34D399]" />
                     </div>
                     <div className="mt-1 text-xs font-semibold leading-snug text-[#F3F1EC] group-hover:text-white">
                       {p.title}
@@ -667,21 +667,21 @@ export function ProtocolRevealView({
           {/* Exact Sound Parameter Pills */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-2.5">
-              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Cortical AM</div>
+              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Cortical AM</div>
               <div className="font-mono-tech mt-0.5 text-sm font-bold text-[#34D399]">
                 {recommendation.params.modulationHz} Hz
               </div>
               <div className="text-[10px] text-[#8E8E88]">3-Band LR4 clean sub</div>
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-2.5">
-              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Pulse Tempo</div>
+              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Pulse Tempo</div>
               <div className="font-mono-tech mt-0.5 text-sm font-bold text-[#F3F1EC]">
                 {recommendation.params.bpm > 0 ? `${recommendation.params.bpm} BPM` : 'Ambient'}
               </div>
               <div className="text-[10px] text-[#8E8E88]">{energyInfo.label}</div>
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-2.5">
-              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Noise Floor</div>
+              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Noise Floor</div>
               <div className="font-mono-tech mt-0.5 text-sm font-bold text-[#D4D4CE] capitalize">
                 {recommendation.params.noiseColor.replace('_', ' ')}
               </div>
@@ -690,7 +690,7 @@ export function ProtocolRevealView({
               </div>
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] p-2.5">
-              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Iso-Arc</div>
+              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Iso-Arc</div>
               <div className="font-mono-tech mt-0.5 text-sm font-bold text-[#34D399]">
                 {entryMin}m → {peakMin}m → {landingMin}m
               </div>

@@ -70,7 +70,10 @@ export function HugginsCheckModal({ onComplete, onClose }: HugginsCheckModalProp
   const ensureAudioReady = useCallback(async (): Promise<AudioWorkletNode | null> => {
     if (workletRef.current && ctxRef.current) {
       if (ctxRef.current.state === 'suspended') {
-        await ctxRef.current.resume().catch(() => {});
+        await Promise.race([
+          ctxRef.current.resume().catch(() => {}),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 200)),
+        ]);
       }
       return workletRef.current;
     }
@@ -81,7 +84,10 @@ export function HugginsCheckModal({ onComplete, onClose }: HugginsCheckModalProp
       const ctx = new AudioCtx({ latencyHint: 'playback' });
       ctxRef.current = ctx;
       if (ctx.state === 'suspended') {
-        await ctx.resume();
+        await Promise.race([
+          ctx.resume().catch(() => {}),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 200)),
+        ]);
       }
       const ready = await ensureDspWorkletsLoaded(ctx);
       if (!ready) {
@@ -196,6 +202,7 @@ export function HugginsCheckModal({ onComplete, onClose }: HugginsCheckModalProp
               teardownAudio();
               onClose();
             }}
+            aria-label="Close Huggins Pitch modal"
             className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
           >
             <X className="h-4 w-4" />
@@ -275,7 +282,7 @@ export function HugginsCheckModal({ onComplete, onClose }: HugginsCheckModalProp
                         ? 'border-[#34D399] bg-emerald-400/20 text-[#F3F1EC] shadow-[0_0_24px_rgba(52,211,153,0.3)]'
                         : stage === 'choose'
                           ? 'border-white/15 bg-[#121418] text-[#F3F1EC] hover:border-emerald-400/60 hover:bg-emerald-500/10'
-                          : 'border-white/10 bg-[#0B0C0E] text-[#7E7E78]'
+                          : 'border-white/10 bg-[#0B0C0E] text-[#8E8E88]'
                     }`}
                   >
                     <Volume2 className={`h-5 w-5 ${isLit ? 'text-[#34D399]' : 'text-[#8E8E88]'}`} />

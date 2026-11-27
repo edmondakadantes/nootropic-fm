@@ -668,7 +668,7 @@ export function LiveEnvelopeProof({
         </div>
       </div>
 
-      <p className="text-[10px] leading-relaxed text-[#7E7E78]">
+      <p className="text-[10px] leading-relaxed text-[#8E8E88]">
         Tap <strong className="text-[#D4D4CE]">Isolate Pure Wave</strong> anytime to mute background
         music and verify the exact frequency with any external oscilloscope or spectrum analyzer
         (e.g. Audacity, Spectroid).

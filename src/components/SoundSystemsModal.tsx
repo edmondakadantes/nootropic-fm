@@ -140,7 +140,7 @@ export function SoundSystemsModal({ profileId, onClose }: SoundSystemsModalProps
               2. Sealed Ear Canal
             </div>
             <p className="text-[11px] leading-relaxed text-[#A3A39E]">
-              Silicone or foam eartips create a sealed pressure chamber, Coupling 6×40 Hz sub-harmonics
+              Silicone or foam eartips create a sealed pressure chamber, coupling 6×40 Hz sub-harmonics
               directly to the tympanic membrane.
             </p>
           </div>
@@ -250,7 +250,7 @@ export function SoundSystemsModal({ profileId, onClose }: SoundSystemsModalProps
               </button>
             </div>
             {error && <p className="text-xs font-medium text-rose-300">{error}</p>}
-            <p className="flex items-center gap-1.5 text-[10.5px] text-[#7E7E78]">
+            <p className="flex items-center gap-1.5 text-[10.5px] text-[#8E8E88]">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
               Zero spam — one private invite when Batch 01 acoustic units are ready. Until then, use
               your best sealed in-ear buds.

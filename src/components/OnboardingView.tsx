@@ -28,7 +28,9 @@ export function OnboardingView({
   onCancel,
 }: OnboardingViewProps) {
   const [displayName, setDisplayName] = useState(initialProfile?.displayName ?? '');
-  const [age, setAge] = useState<number>(Math.max(18, initialProfile?.age ?? 34));
+  const [ageInput, setAgeInput] = useState<string>(
+    String(Math.max(18, initialProfile?.age ?? 34))
+  );
   const [ageError, setAgeError] = useState<string | null>(null);
   const [gender, setGender] = useState<UserGender>(initialProfile?.gender ?? 'prefer_not_to_say');
   const [role, setRole] = useState<UserRole>(initialProfile?.role ?? 'knowledge_worker');
@@ -46,8 +48,9 @@ export function OnboardingView({
   const [submitting, setSubmitting] = useState(false);
 
   const handleSave = async () => {
-    if (!Number.isFinite(age) || age < 18 || age > 95) {
-      setAgeError('nootropic.fm is restricted to listeners aged 18+.');
+    const parsedAge = ageInput.trim() === '' ? NaN : Number(ageInput);
+    if (!Number.isFinite(parsedAge) || parsedAge < 18 || parsedAge > 95) {
+      setAgeError('nootropic.fm is restricted to listeners aged 18+ (18–95).');
       return;
     }
     if (role === 'other' && occupationLabel.trim().length < 2) {
@@ -61,7 +64,7 @@ export function OnboardingView({
       await onComplete({
         id: initialProfile?.id,
         displayName: displayName.trim() || undefined,
-        age: Math.round(age),
+        age: Math.round(parsedAge),
         gender,
         role,
         occupationLabel: occupationLabel.trim() || undefined,
@@ -99,7 +102,7 @@ export function OnboardingView({
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
-          <div className="sm:col-span-5">
+          <div className={role === 'other' ? 'sm:col-span-8' : 'sm:col-span-5'}>
             <label htmlFor="onb-display-name" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
               First name / Nickname (optional)
             </label>
@@ -110,44 +113,48 @@ export function OnboardingView({
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="e.g. Alex"
-              className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+              className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#8E8E88] focus:border-emerald-400 focus:outline-none"
             />
           </div>
-          <div className="sm:col-span-3">
+          <div className={role === 'other' ? 'sm:col-span-4' : 'sm:col-span-3'}>
             <label htmlFor="onb-age" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
               Age (18+)
             </label>
             <input
               id="onb-age"
               type="number"
+              inputMode="numeric"
               min={18}
               max={95}
-              value={age}
+              value={ageInput}
               onChange={(e) => {
-                const v = Number(e.target.value);
-                setAge(v);
-                if (v >= 18 && v <= 95) setAgeError(null);
+                const raw = e.target.value;
+                setAgeInput(raw);
+                const v = raw.trim() === '' ? NaN : Number(raw);
+                if (Number.isFinite(v) && v >= 18 && v <= 95) setAgeError(null);
               }}
               className="font-mono-tech w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] focus:border-emerald-400 focus:outline-none"
             />
           </div>
-          <div className="sm:col-span-4">
-            <label htmlFor="onb-occupation" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
-              Occupation (optional)
-            </label>
-            <input
-              id="onb-occupation"
-              type="text"
-              maxLength={40}
-              value={occupationLabel}
-              onChange={(e) => {
-                setOccupationLabel(e.target.value);
-                setSaveError(null);
-              }}
-              placeholder="e.g. Programmer, Driver"
-              className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
-            />
-          </div>
+          {role !== 'other' && (
+            <div className="sm:col-span-4">
+              <label htmlFor="onb-occupation" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
+                Occupation (optional)
+              </label>
+              <input
+                id="onb-occupation"
+                type="text"
+                maxLength={40}
+                value={occupationLabel}
+                onChange={(e) => {
+                  setOccupationLabel(e.target.value);
+                  setSaveError(null);
+                }}
+                placeholder="e.g. Programmer, Driver"
+                className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#8E8E88] focus:border-emerald-400 focus:outline-none"
+              />
+            </div>
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -199,7 +206,6 @@ export function OnboardingView({
               <input
                 id="onb-custom-role"
                 type="text"
-                autoFocus
                 maxLength={40}
                 value={occupationLabel}
                 onChange={(e) => {
@@ -207,7 +213,7 @@ export function OnboardingView({
                   setSaveError(null);
                 }}
                 placeholder="e.g. Architect, Surgeon, Pilot, Chef, Trader, Musician..."
-                className="w-full rounded-xl border border-white/15 bg-[#0B0C0E] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                className="w-full rounded-xl border border-white/15 bg-[#0B0C0E] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#8E8E88] focus:border-emerald-400 focus:outline-none"
               />
             </div>
           )}

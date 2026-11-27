@@ -103,7 +103,7 @@ export function NeuralCompassSelector({
           <Compass className="h-3.5 w-3.5" />
           2D Neural State Map · Touch or Drag Anywhere
         </span>
-        <span className="text-[10px] text-[#7E7E78]">Russell Circumplex (Arousal × Clarity)</span>
+        <span className="text-[10px] text-[#8E8E88]">Russell Circumplex (Arousal × Clarity)</span>
       </div>
 
       {/* Interactive 2D Studio Vector Grid */}
@@ -163,10 +163,10 @@ export function NeuralCompassSelector({
         <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2 rounded bg-[#0F1013]/90 px-2.5 py-0.5 font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#A3A39E]">
           ▼ Low Energy · Drained
         </div>
-        <div className="pointer-events-none absolute left-2 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0F1013]/85 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-[#7E7E78]">
+        <div className="pointer-events-none absolute left-2 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0F1013]/85 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-[#8E8E88]">
           Tense / Fog
         </div>
-        <div className="pointer-events-none absolute right-2 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0F1013]/85 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-[#7E7E78]">
+        <div className="pointer-events-none absolute right-2 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0F1013]/85 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-[#8E8E88]">
           Clear / Open
         </div>
 
@@ -289,7 +289,7 @@ export function NeuralCompassSelector({
         {/* Quick / Nearby Micro-States + Expand All 19 States */}
         <div className="space-y-1.5 border-t border-white/[0.08] pt-2.5">
           <div className="flex items-center justify-between gap-2 text-[10px]">
-            <span className="font-medium text-[#7E7E78]">
+            <span className="font-medium text-[#8E8E88]">
               {showAllStates
                 ? `All ${NEURAL_MICRO_STATES.length} neural states (tap any):`
                 : selectedState

@@ -704,7 +704,7 @@ export function CheckInView({
                       {liveProfileSummary}
                     </span>
                   </div>
-                  <div className="text-[10px] text-[#7E7E78]">
+                  <div className="text-[10px] text-[#8E8E88]">
                     Neural Tuning AI active · {sessionsCount} session{sessionsCount === 1 ? '' : 's'} learned for your mind
                   </div>
                 </div>
@@ -1579,7 +1579,7 @@ export function CheckInView({
                 >
                   <Car className="h-3.5 w-3.5" />
                   <span>Car Safety</span>
-                  <span className="font-mono-tech text-[8.5px] text-[#7E7E78]">Road Safe</span>
+                  <span className="font-mono-tech text-[8.5px] text-[#8E8E88]">Road Safe</span>
                 </button>
               </div>
             </div>
@@ -1828,7 +1828,7 @@ export function CheckInView({
           </div>
 
           {isDriving && (
-            <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-[#7E7E78]">
+            <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-[#8E8E88]">
               <AlertTriangle className="h-3.5 w-3.5 text-amber-400/70" />
               Start before driving. Audio supports focus but never replaces rest.
             </p>

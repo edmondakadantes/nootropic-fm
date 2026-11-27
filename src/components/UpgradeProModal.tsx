@@ -126,6 +126,7 @@ export function UpgradeProModal({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close Pro modal"
             className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/[0.06] hover:text-[#F3F1EC]"
           >
             <X className="h-4 w-4" />
@@ -301,15 +302,16 @@ export function UpgradeProModal({
 
             {/* Optional receipt email */}
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
+              <label htmlFor="pro-receipt-email" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
                 Email for receipt &amp; invoice (optional, Stripe also collects it securely)
               </label>
               <input
+                id="pro-receipt-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full rounded-xl border border-white/15 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                className="w-full rounded-xl border border-white/15 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#8E8E88] focus:border-emerald-400 focus:outline-none"
               />
             </div>
 

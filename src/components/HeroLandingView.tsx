@@ -696,7 +696,7 @@ export function HeroLandingView({
                         <div className="text-xs font-semibold text-[#F3F1EC] sm:text-sm">
                           {goal.title}
                         </div>
-                        <div className="truncate text-[11px] text-[#8E8E88]">{goal.sub}</div>
+                        <div className="text-[11px] leading-snug text-[#8E8E88]">{goal.sub}</div>
                       </div>
 
                       <span

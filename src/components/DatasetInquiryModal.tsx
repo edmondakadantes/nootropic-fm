@@ -34,12 +34,22 @@ export function DatasetInquiryModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanEmail = email.trim();
+    const cleanOrg = organization.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+      setError('Please enter a valid work or research email address.');
+      return;
+    }
+    if (cleanOrg.length < 2) {
+      setError('Please enter your organization or lab name.');
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
       const res = await api.submitDatasetInquiry({
-        email: email.trim(),
-        organization: organization.trim(),
+        email: cleanEmail,
+        organization: cleanOrg,
         roleTitle: roleTitle.trim() || undefined,
         cohortInterest: cohortInterest.trim() || undefined,
         useCase,
@@ -110,51 +120,55 @@ export function DatasetInquiryModal({
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
+                <label htmlFor="ds-email" className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
                   Work or Research Email *
                 </label>
                 <input
+                  id="ds-email"
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@organization.com"
-                  className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                  className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#8E8E88] focus:border-emerald-400 focus:outline-none"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
+                <label htmlFor="ds-org" className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
                   Organization / Lab *
                 </label>
                 <input
+                  id="ds-org"
                   type="text"
                   required
                   value={organization}
                   onChange={(e) => setOrganization(e.target.value)}
                   placeholder="Company, University, or Brand"
-                  className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                  className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#8E8E88] focus:border-emerald-400 focus:outline-none"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
+                <label htmlFor="ds-role" className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
                   Your Role (optional)
                 </label>
                 <input
+                  id="ds-role"
                   type="text"
                   value={roleTitle}
                   onChange={(e) => setRoleTitle(e.target.value)}
                   placeholder="e.g. Head of R&D, Researcher"
-                  className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                  className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#8E8E88] focus:border-emerald-400 focus:outline-none"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
+                <label htmlFor="ds-use-case" className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
                   Primary Use Case
                 </label>
                 <select
+                  id="ds-use-case"
                   value={useCase}
                   onChange={(e) =>
                     setUseCase(e.target.value as NonNullable<DatasetInquiryPayload['useCase']>)
@@ -171,28 +185,30 @@ export function DatasetInquiryModal({
             </div>
 
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
+              <label htmlFor="ds-cohort" className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
                 Target Profession / State Cohort of Interest
               </label>
               <input
+                id="ds-cohort"
                 type="text"
                 value={cohortInterest}
                 onChange={(e) => setCohortInterest(e.target.value)}
                 placeholder="e.g. Stressed Doctors → Calm, Distracted Programmers → Deep Focus"
-                className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#8E8E88] focus:border-emerald-400 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
+              <label htmlFor="ds-notes" className="mb-1 block text-[11px] font-medium text-[#D4D4CE]">
                 Specific Metrics Needed (optional)
               </label>
               <textarea
+                id="ds-notes"
                 rows={2}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="e.g. 25/50/75/90% retention curves, optimal genre by age band, PVT ms delta CSV..."
-                className="w-full resize-none rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
+                className="w-full resize-none rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#8E8E88] focus:border-emerald-400 focus:outline-none"
               />
             </div>
 

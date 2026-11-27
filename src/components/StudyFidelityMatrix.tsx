@@ -83,7 +83,7 @@ export function StudyFidelityMatrix({ spec, compact = false }: StudyFidelityMatr
       {/* Executed Signal Summary Strip */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="rounded-xl border border-white/[0.08] bg-[#131519] p-2.5">
-          <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Acoustic Modulation</div>
+          <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Acoustic Modulation</div>
           <div className="font-mono-tech mt-0.5 text-xs font-bold text-[#34D399]">
             {spec.entrainment.frequencyHz > 0
               ? `${spec.entrainment.frequencyHz} Hz`
@@ -97,7 +97,7 @@ export function StudyFidelityMatrix({ spec, compact = false }: StudyFidelityMatr
         </div>
 
         <div className="rounded-xl border border-white/[0.08] bg-[#131519] p-2.5">
-          <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Tempo &amp; Drums</div>
+          <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Tempo &amp; Drums</div>
           <div className="font-mono-tech mt-0.5 text-xs font-bold text-[#F3F1EC]">{tempoText}</div>
           <div className="truncate text-[10px] text-[#A3A39E] capitalize">
             Percussion: {spec.music.percussion.replace('_', ' ')}
@@ -105,7 +105,7 @@ export function StudyFidelityMatrix({ spec, compact = false }: StudyFidelityMatr
         </div>
 
         <div className="rounded-xl border border-white/[0.08] bg-[#131519] p-2.5">
-          <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Tonality &amp; Tuning</div>
+          <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Tonality &amp; Tuning</div>
           <div className="font-mono-tech mt-0.5 text-xs font-bold text-[#D4D4CE] capitalize">
             {spec.music.tonalMode} · A={spec.music.tuningA4Hz} Hz
           </div>
@@ -115,7 +115,7 @@ export function StudyFidelityMatrix({ spec, compact = false }: StudyFidelityMatr
         </div>
 
         <div className="rounded-xl border border-white/[0.08] bg-[#131519] p-2.5">
-          <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Stochastic Noise</div>
+          <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Stochastic Noise</div>
           <div className="font-mono-tech mt-0.5 text-xs font-bold text-[#34D399] capitalize">
             {spec.noise.color === 'none' ? 'Off' : spec.noise.color.replace('_', ' ')}
           </div>

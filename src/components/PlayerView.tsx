@@ -1082,6 +1082,12 @@ export function PlayerView({
       }
       return;
     }
+    if (engineRef.current?.consumeRecentGestureResume()) {
+      setAudioInterrupted(false);
+      setIsPlaying(true);
+      setAudioStarted(true);
+      return;
+    }
     if (!audioStarted) {
       await engineRef.current?.start(
         recommendation.params,
@@ -1092,9 +1098,12 @@ export function PlayerView({
         carrierMode,
         API_BASE
       );
-      setAudioStarted(true);
-      setIsPlaying(true);
+      const stillBlocked = Boolean(engineRef.current?.isAudioInterrupted());
+      setAudioInterrupted(stillBlocked);
+      setAudioStarted(!stillBlocked);
+      setIsPlaying(!stillBlocked);
       if (
+        !stillBlocked &&
         !voiceIntroSentRef.current &&
         carrierMode !== 'pure_stimulus' &&
         voiceGuideEnabledRef.current
@@ -1209,6 +1218,31 @@ export function PlayerView({
     }
   };
 
+  const resumeInterruptedOrGestureForSwitch = async (): Promise<'ready' | 'blocked' | 'needs_start'> => {
+    if (audioInterrupted || engineRef.current?.isAudioInterrupted()) {
+      const ok = await engineRef.current?.resumeFromInterruption();
+      const stillBlocked = !ok || Boolean(engineRef.current?.isAudioInterrupted());
+      setAudioInterrupted(stillBlocked);
+      setAudioStarted(!stillBlocked);
+      setIsPlaying(!stillBlocked);
+      return stillBlocked ? 'blocked' : 'ready';
+    }
+    if (!audioStarted) {
+      if (engineRef.current?.consumeRecentGestureResume()) {
+        setAudioInterrupted(false);
+        setAudioStarted(true);
+        setIsPlaying(true);
+        return 'ready';
+      }
+      return 'needs_start';
+    }
+    if (!isPlaying) {
+      await engineRef.current?.resume();
+      setIsPlaying(true);
+    }
+    return 'ready';
+  };
+
   const handleLayerMonitorChange = async (nextMode: LayerMonitorMode) => {
     if (!isPro && previewLocked) {
       return;
@@ -1218,7 +1252,10 @@ export function PlayerView({
     if (nextMode === 'science_only') {
       engineRef.current?.stopVoiceConcierge(0.15);
     }
-    if (!audioStarted) {
+    const wasStarted = audioStarted;
+    const switchState = await resumeInterruptedOrGestureForSwitch();
+    if (switchState === 'blocked') return;
+    if (switchState === 'needs_start') {
       await engineRef.current?.start(
         recommendation.params,
         recommendation.plannedDurationMin,
@@ -1228,21 +1265,13 @@ export function PlayerView({
         initialCarrier === 'pure_stimulus' ? 'studio_library' : initialCarrier,
         API_BASE
       );
-      engineRef.current?.setLayerMonitorMode(nextMode);
-      setAudioStarted(true);
-      setIsPlaying(true);
-      setTelemetry((prev) =>
-        engineRef.current
-          ? engineRef.current.updateElapsed(elapsedRef.current)
-          : { ...prev, layerMonitorMode: nextMode }
-      );
-      return;
+      const stillBlocked = Boolean(engineRef.current?.isAudioInterrupted());
+      setAudioInterrupted(stillBlocked);
+      setAudioStarted(!stillBlocked);
+      setIsPlaying(!stillBlocked);
+      if (stillBlocked) return;
     }
-    if (!isPlaying) {
-      await engineRef.current?.resume();
-      setIsPlaying(true);
-    }
-    if (carrierMode === 'pure_stimulus' && nextMode !== 'science_only') {
+    if (wasStarted && carrierMode === 'pure_stimulus' && nextMode !== 'science_only') {
       setCarrierMode('studio_library');
       setAudioSource('studio_library');
       engineRef.current?.setCarrierMode('studio_library');
@@ -1283,9 +1312,9 @@ export function PlayerView({
         setLyriaNotice(
           "Today's 90s Endless Stream preview is complete — playing Studio Mix seamlessly. Start your 7-Day Free Trial ($0 today) for unlimited Endless Stream."
         );
-        if (!audioStarted) {
-          setCarrierMode('studio_library');
-          setAudioSource('studio_library');
+        const switchState = await resumeInterruptedOrGestureForSwitch();
+        if (switchState === 'blocked') return;
+        if (switchState === 'needs_start') {
           await engineRef.current?.start(
             recommendation.params,
             recommendation.plannedDurationMin,
@@ -1295,13 +1324,11 @@ export function PlayerView({
             'studio_library',
             API_BASE
           );
-          setAudioStarted(true);
-          setIsPlaying(true);
-          return;
-        }
-        if (!isPlaying) {
-          await engineRef.current?.resume();
-          setIsPlaying(true);
+          const stillBlocked = Boolean(engineRef.current?.isAudioInterrupted());
+          setAudioInterrupted(stillBlocked);
+          setAudioStarted(!stillBlocked);
+          setIsPlaying(!stillBlocked);
+          if (stillBlocked) return;
         }
         setCarrierMode('studio_library');
         setAudioSource('studio_library');
@@ -1311,7 +1338,12 @@ export function PlayerView({
       if (connectingLyria) return;
       setConnectingLyria(true);
       try {
-        if (!audioStarted) {
+        const switchState = await resumeInterruptedOrGestureForSwitch();
+        if (switchState === 'blocked') {
+          setConnectingLyria(false);
+          return;
+        }
+        if (switchState === 'needs_start') {
           await engineRef.current?.start(
             recommendation.params,
             recommendation.plannedDurationMin,
@@ -1321,11 +1353,14 @@ export function PlayerView({
             'studio_library',
             API_BASE
           );
-          setAudioStarted(true);
-          setIsPlaying(true);
-        } else if (!isPlaying) {
-          await engineRef.current?.resume();
-          setIsPlaying(true);
+          const stillBlocked = Boolean(engineRef.current?.isAudioInterrupted());
+          setAudioInterrupted(stillBlocked);
+          setAudioStarted(!stillBlocked);
+          setIsPlaying(!stillBlocked);
+          if (stillBlocked) {
+            setConnectingLyria(false);
+            return;
+          }
         }
 
         const res = await api.getLyriaRealtimeToken();
@@ -1391,9 +1426,9 @@ export function PlayerView({
       return;
     }
 
-    if (!audioStarted) {
-      setCarrierMode(nextMode);
-      setAudioSource(nextMode);
+    const switchState = await resumeInterruptedOrGestureForSwitch();
+    if (switchState === 'blocked') return;
+    if (switchState === 'needs_start') {
       await engineRef.current?.start(
         recommendation.params,
         recommendation.plannedDurationMin,
@@ -1403,14 +1438,11 @@ export function PlayerView({
         nextMode,
         API_BASE
       );
-      setAudioStarted(true);
-      setIsPlaying(true);
-      return;
-    }
-
-    if (!isPlaying) {
-      await engineRef.current?.resume();
-      setIsPlaying(true);
+      const stillBlocked = Boolean(engineRef.current?.isAudioInterrupted());
+      setAudioInterrupted(stillBlocked);
+      setAudioStarted(!stillBlocked);
+      setIsPlaying(!stillBlocked);
+      if (stillBlocked) return;
     }
     setCarrierMode(nextMode);
     setAudioSource(nextMode);
@@ -1972,7 +2004,7 @@ export function PlayerView({
                   <div className="flex items-center justify-between text-[10px] text-[#8E8E88]">
                     <span className="inline-flex items-center gap-1.5">
                       <Volume2 className="h-3 w-3" /> Volume
-                      <kbd className="hidden rounded border border-white/12 bg-[#141518] px-1 py-0.5 font-mono-tech text-[8.5px] text-[#7E7E78] sm:inline">
+                      <kbd className="hidden rounded border border-white/12 bg-[#141518] px-1 py-0.5 font-mono-tech text-[8.5px] text-[#8E8E88] sm:inline">
                         SPACE
                       </kbd>
                     </span>
@@ -2033,13 +2065,13 @@ export function PlayerView({
                       ? voiceSpeaking
                         ? 'border-emerald-400/55 bg-emerald-500/15 text-[#34D399]'
                         : 'border-white/15 bg-[#14161A] text-[#D4D4CE] hover:border-emerald-400/40 hover:text-[#F3F1EC]'
-                      : 'border-white/10 bg-[#101215] text-[#7E7E78] hover:border-white/20 hover:text-[#A3A39E]'
+                      : 'border-white/10 bg-[#101215] text-[#8E8E88] hover:border-white/20 hover:text-[#A3A39E]'
                   }`}
                 >
                   {voiceGuideEnabled ? (
                     <Mic className="h-3.5 w-3.5 text-[#34D399]" />
                   ) : (
-                    <MicOff className="h-3.5 w-3.5 text-[#7E7E78]" />
+                    <MicOff className="h-3.5 w-3.5 text-[#8E8E88]" />
                   )}
                   <span>{voiceGuideEnabled ? 'Alanya ON' : 'Voice OFF'}</span>
                 </button>
@@ -2129,7 +2161,7 @@ export function PlayerView({
                 </div>
                 <p
                   className={`mt-1.5 text-[11px] leading-snug ${
-                    carrierMode === 'studio_library' ? 'text-[#D4D4CE]' : 'text-[#7E7E78]'
+                    carrierMode === 'studio_library' ? 'text-[#D4D4CE]' : 'text-[#8E8E88]'
                   }`}
                 >
                   {carrierMode === 'studio_library'
@@ -2191,7 +2223,7 @@ export function PlayerView({
                   className={`mt-1.5 text-[11px] leading-snug ${
                     carrierMode === 'lyria_realtime'
                       ? 'text-[#D4D4CE]'
-                      : 'text-[#7E7E78]'
+                      : 'text-[#8E8E88]'
                   }`}
                 >
                   {connectingLyria
@@ -2538,7 +2570,7 @@ export function PlayerView({
               })}
               <div
                 aria-disabled="true"
-                className="cursor-not-allowed select-none rounded-xl border border-dashed border-white/10 bg-[#0B0C0E] px-3 py-2 text-left opacity-70"
+                className="cursor-not-allowed select-none rounded-xl border border-dashed border-white/10 bg-[#0B0C0E] px-3 py-2 text-left"
               >
                 <div className="flex items-center justify-between gap-1 text-xs font-semibold text-[#8E8E88]">
                   <span>Other Styles</span>
@@ -2742,7 +2774,7 @@ export function PlayerView({
           {/* Compact Telemetry Strip */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Wave</div>
+              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Wave</div>
               <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#34D399]">
                 {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz` : `A=${telemetry.tuningA4Hz} Hz`}
               </div>
@@ -2753,13 +2785,13 @@ export function PlayerView({
               )}
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Depth</div>
+              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Depth</div>
               <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#F3F1EC]">
                 {Math.round(telemetry.currentModDepth * 100)}%
               </div>
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Tempo</div>
+              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Tempo</div>
               <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#F3F1EC]">
                 {telemetry.currentBpm > 0 ? `${telemetry.currentBpm} BPM` : 'Beatless'}
               </div>
@@ -2776,7 +2808,7 @@ export function PlayerView({
               )}
             </div>
             <div className="rounded-xl border border-white/[0.08] bg-[#131417] p-3">
-              <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Noise Bed</div>
+              <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Noise Bed</div>
               <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#D4D4CE] capitalize">
                 {telemetry.noiseColor === 'none' ? 'Clean' : telemetry.noiseColor.replace('_', ' ')}
               </div>
@@ -2815,7 +2847,7 @@ export function PlayerView({
                     <div className="text-[11px] font-semibold text-[#34D399]">
                       {study.authors.split(',')[0]} et al. ({study.year})
                     </div>
-                    <ExternalLink className="h-3 w-3 shrink-0 text-[#7E7E78] group-hover:text-[#34D399]" />
+                    <ExternalLink className="h-3 w-3 shrink-0 text-[#8E8E88] group-hover:text-[#34D399]" />
                   </div>
                   <div className="text-xs font-medium text-[#F3F1EC] group-hover:text-white">
                     {study.title}
@@ -2843,7 +2875,7 @@ export function PlayerView({
                         <span className="font-mono-tech text-[9px] font-semibold uppercase text-[#34D399]">
                           {paper.source === 'openalex' ? 'OpenAlex' : 'NIH PubMed'} · {paper.year}
                         </span>
-                        <ExternalLink className="h-3 w-3 shrink-0 text-[#7E7E78] group-hover:text-[#34D399]" />
+                        <ExternalLink className="h-3 w-3 shrink-0 text-[#8E8E88] group-hover:text-[#34D399]" />
                       </div>
                       <div className="text-xs font-medium leading-snug text-[#F3F1EC]">
                         {paper.title}

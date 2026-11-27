@@ -179,7 +179,7 @@ export function StudyLabView({
           </span>
 
           {/* Output & Safety Selector */}
-          <div className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#0B0C0E] p-1">
+          <div className="grid w-full grid-cols-3 gap-1 rounded-xl border border-white/10 bg-[#0B0C0E] p-1 sm:flex sm:w-auto sm:items-center sm:gap-1.5">
             {(
               [
                 { id: 'headphones', label: 'Headphones', icon: Headphones },
@@ -191,7 +191,7 @@ export function StudyLabView({
                 key={id}
                 type="button"
                 onClick={() => handleDevicePick(id)}
-                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
+                className={`inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition sm:px-2.5 sm:py-1 ${
                   device === id
                     ? id === 'car_audio'
                       ? 'bg-amber-400/20 text-amber-200 border border-amber-400/40'
@@ -199,8 +199,8 @@ export function StudyLabView({
                     : 'text-[#8E8E88] hover:text-[#F3F1EC]'
                 }`}
               >
-                <Icon className="h-3 w-3" />
-                <span>{label}</span>
+                <Icon className="h-3 w-3 shrink-0" />
+                <span className="truncate">{label}</span>
               </button>
             ))}
           </div>
@@ -215,13 +215,13 @@ export function StudyLabView({
               setErrorMsg(null);
             }}
             placeholder="Paste a PubMed link (e.g. https://pubmed.ncbi.nlm.nih.gov/39455825/), a DOI (10.1038/...), an NCT clinical trial ID, a topic (e.g. '40 Hz gamma attention'), OR paste a study's Methods/Abstract paragraph..."
-            className="w-full resize-none rounded-xl bg-[#0B0C0E] px-4 py-3 text-sm text-[#F3F1EC] placeholder-[#5F605C] focus:outline-none"
+            className="w-full resize-none rounded-xl bg-[#0B0C0E] px-4 py-3 text-sm text-[#F3F1EC] placeholder-[#8E8E88] focus:outline-none"
           />
         </div>
 
         {/* Example Quick Chips */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-[#7E7E78]">Try:</span>
+          <span className="text-[11px] text-[#8E8E88]">Try:</span>
           {EXAMPLE_QUERIES.map((ex) => (
             <button
               key={ex}
@@ -320,7 +320,7 @@ export function StudyLabView({
             <h2 className="text-xs font-semibold uppercase tracking-wider text-[#34D399]">
               Live Biomedical Search Results ({searchResults.length} verified papers)
             </h2>
-            <span className="text-[11px] text-[#7E7E78]">Europe PMC · PubMed · ClinicalTrials.gov v2</span>
+            <span className="text-[11px] text-[#8E8E88]">Europe PMC · PubMed · ClinicalTrials.gov v2</span>
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

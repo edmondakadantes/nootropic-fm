@@ -464,6 +464,7 @@ export class PsychoacousticEngine {
   private keepAliveUrl: string | null = null;
   private backgroundAudioActive = false;
   private audioInterrupted = false;
+  private lastGestureResumeAtMs = 0;
   private interruptionListeners = new Set<(interrupted: boolean) => void>();
   private gestureResumeCleanup: (() => void) | null = null;
   private wakeLock: { release: () => Promise<void> } | null = null;
@@ -1660,6 +1661,13 @@ export class PsychoacousticEngine {
     return this.audioInterrupted;
   }
 
+  public consumeRecentGestureResume(withinMs = 450): boolean {
+    if (this.lastGestureResumeAtMs <= 0) return false;
+    const recent = Date.now() - this.lastGestureResumeAtMs <= withinMs;
+    this.lastGestureResumeAtMs = 0;
+    return recent;
+  }
+
   private setAudioInterrupted(interrupted: boolean): void {
     if (this.audioInterrupted === interrupted) return;
     this.audioInterrupted = interrupted;
@@ -1678,8 +1686,11 @@ export class PsychoacousticEngine {
 
   private installOneShotGestureResume(): void {
     if (this.gestureResumeCleanup || typeof window === 'undefined') return;
-    const handler = () => {
-      void this.resumeFromInterruption();
+    const handler = (evt: Event) => {
+      if (evt instanceof KeyboardEvent) {
+        if (evt.code !== 'Space' && evt.code !== 'Enter') return;
+      }
+      void this.resumeFromInterruption(true);
     };
     window.addEventListener('pointerdown', handler, { passive: true });
     window.addEventListener('touchend', handler, { passive: true });
@@ -1691,13 +1702,16 @@ export class PsychoacousticEngine {
     };
   }
 
-  public async resumeFromInterruption(): Promise<boolean> {
+  public async resumeFromInterruption(fromWindowGesture = false): Promise<boolean> {
     if (!this.ctx) {
       this.setAudioInterrupted(false);
       return false;
     }
     try {
-      await this.ctx.resume();
+      await Promise.race([
+        this.ctx.resume().catch(() => {}),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 200)),
+      ]);
       if (this.keepAliveEl && this.keepAliveEl.paused) {
         await this.keepAliveEl.play().catch(() => {});
       }
@@ -1706,6 +1720,9 @@ export class PsychoacousticEngine {
       }
       const running = String(this.ctx.state) === 'running';
       if (running) {
+        if (fromWindowGesture) {
+          this.lastGestureResumeAtMs = Date.now();
+        }
         this.setAudioInterrupted(false);
         void this.requestWakeLock();
       }
@@ -4768,6 +4785,7 @@ export class PsychoacousticEngine {
 
   private stopImmediate(): void {
     this.isPlaying = false;
+    this.lastGestureResumeAtMs = 0;
     this.setAudioInterrupted(false);
     this.bufferCache.clear();
     this.startToken++;

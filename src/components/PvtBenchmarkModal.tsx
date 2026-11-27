@@ -136,6 +136,7 @@ export function PvtBenchmarkModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
         e.preventDefault();
+        if (e.repeat) return;
         handleTap();
       } else if (e.code === 'Escape') {
         onClose();

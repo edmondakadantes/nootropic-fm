@@ -101,8 +101,16 @@ export function InsightsView({ profileId }: InsightsViewProps) {
 
   if (error || !insights) {
     return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-center text-sm text-rose-200">
-        {error ?? 'Unable to load research metrics.'}
+      <div className="mx-auto max-w-2xl rounded-2xl border border-rose-500/30 bg-rose-500/10 p-6 text-center space-y-3 text-sm text-rose-200">
+        <p>{error ?? 'Unable to load research metrics.'}</p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-[#14161A] px-4 py-2 text-xs font-semibold text-[#F3F1EC] hover:border-white/30"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Retry Loading Insights
+        </button>
       </div>
     );
   }
@@ -177,12 +185,16 @@ export function InsightsView({ profileId }: InsightsViewProps) {
               download the collected training data.
             </p>
             <div className="glow-input-wrap">
+              <label htmlFor="insights-admin-key" className="sr-only">
+                Researcher Admin Key
+              </label>
               <input
+                id="insights-admin-key"
                 type="password"
                 value={adminKey}
                 onChange={(e) => setAdminKey(e.target.value)}
                 placeholder="Enter your Researcher Admin Key..."
-                className="w-full rounded-xl bg-[#0B0C0E] px-4 py-3 text-sm text-[#F3F1EC] placeholder-[#5F605C] focus:outline-none"
+                className="w-full rounded-xl bg-[#0B0C0E] px-4 py-3 text-sm text-[#F3F1EC] placeholder-[#8E8E88] focus:outline-none"
               />
             </div>
             {exportStatus && <p className="text-xs text-amber-300">{exportStatus}</p>}
