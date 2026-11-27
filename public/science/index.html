@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Human Frequency Atlas &amp; Psychoacoustic Science · nootropic.fm</title>
+    <meta
+      name="description"
+      content="Peer-reviewed human frequency atlas behind nootropic.fm: 40 Hz Gamma-MBI, 6×40 Hz Theta-Gamma CFC, 16 Hz Beta LR4 (Woods 2024), 0.10 Hz HRV Mayer breathing, and 600 Hz Huggins phase verification."
+    />
+    <link rel="canonical" href="https://www.nootropic.fm/science/" />
+    <link rel="alternate" type="text/plain" title="LLMs Documentation" href="https://www.nootropic.fm/llms.txt" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="Human Frequency Atlas & Psychoacoustic Science · nootropic.fm" />
+    <meta
+      property="og:description"
+      content="Explore the exact peer-reviewed modulation frequencies (40 Hz Gamma-MBI, 6×40 Hz Theta-Gamma CFC, 16 Hz Beta LR4, 0.10 Hz HRV Mayer, 600 Hz Huggins) compiled into 48 kHz Float64 WebAudio."
+    />
+    <meta property="og:url" content="https://www.nootropic.fm/science/" />
+    <meta property="og:image" content="https://www.nootropic.fm/brand/og-banner.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Human Frequency Atlas · nootropic.fm" />
+    <meta
+      name="twitter:description"
+      content="40 Hz Gamma-MBI, 6×40 Hz Theta-Gamma CFC, 16 Hz Beta LR4 (Woods 2024), 0.10 Hz HRV Mayer, and 600 Hz Huggins phase verification."
+    />
+    <meta name="twitter:image" content="https://www.nootropic.fm/brand/og-banner.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "TechArticle",
+            "@id": "https://www.nootropic.fm/science/#article",
+            "headline": "Human Frequency Atlas: 40 Hz Gamma-MBI, 6×40 Hz Theta-Gamma CFC, 16 Hz Beta LR4, 0.10 Hz HRV Mayer & 600 Hz Huggins",
+            "description": "Technical overview of the peer-reviewed human auditory frequencies, 3-Band Linkwitz-Riley (LR4) cortical modulation matrix, and blind sham / PVT telemetry running at 48 kHz Float64 in nootropic.fm.",
+            "url": "https://www.nootropic.fm/science/",
+            "author": {
+              "@type": "Person",
+              "name": "Vasi Cicarac"
+            },
+            "publisher": {
+              "@id": "https://www.nootropic.fm/#org"
+            },
+            "about": [
+              "40 Hz Gamma Music-Based Intervention",
+              "6x40 Hz Theta-Gamma Cross-Frequency Coupling",
+              "16 Hz Beta Amplitude Modulation (Woods 2024)",
+              "0.10 Hz HRV Mayer Resonance Breathing",
+              "600 Hz Huggins Dichotic Pitch Verification"
+            ]
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.nootropic.fm/#org",
+            "name": "nootropic.fm",
+            "alternateName": "NOOTROPIC FM SOUND SYSTEMS",
+            "url": "https://www.nootropic.fm/",
+            "email": "founders@nootropic.fm",
+            "founder": {
+              "@type": "Person",
+              "name": "Vasi Cicarac"
+            },
+            "contactPoint": [
+              {
+                "@type": "ContactPoint",
+                "contactType": "research",
+                "email": "research@nootropic.fm",
+                "url": "https://www.nootropic.fm/science/"
+              },
+              {
+                "@type": "ContactPoint",
+                "contactType": "customer support",
+                "email": "support@nootropic.fm",
+                "url": "https://www.nootropic.fm/contact/"
+              },
+              {
+                "@type": "ContactPoint",
+                "contactType": "executive",
+                "email": "founders@nootropic.fm",
+                "url": "https://www.nootropic.fm/contact/"
+              }
+            ]
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "What is the 16 Hz Beta LR4 protocol (Woods 2024) in nootropic.fm?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Based on Woods et al. (2024, Communications Biology, DOI 10.1038/s42003-024-07026-3), nootropic.fm embeds 16 Hz beta-band amplitude modulation strictly inside the 190–4,500 Hz cortical band using fourth-order Linkwitz-Riley (LR4) crossovers while keeping sub-bass warmth and upper harmonics unmodulated."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How does 6×40 Hz Theta-Gamma Cross-Frequency Coupling work?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Grounded in Lisman & Jensen (2013, Neuron, DOI 10.1016/j.neuron.2013.03.007), NootropicFM Signature Mode nests 40.000 Hz Gamma micro-bursts onto a 6.0 Hz Theta envelope phase-locked to 120.000 BPM stems and a 0.10 Hz Mayer-wave stereo orbit for stationary deep-flow sessions."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What does the 600 Hz Huggins Dichotic Seal Test verify?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "The 600 Hz Huggins test feeds identical broadband pink noise to the left ear and an all-pass 180-degree phase-shifted band around 600 Hz to the right ear. Hearing a soft 600 Hz chime inside the noise confirms clean left/right earbud isolation; hearing flat noise reveals acoustic speaker crosstalk or spatial-audio mixing."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is nootropic.fm a medical device?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. nootropic.fm is a general cognitive wellness audio platform for adults 18+ designed for everyday focus, deep flow, relaxation, and evening wind-down. It is not a medical device and does not diagnose, treat, cure, or prevent any disease."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0a0b0c;
+        color: #f3f1ec;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 1020px;
+        margin: 0 auto;
+        padding: 32px 20px 72px;
+      }
+      .topbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        margin-bottom: 36px;
+      }
+      .brand {
+        color: #f3f1ec;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 1.05rem;
+        letter-spacing: -0.01em;
+      }
+      .brand span {
+        color: #34d399;
+      }
+      .navlinks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        font-size: 0.85rem;
+        align-items: center;
+      }
+      .navlinks a {
+        color: #d4d4ce;
+        text-decoration: none;
+        padding: 6px 10px;
+        border-radius: 8px;
+      }
+      .navlinks a:hover,
+      .navlinks a[aria-current="page"] {
+        color: #34d399;
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .badge {
+        display: inline-block;
+        padding: 5px 11px;
+        border-radius: 999px;
+        border: 1px solid rgba(52, 211, 153, 0.38);
+        background: rgba(16, 185, 129, 0.12);
+        color: #34d399;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-size: clamp(1.85rem, 3.8vw, 2.75rem);
+        line-height: 1.14;
+        letter-spacing: -0.025em;
+        margin: 16px 0 14px;
+        color: #f3f1ec;
+      }
+      .lead {
+        font-size: 1.04rem;
+        color: #d4d4ce;
+        max-width: 800px;
+        margin: 0 0 24px;
+      }
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 40px;
+      }
+      .btn-primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 11px 20px;
+        border-radius: 10px;
+        background: #34d399;
+        color: #062218;
+        font-weight: 700;
+        font-size: 0.92rem;
+        text-decoration: none;
+      }
+      .btn-primary:hover {
+        background: #4ade80;
+      }
+      .btn-secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 11px 18px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: #14161a;
+        color: #f3f1ec;
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-decoration: none;
+      }
+      .btn-secondary:hover {
+        border-color: rgba(52, 211, 153, 0.5);
+        color: #34d399;
+      }
+      .section-title {
+        font-size: 1.3rem;
+        letter-spacing: -0.015em;
+        margin: 40px 0 14px;
+        color: #f3f1ec;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+        gap: 16px;
+      }
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: #111317;
+        border-radius: 14px;
+        padding: 20px;
+      }
+      .card-accent {
+        border-color: rgba(52, 211, 153, 0.35);
+        background: rgba(16, 185, 129, 0.05);
+      }
+      .kicker {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #34d399;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 6px;
+      }
+      .card h3 {
+        margin: 0 0 8px;
+        font-size: 1.06rem;
+        color: #f3f1ec;
+      }
+      .card p {
+        margin: 0;
+        font-size: 0.89rem;
+        color: #b8b8b2;
+      }
+      .doi {
+        margin-top: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.76rem;
+        color: #a3a39e;
+      }
+      .doi a {
+        color: #34d399;
+        text-decoration: none;
+      }
+      .doi a:hover {
+        text-decoration: underline;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+        font-size: 0.88rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 12px 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        vertical-align: top;
+      }
+      th {
+        background: #14171c;
+        color: #34d399;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      td {
+        background: #0f1115;
+        color: #d4d4ce;
+      }
+      code {
+        background: rgba(255, 255, 255, 0.07);
+        padding: 2px 6px;
+        border-radius: 5px;
+        font-size: 0.86em;
+        color: #e2e8f0;
+      }
+      .meta-box {
+        margin-top: 34px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: #0d0f12;
+        border-radius: 14px;
+        padding: 20px;
+        font-size: 0.86rem;
+        color: #d4d4ce;
+      }
+      .meta-box a {
+        color: #34d399;
+      }
+      footer {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 0.78rem;
+        color: #8e8e88;
+      }
+      footer a {
+        color: #d4d4ce;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      footer a:hover {
+        color: #34d399;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="topbar">
+        <a class="brand" href="/">nootropic<span>.fm</span> · Science Atlas</a>
+        <nav class="navlinks" aria-label="Science Navigation">
+          <a href="/">Showcase</a>
+          <a href="/science/" aria-current="page">Science Atlas</a>
+          <a href="/compare/">DSP vs. Playlists</a>
+          <a href="/investors/">Investors</a>
+          <a href="/partners/">Partners</a>
+          <a href="/contact/">Contact</a>
+          <a href="https://app.nootropic.fm/">Open Studio</a>
+        </nav>
+      </header>
+
+      <main>
+        <span class="badge">Human Frequency Atlas · 48 kHz Float64 AudioWorklet DSP · Adults 18+</span>
+        <h1>The Peer-Reviewed Human Frequency Atlas Behind nootropic.fm</h1>
+        <p class="lead">
+          Every protocol inside <strong>nootropic.fm</strong> translates peer-reviewed human auditory and autonomic
+          literature directly into phase-coherent <code>48 kHz Float64</code> WebAudio modulation&mdash;isolated inside
+          the <code>190–4,500 Hz</code> cortical band, loudness-locked via <code>ITU-R BS.1770-4</code>, and audited
+          with <code>25%</code> blind aperiodic sham controls and millisecond <code>20-Trial PVT</code> reaction speed.
+        </p>
+
+        <div class="cta-row">
+          <a class="btn-primary" href="/#demo">Hear 30s In-Ear Demo (6×40 Hz &amp; 600 Hz Test) →</a>
+          <a class="btn-secondary" href="https://app.nootropic.fm/">Launch Live 48 kHz Studio →</a>
+          <a class="btn-secondary" href="https://app.nootropic.fm/?view=studylab">Explore Study Lab →</a>
+        </div>
+
+        <h2 class="section-title">Core Human Acoustic Bands &amp; Executable Parameters</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Band / Protocol</th>
+              <th>Modulation Target</th>
+              <th>Primary Literature</th>
+              <th>DSP Execution in app.nootropic.fm</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>40 Hz Gamma-MBI</strong></td>
+              <td><code>40.000 Hz</code> (25 ms period)</td>
+              <td>Martorell et al. (2019), <em>Cell</em>; Iaccarino et al. (2016), <em>Nature</em></td>
+              <td>1.2 ms raised-cosine acoustic bursts wrapped inside lyric-free harmonic carriers (zero visual flicker).</td>
+            </tr>
+            <tr>
+              <td><strong>6×40 Hz Theta–Gamma CFC</strong></td>
+              <td><code>6.0 Hz</code> Theta × <code>40.0 Hz</code> Gamma</td>
+              <td>Lisman &amp; Jensen (2013), <em>Neuron</em></td>
+              <td>Signature Mode: 40 Hz Gamma bursts nested on 6 Hz Theta crests, phase-locked to 120.000 BPM stems + 0.10 Hz stereo orbit.</td>
+            </tr>
+            <tr>
+              <td><strong>16 Hz Beta LR4</strong></td>
+              <td><code>16.0 Hz</code> (14–18 Hz Beta)</td>
+              <td>Woods et al. (2024), <em>Communications Biology</em></td>
+              <td>3-Band Linkwitz-Riley (LR4) crossover modulates only <code>190–4,500 Hz</code>, preserving clean sub-bass and upper air.</td>
+            </tr>
+            <tr>
+              <td><strong>0.10 Hz HRV Mayer</strong></td>
+              <td><code>0.10 Hz</code> (~6 breaths/min)</td>
+              <td>Lehrer &amp; Gevirtz (2014), <em>Frontiers in Psychology</em></td>
+              <td>10-second sinusoidal respiratory tide (5s inhale swell / 5s exhale release) + optional live Web Bluetooth <code>BLE 0x180D</code> HRV feedback.</td>
+            </tr>
+            <tr>
+              <td><strong>600 Hz Huggins Test</strong></td>
+              <td><code>600 Hz</code> Dichotic Pitch</td>
+              <td>Huggins (1958) / Dichotic Phase Verification</td>
+              <td>Broadband pink noise with a 180&deg; all-pass phase transition at 600 Hz in the right ear only to verify in-ear L/R separation.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2 class="section-title">Five Foundational Mechanisms in Detail</h2>
+        <div class="grid-2">
+          <article class="card card-accent">
+            <div class="kicker">01 · 40 Hz Gamma-MBI</div>
+            <h3>Auditory 40 Hz Gamma Bursts in Harmonic Music</h3>
+            <p>
+              High-frequency gamma synchronization around <code>40.000 Hz</code> (25 ms inter-stimulus interval) is studied
+              in Music-Based Interventions (MBI) using brief 1–1.2 ms tone bursts. Wrapping these micro-bursts inside
+              controlled lyric-free piano and ambient carriers avoids listening fatigue while keeping exact 40 Hz periodicity
+              intact on the isolated Layer-1 bus.
+            </p>
+            <div class="doi">
+              Refs: <a href="https://doi.org/10.1016/j.cell.2019.02.014" target="_blank" rel="noopener noreferrer">DOI 10.1016/j.cell.2019.02.014</a> (Martorell 2019) &middot;
+              <a href="https://doi.org/10.1038/nature20587" target="_blank" rel="noopener noreferrer">DOI 10.1038/nature20587</a> (Iaccarino 2016)
+            </div>
+          </article>
+
+          <article class="card card-accent">
+            <div class="kicker">02 · 6×40 Hz Theta–Gamma CFC</div>
+            <h3>NootropicFM Signature Mode (120.000 BPM Grid)</h3>
+            <p>
+              Working memory and deep cognitive binding rely on phase-amplitude coupling where <code>40 Hz</code> gamma
+              bursts ride the crests of slower <code>6 Hz</code> theta cycles. Signature Mode locks <code>6.0 Hz</code>
+              theta × <code>40.0 Hz</code> gamma onto an exact <code>120.000 BPM</code> (<code>2.000 Hz</code>, 1:3 theta &amp;
+              1:20 gamma integer sub-harmonic) polyrhythmic stem grid with a <code>0.10 Hz</code> Mayer-wave stereo orbit
+              and <code>0%</code> sham dilution.
+            </p>
+            <div class="doi">
+              Ref: <a href="https://doi.org/10.1016/j.neuron.2013.03.007" target="_blank" rel="noopener noreferrer">DOI 10.1016/j.neuron.2013.03.007</a> (Lisman &amp; Jensen 2013, PMID 23522038)
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="kicker">03 · 16 Hz Beta LR4 (Woods 2024)</div>
+            <h3>Mid-Band Cortical Amplitude Modulation</h3>
+            <p>
+              Woods et al. (2024) demonstrated that rapid beta-band amplitude modulation (<code>~16 Hz</code>) embedded
+              into instrumental music supports sustained attention without requiring harsh synthetic sine drones. Our
+              4th-order Linkwitz-Riley (<code>LR4</code>) 3-band crossover splits audio at <code>190 Hz</code> and
+              <code>4,500 Hz</code> so only the cortical mid-band is modulated, guided in real time by an
+              <code>ITU-R BS.1770-4</code> K-weighted loudness follower.
+            </p>
+            <div class="doi">
+              Ref: <a href="https://doi.org/10.1038/s42003-024-07026-3" target="_blank" rel="noopener noreferrer">DOI 10.1038/s42003-024-07026-3</a> (Woods et al. 2024, PMID 39455825)
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="kicker">04 · 0.10 Hz HRV Mayer &amp; Sleep Wind-Down</div>
+            <h3>Baroreflex Resonance &amp; Nocturnal Deceleration</h3>
+            <p>
+              Cardiovascular Mayer-wave resonance near <code>0.10 Hz</code> (~6 breaths/min) maximizes respiratory sinus
+              arrhythmia and vagal recovery following cognitive load (Lehrer &amp; Gevirtz 2014; Thoma 2013). For evening
+              wind-down, slow lyric-free acoustics decelerate from <code>70 → 54 BPM</code> with a gentle
+              <code>-2.8 dB</code> nocturnal high-shelf above <code>3.2 kHz</code> (Jespersen 2022 Cochrane review).
+            </p>
+            <div class="doi">
+              Refs: <a href="https://doi.org/10.3389/fpsyg.2014.00756" target="_blank" rel="noopener noreferrer">DOI 10.3389/fpsyg.2014.00756</a> &middot;
+              <a href="https://doi.org/10.1002/14651858.CD010459.pub3" target="_blank" rel="noopener noreferrer">CD010459.pub3</a>
+            </div>
+          </article>
+        </div>
+
+        <h2 class="section-title">The 600 Hz Huggins Dichotic Verification &amp; Closed-Loop Proof</h2>
+        <div class="grid-3">
+          <div class="card">
+            <div class="kicker">Acoustic Integrity Check</div>
+            <h3>600 Hz Huggins Seal Test</h3>
+            <p>
+              Before trusting dichotic cues, the built-in Huggins test sends broadband pink noise to the left ear and an
+              all-pass <code>180&deg;</code> phase-shifted band at <code>600 Hz</code> to the right ear. Perception of a
+              soft <code>600 Hz</code> pitch confirms clean left/right earbud isolation; flat noise indicates speaker
+              crosstalk or Spatial Audio mixing.
+            </p>
+          </div>
+          <div class="card">
+            <div class="kicker">Placebo Control</div>
+            <h3>25% Blind Aperiodic Sham</h3>
+            <p>
+              On consented sessions (excluding explicit Signature Mode locks), 1 in 4 trials delivers an RMS-matched
+              aperiodic sham envelope so the Hierarchical Thompson Sampling Research Brain isolates true modulation
+              response from expectation bias.
+            </p>
+          </div>
+          <div class="card">
+            <div class="kicker">Objective Psychometrics</div>
+            <h3>20-Trial PVT &amp; BLE HRV</h3>
+            <p>
+              Pre/post rAF-synced Psychomotor Vigilance Task (<code>1000/RT ms</code> &amp; attentional lapses), 15s
+              continuation tapping CV, and optional Web Bluetooth <code>0x180D</code> RMSSD telemetry quantify response
+              without relying solely on mood sliders.
+            </p>
+          </div>
+        </div>
+
+        <div class="cta-row" style="margin-top:32px;">
+          <a class="btn-primary" href="/#demo">Test the 30s 6×40 Hz &amp; 600 Hz Huggins Proof →</a>
+          <a class="btn-secondary" href="/compare/">Read Technical Comparison: DSP vs. Playlists →</a>
+          <a class="btn-secondary" href="https://app.nootropic.fm/">Launch Full Audio Studio →</a>
+        </div>
+
+        <section class="meta-box" aria-label="Research Contact & Wellness Compliance">
+          <div>
+            <strong>Research &amp; Dataset Inquiries:</strong>
+            <a href="mailto:research@nootropic.fm">research@nootropic.fm</a> &middot;
+            <strong>Founder Desk:</strong> <a href="mailto:founders@nootropic.fm">founders@nootropic.fm</a> &middot;
+            <a href="/contact/">Full Department Directory</a>
+          </div>
+          <div style="margin-top:8px;color:#b8b8b2;">
+            <strong>FDA General Wellness Notice (Adults 18+):</strong> nootropic.fm is a general cognitive wellness
+            audio platform for everyday focus, deep work, calm reset, and pre-sleep wind-down. It is not a medical
+            device and is not intended to diagnose, treat, cure, or prevent any disease or medical condition.
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p style="margin:0;">
+          &copy; 2026 nootropic.fm &middot; <a href="/">Flagship Showcase</a> &middot;
+          <a href="/science/">Science Atlas</a> &middot; <a href="/compare/">DSP vs. Playlists</a> &middot;
+          <a href="/investors/">Investors</a> &middot; <a href="/partners/">Partners</a> &middot;
+          <a href="/contact/">Contact</a> &middot; <a href="https://app.nootropic.fm/">Audio Studio</a> &middot;
+          <a href="/privacy/">Privacy</a> &middot; <a href="/terms/">Terms</a> &middot;
+          <a href="/llms.txt">llms.txt</a>
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>

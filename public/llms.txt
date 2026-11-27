@@ -6,13 +6,16 @@ nootropic.fm (`app.nootropic.fm`) runs client-side 48 kHz AudioWorklet DSP (`~$0
 
 ## Core Documentation
 - [Full Technical & Scientific Reference](https://www.nootropic.fm/llms-full.txt): Complete DSP specifications, NootropicFM Signature Mode, peer-reviewed DOI citations, Research Brain telemetry, In-Ear Buds physics rationale, hardware roadmap, and pricing.
+- [Human Frequency Atlas (/science/)](https://www.nootropic.fm/science/): Peer-reviewed atlas covering 40 Hz Gamma-MBI, 6×40 Hz Theta-Gamma CFC, 16 Hz Beta LR4 (Woods 2024), 0.10 Hz HRV Mayer breathing, and the 600 Hz Huggins Dichotic Seal Test.
+- [Acoustic Comparison Guide (/compare/)](https://www.nootropic.fm/compare/): Technical breakdown explaining why lossy MP3/AAC playlists and open speakers degrade -20 dBc neural sidebands compared to client-side 48 kHz Float64 LR4 synthesis + 25% Blind Sham + 20-Trial PVT.
+- [Official Department Directory & AI Fact Sheet (/contact/)](https://www.nootropic.fm/contact/): Role-based department routing and canonical Press & AI Fact Sheet.
 - [Hardware & Brand Showcase (www.nootropic.fm)](https://www.nootropic.fm/): NOOTROPIC FM SOUND SYSTEMS hardware lineup (Orbital Phase-Ring Earbuds 01, Earbuds Pro PPG HRV, Sound System 01), 30-second interactive in-ear proof, and pricing.
 - [Pre-Seed Investor Memo ($450K SAFE)](https://www.nootropic.fm/investors/): Institutional DeepTech + Hardware Pre-Seed memo ($350K–$550K target), 3-engine monetization, 18-month use of proceeds, and HK/SZ supply-chain readiness.
 - [Strategic R&D Sponsorship & Partners](https://www.nootropic.fm/partners/): Institutional Pre-Seed, Tier-1 silicon/ODM R&D co-development, and enterprise licensing overview.
 - [Audio Studio Web App (app.nootropic.fm)](https://app.nootropic.fm/): Live interactive 48 kHz psychoacoustic studio, Study Lab, and Research Brain.
 - [Privacy Policy](https://www.nootropic.fm/privacy/): Zero-tracker, opt-in EEA/UK/CH privacy architecture and passwordless Neural Sync Pass details.
 - [Terms & Wellness Disclaimer](https://www.nootropic.fm/terms/): General wellness positioning, safe listening limits, and Driving Safety Mode boundaries.
-- Founder & Institutional Contact: Vasi Cicarac — mailto:founders@nootropic.fm
+- Founder: Vasi Cicarac — Department Contacts: General `hello@nootropic.fm` | Partnerships `partners@nootropic.fm` | Research & Data `research@nootropic.fm` | Press `press@nootropic.fm` | Investors `investors@nootropic.fm` | Founders `founders@nootropic.fm` | Support `support@nootropic.fm` | Privacy `privacy@nootropic.fm`
 
 ## Key Capabilities
 - **Dual-Layer 48 kHz WebAudio Engine**: Layer 1 scientific entrainment (`40 Hz` Gamma-MBI, 3-Band Linkwitz-Riley LR4 `190–4,500 Hz` cortical amplitude modulation, `0.10 Hz` HRV paced breathing, `600 Hz` Huggins dichotic headphone verification, ITU-R BS.1770-4 dynamic SNR follower) fused live into Layer 2 music.

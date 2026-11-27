@@ -71,6 +71,8 @@ test('index.html exposes valid Schema.org JSON-LD + semantic non-JS crawlable co
   assert.ok(ldMatch, 'index.html must include JSON-LD metadata');
   const parsed = JSON.parse(ldMatch[1]);
   assert.ok(Array.isArray(parsed['@graph']) && parsed['@graph'].length >= 4);
+  const orgNode = parsed['@graph'].find((n) => n['@type'] === 'Organization');
+  assert.ok(orgNode && Array.isArray(orgNode.contactPoint) && orgNode.contactPoint.length >= 6, 'index.html Organization must define Schema.org ContactPoint array');
 
   assert.match(html, /NootropicFM Signature Mode/);
   assert.match(html, /Engineered Exclusively for In-Ear Buds/);
@@ -84,11 +86,11 @@ test('index.html exposes valid Schema.org JSON-LD + semantic non-JS crawlable co
 
 test('public/investors/index.html and public/partners/index.html are CSP-safe, expose valid JSON-LD, and enforce institutional Pre-NNN IP & General Wellness hygiene', () => {
   const checks = [
-    { rel: ['public', 'investors', 'index.html'], expectedMatch: /Pre-Seed Round Open/i },
-    { rel: ['public', 'partners', 'index.html'], expectedMatch: /Institutional Pre-Seed/i },
+    { rel: ['public', 'investors', 'index.html'], expectedMatch: /Pre-Seed Round Open/i, expectedEmails: ['investors@nootropic.fm', 'founders@nootropic.fm'] },
+    { rel: ['public', 'partners', 'index.html'], expectedMatch: /Institutional Pre-Seed/i, expectedEmails: ['partners@nootropic.fm', 'founders@nootropic.fm'] },
   ];
 
-  for (const { rel, expectedMatch } of checks) {
+  for (const { rel, expectedMatch, expectedEmails } of checks) {
     const filePath = path.join(ROOT, ...rel);
     assert.ok(fs.existsSync(filePath), `Missing ${rel.join('/')}`);
     const html = fs.readFileSync(filePath, 'utf8');
@@ -104,18 +106,144 @@ test('public/investors/index.html and public/partners/index.html are CSP-safe, e
     assert.ok(Array.isArray(parsed['@graph']) && parsed['@graph'].length >= 2);
 
     assert.match(html, expectedMatch);
-    assert.match(html, /founders@nootropic\.fm/i);
-    assert.ok(!/nootropic\.fm@gmail\.com/i.test(html), `Replace personal gmail with founders@nootropic.fm on ${rel.join('/')}`);
+    for (const email of expectedEmails) {
+      assert.ok(html.toLowerCase().includes(email), `Missing ${email} on ${rel.join('/')}`);
+    }
+    assert.ok(!/nootropic\.fm@gmail\.com/i.test(html), `Replace personal gmail on ${rel.join('/')}`);
     assert.ok(!/\$1,000|\$5,000/i.test(html), `Avoid diluting institutional positioning with small microgrant figures on ${rel.join('/')}`);
     assert.ok(!/\b(treats|cures|diagnoses)\s+(adhd|insomnia|alzheimer|depression|tinnitus)\b/i.test(html));
     assert.ok(!/\baddictive\b/i.test(html), 'Must never use clinical term addictive in public copy');
-    assert.ok(!/ATECC608B|T_pcb|59\.70|62\.40|dT_core/i.test(html), 'Must never leak Pre-NNN IP or COGS figures');
+    assert.ok(!/ATECC608B|T_pcb|59\.70|62\.40|dT_core|Envelope Flattener|\$57\b/i.test(html), 'Must never leak Pre-NNN IP or COGS figures');
+  }
+});
+
+test('SEO + GEO pages (/science/, /compare/, /contact/) are crawlable, CSP-safe, Schema.org-valid, and indexed in sitemap & llms docs', () => {
+  const pages = [
+    {
+      rel: ['science', 'index.html'],
+      canonical: 'https://www.nootropic.fm/science/',
+      requiredTypes: ['TechArticle', 'FAQPage', 'Organization'],
+      mustMatch: [/40 Hz Gamma-MBI/, /6×40 Hz/, /16 Hz Beta/, /0\.10 Hz/, /600 Hz Huggins/, /Woods/, /app\.nootropic\.fm/],
+    },
+    {
+      rel: ['compare', 'index.html'],
+      canonical: 'https://www.nootropic.fm/compare/',
+      requiredTypes: ['TechArticle', 'FAQPage', 'Organization'],
+      mustMatch: [/48 kHz Float64/, /-20 dBc/, /25% Blind Aperiodic Sham/i, /20-Trial PVT/, /0\.261 ms/],
+    },
+    {
+      rel: ['contact', 'index.html'],
+      canonical: 'https://www.nootropic.fm/contact/',
+      requiredTypes: ['ContactPage', 'Organization'],
+      mustMatch: [/Press &amp; AI Fact Sheet|Press & AI Fact Sheet/, /Vasi Cicarac/],
+    },
+  ];
+
+  for (const page of pages) {
+    for (const baseDir of [path.join(ROOT, 'public'), path.join(ROOT, 'dist', 'client')]) {
+      const filePath = path.join(baseDir, ...page.rel);
+      assert.ok(fs.existsSync(filePath), `Missing ${page.rel.join('/')} in ${baseDir}`);
+    }
+    const html = fs.readFileSync(path.join(ROOT, 'public', ...page.rel), 'utf8');
+    assert.ok(html.length > 4000, `Expected substantial crawlable HTML in ${page.rel.join('/')}`);
+    assert.ok(html.includes(`<link rel="canonical" href="${page.canonical}" />`), `Missing canonical on ${page.rel.join('/')}`);
+
+    const scriptTags = html.match(/<script\b[^>]*>/gi) ?? [];
+    assert.equal(scriptTags.length, 1, `Expected only JSON-LD metadata script on ${page.rel.join('/')}`);
+    assert.match(scriptTags[0], /type="application\/ld\+json"/);
+
+    const ldMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+    const parsed = JSON.parse(ldMatch[1]);
+    assert.ok(Array.isArray(parsed['@graph']));
+    for (const typeName of page.requiredTypes) {
+      assert.ok(
+        parsed['@graph'].some((n) => n['@type'] === typeName),
+        `Missing @type ${typeName} in JSON-LD of ${page.rel.join('/')}`
+      );
+    }
+
+    for (const rx of page.mustMatch) {
+      assert.match(html, rx, `Expected ${rx} in ${page.rel.join('/')}`);
+    }
+
+    assert.ok(!/nootropic\.fm@gmail\.com/i.test(html), `Personal gmail leaked on ${page.rel.join('/')}`);
+    assert.ok(!/\b(treats|cures|diagnoses)\s+(adhd|insomnia|alzheimer|depression|tinnitus)\b/i.test(html));
+    assert.ok(!/\baddictive\b/i.test(html), `Forbidden clinical term addictive on ${page.rel.join('/')}`);
+    assert.ok(!/ATECC608B|T_pcb|59\.70|62\.40|dT_core|Envelope Flattener|\$57\b/i.test(html), `Pre-NNN IP leak on ${page.rel.join('/')}`);
+    assert.ok(!/\b(brain\.fm|endel|focus@will|focusatwill|spotify|apple music|youtube music)\b/i.test(html), `Avoid trademarked competitor names on ${page.rel.join('/')}`);
+    assert.match(html, /not a medical device/i, `Missing non-medical wellness disclaimer on ${page.rel.join('/')}`);
+  }
+
+  const sitemap = fs.readFileSync(path.join(ROOT, 'public', 'sitemap.xml'), 'utf8');
+  const llms = fs.readFileSync(path.join(ROOT, 'public', 'llms.txt'), 'utf8');
+  const llmsFull = fs.readFileSync(path.join(ROOT, 'public', 'llms-full.txt'), 'utf8');
+  for (const slug of ['/science/', '/compare/', '/contact/']) {
+    assert.ok(sitemap.includes(`https://www.nootropic.fm${slug}`), `sitemap.xml missing ${slug}`);
+    assert.ok(llms.includes(`https://www.nootropic.fm${slug}`), `llms.txt missing ${slug}`);
+    assert.ok(llmsFull.includes(`https://www.nootropic.fm${slug}`), `llms-full.txt missing ${slug}`);
+  }
+});
+
+test('department email suite is routed by role with zero vasi@nootropic.fm anywhere in source or public assets', () => {
+  const deptEmails = [
+    'hello@nootropic.fm',
+    'partners@nootropic.fm',
+    'research@nootropic.fm',
+    'press@nootropic.fm',
+    'investors@nootropic.fm',
+    'founders@nootropic.fm',
+    'support@nootropic.fm',
+    'privacy@nootropic.fm',
+  ];
+
+  const forbiddenAddress = ['vasi', 'nootropic.fm'].join('@');
+  const scanDirs = ['public', 'src', 'worker', 'shared'];
+  const collectFiles = (dir) => {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...collectFiles(full));
+      else if (/\.(html|ts|tsx|js|mjs|txt|xml|json)$/i.test(entry.name)) out.push(full);
+    }
+    return out;
+  };
+  const allScanned = [path.join(ROOT, 'index.html'), ...scanDirs.flatMap((d) => collectFiles(path.join(ROOT, d)))];
+  for (const file of allScanned) {
+    const content = fs.readFileSync(file, 'utf8').toLowerCase();
+    assert.ok(!content.includes(forbiddenAddress), `Forbidden ${forbiddenAddress} found in ${file}`);
+  }
+
+  for (const rel of [
+    ['index.html'],
+    ['public', 'contact', 'index.html'],
+    ['public', 'llms.txt'],
+    ['public', 'llms-full.txt'],
+    ['src', 'components', 'FlagshipShowcaseView.tsx'],
+  ]) {
+    const content = fs.readFileSync(path.join(ROOT, ...rel), 'utf8');
+    for (const email of deptEmails) {
+      assert.ok(content.includes(email), `Missing department email ${email} in ${rel.join('/')}`);
+    }
+  }
+
+  const datasetModal = fs.readFileSync(path.join(ROOT, 'src', 'components', 'DatasetInquiryModal.tsx'), 'utf8');
+  assert.ok(datasetModal.includes('research@nootropic.fm'), 'DatasetInquiryModal must route direct emails to research@nootropic.fm');
+
+  const appSrc = fs.readFileSync(path.join(ROOT, 'src', 'App.tsx'), 'utf8');
+  for (const email of ['hello@nootropic.fm', 'research@nootropic.fm', 'support@nootropic.fm', 'privacy@nootropic.fm', 'founders@nootropic.fm']) {
+    assert.ok(appSrc.includes(email), `Missing ${email} in src/App.tsx`);
+  }
+  for (const link of ['/science/', '/compare/', '/contact/']) {
+    assert.ok(appSrc.includes(link), `Missing ${link} in src/App.tsx`);
   }
 });
 
 test('founder identity is strictly Vasi Cicarac (zero Edmond/Vasile), founders@nootropic.fm is surfaced site-wide, and BIMI SVG Tiny-PS logo exists', () => {
   const noOldNameTargets = [
     ['index.html'],
+    ['public', 'science', 'index.html'],
+    ['public', 'compare', 'index.html'],
+    ['public', 'contact', 'index.html'],
     ['public', 'investors', 'index.html'],
     ['public', 'partners', 'index.html'],
     ['public', 'privacy', 'index.html'],
@@ -135,6 +263,9 @@ test('founder identity is strictly Vasi Cicarac (zero Edmond/Vasile), founders@n
 
   for (const rel of [
     ['index.html'],
+    ['public', 'science', 'index.html'],
+    ['public', 'compare', 'index.html'],
+    ['public', 'contact', 'index.html'],
     ['public', 'investors', 'index.html'],
     ['public', 'partners', 'index.html'],
     ['public', 'llms.txt'],
@@ -145,6 +276,9 @@ test('founder identity is strictly Vasi Cicarac (zero Edmond/Vasile), founders@n
 
   for (const rel of [
     ['index.html'],
+    ['public', 'science', 'index.html'],
+    ['public', 'compare', 'index.html'],
+    ['public', 'contact', 'index.html'],
     ['public', 'investors', 'index.html'],
     ['public', 'partners', 'index.html'],
     ['public', 'privacy', 'index.html'],
@@ -154,7 +288,6 @@ test('founder identity is strictly Vasi Cicarac (zero Edmond/Vasile), founders@n
     ['public', 'llms-full.txt'],
     ['src', 'components', 'FlagshipShowcaseView.tsx'],
     ['src', 'components', 'HeroLandingView.tsx'],
-    ['src', 'components', 'DatasetInquiryModal.tsx'],
     ['src', 'App.tsx'],
   ]) {
     const content = fs.readFileSync(path.join(ROOT, ...rel), 'utf8');

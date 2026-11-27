@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>40 Hz Focus Audio &amp; Binaural Beats vs. Cortical Amplitude Modulation · nootropic.fm</title>
+    <meta
+      name="description"
+      content="Technical acoustic comparison: why lossy MP3/AAC focus playlists and open speakers smear -20 dBc neural sidebands, compared against nootropic.fm's 48 kHz Float64 LR4 engine, 25% blind sham, and 20-Trial PVT."
+    />
+    <link rel="canonical" href="https://www.nootropic.fm/compare/" />
+    <link rel="alternate" type="text/plain" title="LLMs Documentation" href="https://www.nootropic.fm/llms.txt" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="40 Hz Focus Audio & Binaural Beats vs. Cortical AM · nootropic.fm" />
+    <meta
+      property="og:description"
+      content="Physics and DSP breakdown: streaming MP3/AAC compression & speaker crosstalk (-20 dBc sideband loss) vs. 48 kHz Float64 LR4 cortical modulation + 25% blind sham + 20-Trial PVT."
+    />
+    <meta property="og:url" content="https://www.nootropic.fm/compare/" />
+    <meta property="og:image" content="https://www.nootropic.fm/brand/og-banner.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Binaural Beats & Playlists vs. 48 kHz Cortical AM · nootropic.fm" />
+    <meta
+      name="twitter:description"
+      content="Why lossy streaming audio loses -20 dBc modulation sidebands vs. client-side 48 kHz Float64 LR4 synthesis with blind sham verification."
+    />
+    <meta name="twitter:image" content="https://www.nootropic.fm/brand/og-banner.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "TechArticle",
+            "@id": "https://www.nootropic.fm/compare/#article",
+            "headline": "40 Hz Focus Audio & Binaural Beats vs. Cortical Amplitude Modulation and Lossy Playlist Compression",
+            "description": "Engineering comparison explaining how MP3/AAC psychoacoustic masking and open-speaker crosstalk degrade -20 dBc neural modulations compared to client-side 48 kHz Float64 LR4 synthesis with 25% blind sham and 20-Trial PVT verification.",
+            "url": "https://www.nootropic.fm/compare/",
+            "author": {
+              "@type": "Person",
+              "name": "Vasi Cicarac"
+            },
+            "publisher": {
+              "@id": "https://www.nootropic.fm/#org"
+            }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.nootropic.fm/#org",
+            "name": "nootropic.fm",
+            "alternateName": "NOOTROPIC FM SOUND SYSTEMS",
+            "url": "https://www.nootropic.fm/",
+            "email": "founders@nootropic.fm",
+            "founder": {
+              "@type": "Person",
+              "name": "Vasi Cicarac"
+            },
+            "contactPoint": [
+              {
+                "@type": "ContactPoint",
+                "contactType": "customer support",
+                "email": "support@nootropic.fm",
+                "url": "https://www.nootropic.fm/contact/"
+              },
+              {
+                "@type": "ContactPoint",
+                "contactType": "research",
+                "email": "research@nootropic.fm",
+                "url": "https://www.nootropic.fm/science/"
+              },
+              {
+                "@type": "ContactPoint",
+                "contactType": "executive",
+                "email": "founders@nootropic.fm",
+                "url": "https://www.nootropic.fm/contact/"
+              }
+            ]
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Why do lossy MP3/AAC focus playlists degrade -20 dBc neural modulation?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Lossy audio codecs (MP3, AAC, SBC) discard low-level temporal sidebands between -20 dBc and -26 dBc when they fall inside the same Equivalent Rectangular Bandwidth (ERB) as louder musical instruments. Client-side 48 kHz Float64 synthesis generates and mixes the cortical envelope live after decompression, avoiding codec re-quantization."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What is the difference between pure binaural beats and 3-Band LR4 cortical amplitude modulation?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Pure binaural beats rely on small left-right frequency offsets of sine tones that collapse into flat air cancellation over speakers and are masked by busy mixes. 3-Band Linkwitz-Riley (LR4) cortical amplitude modulation applies phase-coherent envelopes across the 190–4,500 Hz mid-band while preserving sub-bass and highs, remaining effective across both headphones and monaural speaker safety modes."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Why do open desk speakers fail dichotic phase protocols?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "At a typical 60 cm desk distance, acoustic path differences between left and right ears introduce roughly 0.261 ms inter-aural crosstalk, creating a destructive comb-filter notch near 1,914.8 Hz and 56.4 degrees of phase error at 600 Hz. Sealed in-ear buds preserve left-right isolation (except in Driving Safety Mode, where open vehicle speakers keep road cues audible)."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0a0b0c;
+        color: #f3f1ec;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 1020px;
+        margin: 0 auto;
+        padding: 32px 20px 72px;
+      }
+      .topbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        margin-bottom: 36px;
+      }
+      .brand {
+        color: #f3f1ec;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 1.05rem;
+        letter-spacing: -0.01em;
+      }
+      .brand span {
+        color: #34d399;
+      }
+      .navlinks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        font-size: 0.85rem;
+        align-items: center;
+      }
+      .navlinks a {
+        color: #d4d4ce;
+        text-decoration: none;
+        padding: 6px 10px;
+        border-radius: 8px;
+      }
+      .navlinks a:hover,
+      .navlinks a[aria-current="page"] {
+        color: #34d399;
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .badge {
+        display: inline-block;
+        padding: 5px 11px;
+        border-radius: 999px;
+        border: 1px solid rgba(52, 211, 153, 0.38);
+        background: rgba(16, 185, 129, 0.12);
+        color: #34d399;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-size: clamp(1.85rem, 3.8vw, 2.75rem);
+        line-height: 1.14;
+        letter-spacing: -0.025em;
+        margin: 16px 0 14px;
+        color: #f3f1ec;
+      }
+      .lead {
+        font-size: 1.04rem;
+        color: #d4d4ce;
+        max-width: 800px;
+        margin: 0 0 24px;
+      }
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 40px;
+      }
+      .btn-primary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 11px 20px;
+        border-radius: 10px;
+        background: #34d399;
+        color: #062218;
+        font-weight: 700;
+        font-size: 0.92rem;
+        text-decoration: none;
+      }
+      .btn-primary:hover {
+        background: #4ade80;
+      }
+      .btn-secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 11px 18px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: #14161a;
+        color: #f3f1ec;
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-decoration: none;
+      }
+      .btn-secondary:hover {
+        border-color: rgba(52, 211, 153, 0.5);
+        color: #34d399;
+      }
+      .section-title {
+        font-size: 1.3rem;
+        letter-spacing: -0.015em;
+        margin: 40px 0 14px;
+        color: #f3f1ec;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: #111317;
+        border-radius: 14px;
+        padding: 20px;
+      }
+      .card-accent {
+        border-color: rgba(52, 211, 153, 0.35);
+        background: rgba(16, 185, 129, 0.05);
+      }
+      .kicker {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #34d399;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 6px;
+      }
+      .card h3 {
+        margin: 0 0 8px;
+        font-size: 1.06rem;
+        color: #f3f1ec;
+      }
+      .card p {
+        margin: 0;
+        font-size: 0.89rem;
+        color: #b8b8b2;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+        font-size: 0.86rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 12px 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        vertical-align: top;
+      }
+      th {
+        background: #14171c;
+        color: #34d399;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      td {
+        background: #0f1115;
+        color: #d4d4ce;
+      }
+      td.win {
+        background: rgba(16, 185, 129, 0.06);
+        color: #f3f1ec;
+      }
+      code {
+        background: rgba(255, 255, 255, 0.07);
+        padding: 2px 6px;
+        border-radius: 5px;
+        font-size: 0.86em;
+        color: #e2e8f0;
+      }
+      .meta-box {
+        margin-top: 34px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: #0d0f12;
+        border-radius: 14px;
+        padding: 20px;
+        font-size: 0.86rem;
+        color: #d4d4ce;
+      }
+      .meta-box a {
+        color: #34d399;
+      }
+      footer {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 0.78rem;
+        color: #8e8e88;
+      }
+      footer a {
+        color: #d4d4ce;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      footer a:hover {
+        color: #34d399;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="topbar">
+        <a class="brand" href="/">nootropic<span>.fm</span> · Acoustic Comparison</a>
+        <nav class="navlinks" aria-label="Comparison Navigation">
+          <a href="/">Showcase</a>
+          <a href="/science/">Science Atlas</a>
+          <a href="/compare/" aria-current="page">DSP vs. Playlists</a>
+          <a href="/investors/">Investors</a>
+          <a href="/partners/">Partners</a>
+          <a href="/contact/">Contact</a>
+          <a href="https://app.nootropic.fm/">Open Studio</a>
+        </nav>
+      </header>
+
+      <main>
+        <span class="badge">Acoustic Physics &amp; Signal Engineering Comparison · 48 kHz Float64</span>
+        <h1>40 Hz Focus Audio &amp; Binaural Beats vs. Cortical Amplitude Modulation</h1>
+        <p class="lead">
+          Most static focus playlists and binaural-beat uploads lose their neural modulation before reaching your ears:
+          lossy <code>MP3/AAC</code> compression strips <code>-20 dBc</code> sidebands, dynamic limiters pump the pulse,
+          and open speakers cancel dichotic phase. Here is how client-side <code>48 kHz Float64</code> DSP solves each bottleneck.
+        </p>
+
+        <div class="cta-row">
+          <a class="btn-primary" href="/#demo">Compare Flat vs. 6×40 Hz in 30s Demo →</a>
+          <a class="btn-secondary" href="https://app.nootropic.fm/">Launch 48 kHz Studio →</a>
+          <a class="btn-secondary" href="/science/">Read Human Frequency Atlas →</a>
+        </div>
+
+        <h2 class="section-title">Side-by-Side Signal Architecture Matrix</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Engineering Dimension</th>
+              <th>Static Focus Playlists (MP3/AAC Streams)</th>
+              <th>Generic Binaural Sine Generators</th>
+              <th>nootropic.fm (48 kHz Float64 Engine)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Modulation Sidebands (-20 to -26 dBc)</strong></td>
+              <td>Psychoacoustic ERB masking &amp; lossy compression strip subtle AM sidebands.</td>
+              <td>Unwrapped sine tones cause listening fatigue; often crushed by streaming loudness normalization.</td>
+              <td class="win"><strong>Live 48 kHz Float64 AudioWorklet synthesis</strong> on isolated <code>masterSumBus</code> after music pre-limiting (<code>0.000 dB</code> stimulus ducking).</td>
+            </tr>
+            <tr>
+              <td><strong>Spectral Targeting</strong></td>
+              <td>Full-range audio without cortical band isolation.</td>
+              <td>Fixed single-frequency carrier tones (200–400 Hz) with zero harmonic wrapping.</td>
+              <td class="win"><strong>3-Band Linkwitz-Riley (LR4)</strong> modulates strictly <code>190–4,500 Hz</code>, leaving sub-bass warmth and upper air unmodulated.</td>
+            </tr>
+            <tr>
+              <td><strong>Loudness Calibration</strong></td>
+              <td>Dynamic mastering &amp; volume normalization shift modulation depth unpredictably.</td>
+              <td>Manual slider guessing without real-time musical SNR tracking.</td>
+              <td class="win"><strong>ITU-R BS.1770-4 K-weighted follower</strong> locks exact <code>-20 dB</code> to <code>-16 dB</code> signal-to-noise ratio in real time.</td>
+            </tr>
+            <tr>
+              <td><strong>Speaker vs. In-Ear Physics</strong></td>
+              <td>Open speakers create <code>0.261 ms</code> crosstalk &amp; a <code>1,914.8 Hz</code> comb-filter notch.</td>
+              <td>Binaural phase difference collapses completely in open room air.</td>
+              <td class="win"><strong>600 Hz Huggins Dichotic Seal Test</strong> verifies L/R earbud isolation and auto-switches to monaural/Driving Safety EQ when needed.</td>
+            </tr>
+            <tr>
+              <td><strong>Causal Verification</strong></td>
+              <td>No control trials, no reaction-time measurement, static playlists for everyone.</td>
+              <td>Subjective mood claims without placebo control.</td>
+              <td class="win"><strong>25% Blind Aperiodic Sham Control</strong> + rAF-synced <code>20-Trial PVT</code> (<code>1000/RT ms</code>) + 15s tapping CV + <code>BLE 0x180D</code> HRV.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2 class="section-title">Why -20 dBc Neural Modulations Disappear in Everyday Audio</h2>
+        <div class="grid-2">
+          <article class="card card-accent">
+            <div class="kicker">Physics 01 · Codec &amp; ERB Masking</div>
+            <h3>Lossy Playlist Compression vs. 48 kHz Float64</h3>
+            <p>
+              Pre-baked focus tracks distributed over standard lossy codecs (MP3, AAC, Bluetooth SBC) allocate bits using
+              auditory masking curves. Because a cortical modulation sideband at <code>-20 dBc</code> to <code>-26 dBc</code>
+              falls inside the same Equivalent Rectangular Bandwidth (ERB) as a loud synth pad or drum transient, encoders
+              quantize it away. By running synthesis in real time inside your browser&apos;s <code>48 kHz Float64</code>
+              audio thread, <strong>nootropic.fm</strong> injects the modulation downstream of a <code>-3.35 dBTP</code>
+              music pre-limiter with zero codec distortion.
+            </p>
+          </article>
+
+          <article class="card card-accent">
+            <div class="kicker">Physics 02 · Acoustic Crosstalk</div>
+            <h3>Open Speakers (~0.26 ms Notch) vs. Sealed In-Ear Buds</h3>
+            <p>
+              With desktop speakers placed ~60 cm away, sound from the left speaker reaches the right ear roughly
+              <code>0.261 ms</code> later, introducing a destructive comb-filter null at <code>1,914.8 Hz</code> and a
+              <code>56.4&deg;</code> dichotic phase error at <code>600 Hz</code>. Sealed in-ear buds create an isolated
+              acoustic pressure chamber per ear&mdash;verified instantly with our built-in <code>600 Hz</code> Huggins
+              Dichotic Test&mdash;while Driving Safety Mode purposefully routes through open vehicle speakers to keep
+              <code>800–3,500 Hz</code> road cues unobstructed.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="kicker">Physics 03 · Comfort vs. Efficacy</div>
+            <h3>Why Pure Binaural Sine Waves Cause Fatigue</h3>
+            <p>
+              Raw sine-wave binaural beats sound clinical and compete with listening adherence. Grounded in Woods et al.
+              (2024), 3-Band <code>LR4</code> cortical amplitude modulation embeds <code>16 Hz</code> Beta or
+              <code>6×40 Hz</code> Theta-Gamma modulation inside rich, lyric-free instrumental stems across 10 Studio Mix
+              genres and endless procedural music, preserving musical warmth.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="kicker">Physics 04 · Closed-Loop Science</div>
+            <h3>Proving Delta Over Placebo (25% Sham + 20-Trial PVT)</h3>
+            <p>
+              Static playlists never measure whether a track actually sharpened vigilance. On consented sessions, our
+              Research Brain runs a stratified <code>25%</code> blind aperiodic sham control alongside pre/post
+              <code>20-Trial PVT</code> reaction-time testing, adapting modulation depth and cadence via Hierarchical
+              Thompson Sampling.
+            </p>
+          </article>
+        </div>
+
+        <section class="meta-box" aria-label="Research Contact & Wellness Disclaimer">
+          <div>
+            <strong>Technical &amp; Research Questions:</strong>
+            <a href="mailto:research@nootropic.fm">research@nootropic.fm</a> &middot;
+            <strong>General Inquiries:</strong> <a href="mailto:hello@nootropic.fm">hello@nootropic.fm</a> &middot;
+            <a href="/contact/">All Departments</a>
+          </div>
+          <div style="margin-top:8px;color:#b8b8b2;">
+            <strong>General Wellness Positioning (Adults 18+):</strong> nootropic.fm provides psychoacoustic wellness
+            audio for focus, flow, calm reset, and sleep wind-down. It is not a medical device and does not diagnose,
+            treat, cure, or prevent any disease or medical condition.
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p style="margin:0;">
+          &copy; 2026 nootropic.fm &middot; <a href="/">Flagship Showcase</a> &middot;
+          <a href="/science/">Science Atlas</a> &middot; <a href="/compare/">DSP vs. Playlists</a> &middot;
+          <a href="/investors/">Investors</a> &middot; <a href="/partners/">Partners</a> &middot;
+          <a href="/contact/">Contact</a> &middot; <a href="https://app.nootropic.fm/">Audio Studio</a> &middot;
+          <a href="/privacy/">Privacy</a> &middot; <a href="/terms/">Terms</a> &middot;
+          <a href="/llms.txt">llms.txt</a>
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>

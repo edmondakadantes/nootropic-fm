@@ -1548,6 +1548,20 @@ export default function App() {
               </a>
               <span className="text-[#555550]">·</span>
               <a
+                href="mailto:privacy@nootropic.fm"
+                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
+              >
+                privacy@nootropic.fm
+              </a>
+              <span className="text-[#555550]">·</span>
+              <a
+                href="mailto:support@nootropic.fm"
+                className="font-medium text-[#34D399] underline-offset-2 hover:underline"
+              >
+                support@nootropic.fm
+              </a>
+              <span className="text-[#555550]">·</span>
+              <a
                 href="mailto:founders@nootropic.fm"
                 className="font-medium text-[#34D399] underline-offset-2 hover:underline"
               >
@@ -1634,10 +1648,52 @@ export default function App() {
                 Hardware &amp; Science ↗
               </a>
               <a
+                href="https://www.nootropic.fm/science/"
+                className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
+              >
+                Science Atlas
+              </a>
+              <a
+                href="https://www.nootropic.fm/compare/"
+                className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
+              >
+                DSP vs. Playlists
+              </a>
+              <a
+                href="https://www.nootropic.fm/contact/"
+                className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
+              >
+                Departments
+              </a>
+              <a
                 href="/delete-data"
                 className="text-[#A3A39E] underline-offset-2 hover:text-[#34D399] hover:underline"
               >
                 Delete Data
+              </a>
+              <a
+                href="mailto:hello@nootropic.fm"
+                className="text-[#34D399] underline-offset-2 hover:underline"
+              >
+                hello@nootropic.fm
+              </a>
+              <a
+                href="mailto:research@nootropic.fm"
+                className="text-[#34D399] underline-offset-2 hover:underline"
+              >
+                research@nootropic.fm
+              </a>
+              <a
+                href="mailto:support@nootropic.fm"
+                className="text-[#34D399] underline-offset-2 hover:underline"
+              >
+                support@nootropic.fm
+              </a>
+              <a
+                href="mailto:privacy@nootropic.fm"
+                className="text-[#34D399] underline-offset-2 hover:underline"
+              >
+                privacy@nootropic.fm
               </a>
               <a
                 href="mailto:founders@nootropic.fm"

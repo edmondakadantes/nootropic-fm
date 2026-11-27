@@ -1,8 +1,19 @@
 # nootropic.fm — Complete Technical, Scientific & Hardware Reference
 
 URL: https://www.nootropic.fm/
+Science Atlas: https://www.nootropic.fm/science/
+DSP vs. Playlists Comparison: https://www.nootropic.fm/compare/
+Department Directory & Fact Sheet: https://www.nootropic.fm/contact/
 Founder: Vasi Cicarac
-Contact: founders@nootropic.fm
+Department Contacts:
+- General & Community: hello@nootropic.fm
+- Partnerships & OEM: partners@nootropic.fm
+- Research & Dataset Licensing: research@nootropic.fm
+- Press & Analyst Briefings: press@nootropic.fm
+- Investor Relations: investors@nootropic.fm
+- Executive / Founder Desk: founders@nootropic.fm
+- Listener Support & Billing: support@nootropic.fm
+- Privacy & GDPR/CCPA Rights: privacy@nootropic.fm
 Category: Cognitive Wellness Audio & Closed-Loop Acoustic Neuro-Regulation (Adults 18+)
 Disclaimer: nootropic.fm provides psychoacoustic wellness, focus, relaxation, and sleep wind-down audio. It is not a medical device and is not intended to diagnose, treat, cure, or prevent any medical condition.
 

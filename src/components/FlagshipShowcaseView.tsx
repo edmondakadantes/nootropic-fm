@@ -440,33 +440,45 @@ export function FlagshipShowcaseView({
           <nav className="hidden items-center gap-1 md:flex" aria-label="Showcase Sections">
             <a
               href="#hardware"
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               Earbuds
             </a>
             <a
               href="#demo"
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
-              30s Audio Proof
+              30s Proof
             </a>
             <a
-              href="#platform"
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              href="/science/"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
-              AI Engine
+              Science
+            </a>
+            <a
+              href="/compare/"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+            >
+              Compare
             </a>
             <a
               href="#pricing"
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               Pricing
             </a>
             <a
               href="/investors/"
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               Investors
+            </a>
+            <a
+              href="/contact/"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+            >
+              Contact
             </a>
           </nav>
 
@@ -1051,7 +1063,14 @@ export function FlagshipShowcaseView({
                   NootropicFM Pro).
                 </p>
                 <p className="text-[11px] text-[#A3A39E]">
-                  Direct founder &amp; partnership desk:{' '}
+                  Hardware &amp; OEM partnerships:{' '}
+                  <a
+                    href="mailto:partners@nootropic.fm"
+                    className="font-mono-tech font-semibold text-[#34D399] underline-offset-2 hover:underline"
+                  >
+                    partners@nootropic.fm
+                  </a>{' '}
+                  · Executive desk:{' '}
                   <a
                     href="mailto:founders@nootropic.fm"
                     className="font-mono-tech font-semibold text-[#34D399] underline-offset-2 hover:underline"
@@ -1337,6 +1356,67 @@ export function FlagshipShowcaseView({
             </div>
           </div>
         </section>
+        {/* SECTION 6: OFFICIAL DEPARTMENT DIRECTORY & SEO/SCIENCE RESOURCES */}
+        <section id="contact" className="glass-stage rounded-3xl p-5 sm:p-8 space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="space-y-1">
+              <div className="font-mono-tech text-[10.5px] font-bold uppercase tracking-[0.14em] text-[#34D399]">
+                OFFICIAL DEPARTMENT DIRECTORY · NOOTROPIC.FM
+              </div>
+              <h2 className="font-display text-xl font-bold tracking-tight text-[#F3F1EC] sm:text-2xl">
+                Direct Role-Based Contact Channels
+              </h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <a
+                href="/science/"
+                className="rounded-lg border border-white/15 bg-[#131518] px-3 py-1.5 font-semibold text-[#F3F1EC] transition hover:border-white/30"
+              >
+                Science Atlas →
+              </a>
+              <a
+                href="/compare/"
+                className="rounded-lg border border-white/15 bg-[#131518] px-3 py-1.5 font-semibold text-[#F3F1EC] transition hover:border-white/30"
+              >
+                DSP vs. Playlists →
+              </a>
+              <a
+                href="/contact/"
+                className="rounded-lg border border-emerald-400/35 bg-emerald-500/10 px-3 py-1.5 font-semibold text-[#34D399] transition hover:bg-emerald-500/20"
+              >
+                Fact Sheet &amp; Press →
+              </a>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { role: 'General & Product', email: 'hello@nootropic.fm' },
+              { role: 'Partnerships & OEM', email: 'partners@nootropic.fm' },
+              { role: 'Research & Datasets', email: 'research@nootropic.fm' },
+              { role: 'Press & Briefings', email: 'press@nootropic.fm' },
+              { role: 'Investor Relations', email: 'investors@nootropic.fm' },
+              { role: 'Founder Desk', email: 'founders@nootropic.fm' },
+              { role: 'Listener Support', email: 'support@nootropic.fm' },
+              { role: 'Privacy & Data Rights', email: 'privacy@nootropic.fm' },
+            ].map((dept) => (
+              <div
+                key={dept.email}
+                className="rounded-2xl border border-white/10 bg-[#0B0C0E] px-3.5 py-3 space-y-1"
+              >
+                <div className="font-mono-tech text-[10px] font-bold uppercase tracking-wider text-[#A3A39E]">
+                  {dept.role}
+                </div>
+                <a
+                  href={`mailto:${dept.email}`}
+                  className="block font-mono-tech text-xs font-semibold text-[#34D399] underline-offset-2 hover:underline"
+                >
+                  {dept.email}
+                </a>
+              </div>
+            ))}
+          </div>
+        </section>
       </main>
 
       <footer className="relative z-10 border-t border-white/[0.06] px-4 py-6 text-center text-[11px] text-[#8E8E88]">
@@ -1360,11 +1440,20 @@ export function FlagshipShowcaseView({
             <ShieldCheck className="h-3 w-3" />
             <span>Privacy &amp; Delete Data</span>
           </button>
+          <a href="/science/" className="text-[#A3A39E] underline-offset-2 hover:underline">
+            Science Atlas
+          </a>
+          <a href="/compare/" className="text-[#A3A39E] underline-offset-2 hover:underline">
+            DSP vs. Playlists
+          </a>
           <a href="/investors/" className="text-[#A3A39E] underline-offset-2 hover:underline">
             Investors
           </a>
           <a href="/partners/" className="text-[#A3A39E] underline-offset-2 hover:underline">
             R&amp;D Partners
+          </a>
+          <a href="/contact/" className="text-[#A3A39E] underline-offset-2 hover:underline">
+            Contact Directory
           </a>
           <a href="/privacy" className="text-[#A3A39E] underline-offset-2 hover:underline">
             Privacy Policy
@@ -1376,10 +1465,16 @@ export function FlagshipShowcaseView({
             llms.txt
           </a>
           <a
-            href="mailto:founders@nootropic.fm"
+            href="mailto:hello@nootropic.fm"
             className="inline-flex items-center gap-1 font-medium text-[#34D399] underline-offset-2 hover:underline"
           >
             <Mail className="h-3 w-3" />
+            <span>hello@nootropic.fm</span>
+          </a>
+          <a
+            href="mailto:founders@nootropic.fm"
+            className="inline-flex items-center gap-1 font-medium text-[#34D399] underline-offset-2 hover:underline"
+          >
             <span>founders@nootropic.fm</span>
           </a>
         </div>

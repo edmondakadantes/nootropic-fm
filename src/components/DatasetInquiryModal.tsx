@@ -204,10 +204,10 @@ export function DatasetInquiryModal({
             <p className="text-center text-[11px] text-[#8E8E88]">
               Prefer direct email? Write to{' '}
               <a
-                href="mailto:founders@nootropic.fm"
+                href="mailto:research@nootropic.fm"
                 className="font-medium text-[#34D399] underline-offset-2 hover:underline"
               >
-                founders@nootropic.fm
+                research@nootropic.fm
               </a>
             </p>
           </form>
