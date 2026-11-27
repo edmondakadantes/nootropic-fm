@@ -461,6 +461,12 @@ export function FlagshipShowcaseView({
             >
               Pricing
             </a>
+            <a
+              href="/partners/"
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+            >
+              Partners &amp; Grants
+            </a>
           </nav>
 
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
@@ -1344,6 +1350,9 @@ export function FlagshipShowcaseView({
             <ShieldCheck className="h-3 w-3" />
             <span>Privacy &amp; Delete Data</span>
           </button>
+          <a href="/partners/" className="text-[#A3A39E] underline-offset-2 hover:underline">
+            R&amp;D Partners
+          </a>
           <a href="/privacy" className="text-[#A3A39E] underline-offset-2 hover:underline">
             Privacy Policy
           </a>
