@@ -1525,6 +1525,10 @@ export class PsychoacousticEngine {
 
     this.isPlaying = true;
     this.setAudioInterrupted(false);
+    if (String(ctx.state) !== 'running') {
+      this.setAudioInterrupted(true);
+      this.installOneShotGestureResume();
+    }
     this.triggerPavlovianEntryChime();
     this.setupMediaSession(title);
     void this.requestWakeLock();

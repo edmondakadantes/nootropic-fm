@@ -482,7 +482,7 @@ export function FlagshipShowcaseView({
             </a>
           </nav>
 
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <div
               role="group"
               aria-label="Display Mode"
@@ -493,35 +493,35 @@ export function FlagshipShowcaseView({
                 onClick={() => onSetThemeMode('daylight')}
                 aria-pressed={themeMode === 'daylight'}
                 aria-label="Daylight Mode"
-                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 ${
+                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 sm:px-2 ${
                   themeMode === 'daylight'
                     ? 'bg-[#22252A] text-[#F3F1EC]'
                     : 'text-[#8E8E88] hover:text-[#F3F1EC]'
                 }`}
               >
                 <Sun className="h-3.5 w-3.5 shrink-0" />
-                <span>Day</span>
+                <span className="hidden sm:inline">Day</span>
               </button>
               <button
                 type="button"
                 onClick={() => onSetThemeMode('night')}
                 aria-pressed={themeMode === 'night'}
                 aria-label="Night Mode"
-                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 ${
+                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 sm:px-2 ${
                   themeMode === 'night'
                     ? 'bg-emerald-500/15 text-[#34D399]'
                     : 'text-[#8E8E88] hover:text-[#F3F1EC]'
                 }`}
               >
                 <Moon className="h-3.5 w-3.5 shrink-0" />
-                <span>Night</span>
+                <span className="hidden sm:inline">Night</span>
               </button>
             </div>
 
             <button
               type="button"
               onClick={onOpenProModal}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-emerald-400/35 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-[#34D399] transition hover:bg-emerald-500/20"
+              className="hidden shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-emerald-400/35 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-[#34D399] transition hover:bg-emerald-500/20 sm:inline-flex"
             >
               <Crown className="h-3.5 w-3.5 shrink-0" />
               <span>{profile?.planTier === 'pro' ? 'PRO' : 'Go Pro'}</span>
@@ -549,13 +549,78 @@ export function FlagshipShowcaseView({
             <a
               href={studioRootUrl}
               onClick={(e) => handleStudioNavigate(e)}
-              className="btn-aurora inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold"
+              className="btn-aurora inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold sm:gap-1.5 sm:px-3"
             >
               <span>Open Studio</span>
               <ArrowRight className="h-3.5 w-3.5 shrink-0" />
             </a>
           </div>
         </div>
+
+        {/* Mobile Quick-Access Strip (<768px) — 1-tap navigation to every showcase section & institutional page */}
+        <nav
+          className="flex items-center gap-1.5 overflow-x-auto border-t border-white/[0.06] px-3 py-1.5 md:hidden"
+          aria-label="Mobile Showcase Sections"
+        >
+          <a
+            href="#hardware"
+            className="shrink-0 whitespace-nowrap rounded-md border border-white/10 bg-[#131518] px-2.5 py-1 text-[11px] font-medium text-[#D4D4CE]"
+          >
+            Earbuds
+          </a>
+          <a
+            href="#demo"
+            className="shrink-0 whitespace-nowrap rounded-md border border-white/10 bg-[#131518] px-2.5 py-1 text-[11px] font-medium text-[#D4D4CE]"
+          >
+            30s Proof
+          </a>
+          <a
+            href="/science/"
+            className="shrink-0 whitespace-nowrap rounded-md border border-white/10 bg-[#131518] px-2.5 py-1 text-[11px] font-medium text-[#D4D4CE]"
+          >
+            Science
+          </a>
+          <a
+            href="/compare/"
+            className="shrink-0 whitespace-nowrap rounded-md border border-white/10 bg-[#131518] px-2.5 py-1 text-[11px] font-medium text-[#D4D4CE]"
+          >
+            Compare
+          </a>
+          <a
+            href="#pricing"
+            className="shrink-0 whitespace-nowrap rounded-md border border-white/10 bg-[#131518] px-2.5 py-1 text-[11px] font-medium text-[#D4D4CE]"
+          >
+            Pricing
+          </a>
+          <a
+            href="/investors/"
+            className="shrink-0 whitespace-nowrap rounded-md border border-emerald-400/25 bg-emerald-500/[0.07] px-2.5 py-1 text-[11px] font-semibold text-[#34D399]"
+          >
+            Investors
+          </a>
+          <a
+            href="/contact/"
+            className="shrink-0 whitespace-nowrap rounded-md border border-white/10 bg-[#131518] px-2.5 py-1 text-[11px] font-medium text-[#D4D4CE]"
+          >
+            Contact
+          </a>
+          <button
+            type="button"
+            onClick={onOpenProModal}
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-emerald-400/35 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-[#34D399] sm:hidden"
+          >
+            <Crown className="h-3 w-3 shrink-0" />
+            <span>{profile?.planTier === 'pro' ? 'PRO' : 'Go Pro'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenIdentityModal}
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-white/10 bg-[#131518] px-2.5 py-1 text-[11px] font-medium text-[#D4D4CE]"
+          >
+            <KeyRound className="h-3 w-3 text-[#34D399]" />
+            <span>{profile ? 'Pass' : 'Sync QR'}</span>
+          </button>
+        </nav>
       </header>
 
       <main className="relative z-10 mx-auto w-full max-w-6xl flex-1 space-y-12 px-4 py-8 sm:space-y-16 sm:px-6 sm:py-12">
@@ -1090,8 +1155,8 @@ export function FlagshipShowcaseView({
                       </div>
                       <div className="text-[11px] text-[#A3A39E]">
                         <strong>{waitlistEmail.trim()}</strong> is locked in for{' '}
-                        {HARDWARE_DROPS.find((d) => d.code === selectedProduct)?.name}. Mean
-                        time, start streaming on{' '}
+                        {HARDWARE_DROPS.find((d) => d.code === selectedProduct)?.name}. Meanwhile,
+                        start streaming on{' '}
                         <a
                           href={studioRootUrl}
                           onClick={(e) => handleStudioNavigate(e)}
@@ -1209,8 +1274,10 @@ export function FlagshipShowcaseView({
             {OUTCOME_LAUNCHERS.map((goal) => (
               <a
                 key={goal.target}
-                href={studioRootUrl}
-                onClick={(e) => handleStudioNavigate(e)}
+                href={buildStudioUrl({ target: goal.target, durationMin: goal.durationMin })}
+                onClick={(e) =>
+                  handleStudioNavigate(e, { target: goal.target, durationMin: goal.durationMin })
+                }
                 className="group flex flex-col justify-between rounded-2xl border border-white/12 bg-[#121417] p-4 transition hover:border-emerald-400/60 hover:bg-[#171B20]"
               >
                 <div className="space-y-1.5">
@@ -1245,17 +1312,17 @@ export function FlagshipShowcaseView({
                 10 GENRES + ENDLESS STREAM
               </div>
               <p className="text-xs text-[#A3A39E]">
-                Remastered `-15.5 LUFS` lyric-free studio tracks paired with infinite procedural and
-                Lyria RealTime synthesis.
+                Remastered <code className="font-mono-tech text-[#F3F1EC]">-15.5 LUFS</code> lyric-free
+                studio tracks paired with infinite procedural and Lyria RealTime synthesis.
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-[#0B0C0E] p-4 space-y-1">
               <div className="font-mono-tech text-[10.5px] font-bold text-[#34D399]">
-                MONIQUE STUDIO CONCIERGE
+                ALANYA STUDIO CONCIERGE
               </div>
               <p className="text-xs text-[#A3A39E]">
-                Calm spoken briefings delayed smoothly with -20 dB vocal ducking and gradual 6-second
-                music bloom.
+                Calm spoken briefings by Alanya (0.96× pace) delayed smoothly with -20 dB vocal
+                ducking and gradual 6-second music bloom.
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-[#0B0C0E] p-4 space-y-1">

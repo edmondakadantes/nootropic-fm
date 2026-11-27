@@ -635,7 +635,7 @@ export async function resolveVoiceConciergeAudio(
     ),
   ]);
 
-  // Voice-Pair Cohesion Guard: if one segment hit R2 on Monique while the other fell back to Workers AI
+  // Voice-Pair Cohesion Guard: if one segment hit R2 on Alanya while the other fell back to Workers AI
   // (e.g. partial R2 hit during ElevenLabs quota exhaustion), unify both onto the same free voice!
   if (greetSeg && bodySeg && greetSeg.voiceId !== bodySeg.voiceId) {
     if (greetSeg.voiceId !== 'aura_luna') {

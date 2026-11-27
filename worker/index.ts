@@ -1938,10 +1938,15 @@ export default {
           return json({ error: 'Audio bucket not configured' }, 404, request);
         }
         const rawPath = url.pathname.replace('/api/audio/stream/', '');
-        const key = rawPath
-          .split('/')
-          .map((seg) => decodeURIComponent(seg))
-          .join('/');
+        let key: string;
+        try {
+          key = rawPath
+            .split('/')
+            .map((seg) => decodeURIComponent(seg))
+            .join('/');
+        } catch {
+          return json({ error: 'Malformed audio stream path' }, 400, request);
+        }
 
         if (request.method === 'HEAD') {
           const headObj = await env.AUDIO_BUCKET.head(key);
@@ -2340,7 +2345,12 @@ export default {
 
       // GET /api/profile/:id — Authenticated via X-Profile-Token; returns pendingDebrief ONLY if listened >= 60s
       if (url.pathname.startsWith('/api/profile/') && request.method === 'GET') {
-        const id = decodeURIComponent(url.pathname.replace('/api/profile/', ''));
+        let id: string;
+        try {
+          id = decodeURIComponent(url.pathname.replace('/api/profile/', ''));
+        } catch {
+          return json({ error: 'Invalid profile id' }, 400, request);
+        }
         const auth = await verifyProfileAccess(env.DB, id, request);
         if (!auth.row) return json({ error: 'Profile not found' }, 404, request);
         if (!auth.ok) return json({ error: 'Unauthorized profile access' }, 401, request);
@@ -2394,7 +2404,12 @@ export default {
         const allowed = await checkDailyRateLimit(env.DB, request, 'profile_delete', 20);
         if (!allowed) return json({ error: 'Rate limit reached.' }, 429, request);
 
-        const id = decodeURIComponent(url.pathname.replace('/api/profile/', ''));
+        let id: string;
+        try {
+          id = decodeURIComponent(url.pathname.replace('/api/profile/', ''));
+        } catch {
+          return json({ error: 'Invalid profile id' }, 400, request);
+        }
         const auth = await verifyProfileAccess(env.DB, id, request);
         if (!auth.row) return json({ error: 'Profile not found' }, 404, request);
         if (!auth.ok) return json({ error: 'Unauthorized deletion request' }, 401, request);

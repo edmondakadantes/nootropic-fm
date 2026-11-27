@@ -153,24 +153,27 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
   };
 
   useEffect(() => {
-    if (phase !== 'running') return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
+      if (e.code === 'Escape') {
+        onClose();
+        return;
+      }
+      if (phase === 'running' && e.code === 'Space') {
         e.preventDefault();
         recordTap();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [phase]);
+  }, [phase, onClose]);
 
   const inContinuation = elapsedMs >= PACING_MS;
   const remainingSec = Math.max(0, Math.ceil((TOTAL_MS - elapsedMs) / 1000));
   const progressPct = Math.min(100, Math.round((elapsedMs / TOTAL_MS) * 100));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-      <div className="glass-stage w-full max-w-md rounded-2xl border border-white/15 p-5 sm:p-6 space-y-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm">
+      <div className="glass-stage my-auto w-full max-w-md rounded-2xl border border-white/15 p-5 sm:p-6 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-1.5 font-mono-tech text-[10px] font-bold uppercase tracking-wider text-[#34D399]">

@@ -82,6 +82,15 @@ export function InsightsView({ profileId }: InsightsViewProps) {
     void load();
   }, [profileId]);
 
+  useEffect(() => {
+    if (!showExportModal) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') setShowExportModal(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showExportModal]);
+
   if (loading && !insights) {
     return (
       <div className="mx-auto max-w-5xl py-16 text-center font-mono-tech text-xs uppercase tracking-[0.18em] text-[#8E8E88]">
@@ -146,8 +155,8 @@ export function InsightsView({ profileId }: InsightsViewProps) {
 
       {/* Admin-Protected Dataset Export Modal */}
       {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
-          <div className="animate-step glass-stage w-full max-w-md rounded-2xl border border-white/15 p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage my-auto w-full max-w-md rounded-2xl border border-white/15 p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-[#34D399]">
                 <Lock className="h-4 w-4" />

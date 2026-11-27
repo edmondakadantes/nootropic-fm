@@ -19,6 +19,7 @@ import {
 import { matchCoreGenreAlias, sanitizeCustomVibe } from '../shared/promptComposer';
 import { formatCohortLabel, swapRecommendationGenre } from '../shared/protocols';
 import {
+  TARGET_LABELS,
   formatProfileSummary,
   type AppRuntimeConfig,
   type CurrentState,
@@ -34,10 +35,7 @@ import {
 } from '../shared/types';
 import { AmbientField, type FieldMood } from './components/AmbientField';
 import { CheckInView, type MoodPresetSelection } from './components/CheckInView';
-import { FlagshipShowcaseView } from './components/FlagshipShowcaseView';
-import { HeroLandingView } from './components/HeroLandingView';
 import { NeuralFingerprintSigil, NeuralPassCard } from './components/NeuralFingerprintPass';
-import { SoundSystemsModal } from './components/SoundSystemsModal';
 import {
   buildShowcaseUrl,
   resolveLegacyShowcaseRedirect,
@@ -53,6 +51,15 @@ import {
   type ResolvedThemeMode,
 } from './lib/circadianTheme';
 
+const FlagshipShowcaseView = lazy(() =>
+  import('./components/FlagshipShowcaseView').then((m) => ({ default: m.FlagshipShowcaseView }))
+);
+const HeroLandingView = lazy(() =>
+  import('./components/HeroLandingView').then((m) => ({ default: m.HeroLandingView }))
+);
+const SoundSystemsModal = lazy(() =>
+  import('./components/SoundSystemsModal').then((m) => ({ default: m.SoundSystemsModal }))
+);
 const DebriefView = lazy(() =>
   import('./components/DebriefView').then((m) => ({ default: m.DebriefView }))
 );
@@ -112,6 +119,14 @@ const SHOWCASE_TARGETS = new Set<TargetState>([
   'sleep_winddown',
 ]);
 
+const SHOWCASE_DEFAULT_MICRO: Record<TargetState, string> = {
+  deep_flow: 'calm_balanced',
+  alert_focus: 'brain_fog',
+  energy_lift: 'tired_sluggish',
+  calm_reset: 'stressed',
+  sleep_winddown: 'calm_balanced',
+};
+
 function buildShowcasePreset(
   targetRaw?: string | null,
   durationRaw?: number | string | null
@@ -120,8 +135,11 @@ function buildShowcasePreset(
     return null;
   }
   const target = targetRaw as TargetState;
+  const preferredId = SHOWCASE_DEFAULT_MICRO[target];
   const micro =
-    NEURAL_MICRO_STATES.find((s) => s.suggestedTarget === target) ?? NEURAL_MICRO_STATES[0];
+    NEURAL_MICRO_STATES.find((s) => s.id === preferredId) ??
+    NEURAL_MICRO_STATES.find((s) => s.suggestedTarget === target) ??
+    NEURAL_MICRO_STATES[0];
   const parsedDur = Number(durationRaw);
   const durationMin = Number.isFinite(parsedDur)
     ? Math.max(5, Math.min(90, Math.round(parsedDur)))
@@ -138,7 +156,7 @@ function buildShowcasePreset(
     target === 'calm_reset' || target === 'sleep_winddown' ? 'ambient_space' : 'deep_electronic';
   return {
     id: `showcase_${target}`,
-    label: micro.label,
+    label: `${TARGET_LABELS[target]} (${durationMin}m)`,
     microStateId: micro.id,
     targetState: target,
     requestedGenre,
@@ -905,28 +923,48 @@ export default function App() {
     []
   );
 
+  useEffect(() => {
+    if (!showIdentityModal && !showPrivacyModal) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowIdentityModal(false);
+        setShowPrivacyModal(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showIdentityModal, showPrivacyModal]);
+
   return (
     <div className="relative min-h-dvh flex flex-col overflow-x-hidden bg-[#0A0B0C]">
       {/* Architectural studio calibration backdrop */}
       <AmbientField mood={fieldMood} activePulse={audioActive} themeMode={themeMode} />
 
       {surfaceMode === 'showcase' ? (
-        <FlagshipShowcaseView
-          profile={profile}
-          syncCode={syncCode}
-          themeMode={themeMode}
-          onSetThemeMode={handleSetCircadianTheme}
-          onOpenProModal={() => setShowProModal(true)}
-          onOpenIdentityModal={() => {
-            setIdentityStatus(null);
-            setShowIdentityModal(true);
-          }}
-          onOpenPrivacyModal={() => {
-            setPrivacyStatus(null);
-            setShowPrivacyModal(true);
-          }}
-          onEnterStudio={handleEnterStudioFromShowcase}
-        />
+        <Suspense
+          fallback={
+            <div className="py-28 text-center font-mono-tech text-xs uppercase tracking-[0.25em] text-[#8E8E88]">
+              Loading nootropic.fm...
+            </div>
+          }
+        >
+          <FlagshipShowcaseView
+            profile={profile}
+            syncCode={syncCode}
+            themeMode={themeMode}
+            onSetThemeMode={handleSetCircadianTheme}
+            onOpenProModal={() => setShowProModal(true)}
+            onOpenIdentityModal={() => {
+              setIdentityStatus(null);
+              setShowIdentityModal(true);
+            }}
+            onOpenPrivacyModal={() => {
+              setPrivacyStatus(null);
+              setShowPrivacyModal(true);
+            }}
+            onEnterStudio={handleEnterStudioFromShowcase}
+          />
+        </Suspense>
       ) : (
         <>
           {/* Precision Console Header */}
@@ -958,7 +996,7 @@ export default function App() {
             </div>
           </button>
 
-          <nav className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+          <nav className="flex shrink-0 items-center gap-1 sm:gap-1.5" aria-label="Studio Navigation">
             {installPrompt && (
               <button
                 type="button"
@@ -967,7 +1005,7 @@ export default function App() {
                   await installPrompt.userChoice;
                   setInstallPrompt(null);
                 }}
-                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/12 bg-[#131518] px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:border-white/25 hover:text-[#F3F1EC] sm:px-3"
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/12 bg-[#131518] px-2 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:border-white/25 hover:text-[#F3F1EC] sm:px-3"
                 title="Install nootropic.fm as an app"
               >
                 <Download className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
@@ -979,7 +1017,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setScreen(activeRec ? 'player' : 'checkin')}
-                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+                className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:inline-flex sm:px-3 ${
                   screen === 'checkin' || screen === 'reveal' || screen === 'player' || screen === 'debrief'
                     ? themeMode === 'daylight'
                       ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
@@ -999,7 +1037,7 @@ export default function App() {
                 setFieldMood('focus');
                 setScreen('studylab');
               }}
-              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+              className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:inline-flex sm:px-3 ${
                 screen === 'studylab'
                   ? themeMode === 'daylight'
                     ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
@@ -1009,7 +1047,7 @@ export default function App() {
               title="Browse & play published science studies"
             >
               <FlaskConical className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
-              <span className="hidden sm:inline">Study Lab</span>
+              <span>Study Lab</span>
             </button>
 
             <button
@@ -1018,7 +1056,7 @@ export default function App() {
                 setFieldMood('flow');
                 setScreen('insights');
               }}
-              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:px-3 ${
+              className={`hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition sm:inline-flex sm:px-3 ${
                 screen === 'insights'
                   ? themeMode === 'daylight'
                     ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
@@ -1029,18 +1067,18 @@ export default function App() {
             >
               <BarChart3 className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden md:inline">Research Brain</span>
-              <span className="hidden sm:inline md:hidden">Research</span>
+              <span className="md:hidden">Research</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShowSoundSystemsModal(true)}
-              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-2.5 py-1.5 text-xs font-medium text-[#34D399] transition hover:border-emerald-400/60 hover:bg-emerald-500/15 sm:px-3"
+              className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-2.5 py-1.5 text-xs font-medium text-[#34D399] transition hover:border-emerald-400/60 hover:bg-emerald-500/15 sm:inline-flex sm:px-3"
               title="NootropicFM Sound Systems — Engineered Exclusively for In-Ear Buds & Upcoming Hardware"
             >
               <Headphones className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
               <span className="hidden lg:inline">Sound Systems</span>
-              <span className="hidden sm:inline lg:hidden">Earbuds</span>
+              <span className="lg:hidden">Earbuds</span>
             </button>
 
             <div
@@ -1054,14 +1092,14 @@ export default function App() {
                 aria-pressed={themeMode === 'daylight'}
                 aria-label="Daylight Mode"
                 title="Daylight Mode: crisp cool-slate acoustic lab + full daytime clarity"
-                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 transition ${
+                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 transition sm:px-2 ${
                   themeMode === 'daylight'
                     ? 'bg-[#22252A] text-[#F3F1EC]'
                     : 'text-[#8E8E88] hover:text-[#F3F1EC]'
                 }`}
               >
                 <Sun className="h-3.5 w-3.5 shrink-0" />
-                <span>Day</span>
+                <span className="hidden sm:inline">Day</span>
               </button>
               <button
                 type="button"
@@ -1069,21 +1107,21 @@ export default function App() {
                 aria-pressed={themeMode === 'night'}
                 aria-label="Night Mode"
                 title="Night Mode: obsidian studio + melatonin-safe nocturnal silk filter (-2.8 dB > 3.2 kHz)"
-                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 transition ${
+                className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 transition sm:px-2 ${
                   themeMode === 'night'
                     ? 'bg-emerald-500/15 text-[#34D399]'
                     : 'text-[#8E8E88] hover:text-[#F3F1EC]'
                 }`}
               >
                 <Moon className="h-3.5 w-3.5 shrink-0" />
-                <span>Night</span>
+                <span className="hidden sm:inline">Night</span>
               </button>
             </div>
 
             <button
               type="button"
               onClick={() => setShowProModal(true)}
-              className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition sm:gap-1.5 sm:px-3 ${
+              className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2 py-1.5 text-xs font-semibold transition sm:gap-1.5 sm:px-3 ${
                 profile?.planTier === 'pro'
                   ? 'border-emerald-400/35 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20'
                   : 'border-amber-400/35 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20'
@@ -1104,12 +1142,13 @@ export default function App() {
                 setIdentityStatus(null);
                 setShowIdentityModal(true);
               }}
+              aria-label={profile ? 'Neural Fingerprint Pass' : 'Restore Sync QR'}
               className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/12 bg-[#131518] px-2 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:border-white/25 hover:text-[#F3F1EC] sm:px-2.5"
               title="Neural Fingerprint Pass, Scannable QR & Switch Identity"
             >
               {profile ? (
                 <>
-                  <NeuralFingerprintSigil seed={syncCode || profile.id} size={22} />
+                  <NeuralFingerprintSigil seed={syncCode || profile.id} size={20} />
                   <span className="hidden lg:inline">
                     {profile.displayName ? `${profile.displayName} · ${profile.age}` : `Pass · ${profile.age}`}
                   </span>
@@ -1123,6 +1162,69 @@ export default function App() {
             </button>
           </nav>
         </div>
+
+        {/* Mobile Secondary Quick-Nav Row (<640px) — keeps all destinations 1-tap & zero clipping */}
+        <nav
+          className="flex items-center gap-1.5 overflow-x-auto border-t border-white/[0.06] px-3 py-1.5 sm:hidden"
+          aria-label="Studio Mobile Navigation"
+        >
+          <button
+            type="button"
+            onClick={() => setScreen(activeRec ? 'player' : 'checkin')}
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+              screen === 'checkin' || screen === 'reveal' || screen === 'player' || screen === 'debrief'
+                ? themeMode === 'daylight'
+                  ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                  : 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
+                : 'border-white/[0.08] bg-[#131518] text-[#A3A39E]'
+            }`}
+          >
+            <SlidersHorizontal className="h-3 w-3 shrink-0 text-[#34D399]" />
+            <span>{activeRec ? 'Session' : 'Calibrate'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFieldMood('focus');
+              setScreen('studylab');
+            }}
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+              screen === 'studylab'
+                ? themeMode === 'daylight'
+                  ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                  : 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
+                : 'border-white/[0.08] bg-[#131518] text-[#A3A39E]'
+            }`}
+          >
+            <FlaskConical className="h-3 w-3 shrink-0 text-[#34D399]" />
+            <span>Study Lab</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFieldMood('flow');
+              setScreen('insights');
+            }}
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+              screen === 'insights'
+                ? themeMode === 'daylight'
+                  ? 'border-slate-900 bg-[#22252A] text-[#F3F1EC]'
+                  : 'border-white/15 bg-[#16181C] text-[#F3F1EC]'
+                : 'border-white/[0.08] bg-[#131518] text-[#A3A39E]'
+            }`}
+          >
+            <BarChart3 className="h-3 w-3 shrink-0 text-[#34D399]" />
+            <span>Research</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowSoundSystemsModal(true)}
+            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-emerald-400/30 bg-emerald-500/[0.08] px-2.5 py-1 text-[11px] font-medium text-[#34D399]"
+          >
+            <Headphones className="h-3 w-3 shrink-0" />
+            <span>Earbuds</span>
+          </button>
+        </nav>
       </header>
 
       {/* Main Content Stage (vertically centered distraction-free canvas during active Player) */}
@@ -1160,27 +1262,35 @@ export default function App() {
             Restoring your Neural Sync Pass...
           </div>
         ) : screen === 'landing' ? (
-          <HeroLandingView
-            isPro={profile?.planTier === 'pro'}
-            hasProfile={Boolean(profile)}
-            profile={profile}
-            themeMode={themeMode}
-            onInstantPlay={handleInstantHeroPlay}
-            onLaunchStateGoal={handleLaunchStateGoal}
-            onDiscoverProtocol={handleDiscoverFromHero}
-            onStartCustomize={() => {
-              setSelectedPreset(null);
-              setScreen('checkin');
-            }}
-            onOpenStudyLab={() => {
-              setFieldMood('focus');
-              setScreen('studylab');
-            }}
-            onOpenIdentityModal={() => {
-              setIdentityStatus(null);
-              setShowIdentityModal(true);
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="py-24 text-center font-mono-tech text-xs uppercase tracking-[0.2em] text-[#8E8E88]">
+                Loading Neural Brain Map...
+              </div>
+            }
+          >
+            <HeroLandingView
+              isPro={profile?.planTier === 'pro'}
+              hasProfile={Boolean(profile)}
+              profile={profile}
+              themeMode={themeMode}
+              onInstantPlay={handleInstantHeroPlay}
+              onLaunchStateGoal={handleLaunchStateGoal}
+              onDiscoverProtocol={handleDiscoverFromHero}
+              onStartCustomize={() => {
+                setSelectedPreset(null);
+                setScreen('checkin');
+              }}
+              onOpenStudyLab={() => {
+                setFieldMood('focus');
+                setScreen('studylab');
+              }}
+              onOpenIdentityModal={() => {
+                setIdentityStatus(null);
+                setShowIdentityModal(true);
+              }}
+            />
+          </Suspense>
         ) : screen === 'onboarding' ? (
           <Suspense
             fallback={
@@ -1367,10 +1477,12 @@ export default function App() {
 
       {/* NootropicFM Sound Systems & Earbuds Hardware Lab Modal */}
       {showSoundSystemsModal && (
-        <SoundSystemsModal
-          profileId={profile?.id}
-          onClose={() => setShowSoundSystemsModal(false)}
-        />
+        <Suspense fallback={null}>
+          <SoundSystemsModal
+            profileId={profile?.id}
+            onClose={() => setShowSoundSystemsModal(false)}
+          />
+        </Suspense>
       )}
 
       {/* Stripe Pro Subscription Upgrade / Billing Portal Modal */}
@@ -1481,8 +1593,8 @@ export default function App() {
 
       {/* Privacy & Delete My Data Modal */}
       {showPrivacyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
-          <div className="animate-step glass-stage w-full max-w-md rounded-2xl p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/75 p-4 backdrop-blur-md">
+          <div className="animate-step glass-stage my-auto w-full max-w-md rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-[#34D399]">
                 <ShieldCheck className="h-5 w-5" />

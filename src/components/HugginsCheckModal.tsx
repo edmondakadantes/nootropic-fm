@@ -56,6 +56,17 @@ export function HugginsCheckModal({ onComplete, onClose }: HugginsCheckModalProp
 
   useEffect(() => () => teardownAudio(), [teardownAudio]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') {
+        teardownAudio();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [teardownAudio, onClose]);
+
   const ensureAudioReady = useCallback(async (): Promise<AudioWorkletNode | null> => {
     if (workletRef.current && ctxRef.current) {
       if (ctxRef.current.state === 'suspended') {
@@ -170,8 +181,8 @@ export function HugginsCheckModal({ onComplete, onClose }: HugginsCheckModalProp
   const passed = score >= PASS_THRESHOLD;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-      <div className="animate-step glass-stage w-full max-w-md rounded-2xl border border-white/15 p-6 space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-md">
+      <div className="animate-step glass-stage my-auto w-full max-w-md rounded-2xl border border-white/15 p-6 space-y-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-[#34D399]">
             <Headphones className="h-4 w-4" />

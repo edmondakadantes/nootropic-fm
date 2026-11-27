@@ -1720,10 +1720,12 @@ export function PlayerView({
           className="animate-rise flex w-full items-center justify-between gap-3 rounded-xl border border-amber-400/45 bg-amber-500/15 px-4 py-3 text-left text-xs text-amber-100 transition hover:bg-amber-500/20"
         >
           <span className="font-medium">
-            Audio paused by a system or Bluetooth interruption — tap anywhere to resume smoothly.
+            {elapsedSec < 3
+              ? 'Browser audio is awaiting a quick tap to start — tap anywhere to activate sound.'
+              : 'Audio paused by a system or Bluetooth interruption — tap anywhere to resume smoothly.'}
           </span>
           <span className="shrink-0 rounded-lg bg-amber-400/25 px-3 py-1 font-semibold text-amber-200">
-            Resume Audio
+            {elapsedSec < 3 ? 'Start Audio' : 'Resume Audio'}
           </span>
         </button>
       )}

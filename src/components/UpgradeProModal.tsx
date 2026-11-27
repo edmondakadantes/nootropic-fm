@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Check,
   CreditCard,
@@ -42,6 +42,14 @@ export function UpgradeProModal({
 
   const isPro = profile?.planTier === 'pro';
   const isPlayStore = isNativePlayStoreApp();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const handleRedeemAccessKey = async () => {
     if (!accessKey.trim()) return;

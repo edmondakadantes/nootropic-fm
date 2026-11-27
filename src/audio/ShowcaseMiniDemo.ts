@@ -36,9 +36,14 @@ export class ShowcaseMiniDemo {
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new AudioCtx({ sampleRate: 48000 });
+    let ctx: AudioContext;
+    try {
+      ctx = new AudioCtx({ sampleRate: 48000 });
+    } catch {
+      ctx = new AudioCtx();
+    }
     if (ctx.state === 'suspended') {
-      await ctx.resume();
+      await ctx.resume().catch(() => {});
     }
     this.ctx = ctx;
 

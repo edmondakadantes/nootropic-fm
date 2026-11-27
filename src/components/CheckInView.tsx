@@ -470,9 +470,6 @@ export function CheckInView({
     if (role === 'other' && occupationLabel.trim().length < 2) {
       return 'Please type your profession or craft to continue.';
     }
-    if (!researchConsent) {
-      return 'Please check "Save my anonymous profile & QR Sync Code" to continue.';
-    }
     return null;
   };
 
@@ -1202,14 +1199,12 @@ export function CheckInView({
             )}
           </div>
 
-          {/* Required Anonymous Profile & QR Sync Opt-In */}
+          {/* Optional Anonymous Profile & QR Sync Opt-In (uncheck for 100% local-only mode) */}
           <label
             className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 text-[11px] leading-relaxed transition ${
               researchConsent
                 ? 'border-emerald-400/40 bg-emerald-500/[0.08] text-[#D4D4CE]'
-                : ageError && !researchConsent
-                  ? 'border-rose-400/70 bg-rose-500/10 text-rose-100'
-                  : 'border-white/12 bg-[#0B0C0E] text-[#A3A39E] hover:border-white/25'
+                : 'border-white/12 bg-[#0B0C0E] text-[#A3A39E] hover:border-white/25'
             }`}
           >
             <input
@@ -1225,10 +1220,11 @@ export function CheckInView({
             <span>
               <strong className="inline-flex items-center gap-1 text-[#34D399]">
                 <ShieldCheck className="h-3.5 w-3.5" /> Save my anonymous profile &amp; QR Sync Code{' '}
-                <span>(required)</span>
+                <span className="font-normal text-[#A3A39E]">(optional · uncheck for local-only mode)</span>
               </strong>{' '}
               creates a private anonymous Sync Pass (no email, no password) so the sound adapts
-              over time and contributes anonymously to cohort metrics. Erase anytime in Privacy.
+              over time and contributes anonymously to cohort metrics. Unchecked = 100% local-only
+              with zero server writes.
             </span>
           </label>
 

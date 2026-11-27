@@ -156,8 +156,8 @@ export function PvtBenchmarkModal({
   const progressPct = Math.min(100, Math.round((trials.length / totalTrials) * 100));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-      <div className="animate-step glass-stage w-full max-w-md rounded-2xl border border-white/15 p-6 space-y-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-md">
+      <div className="animate-step glass-stage my-auto w-full max-w-md rounded-2xl border border-white/15 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-[#34D399]">
             <Zap className="h-4 w-4" />

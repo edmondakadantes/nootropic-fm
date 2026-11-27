@@ -404,7 +404,7 @@ export function StudyLabView({
                 Open Community Empirical Study Leaderboard
               </h2>
               <p className="text-xs text-[#8E8E88]">
-                Live anonymized outcomes from real listeners testing peer-reviewed protocols, including optional 15s objective PVT reaction time (ms).
+                Live anonymized outcomes from real listeners testing peer-reviewed protocols, including optional 20-trial (~75s) objective PVT reaction time (ms).
               </p>
             </div>
           </div>
@@ -460,7 +460,7 @@ export function StudyLabView({
         ) : (
           <div className="rounded-xl border border-white/[0.08] bg-[#0B0C0E] px-4 py-3 text-xs text-[#8E8E88]">
             No community Study Lab trials rated yet. Run any verified protocol below, optionally take the{' '}
-            <strong className="text-[#34D399]">15s Pre/Post PVT reaction benchmark (ms)</strong>, and submit your debrief to publish the first real empirical result.
+            <strong className="text-[#34D399]">20-trial (~75s) Pre/Post PVT reaction benchmark (ms)</strong>, and submit your debrief to publish the first real empirical result.
           </div>
         )}
       </div>
