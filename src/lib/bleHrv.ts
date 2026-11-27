@@ -93,6 +93,13 @@ export class BleHrvMonitor {
     };
 
     try {
+      if (this.device?.gatt?.connected) {
+        try {
+          this.device.gatt.disconnect();
+        } catch {
+          // ignore
+        }
+      }
       const bleNav = navigator as BleNavigator;
       const dev = await bleNav.bluetooth.requestDevice({
         filters: [{ services: [0x180d] }],
@@ -103,6 +110,7 @@ export class BleHrvMonitor {
       this.lastMetrics = null;
 
       dev.addEventListener('gattserverdisconnected', () => {
+        if (this.device !== dev) return;
         this.emitState(false);
       });
 
@@ -113,6 +121,7 @@ export class BleHrvMonitor {
       await char.startNotifications();
 
       char.addEventListener('characteristicvaluechanged', (evt) => {
+        if (this.device !== dev) return;
         const val = evt.target?.value;
         if (!val) return;
         const parsed = parseBleHeartRateMeasurement(val);
@@ -122,13 +131,8 @@ export class BleHrvMonitor {
           if (this.rrBuffer.length > 240) {
             this.rrBuffer = this.rrBuffer.slice(-240);
           }
-        } else if (parsed.hrBpm > 30 && parsed.hrBpm < 210) {
-          this.rrBuffer.push(60000 / parsed.hrBpm);
-          if (this.rrBuffer.length > 240) {
-            this.rrBuffer = this.rrBuffer.slice(-240);
-          }
+          this.lastMetrics = computeHrvMetricsFromRrMs(this.rrBuffer);
         }
-        this.lastMetrics = computeHrvMetricsFromRrMs(this.rrBuffer);
         this.emitState(true);
       });
 

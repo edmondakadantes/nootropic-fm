@@ -315,6 +315,7 @@ export function PlayerView({
   const [showTappingCheck, setShowTappingCheck] = useState(false);
   const [tappingResult, setTappingResult] = useState<TappingBiomarkerResult | null>(null);
   const bleHrvRef = useRef<BleHrvMonitor | null>(null);
+  const lastBleBiomarkerSaveMsRef = useRef<number>(0);
   const [bleHrvState, setBleHrvState] = useState<BleHrvState>({
     connected: false,
     deviceName: null,
@@ -596,13 +597,20 @@ export function PlayerView({
     setPreviewLocked(!isPro && readDailyFreeUsage().usedSec >= limit);
     setUnlockError(null);
     setLayerMonitor(initialCarrier === 'pure_stimulus' ? 'science_only' : 'full_mix');
+    const isCalmGoal =
+      recommendation.targetState === 'calm_reset' || recommendation.targetState === 'sleep_winddown';
+    const goalModMult = profile?.neuralMemory
+      ? isCalmGoal
+        ? profile.neuralMemory.calmModMult
+        : profile.neuralMemory.focusModMult
+      : profile?.preferredModMult;
     const nextSmartEffect = pickSmartInitialEffectTier({
       currentState: recommendation.currentState,
       microStateId: recommendation.microStateId,
       targetState: recommendation.targetState,
       safetyMode: recommendation.safetyMode,
       noiseSensitivity: profile?.noiseSensitivity,
-      preferredModMult: profile?.preferredModMult,
+      preferredModMult: goalModMult,
     });
     setModMult(nextSmartEffect.modMult);
     modMultRef.current = nextSmartEffect.modMult;
@@ -613,6 +621,7 @@ export function PlayerView({
     setVoiceSpeaking(false);
     setVoiceTranscript(null);
     setActiveDevice(recommendation.device);
+    lastBleBiomarkerSaveMsRef.current = 0;
     elapsedRef.current = 0;
     activeElapsedMsRef.current = 0;
     lastCheckpointSecRef.current = 0;
@@ -1105,7 +1114,14 @@ export function PlayerView({
     }
     await bleHrvRef.current.connect((snap) => {
       setBleHrvState(snap);
-      if (snap.metrics && !isEphemeral && !liveSessionId.startsWith('eph_')) {
+      const nowMs = Date.now();
+      if (
+        snap.metrics &&
+        !isEphemeral &&
+        !liveSessionId.startsWith('eph_') &&
+        nowMs - lastBleBiomarkerSaveMsRef.current >= 60_000
+      ) {
+        lastBleBiomarkerSaveMsRef.current = nowMs;
         void api
           .saveSessionBiomarkers({
             sessionId: liveSessionId,
@@ -1247,7 +1263,7 @@ export function PlayerView({
             recommendation.params,
             recommendation.plannedDurationMin,
             recommendation.arm.name,
-            recommendation.isControlTrial,
+            isPro ? false : recommendation.isControlTrial,
             recommendation.executableSpec,
             'studio_library',
             API_BASE
@@ -2697,9 +2713,9 @@ export function PlayerView({
               <div className="font-mono-tech mt-0.5 text-sm font-semibold text-[#34D399]">
                 {telemetry.currentModHz > 0 ? `${telemetry.currentModHz} Hz` : `A=${telemetry.tuningA4Hz} Hz`}
               </div>
-              {telemetry.usingStudioAudio && telemetry.activeTrackKey && (
+              {telemetry.usingStudioAudio && telemetry.activeTrackKeyLabel && (
                 <div className="mt-0.5 font-mono-tech text-[10px] text-[#8E8E88]">
-                  Key-locked · {telemetry.activeTrackKey}
+                  Key-locked · {telemetry.activeTrackKeyLabel}
                 </div>
               )}
             </div>

@@ -355,10 +355,10 @@ export function computeItuKWeightingCoeffs(sampleRate: number): {
  */
 export function estimateAgePriorIafHz(ageBand?: string | null): number {
   let raw = 10.0;
-  if (ageBand === '18_29') raw = 10.5;
-  else if (ageBand === '30_44') raw = 10.0;
-  else if (ageBand === '45_59') raw = 9.5;
-  else if (ageBand === '60_plus') raw = 9.0;
+  if (ageBand === '18-24' || ageBand === '18_29') raw = 10.5;
+  else if (ageBand === '25-34' || ageBand === '35-44' || ageBand === '30_44') raw = 10.0;
+  else if (ageBand === '45-54' || ageBand === '45_59') raw = 9.5;
+  else if (ageBand === '55+' || ageBand === '60_plus') raw = 9.0;
   const snapped = Math.round(raw * 2) / 2;
   return Math.max(8.5, Math.min(11.5, snapped));
 }

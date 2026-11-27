@@ -86,6 +86,8 @@ function trimAndNormalizeVocalBuffer(ctx: AudioContext, raw: AudioBuffer): Audio
 export class VoiceConciergePlayer {
   private ctx: AudioContext | null = null;
   private activeSources: AudioBufferSourceNode[] = [];
+  private fadingSources = new Set<AudioBufferSourceNode>();
+  private pendingStopTimers = new Set<number>();
   private inputNode: AudioNode | null = null;
   private voiceGain: GainNode | null = null;
   private endTimer: number | null = null;
@@ -185,6 +187,12 @@ export class VoiceConciergePlayer {
       const decoded = await this.ctx.decodeAudioData(ab.slice(0));
       if (!this.ctx) return null;
       const conditioned = trimAndNormalizeVocalBuffer(this.ctx, decoded);
+      if (this.bufferCache.size >= 8) {
+        const oldestKey = this.bufferCache.keys().next().value;
+        if (oldestKey !== undefined) {
+          this.bufferCache.delete(oldestKey);
+        }
+      }
       this.bufferCache.set(url, conditioned);
       return conditioned;
     } catch {
@@ -321,8 +329,13 @@ export class VoiceConciergePlayer {
       } catch {
         // ignore
       }
-      window.setTimeout(() => {
+      for (const s of prev) {
+        this.fadingSources.add(s);
+      }
+      const stopTimerId = window.setTimeout(() => {
+        this.pendingStopTimers.delete(stopTimerId);
         for (const s of prev) {
+          this.fadingSources.delete(s);
           try {
             s.stop();
             s.disconnect();
@@ -331,6 +344,7 @@ export class VoiceConciergePlayer {
           }
         }
       }, Math.round((fadeSec + 0.05) * 1000));
+      this.pendingStopTimers.add(stopTimerId);
       this.onSpeakingChange?.(false, true);
     }
   }
@@ -338,6 +352,19 @@ export class VoiceConciergePlayer {
   public stop(): void {
     this.playToken++;
     this.cancelActiveVoices(0.05);
+    for (const timerId of this.pendingStopTimers) {
+      window.clearTimeout(timerId);
+    }
+    this.pendingStopTimers.clear();
+    for (const s of this.fadingSources) {
+      try {
+        s.stop();
+        s.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+    this.fadingSources.clear();
     this.bufferCache.clear();
     try {
       this.voiceGain?.disconnect();

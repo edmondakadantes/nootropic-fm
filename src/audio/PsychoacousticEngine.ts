@@ -83,6 +83,7 @@ export interface EngineTelemetry {
   usingCustomTrack?: boolean;
   activeTrackName: string | null;
   activeTrackKey?: string | null;
+  activeTrackKeyLabel?: string | null;
   // v3.0 Study-to-Sound & Live As-We-Go Telemetry
   carrierMode: CarrierEngineMode;
   entrainmentType: EntrainmentType;
@@ -513,6 +514,7 @@ export class PsychoacousticEngine {
   private activeCustomTrack: { url: string; label: string } | null = null;
   private activeTrackName: string | null = null;
   private activeTrackKey: string | null = null;
+  private activeTrackKeyLabel: string | null = null;
   private activeTrackNativeBpm = 0;
   private activeStudioAppliedBpm = 0;
 
@@ -2484,6 +2486,7 @@ export class PsychoacousticEngine {
       this.usingCustomTrack = false;
       this.activeTrackName = null;
       this.activeTrackKey = null;
+      this.activeTrackKeyLabel = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
       this.activeStemCodecLabel = null;
@@ -2524,6 +2527,7 @@ export class PsychoacousticEngine {
       this.usingCustomTrack = false;
       this.activeTrackName = null;
       this.activeTrackKey = null;
+      this.activeTrackKeyLabel = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
       this.activeStemCodecLabel = null;
@@ -2669,6 +2673,7 @@ export class PsychoacousticEngine {
           this.usingStudioAudio = false;
           this.usingCustomTrack = false;
           this.activeTrackKey = null;
+          this.activeTrackKeyLabel = null;
           this.activeTrackNativeBpm = 0;
           this.activeStudioAppliedBpm = 0;
           this.activeStemCodecLabel = null;
@@ -2994,7 +2999,8 @@ export class PsychoacousticEngine {
     onCrossfade?: () => void,
     fadeInSec = 1.8,
     nativeBpm = 0,
-    keyLabel: string | null = null
+    keyLabel: string | null = null,
+    trackKey: string | null = null
   ): Promise<boolean> {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return false;
     const claimed = this.acquireMediaDeckSlot();
@@ -3164,7 +3170,8 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = true;
       this.usingCustomTrack = isCustom;
       this.activeTrackName = trackName;
-      this.activeTrackKey = keyLabel;
+      this.activeTrackKey = this.usingCustomTrack ? null : trackKey;
+      this.activeTrackKeyLabel = keyLabel;
       this.activeTrackNativeBpm = nativeBpm;
       this.activeStudioAppliedBpm = alignment.effectiveBpm;
       return true;
@@ -3401,7 +3408,8 @@ export class PsychoacousticEngine {
         this.usingStudioAudio = true;
         this.usingCustomTrack = false;
         this.activeTrackName = track.name;
-        this.activeTrackKey = track.keyLabel ?? null;
+        this.activeTrackKey = track.key;
+        this.activeTrackKeyLabel = track.keyLabel ?? null;
         this.activeTrackNativeBpm = stemBpm;
         this.activeStudioAppliedBpm =
           gridRate.targetGridBpm > 0 ? Math.round(gridRate.targetGridBpm * tune432Ratio) : 0;
@@ -3653,7 +3661,8 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = true;
       this.usingCustomTrack = false;
       this.activeTrackName = opts.track.name;
-      this.activeTrackKey = opts.track.keyLabel ?? null;
+      this.activeTrackKey = opts.track.key;
+      this.activeTrackKeyLabel = opts.track.keyLabel ?? null;
       this.activeTrackNativeBpm = opts.stemBpm;
       this.activeStudioAppliedBpm =
         opts.targetGridBpm > 0 ? Math.round(opts.targetGridBpm * opts.tune432Ratio) : 0;
@@ -3730,6 +3739,7 @@ export class PsychoacousticEngine {
       this.usingStudioAudio = false;
       this.activeTrackName = null;
       this.activeTrackKey = null;
+      this.activeTrackKeyLabel = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
       this.activeStemCodecLabel = null;
@@ -3804,7 +3814,8 @@ export class PsychoacousticEngine {
       advanceToNextTrack,
       fadeSec,
       nativeBpm,
-      trackKeyLabel
+      trackKeyLabel,
+      track.key
     );
     if (streamed) {
       alignHarmonicRootToTrack();
@@ -3827,7 +3838,8 @@ export class PsychoacousticEngine {
       studioTargetGain,
       advanceToNextTrack,
       nativeBpm,
-      trackKeyLabel
+      trackKeyLabel,
+      track.key
     );
     this.syncRainBed();
   }
@@ -3854,7 +3866,8 @@ export class PsychoacousticEngine {
     targetGain: number,
     onCrossfade: () => void,
     nativeBpm = 0,
-    keyLabel: string | null = null
+    keyLabel: string | null = null,
+    trackKey: string | null = null
   ): void {
     if (!this.ctx || !this.studioBus || token !== this.studioLoadToken) return;
     const ctx = this.ctx;
@@ -3971,7 +3984,8 @@ export class PsychoacousticEngine {
       this.activeStudioGain = deckGain;
       this.usingStudioAudio = true;
       this.activeTrackName = trackName;
-      this.activeTrackKey = keyLabel;
+      this.activeTrackKey = this.usingCustomTrack ? null : trackKey;
+      this.activeTrackKeyLabel = keyLabel;
       this.activeTrackNativeBpm = nativeBpm;
       this.activeStudioAppliedBpm = alignment.effectiveBpm;
 
@@ -4000,7 +4014,8 @@ export class PsychoacousticEngine {
     this.activeStudioGain = deckGain;
     this.usingStudioAudio = true;
     this.activeTrackName = trackName;
-    this.activeTrackKey = keyLabel;
+    this.activeTrackKey = this.usingCustomTrack ? null : trackKey;
+    this.activeTrackKeyLabel = keyLabel;
     this.activeTrackNativeBpm = nativeBpm;
     this.activeStudioAppliedBpm = alignment.effectiveBpm;
 
@@ -4380,6 +4395,7 @@ export class PsychoacousticEngine {
       usingCustomTrack: this.usingCustomTrack,
       activeTrackName: this.activeTrackName,
       activeTrackKey: this.activeTrackKey,
+      activeTrackKeyLabel: this.activeTrackKeyLabel,
       carrierMode: this.carrierMode,
       entrainmentType: stim.entrainmentType,
       stimulusCarrierLabel: stim.carrierLabel,
@@ -4664,6 +4680,7 @@ export class PsychoacousticEngine {
       }
       this.activeStreamCrossfadeCheck = null;
       this.activeTrackKey = null;
+      this.activeTrackKeyLabel = null;
       this.activeTrackNativeBpm = 0;
       this.activeStudioAppliedBpm = 0;
       // Pause note scheduling immediately while letting audio fade smoothly over 500 ms
@@ -4765,6 +4782,7 @@ export class PsychoacousticEngine {
     this.activeCustomTrack = null;
     this.activeTrackName = null;
     this.activeTrackKey = null;
+    this.activeTrackKeyLabel = null;
     this.activeTrackNativeBpm = 0;
     this.activeStudioAppliedBpm = 0;
     this.studioDeckPausedRemainingSec = null;

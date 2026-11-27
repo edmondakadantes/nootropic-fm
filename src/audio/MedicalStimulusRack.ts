@@ -614,18 +614,16 @@ export class MedicalStimulusRack {
         const endBeatHz = effectiveTargetHz || 10;
         const startBeatHz = spec.entrainment.startFrequencyHz ?? endBeatHz;
         const hasExplicitPair = spec.entrainment.carrierLeftHz !== undefined;
-        const centerHz = hasExplicitPair
-          ? spec.entrainment.carrierLeftHz!
-          : computeHarmonicCarrierHz(spec.music.rootMidi, spec.music.tuningA4Hz, 220);
+        const defaultCenterHz = computeHarmonicCarrierHz(spec.music.rootMidi, spec.music.tuningA4Hz, 220);
         const leftHz = hasExplicitPair
           ? spec.entrainment.carrierLeftHz!
-          : Number((centerHz - startBeatHz / 2).toFixed(2));
+          : Number((defaultCenterHz - startBeatHz / 2).toFixed(2));
         const rightHz = hasExplicitPair
           ? spec.entrainment.carrierRightHz ?? Number((leftHz + startBeatHz).toFixed(2))
-          : Number((centerHz + startBeatHz / 2).toFixed(2));
-        this.beatCenterHz = centerHz;
+          : Number((defaultCenterHz + startBeatHz / 2).toFixed(2));
         this.beatSymmetric = !hasExplicitPair;
         this.primaryCarrierHz = Number(((leftHz + rightHz) / 2).toFixed(2));
+        this.beatCenterHz = this.primaryCarrierHz;
 
         const useBinaural = eType === 'binaural_beat' && !speakerSafeEQ && !this.forceMonaural;
 
@@ -1128,7 +1126,9 @@ export class MedicalStimulusRack {
       const isAlpha = spec.entrainment.frequencyHz >= 8 && spec.entrainment.frequencyHz <= 12;
       const targetEndHz =
         isAlpha && this.overrideFreqHz !== null ? this.overrideFreqHz : spec.entrainment.frequencyHz;
-      const rampRatio = Math.min(1, Math.max(0, progressRatio) / 0.12);
+      const rampSec = Math.min(90, Math.max(30, this.plannedSec * 0.15));
+      const elapsedSec = Math.max(0, progressRatio) * this.plannedSec;
+      const rampRatio = rampSec > 0 ? Math.min(1, elapsedSec / rampSec) : 1;
       const liveBeatHz = Number(
         (
           spec.entrainment.startFrequencyHz +
@@ -1136,12 +1136,8 @@ export class MedicalStimulusRack {
         ).toFixed(2)
       );
       this.currentHz = liveBeatHz;
-      const leftHz = this.beatSymmetric
-        ? Number((this.beatCenterHz - liveBeatHz / 2).toFixed(2))
-        : this.beatCenterHz;
-      const rightHz = this.beatSymmetric
-        ? Number((this.beatCenterHz + liveBeatHz / 2).toFixed(2))
-        : Number((leftHz + liveBeatHz).toFixed(2));
+      const leftHz = Number((this.beatCenterHz - liveBeatHz / 2).toFixed(2));
+      const rightHz = Number((leftHz + liveBeatHz).toFixed(2));
       if (this.beatOscL && this.beatOscR) {
         const now = this.ctx.currentTime;
         const nyqMax = this.ctx.sampleRate * 0.44;
@@ -1152,6 +1148,25 @@ export class MedicalStimulusRack {
         spec.entrainment.type === 'binaural_beat' && !this.speakerSafeEQ && !this.forceMonaural
           ? `${leftHz} Hz L / ${rightHz} Hz R (${liveBeatHz} Hz Beat)`
           : `${leftHz} + ${rightHz} Hz Monaural (${liveBeatHz} Hz Beat)`;
+    } else if (
+      spec &&
+      !this.isControlTrial &&
+      spec.entrainment.type === 'isochronic_pulse' &&
+      spec.entrainment.startFrequencyHz !== undefined
+    ) {
+      const targetEndHz = spec.entrainment.frequencyHz || 14;
+      const rampSec = Math.min(90, Math.max(30, this.plannedSec * 0.15));
+      const elapsedSec = Math.max(0, progressRatio) * this.plannedSec;
+      const rampRatio = rampSec > 0 ? Math.min(1, elapsedSec / rampSec) : 1;
+      const liveIsoHz = Number(
+        (
+          spec.entrainment.startFrequencyHz +
+          (targetEndHz - spec.entrainment.startFrequencyHz) * rampRatio
+        ).toFixed(2)
+      );
+      this.currentHz = liveIsoHz;
+      const dutyPct = Math.round((spec.entrainment.dutyCycle ?? 0.5) * 100);
+      this.carrierLabel = `${liveIsoHz} Hz Isochronic (${dutyPct}% duty @ ${this.primaryCarrierHz ?? 220} Hz)`;
     } else if (
       spec &&
       !this.isControlTrial &&

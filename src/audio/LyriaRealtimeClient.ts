@@ -115,6 +115,7 @@ export class LyriaRealtimeClient {
 
     return await new Promise<boolean>((resolve) => {
       let settled = false;
+      let erroredBeforeSettle = false;
       let sentStart = false;
       const finish = (ok: boolean) => {
         if (settled) return;
@@ -123,6 +124,7 @@ export class LyriaRealtimeClient {
       };
 
       const timeout = window.setTimeout(() => {
+        if (this.ws !== ws) return;
         if (!settled) {
           this.setStatus('error', 'Endless Stream handshake timed out. Continuing on Studio Mix.');
           this.stop();
@@ -131,10 +133,12 @@ export class LyriaRealtimeClient {
       }, 10000);
 
       ws.onopen = () => {
+        if (this.ws !== ws) return;
         ws.send(JSON.stringify({ setup: { model: model || 'models/lyria-realtime-exp' } }));
       };
 
       ws.onmessage = async (evt) => {
+        if (this.ws !== ws) return;
         try {
           let raw: string;
           if (typeof evt.data === 'string') {
@@ -146,6 +150,7 @@ export class LyriaRealtimeClient {
           } else {
             raw = String(evt.data);
           }
+          if (this.ws !== ws) return;
           const msg = JSON.parse(raw) as {
             setupComplete?: Record<string, unknown>;
             serverContent?: {
@@ -211,16 +216,23 @@ export class LyriaRealtimeClient {
       };
 
       ws.onerror = () => {
+        if (this.ws !== ws) return;
         window.clearTimeout(timeout);
         if (!settled) {
+          erroredBeforeSettle = true;
           this.setStatus('error', 'Endless Stream connection interrupted. Continuing seamlessly on Studio Mix.');
           finish(false);
         }
       };
 
       ws.onclose = () => {
+        if (this.ws !== ws) return;
         window.clearTimeout(timeout);
         if (this.intentionalStop) {
+          finish(false);
+          return;
+        }
+        if (erroredBeforeSettle) {
           finish(false);
           return;
         }

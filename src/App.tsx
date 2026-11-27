@@ -81,6 +81,7 @@ import {
   type QuickTryId,
 } from './lib/quickTryProtocols';
 import {
+  NEURAL_MICRO_STATES,
   coordsToBaselineScore,
   type NeuralCoords,
   type NeuralMicroState,
@@ -102,6 +103,48 @@ type Screen =
   | 'player'
   | 'debrief'
   | 'insights';
+
+const SHOWCASE_TARGETS = new Set<TargetState>([
+  'deep_flow',
+  'alert_focus',
+  'energy_lift',
+  'calm_reset',
+  'sleep_winddown',
+]);
+
+function buildShowcasePreset(
+  targetRaw?: string | null,
+  durationRaw?: number | string | null
+): MoodPresetSelection | null {
+  if (!targetRaw || !SHOWCASE_TARGETS.has(targetRaw as TargetState)) {
+    return null;
+  }
+  const target = targetRaw as TargetState;
+  const micro =
+    NEURAL_MICRO_STATES.find((s) => s.suggestedTarget === target) ?? NEURAL_MICRO_STATES[0];
+  const parsedDur = Number(durationRaw);
+  const durationMin = Number.isFinite(parsedDur)
+    ? Math.max(5, Math.min(90, Math.round(parsedDur)))
+    : target === 'deep_flow'
+      ? 45
+      : target === 'sleep_winddown'
+        ? 30
+        : target === 'alert_focus'
+          ? 25
+          : target === 'calm_reset'
+            ? 15
+            : 20;
+  const requestedGenre: MusicGenreChoice =
+    target === 'calm_reset' || target === 'sleep_winddown' ? 'ambient_space' : 'deep_electronic';
+  return {
+    id: `showcase_${target}`,
+    label: micro.label,
+    microStateId: micro.id,
+    targetState: target,
+    requestedGenre,
+    durationMin,
+  };
+}
 
 export default function App() {
   const hasInitialHashSync =
@@ -242,12 +285,18 @@ export default function App() {
       const billingStatus = searchParams.get('billing');
       const checkoutSessionId = searchParams.get('session_id');
       const deepView = searchParams.get('view');
+      const deepLaunch = searchParams.get('launch');
+      const deepTarget = searchParams.get('target');
+      const deepDuration = searchParams.get('duration');
 
-      if (billingStatus || deepView) {
+      if (billingStatus || deepView || deepLaunch || deepTarget || deepDuration) {
         const cleaned = new URLSearchParams(window.location.search);
         cleaned.delete('billing');
         cleaned.delete('session_id');
         cleaned.delete('view');
+        cleaned.delete('launch');
+        cleaned.delete('target');
+        cleaned.delete('duration');
         const nextSearch = cleaned.toString();
         window.history.replaceState(
           null,
@@ -287,6 +336,25 @@ export default function App() {
         if (deepView === 'insights') {
           setFieldMood('flow');
           setScreen('insights');
+          return;
+        }
+        const deepPreset = buildShowcasePreset(deepTarget, deepDuration);
+        if (deepPreset || deepLaunch) {
+          setSelectedPreset(deepPreset);
+          setActiveRec(null);
+          setFieldMood(
+            deepPreset
+              ? deepPreset.targetState === 'calm_reset'
+                ? 'calm'
+                : deepPreset.targetState === 'deep_flow'
+                  ? 'flow'
+                  : deepPreset.targetState === 'sleep_winddown'
+                    ? 'sleep'
+                    : 'focus'
+              : 'default'
+          );
+          setCheckinResetNonce((n) => n + 1);
+          setScreen('checkin');
         }
       };
 
@@ -817,9 +885,20 @@ export default function App() {
         setScreen('insights');
         return;
       }
-      setSelectedPreset(null);
+      const preset = buildShowcasePreset(opts?.target, opts?.durationMin);
+      setSelectedPreset(preset);
       setActiveRec(null);
-      setFieldMood('default');
+      setFieldMood(
+        preset
+          ? preset.targetState === 'calm_reset'
+            ? 'calm'
+            : preset.targetState === 'deep_flow'
+              ? 'flow'
+              : preset.targetState === 'sleep_winddown'
+                ? 'sleep'
+                : 'focus'
+          : 'default'
+      );
       setCheckinResetNonce((n) => n + 1);
       setScreen('checkin');
     },

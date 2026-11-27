@@ -38,6 +38,8 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
   const rafRef = useRef<number | null>(null);
   const lastBeatIdxRef = useRef(-1);
   const clickCtxRef = useRef<AudioContext | null>(null);
+  const beatFlashTimerRef = useRef<number | null>(null);
+  const tapPulseTimerRef = useRef<number | null>(null);
 
   const playSoftTick = () => {
     try {
@@ -68,6 +70,8 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
   useEffect(() => {
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      if (beatFlashTimerRef.current !== null) window.clearTimeout(beatFlashTimerRef.current);
+      if (tapPulseTimerRef.current !== null) window.clearTimeout(tapPulseTimerRef.current);
       try {
         void clickCtxRef.current?.close();
       } catch {
@@ -114,7 +118,11 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
           lastBeatIdxRef.current = beatIdx;
           playSoftTick();
           setBeatFlash(true);
-          window.setTimeout(() => setBeatFlash(false), 110);
+          if (beatFlashTimerRef.current !== null) window.clearTimeout(beatFlashTimerRef.current);
+          beatFlashTimerRef.current = window.setTimeout(() => {
+            beatFlashTimerRef.current = null;
+            setBeatFlash(false);
+          }, 110);
         }
       }
       if (elapsed >= TOTAL_MS) {
@@ -137,7 +145,11 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
       setTapCount(continuationTapsRef.current.length);
     }
     setTapPulse(true);
-    window.setTimeout(() => setTapPulse(false), 90);
+    if (tapPulseTimerRef.current !== null) window.clearTimeout(tapPulseTimerRef.current);
+    tapPulseTimerRef.current = window.setTimeout(() => {
+      tapPulseTimerRef.current = null;
+      setTapPulse(false);
+    }, 90);
   };
 
   useEffect(() => {
@@ -185,7 +197,7 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
               Synchronize your taps to a gentle <strong className="text-[#F3F1EC]">{bpm} BPM</strong> pulse
               for <strong className="text-[#F3F1EC]">5 seconds</strong>, then keep the exact same tempo silently
               for <strong className="text-[#F3F1EC]">10 seconds</strong> after the guide stops. Measures
-              inter-tap stability (<code className="text-[#34D399]">CV%</code>) linked to attentionalsteadiness.
+              inter-tap stability (<code className="text-[#34D399]">CV%</code>) linked to attentional steadiness.
             </p>
             <button
               type="button"

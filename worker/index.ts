@@ -796,9 +796,23 @@ async function updateBanditScope(
   const newAvgComp =
     newTrials > 0 ? Number((newRetSum / newTrials).toFixed(3)) : opts.completionRatio;
   const newAvgReward =
-    newTrials > 0
-      ? Number(((prevAvgReward * prevTrials + opts.reward) / Math.max(1, prevTrials + 1)).toFixed(3))
-      : opts.reward;
+    opts.mode === 'return_bonus'
+      ? prevAvgReward
+      : isReplacement && prevTrials > 0
+        ? Number(
+            Math.max(
+              0,
+              Math.min(1, (prevAvgReward * prevTrials - prevR + opts.reward) / Math.max(1, newTrials))
+            ).toFixed(3)
+          )
+        : newTrials > 0
+          ? Number(
+              Math.max(
+                0,
+                Math.min(1, (prevAvgReward * prevTrials + opts.reward) / Math.max(1, newTrials))
+              ).toFixed(3)
+            )
+          : opts.reward;
 
   const now = new Date().toISOString();
   await db
@@ -1953,21 +1967,63 @@ export default {
 
         const rangeHeader = request.headers.get('range');
         let r2Range: { offset: number; length?: number } | undefined;
+        let invalidRangeHeader = false;
         if (rangeHeader) {
           const m = rangeHeader.match(/^bytes=(\d+)-(\d*)$/);
           if (m) {
             const start = Number(m[1]);
             const end = m[2] ? Number(m[2]) : undefined;
-            r2Range = {
-              offset: start,
-              ...(end !== undefined && end >= start ? { length: end - start + 1 } : {}),
-            };
+            if (
+              !Number.isSafeInteger(start) ||
+              (end !== undefined && (!Number.isSafeInteger(end) || end < start))
+            ) {
+              invalidRangeHeader = true;
+            } else {
+              r2Range = {
+                offset: start,
+                ...(end !== undefined ? { length: end - start + 1 } : {}),
+              };
+            }
           }
         }
 
-        const object = await env.AUDIO_BUCKET.get(key, r2Range ? { range: r2Range } : undefined);
+        if (invalidRangeHeader) {
+          const headObj = await env.AUDIO_BUCKET.head(key);
+          if (!headObj) {
+            return json({ error: 'Audio track not found' }, 404, request);
+          }
+          const h416 = new Headers(corsHeaders(request));
+          h416.set('content-range', `bytes */${headObj.size}`);
+          return new Response(null, { status: 416, headers: h416 });
+        }
+
+        let object: Awaited<ReturnType<typeof env.AUDIO_BUCKET.get>> = null;
+        try {
+          object = await env.AUDIO_BUCKET.get(key, r2Range ? { range: r2Range } : undefined);
+        } catch {
+          if (r2Range) {
+            const headObj = await env.AUDIO_BUCKET.head(key);
+            if (!headObj) {
+              return json({ error: 'Audio track not found' }, 404, request);
+            }
+            const h416 = new Headers(corsHeaders(request));
+            h416.set('content-range', `bytes */${headObj.size}`);
+            return new Response(null, { status: 416, headers: h416 });
+          }
+          throw new Error('Audio stream read failed');
+        }
         if (!object) {
           return json({ error: 'Audio track not found' }, 404, request);
+        }
+        if (r2Range && r2Range.offset >= object.size) {
+          try {
+            await object.body?.cancel();
+          } catch {
+            // ignore
+          }
+          const h416 = new Headers(corsHeaders(request));
+          h416.set('content-range', `bytes */${object.size}`);
+          return new Response(null, { status: 416, headers: h416 });
         }
 
         const headers = new Headers(corsHeaders(request));
