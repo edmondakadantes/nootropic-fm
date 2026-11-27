@@ -82,24 +82,31 @@ test('index.html exposes valid Schema.org JSON-LD + semantic non-JS crawlable co
   }
 });
 
-test('public/partners/index.html is CSP-safe, exposes valid JSON-LD, and enforces General Wellness & Pre-NNN IP hygiene', () => {
-  const partnerPath = path.join(ROOT, 'public', 'partners', 'index.html');
-  assert.ok(fs.existsSync(partnerPath), 'Missing public/partners/index.html');
-  const html = fs.readFileSync(partnerPath, 'utf8');
-  assert.ok(html.length > 3000, 'Expected substantial /partners HTML page');
+test('public/investors/index.html and public/partners/index.html are CSP-safe, expose valid JSON-LD, and enforce institutional Pre-NNN IP & General Wellness hygiene', () => {
+  const checks = [
+    { rel: ['public', 'investors', 'index.html'], expectedMatch: /Pre-Seed Round Open/i },
+    { rel: ['public', 'partners', 'index.html'], expectedMatch: /Institutional Pre-Seed/i },
+  ];
 
-  const scriptTags = html.match(/<script\b[^>]*>/gi) ?? [];
-  assert.equal(scriptTags.length, 1, 'Expected only JSON-LD metadata script on /partners');
-  assert.match(scriptTags[0], /type="application\/ld\+json"/);
+  for (const { rel, expectedMatch } of checks) {
+    const filePath = path.join(ROOT, ...rel);
+    assert.ok(fs.existsSync(filePath), `Missing ${rel.join('/')}`);
+    const html = fs.readFileSync(filePath, 'utf8');
+    assert.ok(html.length > 3000, `Expected substantial HTML on ${rel.join('/')}`);
 
-  const ldMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
-  assert.ok(ldMatch, '/partners must include valid JSON-LD metadata');
-  const parsed = JSON.parse(ldMatch[1]);
-  assert.ok(Array.isArray(parsed['@graph']) && parsed['@graph'].length >= 2);
+    const scriptTags = html.match(/<script\b[^>]*>/gi) ?? [];
+    assert.equal(scriptTags.length, 1, `Expected only JSON-LD metadata script on ${rel.join('/')}`);
+    assert.match(scriptTags[0], /type="application\/ld\+json"/);
 
-  assert.match(html, /Strategic R&amp;D Sponsorship/i);
-  assert.match(html, /Track 01/i);
-  assert.ok(!/\b(treats|cures|diagnoses)\s+(adhd|insomnia|alzheimer|depression|tinnitus)\b/i.test(html));
-  assert.ok(!/\baddictive\b/i.test(html), 'Must never use clinical term addictive in public copy');
-  assert.ok(!/ATECC608B|T_pcb|59\.70|62\.40|dT_core/i.test(html), 'Must never leak Pre-NNN IP or COGS figures');
+    const ldMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+    assert.ok(ldMatch, `${rel.join('/')} must include valid JSON-LD metadata`);
+    const parsed = JSON.parse(ldMatch[1]);
+    assert.ok(Array.isArray(parsed['@graph']) && parsed['@graph'].length >= 2);
+
+    assert.match(html, expectedMatch);
+    assert.ok(!/\$1,000|\$5,000/i.test(html), `Avoid diluting institutional positioning with small microgrant figures on ${rel.join('/')}`);
+    assert.ok(!/\b(treats|cures|diagnoses)\s+(adhd|insomnia|alzheimer|depression|tinnitus)\b/i.test(html));
+    assert.ok(!/\baddictive\b/i.test(html), 'Must never use clinical term addictive in public copy');
+    assert.ok(!/ATECC608B|T_pcb|59\.70|62\.40|dT_core/i.test(html), 'Must never leak Pre-NNN IP or COGS figures');
+  }
 });
