@@ -154,6 +154,29 @@ Pentru ca utilizatorul nu doar să „accepte” muzica de fundal, ci să o simt
 7. **Selecție Darwiniană pe Nivel de Piesă / Stem (`Track-Level Bandit` pe `PVT ms` & Retenție `90%+`):**
    - AI-ul măsoară nu doar genul, ci fiecare `activeTrackKey` / configurație generativă după rata de abandon în primele `60s` și câștigul real în milisecunde la `PVT`, păstrând în rotația ta personală doar piesele care te bagă demonstrabil în flux profund.
 
+### 2B.5 Cele 5 Secrete Hardware × App în Buclă Închisă (*„Dumb Factory Pipe, Secret Cloud/App Brain” — 100% Manufacturabile în Shenzhen*)
+
+> **Principiul de Aur Anti-Clonare & Fezabilitate 100% (`MOQ 1,000–3,000`, COGS landed `\$59.70–\$62.40`, Retail `\$249`):** Fabrica ODM din Shenzhen/Dongguan asamblează doar componente de serie disponibile azi pe raft și rulează un firmware „mut” (*Dumb Sensor & Audio Pipe*). **0% din logica neuro-acustică și termică** locuiește pe cipul din China — **100% din creier** rulează în `app.nootropic.fm`.
+
+1. **Canal Acustic „Neuro-Transparent” (`Qualcomm QCC3081 / S3 Gen 2` + `10mm LCP DD + Sonion/Knowles BA`):**
+   - Dezactivează compresia comercială `AAC/SBC` și procesările V-shape/Spatial Audio (care rad micro-pulsurile de `-20..-26 dBc` din aceeași bandă critică `ERB` și introduc `56.4°` eroare dicotică), oferind cale `LE Audio LC3` / `aptX Lossless` (`24-bit/48 kHz`) cu filtre `biquad` post-NNN (`±1.0 dB` și `<3°` împerechere L/R la `600 Hz` în QC de fabrică).
+2. **Termometrie Aurală fără Cerumen prin Flux Termic Dual (*Dual-Sensor Contact Heat-Flux `DHF`* vs. IR `MLX90632`):**
+   - *De ce am respins senzorul IR `MLX90632`:* orice fereastră optică infraroșu deschisă în duza căștii se acoperă cu cerumen/sebum în `7–14` zile (`-0.8°C .. -1.5°C` eroare falsă) și concurează spațiul cu canalul acustic.
+   - *Soluția 100% manufacturabilă:* per fiecare cască, doi senzori de contact (`TI TMP117` / `ams OSRAM AS6221` I2C `±0.05–0.09°C` la `3.5 µA`, sau termistori `Murata NCP03XH 0201 ±0.1%` calibrați în 2 puncte): **`T_skin`** pe un braț flexibil polyimide `FPC` izolat cu fantă de aer direct sub fereastra etanșă de safir din concha (se șterge într-o secundă, zero colmatare cu ceară) + **`T_pcb`** lângă `SoC/PMIC`.
+   - *Estimatorul termic de-confundat (rulează exclusiv în `app.nootropic.fm` după `240s` de echilibrare la inserție):*
+     `T_core_hat(t) = T_skin(t) + k_flux * (T_skin(t) - T_pcb(t)) - gamma * P_audio(t)` -> derivă curată a trendului circadian `dT_core/dt` (°C/h), eliminând auto-încălzirea electronicii.
+   - *Regulă onestă pentru Asimetria Bilaterală `ΔT_LR = T_core_L - T_core_R`:* validată în `Research Brain` **exclusiv** când `IMU`-ul confirmă capul vertical (`|roll| < 12°`), testul de etanșare L/R e simetric și `|T_pcb_L - T_pcb_R| < 0.25°C` (eliminând perna pe o parte sau curentul de aer condiționat unilateral).
+3. **Biometrie Optical PPG în Concha Cavum cu Gating IMU pe 3 Axe (`GH3026 / PAH8112 + ST LSM6DSO`):**
+   - Fereastra optică este poziționată în **concha cavum / antihelix** (departe de peretele mobil al articulației temporo-mandibulare `TMJ`, ca vorbitul/mestecatul să nu rupă bătăile `PP-intervals`), cu excludere dinamică a artefactelor pe `IMU` în `app.nootropic.fm` înainte de calculul `ln(RMSSD)` și al coerenței `0.10 Hz`.
+4. **Cele 3 Reflexe Automate în Buclă Închisă & Inelul `Orbital Phase-Ring` (`< 0.40 mA`):**
+   - Firmware-ul raportează via `BLE` la `1 Hz` (`0x180D` + GATT custom telemetry), iar `app.nootropic.fm` evaluează la ferestre glisante cu histerezis `>= 45–60s` (*zero oscilație sau hunting acustic*, `0.000 dB` invariant pe Layer-1, **100% General Wellness** fără diagnostic medical):
+     - **Scut Anti-Somnolență (*Circadian Dip Shield*):** când `dT_core/dt < -0.12°C/h` + creștere a varianței `PP` / micro-noduri `IMU` -> urcare lină `Iso-Bridge` către `16–18 Hz Beta Vigilance` cu `15–20` min înaintea prăbușirii post-prânz.
+     - **Frână Anti-Suprasolicitare (*Cognitive Overheat Brake*):** când `ΔT_core > +0.10°C` + prăbușire `ln(RMSSD) > 1.2σ` -> `4` minute automate de răcire vagală `10 Hz Alpha + 0.10 Hz` înainte de revenirea în `Gamma/Beta`.
+     - **Stare `Verified Flow-Lock` & Inel Social `0.10 Hz`:** când `IMU` confirmă nemișcare + `ln(RMSSD)` stabil în zona țintă + platou termic -> aplicația încuie groove-ul și trimite `SET_FLOW_RING = 1`; `2×` micro-LED-uri `0201 InGaN 525 nm` (`0.35 mA` medie PWM prin ghid optic) respiră discret la `0.10 Hz` (*„Nu mă întrerupe, sunt în Flow”*), consumând `<4%` dintr-o baterie de `55 mAh` (`5.5–6.2h` autonomie).
+5. **Șanț Criptografic Anti-Clonă (`Microchip ATECC608B` `ECDSA-P256`):**
+   - Cipul securizat `ATECC608B` (`2×3 mm`, `\$0.45`, `<150 nA` în sleep) semnează cu cheia privată blocată hardware un `nonce` aleatoriu trimis de `app.nootropic.fm` prin `BLE GATT`. Fără această semnătură autentică, clonele de pe Alibaba nu pot debloca compensarea neuro-transparentă și nici modul biometric în buclă închisă.
+   - **BOM Verificat Shenzhen (`MOQ 1,000–3,000`):** **`\$59.70`** (cu perechi `Murata 0.1% NTC` calibrate în 2 puncte) până la **`\$62.40`** (cu `4× TI TMP117 / AS6221` digital I2C) per pereche -> `~75%` marjă brută la `\$249` retail și cash pozitiv chiar și la `\$159–\$179` Kickstarter *Early Bird*.
+
 ---
 
 ## 3. Cei 10 Piloni Secreți ai `nootropic.fm` (Rețeta Neînvinsă)
@@ -247,7 +270,7 @@ Nicio funcție nouă pe `app.nootropic.fm`, niciun protocol acustic, niciun stem
 | **6. Control Orb `25% Sham` & `PVT/Tapping`** | **95% Live** | `assignStratifiedShamControl()`, `computePvtMetrics()`, `TappingTestModal`, `Signature Mode` nediluat, D1 analytics. | Prag vizual public „Causal Proof Meter” pe măsură ce cohorte reale ating `392 / 648` sesiuni. |
 | **7. Memoria Neuronală Vizibilă** | **100% Live** | **`PersonalNeuralMemory` continuă** (`personalIafHz`, `focusOffsetHz`, `focusModMult` vs `calmModMult`, `preferredNoiseMult`, `fatigueDipMinute` autopilot, `profile_chrono` + **Active vs Sham PVT Proof**) vizibilă în `CheckInView`, `ProtocolRevealView` și `DebriefView`. | Conectarea viitoare directă a streamului `PPG · HRV` din `Earbuds Pro` pe același `ingestLiveHrvMetrics()`. |
 | **8. Doctrina *In-Ear* & Test Huggins `600 Hz`** | **95% Live** | `HugginsCheckModal` (`564–636 Hz`), comparator live `30s` pe `www.nootropic.fm`, excepție `Driving Safety Mode`. | Sugestie automată *In-Ear* pe rezultatul slab la Huggins legată cu lista `Earbuds Pro`. |
-| **9. Hardware *Orbital Phase-Ring* Wireless** | **85% Live *(Design & Vitrină Live; Firmware/ODM în Drop 02)*** | 3 randări 4K proprii, `FlagshipShowcaseView` wireless-first cu `Earbuds Pro` (`\$249`) în prim-plan + waitlist. | RFQ final cu ODM-urile `Qualcomm QCC3081/QCC5181 + Valencell/PixArt PPG`, streaming real BLE HRV -> `app.nootropic.fm`. |
+| **9. Hardware *Orbital Phase-Ring* Wireless** | **90% Live *(Design, Vitrină, BOM Shenzhen & 14 ODM-uri Contactate)*** | 3 randări 4K proprii, `FlagshipShowcaseView` wireless-first cu `Earbuds Pro` (`\$249`), Secretele `2B.5` blocate în arhitectură (`QCC3081 + GH3026/PAH8112 + DHF Dual-Thermal + ATECC608B`, COGS `\$59.70–\$62.40`), + **14 fabrici ODM** contactate din `nootropic.fm@gmail.com`. | Recepționare mostre DHL + audit `BLE 0x180D` & `DHF`, semnare `NNN` bilingv, EVT pe platforma validată. |
 | **10. Scut Passwordless & *General Wellness (`18+`)*** | **100% Live** | `NeuralFingerprintPass` QR, cookie `.nootropic.fm`, CSP strict, `GPC`, mod local SEE/UK, zero claim-uri medicale. | Verificare juridică formală înainte de lansarea campaniilor plătite / `TrueMed HSA/FSA`. |
 
 > **Verdict Strategic din Auditul Celor 10 Piloni:**
