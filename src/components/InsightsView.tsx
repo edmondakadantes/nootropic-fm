@@ -165,6 +165,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
               <button
                 type="button"
                 onClick={() => setShowExportModal(false)}
+                aria-label="Close export modal"
                 className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
               >
                 <X className="h-4 w-4" />
@@ -306,7 +307,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
               <div className="font-mono-tech mt-1 text-2xl font-bold text-[#D4D4CE]">
                 {ret.instantSwapRatePct}%
               </div>
-              <div className="text-[10px] text-[#7E7E78]">initial genre mismatch</div>
+              <div className="text-[10px] text-[#8E8E88]">initial genre mismatch</div>
             </div>
 
             <div className="rounded-xl border border-white/12 bg-[#131519] p-3.5">
@@ -572,7 +573,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
         </div>
 
         {insights.cohorts.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/12 p-8 text-center text-sm text-[#7E7E78]">
+          <div className="rounded-xl border border-dashed border-white/12 p-8 text-center text-sm text-[#8E8E88]">
             Database is ready. Complete your first session to see the first learned cohort appear in
             real time.
           </div>
@@ -586,7 +587,7 @@ export function InsightsView({ profileId }: InsightsViewProps) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <div className="text-sm font-semibold text-[#F3F1EC]">{cohort.cohortLabel}</div>
-                    <div className="font-mono-tech text-[11px] text-[#7E7E78]">
+                    <div className="font-mono-tech text-[11px] text-[#8E8E88]">
                       {cohort.cohortKey} · {cohort.completedSessions}/{cohort.totalSessions} rated
                       sessions · Leading protocol:{' '}
                       <span className="text-[#34D399]">{cohort.topArmName}</span>

@@ -593,7 +593,10 @@ export class PsychoacousticEngine {
     const ctx = new AudioCtx({ latencyHint: 'playback' });
     this.ctx = ctx;
     if (ctx.state === 'suspended') {
-      await ctx.resume().catch(() => {});
+      await Promise.race([
+        ctx.resume().catch(() => {}),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 120)),
+      ]);
     }
     if (myStartToken !== this.startToken || this.ctx !== ctx) {
       try {

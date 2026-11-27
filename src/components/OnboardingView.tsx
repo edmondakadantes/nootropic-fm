@@ -42,6 +42,7 @@ export function OnboardingView({
   const [researchConsent, setResearchConsent] = useState<boolean>(
     initialProfile?.researchConsent ?? false
   );
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSave = async () => {
@@ -49,7 +50,12 @@ export function OnboardingView({
       setAgeError('nootropic.fm is restricted to listeners aged 18+.');
       return;
     }
+    if (role === 'other' && occupationLabel.trim().length < 2) {
+      setSaveError('Please type your profession or craft to continue.');
+      return;
+    }
     setAgeError(null);
+    setSaveError(null);
     setSubmitting(true);
     try {
       await onComplete({
@@ -65,6 +71,8 @@ export function OnboardingView({
         primaryChallenge: initialProfile?.primaryChallenge ?? 'distraction',
         researchConsent,
       });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Unable to save profile changes right now.');
     } finally {
       setSubmitting(false);
     }
@@ -77,12 +85,12 @@ export function OnboardingView({
         <h1 className="mt-4 text-2xl font-bold tracking-tight text-[#F3F1EC] sm:text-3xl">
           Refine your <span className="text-[#34D399]">Neural Identity</span>
         </h1>
-        <p className="mt-1.5 max-w-md text-xs text-[#8E8E88] sm:text-sm">
+        <p className="mt-1.5 max-w-md text-xs text-[#A3A39E] sm:text-sm">
           Updates apply to future recommendations and keep all your learned Bandit session history intact.
         </p>
       </div>
 
-      <div className="animate-step glass-stage w-full rounded-2xl p-6 sm:p-8 space-y-5">
+      <div className="animate-step glass-stage w-full rounded-2xl p-5 sm:p-8 space-y-5">
         <div className="flex items-center gap-2 text-[#34D399]">
           <UserCheck className="h-4 w-4" />
           <span className="font-mono-tech text-[11px] uppercase tracking-[0.16em]">
@@ -92,10 +100,11 @@ export function OnboardingView({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
           <div className="sm:col-span-5">
-            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">
+            <label htmlFor="onb-display-name" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
               First name / Nickname (optional)
             </label>
             <input
+              id="onb-display-name"
               type="text"
               maxLength={28}
               value={displayName}
@@ -105,8 +114,11 @@ export function OnboardingView({
             />
           </div>
           <div className="sm:col-span-3">
-            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">Age (18+)</label>
+            <label htmlFor="onb-age" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
+              Age (18+)
+            </label>
             <input
+              id="onb-age"
               type="number"
               min={18}
               max={95}
@@ -120,14 +132,18 @@ export function OnboardingView({
             />
           </div>
           <div className="sm:col-span-4">
-            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">
+            <label htmlFor="onb-occupation" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
               Occupation (optional)
             </label>
             <input
+              id="onb-occupation"
               type="text"
               maxLength={40}
               value={occupationLabel}
-              onChange={(e) => setOccupationLabel(e.target.value)}
+              onChange={(e) => {
+                setOccupationLabel(e.target.value);
+                setSaveError(null);
+              }}
               placeholder="e.g. Programmer, Driver"
               className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
             />
@@ -135,7 +151,7 @@ export function OnboardingView({
         </div>
 
         <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-[#8E8E88]">Gender (optional)</div>
+          <div className="text-[11px] font-medium text-[#A3A39E]">Gender (optional)</div>
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
             {(['male', 'female', 'non_binary', 'prefer_not_to_say'] as UserGender[]).map((g) => (
               <button
@@ -155,13 +171,16 @@ export function OnboardingView({
         </div>
 
         <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-[#8E8E88]">Primary Field / Role</div>
+          <div className="text-[11px] font-medium text-[#A3A39E]">Primary Field / Role</div>
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
             {(Object.keys(ROLE_SHORT_LABELS) as UserRole[]).map((r) => (
               <button
                 key={r}
                 type="button"
-                onClick={() => setRole(r)}
+                onClick={() => {
+                  setRole(r);
+                  setSaveError(null);
+                }}
                 className={`rounded-xl border px-3 py-2 text-xs font-medium transition ${
                   role === r
                     ? 'border-emerald-400/60 bg-emerald-400/15 text-[#F3F1EC]'
@@ -174,15 +193,19 @@ export function OnboardingView({
           </div>
           {role === 'other' && (
             <div className="animate-step rounded-xl border border-emerald-400/30 bg-emerald-500/[0.06] p-3 space-y-1.5">
-              <label className="block text-[11px] font-semibold text-[#34D399]">
+              <label htmlFor="onb-custom-role" className="block text-[11px] font-semibold text-[#34D399]">
                 Type your profession or craft:
               </label>
               <input
+                id="onb-custom-role"
                 type="text"
                 autoFocus
                 maxLength={40}
                 value={occupationLabel}
-                onChange={(e) => setOccupationLabel(e.target.value)}
+                onChange={(e) => {
+                  setOccupationLabel(e.target.value);
+                  setSaveError(null);
+                }}
                 placeholder="e.g. Architect, Surgeon, Pilot, Chef, Trader, Musician..."
                 className="w-full rounded-xl border border-white/15 bg-[#0B0C0E] px-3 py-2 text-xs text-[#F3F1EC] placeholder-[#5F605C] focus:border-emerald-400 focus:outline-none"
               />
@@ -192,10 +215,11 @@ export function OnboardingView({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">
+            <label htmlFor="onb-default-device" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
               Default Output
             </label>
             <select
+              id="onb-default-device"
               value={defaultDevice}
               onChange={(e) => setDefaultDevice(e.target.value as OutputDevice)}
               className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] focus:border-emerald-400 focus:outline-none"
@@ -208,10 +232,11 @@ export function OnboardingView({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-[#8E8E88]">
+            <label htmlFor="onb-sensitivity" className="mb-1 block text-[11px] font-medium text-[#A3A39E]">
               Sound Sensitivity
             </label>
             <select
+              id="onb-sensitivity"
               value={noiseSensitivity}
               onChange={(e) => setNoiseSensitivity(e.target.value as NoiseSensitivity)}
               className="w-full rounded-xl border border-white/12 bg-[#0B0C0E] px-3 py-2.5 text-xs text-[#F3F1EC] focus:border-emerald-400 focus:outline-none"
@@ -223,7 +248,16 @@ export function OnboardingView({
           </div>
         </div>
 
-        {ageError && <p className="text-xs text-rose-300">{ageError}</p>}
+        {ageError && (
+          <div className="rounded-xl border border-rose-500/40 bg-rose-500/12 px-3 py-2 text-xs text-rose-200">
+            {ageError}
+          </div>
+        )}
+        {saveError && (
+          <div className="rounded-xl border border-rose-500/40 bg-rose-500/12 px-3 py-2 text-xs text-rose-200">
+            {saveError}
+          </div>
+        )}
 
         <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.05] px-3.5 py-2.5 text-[11px] leading-relaxed text-[#D4D4CE]">
           <input
@@ -241,7 +275,7 @@ export function OnboardingView({
           </span>
         </label>
 
-        <div className="flex items-center gap-2.5 pt-1">
+        <div className="flex flex-wrap items-center gap-2.5 pt-1">
           {onCancel && (
             <button
               type="button"
@@ -256,9 +290,9 @@ export function OnboardingView({
             type="button"
             disabled={submitting}
             onClick={() => void handleSave()}
-            className="btn-aurora flex flex-1 items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold text-[#0A0B0C] disabled:opacity-60"
+            className="btn-aurora flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-5 py-3.5 text-sm font-bold text-[#0A0B0C] disabled:opacity-60"
           >
-            <CheckCircle2 className="h-4 w-4" />
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
             {submitting ? 'Saving Neural Identity...' : 'Save Profile Changes'}
           </button>
         </div>

@@ -121,11 +121,11 @@ const SHOWCASE_TARGETS = new Set<TargetState>([
 ]);
 
 const SHOWCASE_DEFAULT_MICRO: Record<TargetState, string> = {
-  deep_flow: 'calm_balanced',
+  deep_flow: 'calm_steady',
   alert_focus: 'brain_fog',
-  energy_lift: 'tired_sluggish',
-  calm_reset: 'stressed',
-  sleep_winddown: 'calm_balanced',
+  energy_lift: 'sleep_deprived',
+  calm_reset: 'frustrated_tense',
+  sleep_winddown: 'drowsy_bedtime',
 };
 
 function buildShowcasePreset(

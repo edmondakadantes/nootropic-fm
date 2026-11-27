@@ -69,7 +69,7 @@ export function NeuralCompassSelector({
 
   const landmarks = NEURAL_MICRO_STATES.filter((s) => s.landmark);
   const quickStarterStates = NEURAL_MICRO_STATES.filter((s) =>
-    ['stressed', 'tired_sluggish', 'brain_fog', 'distracted_scattered', 'anxious_racing', 'calm_balanced'].includes(
+    ['frustrated_tense', 'sleep_deprived', 'brain_fog', 'distracted_scattered', 'anxious_racing', 'calm_steady'].includes(
       s.id
     )
   );

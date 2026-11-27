@@ -69,6 +69,7 @@ export function DatasetInquiryModal({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close dataset inquiry modal"
             className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
           >
             <X className="h-4 w-4" />

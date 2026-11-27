@@ -233,7 +233,10 @@ export class VoiceConciergePlayer {
 
     const ctx = this.ctx;
     if (ctx.state === 'suspended') {
-      await ctx.resume().catch(() => {});
+      await Promise.race([
+        ctx.resume().catch(() => {}),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 120)),
+      ]);
     }
 
     const minLeadSec = Math.max(0.18, (opts.initialDelayMs ?? 350) / 1000);

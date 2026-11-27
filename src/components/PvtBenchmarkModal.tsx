@@ -44,6 +44,7 @@ export function PvtBenchmarkModal({
   totalTrialsRef.current = totalTrials;
   const trialsRef = useRef<number[]>(trials);
   trialsRef.current = trials;
+  const pointerHandledRef = useRef(false);
 
   const clearPendingTimers = useCallback(() => {
     if (timerRef.current !== null) {
@@ -169,6 +170,7 @@ export function PvtBenchmarkModal({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close PVT benchmark modal"
             className="rounded-lg p-1.5 text-[#8E8E88] hover:bg-white/10 hover:text-[#F3F1EC]"
           >
             <X className="h-4 w-4" />
@@ -231,8 +233,17 @@ export function PvtBenchmarkModal({
         {stage !== 'done' ? (
           <button
             type="button"
+            data-pvt-target="true"
             onPointerDown={(e) => {
               e.preventDefault();
+              pointerHandledRef.current = true;
+              handleTap();
+            }}
+            onClick={() => {
+              if (pointerHandledRef.current) {
+                pointerHandledRef.current = false;
+                return;
+              }
               handleTap();
             }}
             className={`flex h-52 w-full select-none flex-col items-center justify-center rounded-2xl border-2 transition-all ${

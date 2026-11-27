@@ -175,6 +175,33 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     '.webmanifest': 'application/manifest+json',
   };
 
+  const voiceConciergeCalls = [];
+  let currentMockProfile = null;
+
+  const makeTestWavBytes = (durationSec = 0.25, sampleRate = 48000) => {
+    const numSamples = Math.floor(durationSec * sampleRate);
+    const buf = Buffer.alloc(44 + numSamples * 2);
+    buf.write('RIFF', 0);
+    buf.writeUInt32LE(36 + numSamples * 2, 4);
+    buf.write('WAVE', 8);
+    buf.write('fmt ', 12);
+    buf.writeUInt32LE(16, 16);
+    buf.writeUInt16LE(1, 20);
+    buf.writeUInt16LE(1, 22);
+    buf.writeUInt32LE(sampleRate, 24);
+    buf.writeUInt32LE(sampleRate * 2, 28);
+    buf.writeUInt16LE(2, 32);
+    buf.writeUInt16LE(16, 34);
+    buf.write('data', 36);
+    buf.writeUInt32LE(numSamples * 2, 40);
+    for (let i = 0; i < numSamples; i++) {
+      const sample = Math.round(Math.sin((2 * Math.PI * 240 * i) / sampleRate) * 4000);
+      buf.writeInt16LE(sample, 44 + i * 2);
+    }
+    return buf;
+  };
+  const testWavBuf = makeTestWavBytes(0.25);
+
   const server = http.createServer((req, res) => {
     const cleanUrl = (req.url || '/').split('?')[0];
     if (cleanUrl === '/api/config') {
@@ -199,7 +226,104 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     }
     if (cleanUrl === '/api/identity/me') {
       res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
-      res.end(JSON.stringify({ authenticated: false, profile: null, pendingDebrief: null }));
+      res.end(JSON.stringify({ authenticated: Boolean(currentMockProfile), profile: currentMockProfile, pendingDebrief: null }));
+      return;
+    }
+    if (cleanUrl === '/api/profile' && req.method === 'POST') {
+      let bodyStr = '';
+      req.on('data', (c) => { bodyStr += c; });
+      req.on('end', () => {
+        const body = JSON.parse(bodyStr || '{}');
+        const age = Number(body.age ?? 34);
+        if (!Number.isFinite(age) || age < 18 || age > 95) {
+          res.writeHead(400, { 'Content-Type': 'application/json', Connection: 'close' });
+          res.end(JSON.stringify({ error: 'nootropic.fm is restricted to listeners aged 18+.' }));
+          return;
+        }
+        currentMockProfile = {
+          id: body.id || 'prof_e2e_01',
+          displayName: body.displayName || undefined,
+          age: Math.round(age),
+          ageBand: age < 25 ? '18-24' : age < 35 ? '25-34' : '35-44',
+          gender: body.gender || 'female',
+          role: body.role || 'entrepreneur',
+          occupationLabel: body.occupationLabel || undefined,
+          texturePref: body.texturePref || 'warm_organic',
+          noiseSensitivity: body.noiseSensitivity || 'medium',
+          defaultDevice: body.defaultDevice || 'headphones',
+          primaryChallenge: body.primaryChallenge || 'distraction',
+          researchConsent: body.researchConsent === true,
+          preferredModMult: 1.0,
+          planTier: 'free',
+          proUntil: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({ profile: currentMockProfile, profileToken: 'tok_e2e_01', syncCode: 'NFM-TEST-2027' }));
+      });
+      return;
+    }
+    if (cleanUrl.startsWith('/api/profile/') && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+      res.end(
+        JSON.stringify({
+          profile: currentMockProfile || {
+            id: 'prof_e2e_01',
+            displayName: 'Elena',
+            age: 34,
+            ageBand: '25-34',
+            gender: 'female',
+            role: 'entrepreneur',
+            texturePref: 'warm_organic',
+            noiseSensitivity: 'medium',
+            defaultDevice: 'headphones',
+            primaryChallenge: 'distraction',
+            researchConsent: true,
+            preferredModMult: 1.0,
+            planTier: 'free',
+            proUntil: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          profileToken: 'tok_e2e_01',
+          syncCode: 'NFM-TEST-2027',
+          pendingDebrief: null,
+        })
+      );
+      return;
+    }
+    if (cleanUrl === '/api/identity/restore' && req.method === 'POST') {
+      req.resume();
+      req.on('end', () => {
+        currentMockProfile = {
+          id: 'prof_e2e_01',
+          displayName: 'Elena',
+          age: 34,
+          ageBand: '25-34',
+          gender: 'female',
+          role: 'entrepreneur',
+          texturePref: 'warm_organic',
+          noiseSensitivity: 'medium',
+          defaultDevice: 'headphones',
+          primaryChallenge: 'distraction',
+          researchConsent: true,
+          preferredModMult: 1.0,
+          planTier: 'free',
+          proUntil: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(
+          JSON.stringify({
+            profile: currentMockProfile,
+            profileToken: 'tok_e2e_01',
+            syncCode: 'NFM-TEST-2027',
+            pendingDebrief: null,
+          })
+        );
+      });
       return;
     }
     if (cleanUrl === '/api/audio/catalog') {
@@ -243,11 +367,33 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
       return;
     }
     if (cleanUrl === '/api/voice/concierge') {
-      req.resume();
+      let bodyStr = '';
+      req.on('data', (c) => { bodyStr += c; });
       req.on('end', () => {
+        const parsed = JSON.parse(bodyStr || '{}');
+        voiceConciergeCalls.push(parsed);
+        const enableAudio = req.url?.includes('voice=1') || voiceConciergeCalls._enableAudio;
         res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
-        res.end(JSON.stringify({ available: false, cueType: 'intro_full', breathPauseMs: 720, transcript: '' }));
+        if (enableAudio) {
+          res.end(
+            JSON.stringify({
+              available: true,
+              cueType: parsed.cueType || 'intro_full',
+              greetingUrl: '/api/voice/test-greet.wav',
+              bodyUrl: '/api/voice/test-body.wav',
+              breathPauseMs: 250,
+              transcript: 'Take a calm breath. Seal both earbuds for full phase lock.',
+            })
+          );
+        } else {
+          res.end(JSON.stringify({ available: false, cueType: 'intro_full', breathPauseMs: 720, transcript: '' }));
+        }
       });
+      return;
+    }
+    if (cleanUrl === '/api/voice/test-greet.wav' || cleanUrl === '/api/voice/test-body.wav') {
+      res.writeHead(200, { 'Content-Type': 'audio/wav', Connection: 'close' });
+      res.end(testWavBuf);
       return;
     }
     if (cleanUrl === '/api/protocol/start' && req.method === 'POST') {
@@ -332,12 +478,136 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
             globalSuccessRatePct: 82,
             globalAvgDelta: 1.6,
             explorationSharePct: 14,
-            personalArms: [],
-            cohorts: [],
-            recentSessions: [],
+            retentionMetrics: {
+              trackedSessions: 42,
+              returningProfiles: 9,
+              avgListenRetentionPct: 84,
+              completionRatePct: 76,
+              earlyBounceRatePct: 7,
+              instantSwapRatePct: 5,
+              d1ReturnRatePct: 48,
+              d7ReturnRatePct: 64,
+            },
+            abValidation: {
+              readyForStats: true,
+              activeSessions: 31,
+              activeAvgDelta: 1.8,
+              activeSuccessRatePct: 84,
+              activeListenRetentionPct: 86,
+              controlSessions: 11,
+              controlAvgDelta: 0.9,
+              controlSuccessRatePct: 62,
+              controlListenRetentionPct: 71,
+              deltaLift: 0.9,
+              retentionLiftPct: 15,
+            },
+            personalArms: [
+              {
+                armId: 'nootropic-trance-6x40hz',
+                armName: '6×40 Hz Signature Lock',
+                trials: 8,
+                alpha: 8.5,
+                beta: 1.5,
+                successRatePct: 85,
+                avgDelta: 1.9,
+                avgCompletionPct: 88,
+              },
+            ],
+            genreLeaderboard: [
+              {
+                genre: 'nootropic_trance',
+                label: 'NootropicFM Mode',
+                isCustom: false,
+                sessions: 18,
+                successRatePct: 88,
+                avgDelta: 1.9,
+                avgRetentionPct: 91,
+              },
+            ],
+            topArchetypeCombos: [
+              {
+                cohortKey: '25-34|entrepreneur|deep_flow|office',
+                cohortLabel: '25–34 · Founder · Deep Flow',
+                armName: '6×40 Hz Signature Lock',
+                genreSlug: 'nootropic_trance',
+                genreLabel: 'NootropicFM Mode',
+                sessions: 12,
+                successRatePct: 86,
+                avgDelta: 1.8,
+                avgRetentionPct: 89,
+              },
+            ],
+            cohorts: [
+              {
+                cohortKey: '25-34|entrepreneur|deep_flow|office',
+                cohortLabel: '25–34 · Founder · Deep Flow',
+                totalSessions: 14,
+                completedSessions: 12,
+                topArmName: '6×40 Hz Signature Lock',
+                successRatePct: 86,
+                avgDelta: 1.8,
+                arms: [
+                  {
+                    armId: 'nootropic-trance-6x40hz',
+                    armName: '6×40 Hz Signature Lock',
+                    trials: 12,
+                    alpha: 10.5,
+                    beta: 2.0,
+                    successRatePct: 86,
+                    avgDelta: 1.8,
+                    avgCompletionPct: 89,
+                  },
+                ],
+              },
+            ],
+            recentSessions: [
+              {
+                id: 'sess_e2e_01',
+                cohortKey: '25-34|entrepreneur|deep_flow|office',
+                rawInputText: 'Brain fog -> deep flow',
+                currentState: 'distracted',
+                baselineScore: 2,
+                targetState: 'deep_flow',
+                environment: 'office',
+                device: 'headphones',
+                safetyMode: false,
+                plannedDurationMin: 45,
+                actualDurationSec: 2520,
+                completionRatio: 0.93,
+                armId: 'nootropic-trance-6x40hz',
+                armName: '6×40 Hz Signature Lock',
+                isExploration: false,
+                isControlTrial: false,
+                energyTier: 'focus',
+                musicGenre: 'nootropic_trance',
+                audioSource: 'studio_library',
+                retentionOutcome: 'completed_full',
+                acousticParams: { modulationHz: 6, bpm: 120 },
+                citedStudyIds: ['woods_2024'],
+                liveAdjustments: [],
+                timeOfDayBucket: 'morning',
+                status: 'completed',
+                postScore: 4,
+                deltaScore: 2,
+                workedRating: 'yes',
+                feedbackTags: ['Kept me locked in'],
+                rewardScore: 0.92,
+                notes: '',
+                createdAt: new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+              },
+            ],
           },
         })
       );
+      return;
+    }
+    if (cleanUrl === '/api/intelligence/inquire' && req.method === 'POST') {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({ ok: true, inquiryId: 'inq_e2e_01' }));
+      });
       return;
     }
     if (cleanUrl === '/api/studies/leaderboard') {
@@ -635,6 +905,32 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     const mobileNavLinks = await evalJs(`Array.from(document.querySelectorAll('nav[aria-label="Mobile Showcase Sections"] a, nav[aria-label="Mobile Showcase Sections"] button')).map(el => el.innerText.trim())`);
     assert.ok(mobileNavLinks.includes('Earbuds') && mobileNavLinks.includes('Investors') && mobileNavLinks.includes('Science'));
 
+    // Showcase anchor scroll-mt-28 clearance on 375px & 1280px (sections never clipped behind sticky header)
+    const assertAnchorClearance = async (bpLabel, selector, targetId) => {
+      await evalJs(`document.querySelector('${selector}')?.click()`);
+      await new Promise((r) => setTimeout(r, 380));
+      const pos = await evalJs(`(() => {
+        const hdr = document.querySelector('header')?.getBoundingClientRect();
+        const sec = document.getElementById('${targetId}')?.getBoundingClientRect();
+        return { hdrBottom: hdr ? hdr.bottom : 0, secTop: sec ? sec.top : -999 };
+      })()`);
+      assert.ok(
+        pos.secTop >= pos.hdrBottom - 2,
+        `Anchor #${targetId} clipped behind sticky header on ${bpLabel}: secTop=${pos.secTop}, hdrBottom=${pos.hdrBottom}`
+      );
+    };
+    await assertAnchorClearance('Showcase 375px', 'nav[aria-label="Mobile Showcase Sections"] a[href="#demo"]', 'demo');
+    await assertAnchorClearance('Showcase 375px', 'nav[aria-label="Mobile Showcase Sections"] a[href="#hardware"]', 'hardware');
+    await assertAnchorClearance('Showcase 375px', 'nav[aria-label="Mobile Showcase Sections"] a[href="#pricing"]', 'pricing');
+
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 844, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 120));
+    await assertAnchorClearance('Showcase 1280px', 'nav[aria-label="Showcase Sections"] a[href="#hardware"]', 'hardware');
+    await assertAnchorClearance('Showcase 1280px', 'nav[aria-label="Showcase Sections"] a[href="#pricing"]', 'pricing');
+
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 100));
+
     // Outcome cards carry ?target=...&duration=... deep links
     const outcomeHref = await evalJs(`Array.from(document.querySelectorAll('a')).find(a => /Deep Flow/i.test(a.innerText || ''))?.getAttribute('href') || ''`);
     assert.match(outcomeHref, /target=deep_flow/);
@@ -729,12 +1025,33 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await assertNoOverflowAndClippedHeader('Studio PlayerView 375px', 375);
     await assertContrastWcag('Studio PlayerView 375px');
 
-    // Open & Escape-close PVT, Tapping, Huggins, and UpgradePro modals on 375px
+    // Open & complete full 20-trial PVT flow ('ready' -> 20x 'waiting'->'go' -> 'done' -> save), then Tapping, Huggins, and UpgradePro modals on 375px
+    await evalJs(`(() => {
+      if (!window.__origSetTimeout) window.__origSetTimeout = window.setTimeout.bind(window);
+      window.setTimeout = (fn, delay, ...args) => {
+        const d = typeof delay === 'number' && delay >= 1000 && delay <= 4500 ? 18 : delay;
+        return window.__origSetTimeout(fn, d, ...args);
+      };
+    })()`);
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Run PVT/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Visual 1/RT Vigilance Check'))`, 4000, 'PVT Modal');
     await assertContrastWcag('PVT Modal 375px');
-    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
-    await waitUntil(`!document.body.innerText.includes('Visual 1/RT Vigilance Check')`, 4000, 'PVT Modal closed via Escape');
+
+    // Run all 20 visual trials genuinely through waiting -> rAF go -> realistic >=120ms tap -> done
+    await evalJs(`document.querySelector('button[data-pvt-target="true"]')?.click()`);
+    for (let trial = 0; trial < 20; trial++) {
+      await waitUntil(`Boolean(document.body.innerText.includes('TAP NOW!'))`, 2500, `PVT trial ${trial + 1} flash`);
+      await new Promise((r) => setTimeout(r, 125));
+      await evalJs(`(() => {
+        const t = document.querySelector('button[data-pvt-target="true"]');
+        if (t) t.click();
+      })()`);
+    }
+    await waitUntil(`Boolean(/Mean Inverse Speed \\(1\\/RT\\) · 20 Visual Trials/i.test(document.body.innerText))`, 4000, 'PVT 20-trial done stage');
+    await assertContrastWcag('PVT Modal Done 375px');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Save 20-Trial 1\\/RT Benchmark/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Baseline Recorded:'))`, 4000, 'PVT baseline saved on PlayerView');
+    await evalJs(`(() => { if (window.__origSetTimeout) window.setTimeout = window.__origSetTimeout; })()`);
 
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Run \\(15s\\)/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Intrinsic Motor Rhythm Check'))`, 4000, 'Tapping Modal');
@@ -754,15 +1071,55 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.querySelector('div.fixed.inset-0.z-50')`, 4000, 'UpgradePro Modal closed via Escape');
 
-    // End Session -> Local-Only Debrief Summary
+    // End Session -> Local-Only Debrief Summary -> Start a New Session -> HeroLandingView (375px & 1280px)
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /End Session/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('See Local Session Summary'))`, 5000, 'Local-only Debrief');
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /See Local Session Summary/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Local-Only Privacy Mode'))`, 5000, 'Local-Only Privacy Summary');
     await assertContrastWcag('Local-Only Debrief 375px');
 
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Start a New Session/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural Brain Map"]'))`, 6000, 'HeroLandingView 375px');
+    const quickCount375 = await evalJs(`(() => {
+      const labels = ['Stressed', 'Tired', 'Brain Fog', 'Distracted', 'Anxious', 'Calm'];
+      const txt = document.body.innerText;
+      return labels.filter(l => txt.includes(l)).length;
+    })()`);
+    assert.equal(quickCount375, 6, 'HeroLandingView must expose all 6 quick starter states');
+    await assertNoOverflowAndClippedHeader('HeroLandingView 375px', 375);
+    await assertContrastWcag('HeroLandingView 375px');
+
+    // Also test DatasetInquiryModal from HeroLandingView CohortIntelligenceShowcase at 375px & 1280px
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /License Full Dataset/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Unlock Full Aggregated Cohort Datasets'))`, 4000, 'DatasetInquiryModal 375px');
+    await assertNoOverflowAndClippedHeader('DatasetInquiryModal 375px', 375);
+    await assertContrastWcag('DatasetInquiryModal 375px');
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 120));
+    await assertContrastWcag('DatasetInquiryModal 1280px');
+    await evalJs(`(() => {
+      const modal = document.querySelector('div.fixed.inset-0.z-50');
+      const emailIn = modal.querySelector('input[type="email"]');
+      const orgIn = modal.querySelectorAll('input[type="text"]')[0];
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      if (emailIn._valueTracker) emailIn._valueTracker.setValue('');
+      setter.call(emailIn, 'researcher@lab.org');
+      emailIn.dispatchEvent(new Event('input', { bubbles: true }));
+      if (orgIn._valueTracker) orgIn._valueTracker.setValue('');
+      setter.call(orgIn, 'Cognitive Sound Lab');
+      orgIn.dispatchEvent(new Event('input', { bubbles: true }));
+      modal.querySelector('button[type="submit"]')?.click();
+    })()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Dataset Request Received') && document.body.innerText.includes('inq_e2e_01'))`, 4000, 'DatasetInquiryModal submitted');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Return to nootropic\\.fm/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`!document.querySelector('div.fixed.inset-0.z-50')`, 4000, 'DatasetInquiryModal closed');
+
+    // HeroLandingView 1280px WCAG + 2D Map Step 1 + Step 2 -> Discover
+    await assertNoOverflowAndClippedHeader('HeroLandingView 1280px', 1280);
+    await assertContrastWcag('HeroLandingView 1280px');
+
     // =========================================================================
-    // 3) DESKTOP 1280x900: Outcome Deep-Link + Study Lab & Insights + Escape Modals
+    // 3) DESKTOP 1280x900 & MOBILE 375x812: Outcome Deep-Link + Study Lab + Insights (Admin Export Modal) + OnboardingView
     // =========================================================================
     await sendCdp('Emulation.setDeviceMetricsOverride', {
       width: 1280,
@@ -774,15 +1131,57 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await waitUntil(`Boolean(document.body.innerText.includes('Selected shift:') && document.body.innerText.includes('Deep Flow State (45m)'))`, 6000, 'Outcome Deep-Link pre-selection');
     await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /Continue:\\s*Choose Music Style/i.test(b.textContent || '')))`, 4000, 'Beat 1 Deep-Link CTA matches destination Beat 4');
 
+    // Restore sync pass to access OnboardingView ('Edit Profile Details') & verify both 375px and 1280px
+    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Restore Sync QR|Neural Fingerprint Pass/i.test(b.getAttribute('aria-label') || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Restore your Neural Pass on this device'))`, 4000, 'Identity Restore Modal');
+    await evalJs(`(() => {
+      const inp = document.querySelector('div.fixed.inset-0.z-50 input[placeholder="NFM-XXXX-XXXX"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      if (inp._valueTracker) inp._valueTracker.setValue('');
+      setter.call(inp, 'NFM-TEST-2027');
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await evalJs(`Array.from(document.querySelectorAll('div.fixed.inset-0.z-50 button')).find(b => /^Restore$/i.test((b.textContent || '').trim()))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Welcome back, Elena'))`, 5000, 'Profile restored');
+    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Neural Fingerprint Pass/i.test(b.getAttribute('aria-label') || ''))?.click()`);
+    await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /Edit Profile Details/i.test(b.textContent || '')))`, 4000, 'Neural Pass Modal with Edit Profile');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Edit Profile Details/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Refine your Neural Identity'))`, 5000, 'OnboardingView 1280px');
+    await assertNoOverflowAndClippedHeader('OnboardingView 1280px', 1280);
+    await assertContrastWcag('OnboardingView 1280px');
+
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 120));
+    await assertNoOverflowAndClippedHeader('OnboardingView 375px', 375);
+    await assertContrastWcag('OnboardingView 375px');
+
+    // Save Onboarding changes -> cleanly returns to CheckInView
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Save Profile Changes/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Welcome back, Elena'))`, 5000, 'OnboardingView save -> CheckInView');
+
+    // Open Research Brain (Insights) on 375px AND 1280px + Admin Dataset Export Modal
+    await evalJs(`Array.from(document.querySelectorAll('nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Research/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Research Brain') && document.body.innerText.includes('Implicit Retention'))`, 5000, 'InsightsView 375px');
+    await assertNoOverflowAndClippedHeader('InsightsView 375px', 375);
+    await assertContrastWcag('InsightsView 375px');
+
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Admin Dataset Export/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Protected Research Export'))`, 4000, 'Insights Admin Export Modal 375px');
+    await assertNoOverflowAndClippedHeader('Insights Admin Export Modal 375px', 375);
+    await assertContrastWcag('Insights Admin Export Modal 375px');
+
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 120));
+    await assertContrastWcag('Insights Admin Export Modal 1280px');
+    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await waitUntil(`!document.body.innerText.includes('Protected Research Export')`, 4000, 'Admin Export Modal closed via Escape');
+    await assertNoOverflowAndClippedHeader('InsightsView 1280px', 1280);
+    await assertContrastWcag('InsightsView 1280px');
+
     // Open Study Lab -> verify accurate 20-trial (~75s) PVT text + WCAG contrast
     await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('20-trial (~75s) Pre/Post PVT'))`, 5000, 'Study Lab updated PVT text');
     await assertContrastWcag('StudyLab 1280px');
-
-    // Open Research Brain (Insights) -> verify WCAG contrast
-    await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Research/i.test(b.textContent || ''))?.click()`);
-    await waitUntil(`Boolean(document.body.innerText.includes('Research Brain') || document.body.innerText.includes('Cohort'))`, 5000, 'InsightsView 1280px');
-    await assertContrastWcag('InsightsView 1280px');
 
     // Open Sound Systems -> WCAG + Escape close
     await evalJs(`Array.from(document.querySelectorAll('header button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
@@ -802,5 +1201,306 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     try {
       fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 120 });
     } catch {}
+  }
+});
+
+test('Headless Edge E2E: PlayerView suspended-AudioContext autoplay recovery + deferred Alanya voice cue', async (t) => {
+  const edgePath = findEdgeExecutable();
+  if (!edgePath) {
+    t.skip('Edge/Chrome binary not found');
+    return;
+  }
+
+  const distDir = path.join(ROOT, 'dist', 'client');
+  const mimeMap = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'application/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.woff2': 'font/woff2',
+    '.webmanifest': 'application/manifest+json',
+  };
+
+  const makeWav = (durationSec = 0.2, sampleRate = 48000) => {
+    const numSamples = Math.floor(durationSec * sampleRate);
+    const buf = Buffer.alloc(44 + numSamples * 2);
+    buf.write('RIFF', 0);
+    buf.writeUInt32LE(36 + numSamples * 2, 4);
+    buf.write('WAVE', 8);
+    buf.write('fmt ', 12);
+    buf.writeUInt32LE(16, 16);
+    buf.writeUInt16LE(1, 20);
+    buf.writeUInt16LE(1, 22);
+    buf.writeUInt32LE(sampleRate, 24);
+    buf.writeUInt32LE(sampleRate * 2, 28);
+    buf.writeUInt16LE(2, 32);
+    buf.writeUInt16LE(16, 34);
+    buf.write('data', 36);
+    buf.writeUInt32LE(numSamples * 2, 40);
+    return buf;
+  };
+  const wavBuf = makeWav();
+  const voiceCalls = [];
+
+  const server = http.createServer((req, res) => {
+    const cleanUrl = (req.url || '/').split('?')[0];
+    if (cleanUrl === '/api/config') {
+      res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+      res.end(JSON.stringify({ config: { regionRequiresOptIn: true, countryCode: 'RO', customLiveGenAvailable: false, lyriaRealtimeAvailable: false, workersAiCompilerAvailable: false, stripeBillingAvailable: false, musicProvider: 'cache_only', dailyCapMax: 0, dailyCapRemaining: 0, popularCustomVibes: [] } }));
+      return;
+    }
+    if (cleanUrl === '/api/identity/me') {
+      res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+      res.end(JSON.stringify({ authenticated: false, profile: null, pendingDebrief: null }));
+      return;
+    }
+    if (cleanUrl === '/api/audio/catalog') {
+      res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+      res.end(JSON.stringify({ tracksByGenre: { nootropic_trance: [], lofi_keys: [], deep_electronic: [], cinematic_strings: [], jazz_rhodes: [], acoustic_pluck: [], nature_rain: [], dub_reggae: [], ambient_space: [], solo_piano: [], bossa_nova: [] } }));
+      return;
+    }
+    if (cleanUrl === '/api/voice/voices') {
+      res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+      res.end(JSON.stringify({ available: true, provider: 'elevenlabs', defaultVoiceId: 'iRb5bX2IzJDUAwy4jeki', voices: [{ voiceId: 'iRb5bX2IzJDUAwy4jeki', name: 'Alanya - Smooth', shortLabel: 'Alanya · Smooth', category: 'custom' }] }));
+      return;
+    }
+    if (cleanUrl === '/api/voice/concierge') {
+      let bodyStr = '';
+      req.on('data', (c) => { bodyStr += c; });
+      req.on('end', () => {
+        voiceCalls.push(JSON.parse(bodyStr || '{}'));
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({ available: true, cueType: 'intro_full', greetingUrl: '/api/voice/greet.wav', bodyUrl: '/api/voice/body.wav', breathPauseMs: 250, transcript: 'Take a gentle breath. Put both earbuds in.' }));
+      });
+      return;
+    }
+    if (cleanUrl === '/api/voice/greet.wav' || cleanUrl === '/api/voice/body.wav') {
+      res.writeHead(200, { 'Content-Type': 'audio/wav', Connection: 'close' });
+      res.end(wavBuf);
+      return;
+    }
+    if (cleanUrl === '/api/protocol/start' && req.method === 'POST') {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({
+          recommendation: {
+            sessionId: 'eph_autoplay_01',
+            ephemeralMode: true,
+            isControlTrial: false,
+            isExploration: false,
+            confidencePct: 84,
+            cohortTrials: 5,
+            cohortLabel: '18–95 · Founder',
+            currentState: 'distracted',
+            microStateId: 'brain_fog',
+            microStateLabel: 'Brain Fog',
+            arousalPct: 38,
+            clarityPct: 32,
+            baselineScore: 2,
+            targetState: 'deep_flow',
+            environment: 'office',
+            device: 'headphones',
+            plannedDurationMin: 25,
+            safetyMode: false,
+            safetyWarnings: [],
+            audioSource: 'studio_library',
+            fallbackCoreGenre: 'nootropic_trance',
+            rationale: 'Nested 6x40 Hz phase lock.',
+            personalizationSummary: ['190–4,500 Hz LR4'],
+            formulaIngredients: [],
+            arm: { id: 'nootropic-trance-6x40hz', name: '6×40 Hz Signature Lock', studyIds: ['woods_2024'] },
+            params: { genre: 'nootropic_trance', energyTier: 'focus', bpm: 120, modulationHz: 6, modulationDepth: 0.34, crossoverHz: 190, upperCrossoverHz: 4500, stereoAmSpread: true, speakerSafeEQ: false, binauralOffsetHz: 0, noiseColor: 'pink', noiseLevel: 0.08, harmonicMode: 'warm_min9', rootNoteHz: 110, pulseIntensity: 0.55, filterCutoffHz: 2400 },
+            studies: [{ id: 'woods_2024', authors: 'Woods, K. et al.', year: '2024', journal: 'PLOS ONE', title: 'Rapid cortical phase locking', summary: 'Phase-locked AM.', soundEffect: '6x40 Hz', doiOrUrl: 'https://doi.org/10.1371/journal.pone.0298921' }],
+            livePubMedPapers: [],
+          },
+        }));
+      });
+      return;
+    }
+    if (cleanUrl.startsWith('/api/')) {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({ ok: true }));
+      });
+      return;
+    }
+    const relPath = cleanUrl === '/' ? 'index.html' : cleanUrl.replace(/^\/+/, '');
+    let filePath = path.resolve(distDir, relPath);
+    if (!filePath.startsWith(distDir) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+      filePath = path.join(distDir, 'index.html');
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, { 'Content-Type': mimeMap[ext] || 'application/octet-stream', Connection: 'close' });
+    fs.createReadStream(filePath).pipe(res);
+  });
+
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address();
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nfm-autoplay-e2e-'));
+
+  let resolvePort;
+  const cdpPortPromise = new Promise((res) => { resolvePort = res; });
+  const child = spawn(
+    edgePath,
+    ['--headless=new', '--disable-gpu', '--disable-extensions', '--no-first-run', '--remote-debugging-port=0', `--user-data-dir=${userDataDir}`, 'about:blank'],
+    { stdio: ['ignore', 'ignore', 'pipe'] }
+  );
+  let stderrBuf = '';
+  child.stderr.on('data', (chunk) => {
+    stderrBuf += chunk.toString('utf8');
+    const m = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//.exec(stderrBuf);
+    if (m) resolvePort(Number(m[1]));
+  });
+
+  try {
+    const debugPort = await cdpPortPromise;
+    let targets = null;
+    for (let i = 0; i < 25; i++) {
+      await new Promise((r) => setTimeout(r, 150));
+      const res = await fetch(`http://127.0.0.1:${debugPort}/json/list`).catch(() => null);
+      if (res?.ok) {
+        const list = await res.json();
+        if (list.some((x) => x.type === 'page')) { targets = list; break; }
+      }
+    }
+    const pageTarget = targets.find((x) => x.type === 'page') ?? targets[0];
+    const ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
+    await new Promise((r, rej) => { ws.addEventListener('open', r, { once: true }); ws.addEventListener('error', rej, { once: true }); });
+
+    let msgId = 0;
+    const runtimeErrors = [];
+    ws.addEventListener('message', (evt) => {
+      const msg = JSON.parse(String(evt.data));
+      if (msg.method === 'Runtime.exceptionThrown') {
+        runtimeErrors.push(msg.params?.exceptionDetails?.text || 'Runtime exception');
+      }
+    });
+    const sendCdp = (method, params = {}) =>
+      new Promise((res, rej) => {
+        const id = ++msgId;
+        const onMsg = (evt) => {
+          const msg = JSON.parse(String(evt.data));
+          if (msg.id === id) {
+            ws.removeEventListener('message', onMsg);
+            if (msg.error) rej(new Error(JSON.stringify(msg.error)));
+            else res(msg.result);
+          }
+        };
+        ws.addEventListener('message', onMsg);
+        ws.send(JSON.stringify({ id, method, params }));
+      });
+    const evalJs = async (expression) => {
+      const out = await sendCdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+      if (out.exceptionDetails) throw new Error(out.exceptionDetails.text || 'Eval error');
+      return out.result?.value;
+    };
+    const waitUntil = async (expr, timeoutMs = 8000, desc = 'condition') => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const val = await evalJs(expr);
+        if (val) return val;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error(`Timed out waiting for ${desc}`);
+    };
+
+    await sendCdp('Runtime.enable');
+    await sendCdp('Page.enable');
+    // Force initial AudioContext into suspended autoplay-blocked state until explicit user gesture
+    await sendCdp('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(() => {
+        const OrigAudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!OrigAudioContext) return;
+        let unlockedByGesture = false;
+        window.addEventListener('pointerdown', () => { unlockedByGesture = true; }, { capture: true });
+        class AutoplayBlockedAudioContext extends OrigAudioContext {
+          constructor(opts) {
+            super(opts);
+            this.__blocked = !unlockedByGesture;
+            const origStateDesc = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'state');
+            Object.defineProperty(this, 'state', {
+              configurable: true,
+              get: () => (this.__blocked ? 'suspended' : origStateDesc.get.call(this)),
+            });
+          }
+          resume() {
+            if (!unlockedByGesture && this.__blocked) {
+              return new Promise(() => {});
+            }
+            this.__blocked = false;
+            return super.resume();
+          }
+        }
+        window.AudioContext = AutoplayBlockedAudioContext;
+        if (window.webkitAudioContext) window.webkitAudioContext = AutoplayBlockedAudioContext;
+      })();`,
+    });
+
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=studio` });
+    await waitUntil(`Boolean(document.querySelector('input[type="number"]'))`, 8000, 'Beat 1');
+
+    // Fill Beat 1 -> Beat 2 -> Beat 3 -> Beat 4 -> Reveal -> Apply & Start
+    await evalJs(`(() => {
+      const ageInput = document.querySelector('input[type="number"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      if (ageInput._valueTracker) ageInput._valueTracker.setValue('');
+      setter.call(ageInput, '31');
+      ageInput.dispatchEvent(new Event('input', { bubbles: true }));
+      const btns = Array.from(document.querySelectorAll('button'));
+      btns.find(b => /^female$/i.test((b.textContent || '').trim()))?.click();
+      btns.find(b => /Founder/i.test(b.textContent || ''))?.click();
+    })()`);
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /continue:\\s*current state/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'))`, 5000, 'Beat 2');
+    await evalJs(`document.querySelector('button[data-landmark="true"]')?.click()`);
+    await waitUntil(`(() => {
+      Array.from(document.querySelectorAll('button')).find(b => /next:\\s*target/i.test(b.textContent || ''))?.click();
+      return Boolean(Array.from(document.querySelectorAll('button')).find(b => /Deep Uninterrupted Flow/i.test(b.textContent || '')));
+    })()`, 5000, 'Beat 3');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Deep Uninterrupted Flow/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`(() => {
+      Array.from(document.querySelectorAll('button')).find(b => /next:\\s*music style/i.test(b.textContent || ''))?.click();
+      return Boolean(Array.from(document.querySelectorAll('button')).find(b => /Lock NootropicFM Mode/i.test(b.textContent || '')));
+    })()`, 5000, 'Beat 4');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Lock NootropicFM Mode/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`(() => {
+      Array.from(document.querySelectorAll('button')).find(b => /^skip/i.test((b.textContent || '').trim()))?.click();
+      return Boolean(Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || '')));
+    })()`, 8000, 'Reveal');
+
+    // Note: use JS .click() (no pointerdown) so unlockedByGesture stays false on Apply Layers & Start!
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || ''))?.click()`);
+
+    // Assert Start Audio interruption banner appears without hanging and Alanya has NOT been called yet
+    await waitUntil(`Boolean(document.body.innerText.includes('Start Audio') && document.body.innerText.includes('Browser audio is awaiting a quick tap to start'))`, 6000, 'Start Audio interruption banner');
+    assert.equal(voiceCalls.length, 0, 'Alanya voice cue must stay deferred while AudioContext is suspended');
+
+    // Real pointer tap on "Start Audio" banner via CDP Input.dispatchMouseEvent
+    const bannerBox = await evalJs(`(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(x => x.innerText.includes('Start Audio'));
+      const r = b.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`);
+    await sendCdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: bannerBox.x, y: bannerBox.y, button: 'left', clickCount: 1 });
+    await sendCdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: bannerBox.x, y: bannerBox.y, button: 'left', clickCount: 1 });
+
+    // Assert banner clears, Alanya deferred cue fires, and playback timer advances
+    await waitUntil(`!document.body.innerText.includes('Browser audio is awaiting a quick tap to start')`, 5000, 'Interruption banner cleared after Start Audio tap');
+    await waitUntil(`Boolean(document.querySelector('button[aria-label="Pause"]'))`, 5000, 'Player transitioned to playing state');
+    assert.equal(voiceCalls.length, 1, 'Deferred Alanya voice cue must fire exactly once on Start Audio resume');
+    assert.equal(voiceCalls[0].cueType, 'intro_full');
+
+    await waitUntil(`!/00:00/.test(document.body.innerText.match(/\\d{2}:\\d{2}/)?.[0] || '00:00')`, 4000, 'Session timer advancing after audio resume');
+    assert.deepEqual(runtimeErrors, [], `Unexpected browser runtime errors: ${JSON.stringify(runtimeErrors)}`);
+    ws.close();
+  } finally {
+    try { child.kill('SIGKILL'); } catch {}
+    await new Promise((r) => server.close(r));
+    await new Promise((r) => setTimeout(r, 250));
+    try { fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 6, retryDelay: 120 }); } catch {}
   }
 });

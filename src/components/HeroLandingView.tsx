@@ -245,8 +245,8 @@ function HeroScopeStrip({
             <Activity className="h-3 w-3" />
             48.0 KHZ 3-BAND LR4 ENGINE
           </span>
-          <span className={`inline-flex items-center gap-1.5 ${isDay ? 'text-[#0369A1]' : 'text-[#FBBF24]'}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${isDay ? 'bg-[#0369A1]' : 'bg-[#FBBF24]'}`} />
+          <span className={`inline-flex items-center gap-1.5 ${isDay ? 'text-[#075985]' : 'text-[#FBBF24]'}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${isDay ? 'bg-[#075985]' : 'bg-[#FBBF24]'}`} />
             REAL-TIME OSCILLOSCOPE PROOF
           </span>
         </div>
@@ -293,12 +293,12 @@ export function HeroLandingView({
   const landmarks = NEURAL_MICRO_STATES.filter((s) => s.landmark);
   const quickStarterStates = NEURAL_MICRO_STATES.filter((s) =>
     [
-      'stressed',
-      'tired_sluggish',
+      'frustrated_tense',
+      'sleep_deprived',
       'brain_fog',
       'distracted_scattered',
       'anxious_racing',
-      'calm_balanced',
+      'calm_steady',
     ].includes(s.id)
   );
   const nearbyStates =
@@ -390,7 +390,7 @@ export function HeroLandingView({
         <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-500/[0.07] px-3 py-1 font-mono-tech text-[9.5px] font-medium uppercase tracking-[0.14em] text-[#A3A39E] sm:px-3.5 sm:text-[11px]">
           <span className="h-1.5 w-1.5 rounded-full bg-[#34D399]" />
           <span className="font-semibold text-[#34D399]">2D Neural Brain Map</span>
-          <span className="text-white/25">·</span>
+          <span aria-hidden="true" className="text-[#8E8E88]">·</span>
           <span>Peer-Reviewed Study Matching (PubMed &amp; DOI)</span>
         </div>
 
@@ -518,10 +518,10 @@ export function HeroLandingView({
               <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2 rounded bg-[#0E1014]/90 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.12em] text-[#A3A39E]">
                 ▼ Low Energy · Drained
               </div>
-              <div className="pointer-events-none absolute left-1.5 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0E1014]/85 px-1.5 py-0.5 font-mono-tech text-[8.5px] uppercase tracking-wider text-[#7E7E78]">
+              <div className="pointer-events-none absolute left-1.5 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0E1014]/85 px-1.5 py-0.5 font-mono-tech text-[8.5px] uppercase tracking-wider text-[#8E8E88]">
                 Tense / Fog
               </div>
-              <div className="pointer-events-none absolute right-1.5 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0E1014]/85 px-1.5 py-0.5 font-mono-tech text-[8.5px] uppercase tracking-wider text-[#7E7E78]">
+              <div className="pointer-events-none absolute right-1.5 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0E1014]/85 px-1.5 py-0.5 font-mono-tech text-[8.5px] uppercase tracking-wider text-[#8E8E88]">
                 Clear / Calm
               </div>
 
@@ -629,7 +629,7 @@ export function HeroLandingView({
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-2 text-[10px]">
-                <span className="text-[#7E7E78]">
+                <span className="text-[#8E8E88]">
                   {showAllStates
                     ? `All ${NEURAL_MICRO_STATES.length} states:`
                     : selectedState
@@ -766,7 +766,7 @@ export function HeroLandingView({
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono-tech text-[10.5px] text-[#A3A39E]">
                     <span className="text-[#34D399]">{preview.hzSummary}</span>
-                    <span className="text-white/20">·</span>
+                    <span aria-hidden="true" className="text-[#8E8E88]">·</span>
                     <span className="text-[#F3F1EC]">{preview.effectLabel}</span>
                   </div>
                 </div>

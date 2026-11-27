@@ -1073,6 +1073,15 @@ export function PlayerView({
       setPreviewLocked(true);
       return;
     }
+    if (audioInterrupted || engineRef.current?.isAudioInterrupted()) {
+      const ok = await engineRef.current?.resumeFromInterruption();
+      if (ok) {
+        setAudioInterrupted(false);
+        setIsPlaying(true);
+        setAudioStarted(true);
+      }
+      return;
+    }
     if (!audioStarted) {
       await engineRef.current?.start(
         recommendation.params,
@@ -1098,13 +1107,6 @@ export function PlayerView({
     if (isPlaying) {
       await engineRef.current?.pause();
       setIsPlaying(false);
-    } else if (audioInterrupted || engineRef.current?.isAudioInterrupted()) {
-      const ok = await engineRef.current?.resumeFromInterruption();
-      if (ok) {
-        setAudioInterrupted(false);
-        setIsPlaying(true);
-        setAudioStarted(true);
-      }
     } else {
       await engineRef.current?.resume();
       setIsPlaying(true);
@@ -2530,7 +2532,7 @@ export function PlayerView({
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-xs font-semibold">{meta.label}</span>
                     </div>
-                    <div className="mt-0.5 text-[10px] text-[#7E7E78]">{meta.shortDesc}</div>
+                    <div className="mt-0.5 text-[10px] text-[#8E8E88]">{meta.shortDesc}</div>
                   </button>
                 );
               })}

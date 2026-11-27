@@ -183,7 +183,7 @@ export function CohortIntelligenceShowcase({ mode = 'compact' }: CohortIntellige
                         ? `Live Cohort · n=${card.sessions}`
                         : 'Sample Report Format'}
                     </span>
-                    <span className="font-mono-tech text-[10px] text-[#7E7E78] truncate">
+                    <span className="font-mono-tech text-[10px] text-[#8E8E88] truncate">
                       {card.studyLabel.split('·')[0].trim()}
                     </span>
                   </div>
@@ -271,7 +271,7 @@ export function CohortIntelligenceShowcase({ mode = 'compact' }: CohortIntellige
             <code className="font-mono-tech text-[#D4D4CE]">n ≥ 5</code> (strict k-anonymity, zero
             PII).
           </span>
-          <span className="font-mono-tech text-[10px] text-[#7E7E78]">
+          <span className="font-mono-tech text-[10px] text-[#8E8E88]">
             Active live cohorts: {liveCohorts.length}
           </span>
         </div>

@@ -254,19 +254,19 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
             {result ? (
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-xl border border-white/10 bg-[#121417] p-3 text-center">
-                  <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Stability</div>
+                  <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Stability</div>
                   <div className="font-mono-tech mt-1 text-lg font-bold text-[#34D399]">
                     {result.stabilityScore}/100
                   </div>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-[#121417] p-3 text-center">
-                  <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">ITI CV%</div>
+                  <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">ITI CV%</div>
                   <div className="font-mono-tech mt-1 text-lg font-bold text-[#F3F1EC]">
                     {result.cvPct.toFixed(1)}%
                   </div>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-[#121417] p-3 text-center">
-                  <div className="text-[10px] uppercase tracking-wider text-[#7E7E78]">Mean ITI</div>
+                  <div className="text-[10px] uppercase tracking-wider text-[#8E8E88]">Mean ITI</div>
                   <div className="font-mono-tech mt-1 text-lg font-bold text-[#D4D4CE]">
                     {Math.round(result.meanItiMs)} ms
                   </div>
