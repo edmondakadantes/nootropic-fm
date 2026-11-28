@@ -56,7 +56,7 @@ export function NeuralVisualizer({
       ctx.clearRect(0, 0, width, height);
 
       // Background recessed panel
-      ctx.fillStyle = isDay ? '#E8EFF7' : '#070809';
+      ctx.fillStyle = isDay ? '#F4F8FB' : '#070809';
       ctx.fillRect(0, 0, width, height);
 
       const padLeft = 36;
@@ -77,19 +77,19 @@ export function NeuralVisualizer({
       ctx.textBaseline = 'middle';
       for (const mark of dbMarks) {
         const y = Math.round(padTop + plotH * (1 - mark.norm)) + 0.5;
-        ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.14)' : 'rgba(255, 255, 255, 0.05)';
+        ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.10)' : 'rgba(255, 255, 255, 0.05)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(padLeft, y);
         ctx.lineTo(padLeft + plotW, y);
         ctx.stroke();
 
-        ctx.fillStyle = isDay ? '#334155' : 'rgba(163, 163, 158, 0.55)';
+        ctx.fillStyle = isDay ? '#475569' : 'rgba(163, 163, 158, 0.55)';
         ctx.fillText(mark.label, padLeft - 6, y);
       }
 
       // Baseline floor
-      ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.24)' : 'rgba(255, 255, 255, 0.08)';
+      ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.18)' : 'rgba(255, 255, 255, 0.08)';
       ctx.beginPath();
       ctx.moveTo(padLeft, padTop + plotH + 0.5);
       ctx.lineTo(padLeft + plotW, padTop + plotH + 0.5);
@@ -227,7 +227,7 @@ export function NeuralVisualizer({
       ref={canvasRef}
       className={`h-24 sm:h-28 w-full rounded-xl border ${
         themeMode === 'daylight'
-          ? 'border-slate-300 bg-[#E8EFF7]'
+          ? 'border-slate-200 bg-[#F4F8FB]'
           : 'border-white/10 bg-[#070809]'
       }`}
       aria-label="Live 36-band studio spectrum and peak-hold analyzer"

@@ -253,10 +253,10 @@ export function FlagshipShowcaseView({
 
       ctx.save();
       ctx.scale(dpr, dpr);
-      ctx.fillStyle = isDay ? '#E8EFF7' : '#030706';
+      ctx.fillStyle = isDay ? '#F4F8FB' : '#030706';
       ctx.fillRect(0, 0, w, h);
 
-      ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.13)' : 'rgba(52, 211, 153, 0.14)';
+      ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.10)' : 'rgba(52, 211, 153, 0.14)';
       ctx.lineWidth = 1;
       for (let gx = 1; gx < 8; gx++) {
         const x = Math.round((gx / 8) * w) + 0.5;
@@ -559,7 +559,7 @@ export function FlagshipShowcaseView({
 
         {/* Compact & Tablet Quick-Access Strip (<1280px) — 1-tap navigation to every showcase section & institutional page */}
         <nav
-          className="flex items-center gap-1.5 overflow-x-auto border-t border-white/[0.06] px-3 py-1.5 xl:hidden"
+          className="flex items-center gap-1.5 overflow-x-auto border-t border-white/[0.06] px-3 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:hidden"
           aria-label="Mobile Showcase Sections"
         >
           <a
@@ -758,7 +758,11 @@ export function FlagshipShowcaseView({
                   </div>
                 ) : (
                   <div className="p-4 sm:p-5">
-                    <div className="rounded-xl border border-white/10 bg-[#050706] p-3">
+                    <div
+                      className={`rounded-xl border p-3 ${
+                        isDay ? 'border-slate-200/90 bg-[#F4F8FB]' : 'border-white/10 bg-[#050706]'
+                      }`}
+                    >
                       <svg
                         viewBox="0 0 640 330"
                         className="w-full h-auto"
@@ -780,9 +784,38 @@ export function FlagshipShowcaseView({
                         <rect width="640" height="330" fill="url(#nfmCadGrid)" />
 
                         {/* Cordless Wireless SoC Core (inside Ring housing — zero cable!) */}
-                        <rect x="28" y="138" width="66" height="54" rx="10" fill="#1E293B" stroke="#38BDF8" strokeWidth="1.8" />
-                        <text x="61" y="162" textAnchor="middle" fill="#FFFFFF" fontSize="9.5" fontWeight="700" fontFamily="monospace">LC3 SoC</text>
-                        <text x="61" y="176" textAnchor="middle" fill="#6EE7B7" fontSize="8.5" fontFamily="monospace">PPG · HRV</text>
+                        <rect
+                          x="28"
+                          y="138"
+                          width="66"
+                          height="54"
+                          rx="10"
+                          fill={isDay ? '#FFFFFF' : '#1E293B'}
+                          stroke={isDay ? '#1E40AF' : '#38BDF8'}
+                          strokeWidth="1.8"
+                        />
+                        <text
+                          x="61"
+                          y="162"
+                          textAnchor="middle"
+                          fill={isDay ? '#0F172A' : '#FFFFFF'}
+                          fontSize="9.5"
+                          fontWeight="700"
+                          fontFamily="monospace"
+                        >
+                          LC3 SoC
+                        </text>
+                        <text
+                          x="61"
+                          y="176"
+                          textAnchor="middle"
+                          fill={isDay ? '#047857' : '#6EE7B7'}
+                          fontSize="8.5"
+                          fontWeight="600"
+                          fontFamily="monospace"
+                        >
+                          PPG · HRV
+                        </text>
                         <line x1="94" y1="165" x2="123" y2="165" stroke={isDay ? '#1E40AF' : '#38BDF8'} strokeWidth="2" strokeDasharray="4 3" />
 
                         {/* Outer Orbital CNC Ring */}
@@ -790,7 +823,7 @@ export function FlagshipShowcaseView({
                           cx="225"
                           cy="165"
                           r="102"
-                          fill={isDay ? '#CBD5E1' : '#111827'}
+                          fill={isDay ? '#E8EFF7' : '#111827'}
                           stroke={isDay ? '#047857' : '#34D399'}
                           strokeWidth="2.5"
                         />
@@ -798,21 +831,21 @@ export function FlagshipShowcaseView({
                           cx="225"
                           cy="165"
                           r="78"
-                          fill={isDay ? '#E2E8F0' : '#0F172A'}
+                          fill={isDay ? '#FFFFFF' : '#0F172A'}
                           stroke={isDay ? '#1E40AF' : '#38BDF8'}
                           strokeWidth="1.5"
                           strokeDasharray="6 4"
                         />
                         {/* Concentric Sapphire Wave Core */}
-                        <circle cx="225" cy="165" r="56" fill="none" stroke={isDay ? '#047857' : '#34D399'} strokeOpacity="0.7" strokeWidth="1.2" />
-                        <circle cx="225" cy="165" r="38" fill="none" stroke={isDay ? '#047857' : '#34D399'} strokeOpacity="0.85" strokeWidth="1.2" />
-                        <circle cx="225" cy="165" r="20" fill="#047857" fillOpacity={isDay ? '0.88' : '0.35'} stroke={isDay ? '#065F46' : '#34D399'} strokeWidth="1.8" />
+                        <circle cx="225" cy="165" r="61" fill="none" stroke={isDay ? '#047857' : '#34D399'} strokeOpacity="0.68" strokeWidth="1.2" />
+                        <circle cx="225" cy="165" r="45" fill="none" stroke={isDay ? '#047857' : '#34D399'} strokeOpacity="0.82" strokeWidth="1.2" />
+                        <circle cx="225" cy="165" r="30" fill="#047857" fillOpacity={isDay ? '0.94' : '0.45'} stroke={isDay ? '#065F46' : '#34D399'} strokeWidth="1.8" />
                         <text
                           x="225"
-                          y="169"
+                          y="168"
                           textAnchor="middle"
                           fill="#FFFFFF"
-                          fontSize="12"
+                          fontSize="7.4"
                           fontWeight="700"
                           fontFamily="JetBrains Mono, monospace"
                         >
@@ -820,17 +853,62 @@ export function FlagshipShowcaseView({
                         </text>
 
                         {/* Dual Driver Schematic Nozzle */}
-                        <rect x="308" y="132" width="84" height="66" rx="14" fill="#1E293B" stroke={isDay ? '#047857' : '#34D399'} strokeWidth="1.8" />
-                        <rect x="320" y="141" width="26" height="19" rx="4" fill="#047857" stroke="#6EE7B7" strokeWidth="1.2" />
-                        <text x="333" y="154" textAnchor="middle" fill="#FFFFFF" fontSize="8.5" fontFamily="monospace">BA</text>
-                        <circle cx="366" cy="165" r="18" fill="#0F172A" stroke="#38BDF8" strokeWidth="1.5" />
-                        <text x="366" y="168" textAnchor="middle" fill="#FFFFFF" fontSize="8.5" fontFamily="monospace">10mm</text>
+                        <rect
+                          x="308"
+                          y="132"
+                          width="84"
+                          height="66"
+                          rx="14"
+                          fill={isDay ? '#FFFFFF' : '#1E293B'}
+                          stroke={isDay ? '#047857' : '#34D399'}
+                          strokeWidth="1.8"
+                        />
+                        <rect
+                          x="320"
+                          y="141"
+                          width="26"
+                          height="19"
+                          rx="4"
+                          fill={isDay ? '#E6F7F0' : '#047857'}
+                          stroke={isDay ? '#047857' : '#6EE7B7'}
+                          strokeWidth="1.2"
+                        />
+                        <text
+                          x="333"
+                          y="154"
+                          textAnchor="middle"
+                          fill={isDay ? '#065F46' : '#FFFFFF'}
+                          fontSize="8.5"
+                          fontWeight="700"
+                          fontFamily="monospace"
+                        >
+                          BA
+                        </text>
+                        <circle
+                          cx="366"
+                          cy="165"
+                          r="18"
+                          fill={isDay ? '#EBF2FF' : '#0F172A'}
+                          stroke={isDay ? '#1E40AF' : '#38BDF8'}
+                          strokeWidth="1.5"
+                        />
+                        <text
+                          x="366"
+                          y="168"
+                          textAnchor="middle"
+                          fill={isDay ? '#1E40AF' : '#FFFFFF'}
+                          fontSize="8.5"
+                          fontWeight="700"
+                          fontFamily="monospace"
+                        >
+                          10mm
+                        </text>
 
                         {/* Tympanic Seal Tip */}
                         <path
                           d="M392 140 C414 134, 428 144, 428 165 C428 186, 414 196, 392 190 Z"
-                          fill="#334155"
-                          stroke="#94A3B8"
+                          fill={isDay ? '#CBD5E1' : '#334155'}
+                          stroke={isDay ? '#475569' : '#94A3B8'}
                           strokeWidth="1.5"
                         />
 
@@ -840,14 +918,15 @@ export function FlagshipShowcaseView({
                           Cordless CNC Orbital Torus + Sapphire ((•)) Core
                         </text>
 
-                        <line x1="333" y1="141" x2="385" y2="82" stroke={isDay ? '#047857' : '#34D399'} strokeWidth="1.2" />
-                        <text x="392" y="86" fill={isDay ? '#0F172A' : '#F3F1EC'} fontSize="11" fontWeight="600" fontFamily="Inter, sans-serif">
+                        <line x1="333" y1="141" x2="372" y2="82" stroke={isDay ? '#047857' : '#34D399'} strokeWidth="1.2" />
+                        <text x="378" y="86" fill={isDay ? '#0F172A' : '#F3F1EC'} fontSize="10.5" fontWeight="600" fontFamily="Inter, sans-serif">
                           Knowles/Sonion BA: 190–4,500 Hz LR4 Lock
                         </text>
 
-                        <line x1="366" y1="183" x2="395" y2="235" stroke={isDay ? '#1E40AF' : '#38BDF8'} strokeWidth="1.2" />
-                        <text x="402" y="239" fill={isDay ? '#0F172A' : '#F3F1EC'} fontSize="11" fontWeight="600" fontFamily="Inter, sans-serif">
-                          10 mm Beryllium DD (&lt;190 Hz Zero V-Curve Bloat)
+                        <line x1="366" y1="183" x2="386" y2="235" stroke={isDay ? '#1E40AF' : '#38BDF8'} strokeWidth="1.2" />
+                        <text x="392" y="236" fill={isDay ? '#0F172A' : '#F3F1EC'} fontSize="10.5" fontWeight="600" fontFamily="Inter, sans-serif">
+                          <tspan x="392" dy="0">10 mm Beryllium DD</tspan>
+                          <tspan x="392" dy="14" fill={isDay ? '#475569' : '#A3A39E'} fontSize="9.5">(&lt;190 Hz Zero V-Curve Bloat)</tspan>
                         </text>
 
                         <line x1="422" y1="176" x2="462" y2="176" stroke={isDay ? '#475569' : '#94A3B8'} strokeWidth="1.2" />

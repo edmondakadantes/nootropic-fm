@@ -1710,7 +1710,9 @@ export function CheckInView({
             }}
             className={`cursor-pointer rounded-2xl border p-4 sm:p-5 transition-all space-y-3 ${
               genreChoice === 'nootropic_trance'
-                ? 'border-emerald-400/80 bg-emerald-500/[0.11] shadow-[0_0_28px_rgba(52,211,153,0.16)]'
+                ? themeMode === 'daylight'
+                  ? 'border-emerald-700/50 bg-[#E6F7F0] shadow-[0_8px_22px_-12px_rgba(4,120,87,0.28)]'
+                  : 'border-emerald-400/80 bg-emerald-500/[0.11] shadow-[0_0_28px_rgba(52,211,153,0.16)]'
                 : 'border-emerald-400/35 bg-[#0B0C0E] hover:border-emerald-400/65 hover:bg-emerald-500/[0.06]'
             }`}
           >
@@ -1797,7 +1799,9 @@ export function CheckInView({
                     onClick={() => setGenreChoice(g)}
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
                       isSelected
-                        ? 'border-emerald-400/75 bg-emerald-400/18 text-[#F3F1EC] shadow-[0_0_18px_rgba(52,211,153,0.18)]'
+                        ? themeMode === 'daylight'
+                          ? 'border-emerald-700/50 bg-[#E6F7F0] text-[#065F46] shadow-sm'
+                          : 'border-emerald-400/75 bg-emerald-400/18 text-[#F3F1EC] shadow-[0_0_18px_rgba(52,211,153,0.18)]'
                         : 'subtle-chip'
                     }`}
                   >

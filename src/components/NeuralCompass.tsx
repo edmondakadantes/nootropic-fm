@@ -115,7 +115,11 @@ export function NeuralCompassSelector({
         onPointerCancel={handlePointerUp}
         role="application"
         aria-label="Interactive 2D Neural State Compass"
-        className="relative h-[400px] w-full touch-none select-none overflow-hidden rounded-xl border border-white/12 bg-[#08090B] cursor-crosshair sm:h-[460px]"
+        className={`relative h-[400px] w-full touch-none select-none overflow-hidden rounded-xl border cursor-crosshair sm:h-[460px] ${
+          isDay
+            ? 'border-slate-200/90 bg-[#F4F8FB] shadow-inner'
+            : 'border-white/12 bg-[#08090B]'
+        }`}
       >
         {/* Subtle studio X-Y Grid & Concentric Rings */}
         <svg
@@ -195,8 +199,12 @@ export function NeuralCompassSelector({
               <span
                 className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] sm:text-[11px] font-medium transition ${
                   isSelected
-                    ? 'translate-y-4 bg-[#141518] text-[#F3F1EC] ring-1 ring-white/25'
-                    : 'text-[#A3A39E] group-hover:bg-[#141518] group-hover:text-[#F3F1EC]'
+                    ? isDay
+                      ? 'translate-y-4 bg-[#0F172A] text-white ring-1 ring-[#0F172A]/20 shadow-sm'
+                      : 'translate-y-4 bg-[#141518] text-[#F3F1EC] ring-1 ring-white/25'
+                    : isDay
+                      ? 'bg-white/80 text-slate-600 group-hover:bg-white group-hover:text-slate-900 group-hover:shadow-sm'
+                      : 'text-[#A3A39E] group-hover:bg-[#141518] group-hover:text-[#F3F1EC]'
                 }`}
               >
                 {st.shortLabel}
@@ -428,8 +436,18 @@ export function NeuralTrajectoryPreview({
             x1 > 60 ? '-translate-x-[calc(100%-6px)] flex-row-reverse' : '-translate-x-1.5'
           }`}
         >
-          <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-[#F3F1EC] bg-[#A3A39E]" />
-          <span className="whitespace-nowrap rounded bg-[#121316]/95 px-1.5 py-0.5 text-[9px] font-medium text-[#D4D4CE]">
+          <span
+            className={`h-2.5 w-2.5 shrink-0 rounded-full border ${
+              isDay ? 'border-white bg-slate-600 shadow-sm' : 'border-[#F3F1EC] bg-[#A3A39E]'
+            }`}
+          />
+          <span
+            className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[9px] font-medium ${
+              isDay
+                ? 'border border-slate-200/90 bg-white/95 text-slate-700 shadow-sm'
+                : 'bg-[#121316]/95 text-[#D4D4CE]'
+            }`}
+          >
             Now: {fromLabel}
           </span>
         </div>
@@ -442,8 +460,18 @@ export function NeuralTrajectoryPreview({
               x2 > 58 ? '-translate-x-[calc(100%-6px)] flex-row-reverse' : '-translate-x-1.5'
             }`}
           >
-            <span className="h-3 w-3 shrink-0 rounded-full border-2 border-[#F3F1EC] bg-[#34D399]" />
-            <span className="whitespace-nowrap rounded bg-[#121316]/95 px-1.5 py-0.5 text-[9px] font-semibold text-[#34D399]">
+            <span
+              className={`h-3 w-3 shrink-0 rounded-full border-2 ${
+                isDay ? 'border-white bg-[#047857] shadow-sm' : 'border-[#F3F1EC] bg-[#34D399]'
+              }`}
+            />
+            <span
+              className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[9px] font-semibold ${
+                isDay
+                  ? 'border border-emerald-700/25 bg-[#E6F7F0] text-[#047857] shadow-sm'
+                  : 'bg-[#121316]/95 text-[#34D399]'
+              }`}
+            >
               Goal: {dest.label}
             </span>
           </div>

@@ -447,7 +447,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
             if (c && c.a > 0) layers.push(c);
             cur = cur.parentElement;
           }
-          let res = parseRgb(getComputedStyle(document.body).backgroundColor) || { r: 226, g: 232, b: 240, a: 1 };
+          let res = parseRgb(getComputedStyle(document.body).backgroundColor) || { r: 241, g: 245, b: 249, a: 1 };
           res.a = 1;
           for (let i = layers.length - 1; i >= 0; i--) res = blend(layers[i], res);
           return res;
@@ -483,6 +483,46 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
       assert.deepEqual(violations, [], `Contrast violations in ${stageLabel}: ${JSON.stringify(violations)}`);
     };
 
+    const assertDaylightLayoutAndSurfaces = async (stageLabel, expectedWidth) => {
+      const check = await evalJs(`(() => {
+        const overflow = document.documentElement.scrollWidth - ${expectedWidth};
+        const bodyBg = getComputedStyle(document.body).backgroundColor;
+        const parseRgb = (str) => {
+          const m = str.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/);
+          if (!m) return null;
+          return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]), a: m[4] !== undefined ? Number(m[4]) : 1 };
+        };
+        const darkPanels = [];
+        for (const el of document.querySelectorAll('.glass-stage, .glass-card, section, aside, header, nav, [role="dialog"], [data-testid="system-pill-drawer"], [data-testid="mini-player-bar"]')) {
+          const rect = el.getBoundingClientRect();
+          if (rect.width < 32 || rect.height < 24) continue;
+          const st = getComputedStyle(el);
+          if (st.visibility === 'hidden' || Number(st.opacity) < 0.45) continue;
+          const c = parseRgb(st.backgroundColor);
+          if (!c || c.a < 0.5) continue;
+          // Exclude intentional dark active pills or CTA buttons
+          const cls = typeof el.className === 'string' ? el.className : '';
+          if (cls.includes('btn-aurora') || cls.includes('bg-[#22252A]') || cls.includes('bg-[#0F172A]')) continue;
+          if (c.r < 140 && c.g < 140 && c.b < 140) {
+            darkPanels.push({ tag: el.tagName, cls: cls.slice(0, 60), bg: st.backgroundColor });
+          }
+        }
+        return { overflow, bodyBg, darkPanels };
+      })()`);
+      assert.ok(check.overflow <= 1, `Horizontal overflow in ${stageLabel} (${expectedWidth}px): ${check.overflow}px`);
+      assert.equal(check.bodyBg, 'rgb(241, 245, 249)', `Expected crisp Daylight canvas #F1F5F9 in ${stageLabel}, got ${check.bodyBg}`);
+      assert.deepEqual(check.darkPanels, [], `Found unmapped dark panel surfaces in Daylight ${stageLabel}: ${JSON.stringify(check.darkPanels)}`);
+    };
+
+    const saveDaylightShot = async (filename) => {
+      const dir = process.env.SAVE_DAYLIGHT_SHOTS;
+      if (!dir) return;
+      fs.mkdirSync(dir, { recursive: true });
+      const snap = await sendCdp('Page.captureScreenshot', { format: 'png' });
+      fs.writeFileSync(path.join(dir, filename), Buffer.from(snap.data, 'base64'));
+    };
+
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
     await sendCdp('Runtime.enable');
     await sendCdp('Page.enable');
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/` });
@@ -517,16 +557,24 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     })`);
     assert.equal(dayState.theme, 'daylight');
     assert.equal(dayState.hasDark, false);
-    assert.equal(dayState.bg, 'rgb(226, 232, 240)');
+    assert.equal(dayState.bg, 'rgb(241, 245, 249)');
     assert.equal(dayState.stored, 'daylight');
 
     await sendCdp('Page.reload', {});
     await waitUntil(`Boolean(document.querySelector('button[aria-label="Daylight Mode"]'))`, 8000, 'reload Daylight');
     assert.equal(await evalJs(`document.documentElement.dataset.theme`), 'daylight');
 
-    // StudioHomeView contrast check in Daylight Mode
+    // StudioHomeView contrast + layout check in Daylight Mode (1440px Desktop & 375px Mobile)
     await waitUntil(`Boolean(document.querySelector('[data-testid="open-precision-checkin"]'))`, 5000, 'Daylight StudioHomeView');
-    await assertContrastClean('Daylight StudioHomeView');
+    await assertContrastClean('Daylight StudioHomeView 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight StudioHomeView 1440px', 1440);
+    await saveDaylightShot('daylight_studio_home_1440.png');
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 120));
+    await assertContrastClean('Daylight StudioHomeView 375px');
+    await assertDaylightLayoutAndSurfaces('Daylight StudioHomeView 375px', 375);
+    await saveDaylightShot('daylight_studio_home_375.png');
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
     // Open Precision Check-In (starts at Beat 2 with zero Beat 1 wall), then open optional Beat 1 Priors
     await evalJs(`document.querySelector('[data-testid="open-precision-checkin"]')?.click()`);
@@ -552,7 +600,14 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await waitUntil(`Boolean(document.querySelector('[aria-label="Interactive 2D Neural State Compass"]'))`, 5000, 'Beat 2');
     const gridStroke = await evalJs(`getComputedStyle(document.querySelector('.studio-grid-strong')).stroke`);
     assert.match(gridStroke, /rgba?\(15,\s*23,\s*42/);
-    await assertContrastClean('Daylight Beat 2 Brain Map');
+    await assertContrastClean('Daylight Beat 2 Brain Map 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight Beat 2 Brain Map 1440px', 1440);
+    await saveDaylightShot('daylight_compass_1440.png');
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 120));
+    await assertContrastClean('Daylight Beat 2 Brain Map 375px');
+    await assertDaylightLayoutAndSurfaces('Daylight Beat 2 Brain Map 375px', 375);
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
     // Walk to Beat 3 -> Beat 4 -> Reveal -> PlayerView
     await waitUntil(`(() => {
@@ -589,7 +644,9 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || '')))`, 8000, 'PlayerView');
     await new Promise((r) => setTimeout(r, 250));
-    await assertContrastClean('Daylight PlayerView Tier-1');
+    await assertContrastClean('Daylight PlayerView Tier-1 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight PlayerView Tier-1 1440px', 1440);
+    await saveDaylightShot('daylight_player_t1_1440.png');
 
     // Tier-1 Calm Cockpit starts with isLabOpen=false (0 active canvases) -> expand Tier-2 Lab Drawer
     assert.equal(
@@ -600,6 +657,15 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await evalJs(`document.querySelector('[data-testid="toggle-lab-drawer"]')?.click()`);
     await waitUntil(`document.querySelectorAll('main canvas').length >= 2`, 4000, 'Tier-2 Lab Drawer Canvases');
     await new Promise((r) => setTimeout(r, 250));
+    await assertContrastClean('Daylight PlayerView Tier-2 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight PlayerView Tier-2 1440px', 1440);
+    await saveDaylightShot('daylight_player_t2_1440.png');
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 150));
+    await assertContrastClean('Daylight PlayerView Tier-2 375px');
+    await assertDaylightLayoutAndSurfaces('Daylight PlayerView Tier-2 375px', 375);
+    await saveDaylightShot('daylight_player_t2_375.png');
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
     // Verify both Oscillator & Spectrum Bar canvases switched to Daylight lab surface (#E8EFF7 -> r>=224,g>=232,b>=240)
     const canvasAudit = await evalJs(`(() => {
@@ -636,14 +702,40 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await evalJs(`document.querySelector('button[aria-label="Close protocol blueprint"]')?.click()`);
     await new Promise((r) => setTimeout(r, 150));
 
+    // Verify PVT, Tapping & Huggins Modals in Daylight Mode
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Run PVT/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Visual 1/RT Vigilance Check'))`, 4000, 'Daylight PVT Modal');
+    await assertContrastClean('Daylight PvtBenchmarkModal 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight PvtBenchmarkModal 1440px', 1440);
+    await saveDaylightShot('daylight_pvt_1440.png');
+    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await waitUntil(`!document.body.innerText.includes('Visual 1/RT Vigilance Check')`, 3000, 'PVT Modal closed');
+
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Run \\(15s\\)/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Intrinsic Motor Rhythm Check'))`, 4000, 'Daylight Tapping Modal');
+    await assertContrastClean('Daylight TappingTestModal 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight TappingTestModal 1440px', 1440);
+    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await waitUntil(`!document.body.innerText.includes('Intrinsic Motor Rhythm Check')`, 3000, 'Tapping Modal closed');
+
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Verify Headphones/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Huggins Pitch'))`, 4000, 'Daylight Huggins Modal');
+    await assertContrastClean('Daylight HugginsCheckModal 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight HugginsCheckModal 1440px', 1440);
+    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await waitUntil(`!document.body.innerText.includes('35s Dichotic Headphone Check')`, 3000, 'Huggins Modal closed');
+
     // Minimize PlayerView -> exit Zen Focus Lock -> reveal AppShell nav + MiniPlayerBar + SystemPillDrawer
     await evalJs(`document.querySelector('[data-testid="minimize-player-btn"]')?.click()`);
     await waitUntil(`Boolean(document.querySelector('[data-testid="mini-player-bar"]'))`, 4000, 'MiniPlayerBar visible');
+    await assertContrastClean('Daylight MiniPlayerBar 1440px');
 
-    // Verify SystemPillDrawer, Sound Systems, and Go Pro modals in Daylight Mode
+    // Verify SystemPillDrawer, Sound Systems, Go Pro, and OnboardingView in Daylight Mode
     await evalJs(`document.querySelector('[data-testid="system-pill-trigger"]')?.click()`);
     await waitUntil(`Boolean(document.querySelector('[data-testid="system-pill-drawer"]'))`, 4000, 'SystemPillDrawer');
     await assertContrastClean('Daylight SystemPillDrawer');
+    await assertDaylightLayoutAndSurfaces('Daylight SystemPillDrawer 1440px', 1440);
+    await saveDaylightShot('daylight_system_drawer_1440.png');
 
     await evalJs(`Array.from(document.querySelectorAll('[data-testid="system-pill-drawer"] button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`/Acoustic Hardware Lab/i.test(document.body.innerText)`, 4000, 'SoundSystemsModal');
@@ -659,21 +751,72 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await evalJs(`document.querySelector('button[aria-label="Close Pro modal"]')?.click()`);
     await waitUntil(`!document.querySelector('button[aria-label="Close Pro modal"]')`, 3000, 'UpgradeProModal closed');
 
-    // Verify Study Lab & Memory tabs in Daylight Mode while MiniPlayerBar stays docked
+    // Verify Study Lab & Memory (Insights + CohortIntelligenceShowcase + DatasetInquiryModal + Admin Export Modal) in Daylight Mode
     await evalJs(`Array.from(document.querySelectorAll('aside button, nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Study Lab/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Turn Published'))`, 5000, 'StudyLabView');
-    await assertContrastClean('Daylight StudyLabView');
+    await assertContrastClean('Daylight StudyLabView 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight StudyLabView 1440px', 1440);
+    await saveDaylightShot('daylight_studylab_1440.png');
 
     await evalJs(`Array.from(document.querySelectorAll('aside button, nav[aria-label="Studio Mobile Navigation"] button')).find(b => /Memory/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Personal Neural Memory') || document.body.innerText.includes('Research Brain'))`, 5000, 'InsightsView');
-    await assertContrastClean('Daylight InsightsView');
+    await assertContrastClean('Daylight InsightsView 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight InsightsView 1440px', 1440);
+    await saveDaylightShot('daylight_insights_1440.png');
+
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /License Full Dataset/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Unlock Full Aggregated Cohort Datasets'))`, 4000, 'Daylight DatasetInquiryModal');
+    await assertContrastClean('Daylight DatasetInquiryModal 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight DatasetInquiryModal 1440px', 1440);
+    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await waitUntil(`!document.body.innerText.includes('Unlock Full Aggregated Cohort Datasets')`, 3000, 'DatasetInquiryModal closed');
+
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Admin Dataset Export/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Protected Research Export'))`, 4000, 'Daylight Admin Export Modal');
+    await assertContrastClean('Daylight Admin Export Modal 1440px');
+    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await waitUntil(`!document.body.innerText.includes('Protected Research Export')`, 3000, 'Admin Export Modal closed');
+
+    // Privacy & Delete Data modal in Daylight Mode
+    await evalJs(`Array.from(document.querySelectorAll('footer button')).find(b => /Privacy, Credits/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Privacy & Your Data'))`, 4000, 'Daylight Privacy Modal');
+    await assertContrastClean('Daylight Privacy Modal 1440px');
+    await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+    await waitUntil(`!document.body.innerText.includes('Privacy & Your Data')`, 3000, 'Privacy Modal closed');
+
+    // OnboardingView via Edit Profile Details in SystemPillDrawer
+    await evalJs(`document.querySelector('[data-testid="system-pill-trigger"]')?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="system-pill-drawer"]'))`, 4000, 'SystemPillDrawer for OnboardingView');
+    await evalJs(`Array.from(document.querySelectorAll('[data-testid="system-pill-drawer"] button')).find(b => /Edit Profile Details/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('Refine your Neural Identity'))`, 4000, 'Daylight OnboardingView');
+    await assertContrastClean('Daylight OnboardingView 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight OnboardingView 1440px', 1440);
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Back|Cancel/i.test((b.textContent || '').trim()))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[data-testid="mini-player-bar"]'))`, 4000, 'Return from OnboardingView');
 
     // Expand MiniPlayerBar back to PlayerView -> End & Rate -> verify DebriefView contrast
     await evalJs(`document.querySelector('[data-testid="mini-player-bar"] button[aria-label="Expand player"]')?.click()`);
     await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || '')))`, 4000, 'Return to PlayerView');
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('How did your mind'))`, 5000, 'DebriefView');
-    await assertContrastClean('Daylight DebriefView');
+    await assertContrastClean('Daylight DebriefView 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight DebriefView 1440px', 1440);
+
+    // FlagshipShowcaseView (?surface=showcase) in Daylight Mode (Photo + CAD X-Ray Blueprint) at 1440px & 375px
+    await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=showcase` });
+    await waitUntil(`Boolean(document.querySelector('[aria-label*="Acoustic"]')) || Boolean(document.body.innerText.includes('NootropicFM Earbuds'))`, 6000, 'Daylight FlagshipShowcaseView');
+    await assertContrastClean('Daylight FlagshipShowcaseView 1440px');
+    await assertDaylightLayoutAndSurfaces('Daylight FlagshipShowcaseView 1440px', 1440);
+    await saveDaylightShot('daylight_showcase_1440.png');
+    await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /CAD X-Ray/i.test(b.textContent || ''))?.click()`);
+    await waitUntil(`Boolean(document.querySelector('[aria-label*="Acoustic CAD X-Ray"]'))`, 4000, 'Daylight Showcase CAD X-Ray');
+    await assertContrastClean('Daylight FlagshipShowcaseView CAD 1440px');
+    await saveDaylightShot('daylight_showcase_cad_1440.png');
+    await sendCdp('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 150));
+    await assertContrastClean('Daylight FlagshipShowcaseView 375px');
+    await assertDaylightLayoutAndSurfaces('Daylight FlagshipShowcaseView 375px', 375);
+    await saveDaylightShot('daylight_showcase_375.png');
 
     ws.close();
   } finally {

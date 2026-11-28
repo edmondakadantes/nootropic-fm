@@ -2015,7 +2015,7 @@ export function PlayerView({
                   cy="90"
                   r="78"
                   fill="none"
-                  stroke="rgba(148,163,184,0.18)"
+                  stroke={themeMode === 'daylight' ? 'rgba(15, 23, 42, 0.10)' : 'rgba(148, 163, 184, 0.18)'}
                   strokeWidth="6"
                 />
                 <circle
@@ -2023,7 +2023,7 @@ export function PlayerView({
                   cy="90"
                   r="78"
                   fill="none"
-                  stroke="#34D399"
+                  stroke={themeMode === 'daylight' ? '#047857' : '#34D399'}
                   strokeWidth="6"
                   strokeLinecap="round"
                   strokeDasharray={2 * Math.PI * 78}

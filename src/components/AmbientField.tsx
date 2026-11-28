@@ -59,16 +59,17 @@ export function AmbientField({
         0,
         width * 0.5,
         0,
-        Math.max(width, height) * 0.62
+        Math.max(width, height) * 0.65
       );
-      wash.addColorStop(0, isDay ? 'rgba(4, 120, 87, 0.03)' : 'rgba(243, 241, 236, 0.025)');
-      wash.addColorStop(1, isDay ? 'rgba(226, 232, 240, 0)' : 'rgba(10, 11, 12, 0)');
+      wash.addColorStop(0, isDay ? 'rgba(255, 255, 255, 0.72)' : 'rgba(243, 241, 236, 0.025)');
+      wash.addColorStop(0.45, isDay ? 'rgba(4, 120, 87, 0.025)' : 'rgba(243, 241, 236, 0.01)');
+      wash.addColorStop(1, isDay ? 'rgba(241, 245, 249, 0)' : 'rgba(10, 11, 12, 0)');
       ctx.fillStyle = wash;
       ctx.fillRect(0, 0, width, height);
 
       // Crisp 48px studio calibration drafting grid (subtle precision ticks)
       const spacing = 48;
-      const tickColor = isDay ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255, 255, 255, 0.03)';
+      const tickColor = isDay ? 'rgba(15, 23, 42, 0.065)' : 'rgba(255, 255, 255, 0.03)';
       ctx.fillStyle = tickColor;
       ctx.strokeStyle = tickColor;
       ctx.lineWidth = 1;

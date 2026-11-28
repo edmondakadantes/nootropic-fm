@@ -123,11 +123,11 @@ export function LiveEnvelopeProof({
       ctx.clearRect(0, 0, w, h);
 
       // CRT surface (Night) or Crisp Lab Strip-Chart Surface (Daylight)
-      ctx.fillStyle = isDay ? '#E8EFF7' : '#030706';
+      ctx.fillStyle = isDay ? '#F4F8FB' : '#030706';
       ctx.fillRect(0, 0, w, h);
       const bgGlow = ctx.createRadialGradient(w * 0.5, h * 0.45, 10, w * 0.5, h * 0.5, w * 0.65);
-      bgGlow.addColorStop(0, isDay ? 'rgba(4, 120, 87, 0.05)' : 'rgba(52, 211, 153, 0.05)');
-      bgGlow.addColorStop(1, isDay ? 'rgba(232, 239, 247, 0)' : 'rgba(3, 7, 6, 0)');
+      bgGlow.addColorStop(0, isDay ? 'rgba(4, 120, 87, 0.045)' : 'rgba(52, 211, 153, 0.05)');
+      bgGlow.addColorStop(1, isDay ? 'rgba(244, 248, 251, 0)' : 'rgba(3, 7, 6, 0)');
       ctx.fillStyle = bgGlow;
       ctx.fillRect(0, 0, w, h);
 
@@ -528,7 +528,7 @@ export function LiveEnvelopeProof({
     <div
       className={
         isDay
-          ? 'rounded-2xl border border-slate-300 bg-[#DDE5EE] p-4 sm:p-5 shadow-sm space-y-3'
+          ? 'rounded-2xl border border-slate-200/90 bg-[#F8FAFC] p-4 sm:p-5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] space-y-3'
           : 'rounded-2xl border border-emerald-400/30 bg-[#080B0A] p-4 sm:p-5 shadow-[0_0_32px_rgba(16,185,129,0.07),inset_0_1px_0_rgba(52,211,153,0.14)] space-y-3'
       }
     >
@@ -601,7 +601,7 @@ export function LiveEnvelopeProof({
         width={640}
         height={192}
         className={`h-44 sm:h-52 w-full rounded-xl border ${
-          isDay ? 'border-slate-300 bg-[#E8EFF7]' : 'border-emerald-400/25 bg-[#030706]'
+          isDay ? 'border-slate-200 bg-[#F4F8FB]' : 'border-emerald-400/25 bg-[#030706]'
         }`}
       />
 
@@ -655,7 +655,7 @@ export function LiveEnvelopeProof({
         <div
           className={`grid grid-cols-4 gap-1 rounded-lg border px-2.5 py-1.5 font-mono-tech text-[10px] tabular-nums ${
             isDay
-              ? 'border-slate-300 bg-white text-[#1E293B]'
+              ? 'border-slate-200 bg-white text-[#1E293B]'
               : 'border-white/[0.06] bg-[#050706] text-[#D4D4CE]'
           }`}
         >

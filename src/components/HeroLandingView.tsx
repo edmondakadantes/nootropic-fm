@@ -122,10 +122,10 @@ function HeroScopeStrip({
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, w, h);
 
-      ctx.fillStyle = isDay ? '#E8EFF7' : '#030706';
+      ctx.fillStyle = isDay ? '#F4F8FB' : '#030706';
       ctx.fillRect(0, 0, w, h);
 
-      ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.13)' : 'rgba(52, 211, 153, 0.13)';
+      ctx.strokeStyle = isDay ? 'rgba(15, 23, 42, 0.10)' : 'rgba(52, 211, 153, 0.13)';
       ctx.lineWidth = 1;
       for (let gx = 1; gx < 8; gx++) {
         const x = Math.round((gx / 8) * w) + 0.5;
@@ -235,7 +235,7 @@ function HeroScopeStrip({
       onClick={onStart}
       className={`group w-full rounded-2xl border px-4 py-3 text-left transition ${
         isDay
-          ? 'border-slate-300 bg-[#DDE5EE] hover:border-emerald-700/60 shadow-sm'
+          ? 'border-slate-200/90 bg-white hover:border-emerald-700/50 shadow-[0_6px_20px_-10px_rgba(15,23,42,0.12)]'
           : 'border-emerald-400/25 bg-[#080B0A] hover:border-emerald-400/50 shadow-[0_0_24px_rgba(16,185,129,0.06)]'
       }`}
     >
@@ -260,7 +260,7 @@ function HeroScopeStrip({
         width={620}
         height={88}
         className={`h-20 w-full rounded-xl border ${
-          isDay ? 'border-slate-300 bg-[#E8EFF7]' : 'border-emerald-400/25 bg-[#030706]'
+          isDay ? 'border-slate-200 bg-[#F4F8FB]' : 'border-emerald-400/25 bg-[#030706]'
         }`}
       />
     </button>
@@ -406,7 +406,13 @@ export function HeroLandingView({
       </section>
 
       {/* UNIFIED 2D BRAIN MAP + STUDY MATCHER CONSOLE */}
-      <section className="animate-step w-full rounded-2xl border border-white/12 bg-[#101216] p-3.5 sm:p-6 space-y-5 shadow-[0_14px_44px_rgba(0,0,0,0.5)]">
+      <section
+        className={`animate-step w-full rounded-2xl border p-3.5 sm:p-6 space-y-5 ${
+          isDay
+            ? 'border-slate-200/90 bg-white shadow-[0_14px_36px_-18px_rgba(15,23,42,0.14)]'
+            : 'border-white/12 bg-[#101216] shadow-[0_14px_44px_rgba(0,0,0,0.5)]'
+        }`}
+      >
         {/* Top Instrument Header */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1.5 font-mono-tech text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#34D399]">
@@ -557,8 +563,12 @@ export function HeroLandingView({
                     <span
                       className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[9.5px] sm:text-[10.5px] font-medium transition ${
                         isSelected
-                          ? 'translate-y-4 bg-[#14171C] text-[#F3F1EC] ring-1 ring-emerald-400/45'
-                          : 'text-[#A3A39E] group-hover:bg-[#14171C] group-hover:text-[#F3F1EC]'
+                          ? isDay
+                            ? 'translate-y-4 bg-[#0F172A] text-white ring-1 ring-emerald-700/35 shadow-sm'
+                            : 'translate-y-4 bg-[#14171C] text-[#F3F1EC] ring-1 ring-emerald-400/45'
+                          : isDay
+                            ? 'bg-white/80 text-slate-600 group-hover:bg-white group-hover:text-slate-900'
+                            : 'text-[#A3A39E] group-hover:bg-[#14171C] group-hover:text-[#F3F1EC]'
                       }`}
                     >
                       {st.shortLabel}
@@ -688,7 +698,9 @@ export function HeroLandingView({
                       onClick={() => handleSelectGoal(goal.target, goal.defaultMin)}
                       className={`group flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
                         active
-                          ? 'border-emerald-400/70 bg-[#16231E] text-[#F3F1EC] shadow-[0_0_18px_rgba(52,211,153,0.12)]'
+                          ? isDay
+                            ? 'border-emerald-700/50 bg-[#E6F7F0] text-[#065F46] shadow-sm'
+                            : 'border-emerald-400/70 bg-[#16231E] text-[#F3F1EC] shadow-[0_0_18px_rgba(52,211,153,0.12)]'
                           : 'border-white/[0.08] bg-[#14161B] text-[#D4D4CE] hover:border-emerald-400/40 hover:bg-[#171B20]'
                       }`}
                     >

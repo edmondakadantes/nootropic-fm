@@ -24,8 +24,18 @@ export function SonicOrb({ mood = 'default', label, themeMode = 'night' }: Sonic
   const displayLabel = (label && label.trim()) || '48.0 KHZ · STUDIO DSP';
 
   return (
-    <div className="inline-flex items-center gap-2.5 rounded-lg border border-white/10 bg-[#0F1013] px-3 py-1.5 select-none">
-      <div className="flex h-4 w-9 shrink-0 items-center justify-center rounded border border-white/10 bg-[#060807] px-1">
+    <div
+      className={`inline-flex items-center gap-2.5 rounded-lg border px-3 py-1.5 select-none ${
+        isDay
+          ? 'border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)]'
+          : 'border-white/10 bg-[#0F1013]'
+      }`}
+    >
+      <div
+        className={`flex h-4 w-9 shrink-0 items-center justify-center rounded border px-1 ${
+          isDay ? 'border-slate-200 bg-[#F4F8FB]' : 'border-white/10 bg-[#060807]'
+        }`}
+      >
         <svg viewBox="0 0 32 12" className="h-3 w-full" fill="none" aria-hidden="true">
           <line x1="0" y1="6" x2="32" y2="6" className="studio-grid-strong" strokeWidth="0.6" />
           <path

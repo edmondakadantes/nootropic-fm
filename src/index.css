@@ -230,15 +230,15 @@ html[data-theme='daylight'] .studio-grid-strong {
 }
 
 /* ============================================================================
- * CIRCADIAN DAYLIGHT MODE — Crisp Architectural Acoustic Lab (Zero Yellow/Orange Cast)
- * Tier 0 (#E2E8F0): Cool slate-200 page canvas & tinted header
- * Tier 1 (#FFFFFF / #F8FAFC): Elevated stage cards with crisp slate borders & depth
- * Tier 2 (#E6ECF2): Recessed input wells, telemetry trays, 2D map & instrument bezels
- * Tier 3 (#F1F5F9): Tactile slate-100 interactive buttons & cards (clear separation on #FFFFFF)
- * Active Pill (#0F172A / #DDF3EA): High-contrast ink or deep-emerald active states
+ * CIRCADIAN DAYLIGHT MODE — Crisp Architectural Acoustic Lab (Zero Yellow Cast, Zero Dull Gray)
+ * Tier 0 (#F1F5F9): Airy bright slate-100 laboratory canvas & frosted white chrome
+ * Tier 1 (#FFFFFF): Crisp pure-white elevated stage & section cards with fine tactile depth
+ * Tier 2 (#F8FAFC): Recessed input wells, telemetry trays, 2D maps & instrument bezels
+ * Tier 3 (#F8FAFC / #FFFFFF): Tactile interactive buttons & nested keycaps (alternating cleanly)
+ * Active Pill (#0F172A / #E6F7F0): High-contrast slate ink or optical deep-emerald active states
  * ============================================================================ */
 html[data-theme='daylight'] body {
-  background-color: #E2E8F0;
+  background-color: #F1F5F9;
   color: #0F172A;
 }
 
@@ -246,46 +246,80 @@ html[data-theme='daylight'] .text-aurora {
   color: #047857 !important;
 }
 
-/* Tier 0: Page & Sticky Header */
+/* Tier 0: Airy Bright Page Canvas, Sticky Chrome & Desktop Rail */
 html[data-theme='daylight'] .bg-\[\#0A0B0C\] {
-  background-color: #E2E8F0 !important;
+  background-color: #F1F5F9 !important;
 }
 
 html[data-theme='daylight'] .bg-\[\#0A0B0C\]\/90,
 html[data-theme='daylight'] .lg\:bg-\[\#0B0C0E\]\/90,
 html[data-theme='daylight'] aside[aria-label='Desktop Studio Rail'] {
-  background-color: rgba(241, 245, 249, 0.96) !important;
+  background-color: rgba(255, 255, 255, 0.90) !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+html[data-theme='daylight'] nav[aria-label='Studio Mobile Navigation'] {
+  background-color: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: 0 -4px 20px -10px rgba(15, 23, 42, 0.10);
 }
 
 html[data-theme='daylight'] .bg-\[\#0A0B0C\]\/45 {
-  background-color: rgba(226, 232, 240, 0.84) !important;
+  background-color: rgba(248, 250, 252, 0.86) !important;
 }
 
-/* Tier 1: Main Stage Cards */
+/* Tier 1: Pure-White Elevated Stage & Section Cards */
 html[data-theme='daylight'] .glass-stage {
   background: #FFFFFF;
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  border: 1px solid rgba(15, 23, 42, 0.10);
   box-shadow:
-    0 18px 42px -22px rgba(15, 23, 42, 0.18),
-    0 2px 6px rgba(15, 23, 42, 0.06);
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 18px 40px -20px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
 }
 
 html[data-theme='daylight'] .glass-card {
+  background: #FFFFFF;
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.04),
+    0 10px 24px -14px rgba(15, 23, 42, 0.09);
+}
+
+html[data-theme='daylight'] .glass-stage .glass-card {
   background: #F8FAFC;
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  box-shadow: 0 4px 16px -10px rgba(15, 23, 42, 0.12);
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+html[data-theme='daylight'] [data-testid='mini-player-bar'],
+html[data-theme='daylight'] .bg-\[\#101114\]\/95,
+html[data-theme='daylight'] .bg-\[\#101114\],
+html[data-theme='daylight'] .bg-\[\#101216\],
+html[data-theme='daylight'] .bg-\[\#0E0F12\] {
+  background-color: #FFFFFF !important;
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.04),
+    0 12px 28px -16px rgba(15, 23, 42, 0.10);
+}
+
+html[data-theme='daylight'] .glass-stage .bg-\[\#101114\],
+html[data-theme='daylight'] .glass-card .bg-\[\#101114\],
+html[data-theme='daylight'] .glass-stage .bg-\[\#101216\] {
+  background-color: #F8FAFC !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 html[data-theme='daylight'] .glow-input-wrap {
-  background: rgba(15, 23, 42, 0.25);
+  background: rgba(15, 23, 42, 0.16);
 }
 
 html[data-theme='daylight'] .glow-input-wrap:focus-within {
   background: #047857;
-  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.16);
+  box-shadow: 0 0 0 3px rgba(4, 120, 87, 0.14);
 }
 
-/* Tier 2: Recessed Wells, Input Surfaces & Sub-Panels */
+/* Tier 2: Crisp Recessed Instrument Wells, Input Surfaces & Sub-Panels (#F8FAFC) */
+html[data-theme='daylight'] .bg-\[\#030706\],
 html[data-theme='daylight'] .bg-\[\#050706\],
 html[data-theme='daylight'] .bg-\[\#070809\],
 html[data-theme='daylight'] .bg-\[\#07090B\],
@@ -297,27 +331,21 @@ html[data-theme='daylight'] .bg-\[\#0B0E0D\],
 html[data-theme='daylight'] .bg-\[\#0C0E11\],
 html[data-theme='daylight'] .bg-\[\#0D0E10\],
 html[data-theme='daylight'] .bg-\[\#0D110F\],
-html[data-theme='daylight'] .bg-\[\#0E0F12\],
+html[data-theme='daylight'] .bg-\[\#0D1117\],
 html[data-theme='daylight'] .bg-\[\#0E1014\],
+html[data-theme='daylight'] .bg-\[\#0E1319\],
 html[data-theme='daylight'] .bg-\[\#0F1013\] {
-  background-color: #E6ECF2 !important;
+  background-color: #F8FAFC !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
 /* SonicOrb micro-window surface */
 html[data-theme='daylight'] .bg-\[\#060807\] {
   background-color: #FFFFFF !important;
-  border-color: rgba(15, 23, 42, 0.24) !important;
+  border-color: rgba(15, 23, 42, 0.16) !important;
 }
 
-/* Tier 3A: Outer Section Containers (#101114 / #101216) */
-html[data-theme='daylight'] .bg-\[\#101114\]\/95,
-html[data-theme='daylight'] .bg-\[\#101114\],
-html[data-theme='daylight'] .bg-\[\#101216\] {
-  background-color: #F8FAFC !important;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
-}
-
-/* Tier 3B: Tactile Slate-100 Interactive Cards, Buttons & Keycaps (clearly separated from #FFFFFF stage!) */
+/* Tier 3: Tactile Interactive Cards, Buttons & Keycaps (alternating cleanly against #FFFFFF & #F8FAFC) */
 html[data-theme='daylight'] .bg-\[\#101215\],
 html[data-theme='daylight'] .bg-\[\#111215\],
 html[data-theme='daylight'] .bg-\[\#121316\],
@@ -330,6 +358,8 @@ html[data-theme='daylight'] .bg-\[\#141518\],
 html[data-theme='daylight'] .bg-\[\#14161A\],
 html[data-theme='daylight'] .bg-\[\#14161B\],
 html[data-theme='daylight'] .bg-\[\#14171C\],
+html[data-theme='daylight'] .bg-\[\#14171D\],
+html[data-theme='daylight'] .bg-\[\#141820\],
 html[data-theme='daylight'] .bg-\[\#15171B\],
 html[data-theme='daylight'] .bg-\[\#15181E\],
 html[data-theme='daylight'] .bg-\[\#16181C\],
@@ -342,14 +372,37 @@ html[data-theme='daylight'] .bg-\[\#191C22\],
 html[data-theme='daylight'] .bg-\[\#1B1E24\],
 html[data-theme='daylight'] .bg-\[\#1C1F24\],
 html[data-theme='daylight'] .bg-\[\#1E2128\] {
-  background-color: #F1F5F9 !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.07);
+  background-color: #F8FAFC !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+/* Nested interactive keycaps/inputs inside Tier-2 (#F8FAFC) wells lift cleanly to pure #FFFFFF */
+html[data-theme='daylight']
+  :is(.bg-\[\#0B0C0E\], .bg-\[\#0C0E11\], .bg-\[\#0D0E10\], .bg-\[\#08090B\], .bg-\[\#0F1013\], .bg-\[\#0E1014\], .bg-\[\#101114\], .glass-card)
+  :is(
+    .bg-\[\#121417\],
+    .bg-\[\#121418\],
+    .bg-\[\#131417\],
+    .bg-\[\#131518\],
+    .bg-\[\#131519\],
+    .bg-\[\#141518\],
+    .bg-\[\#14161A\],
+    .bg-\[\#14161B\],
+    .bg-\[\#14171D\],
+    .bg-\[\#141820\],
+    .bg-\[\#15171B\],
+    .bg-\[\#16181C\],
+    .bg-\[\#181A1F\],
+    .subtle-chip
+  ) {
+  background-color: #FFFFFF !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
 /* Active Selected Goal Card (#16231E) */
 html[data-theme='daylight'] .bg-\[\#16231E\] {
-  background-color: #DDF3EA !important;
-  box-shadow: 0 2px 10px rgba(4, 120, 87, 0.14);
+  background-color: #E6F7F0 !important;
+  box-shadow: 0 4px 14px -4px rgba(4, 120, 87, 0.16) !important;
 }
 
 /* Translucent Floating Labels & Badges inside Maps/Cards */
@@ -363,31 +416,33 @@ html[data-theme='daylight'] .bg-\[\#121316\]\/95,
 html[data-theme='daylight'] .bg-\[\#121417\]\/95,
 html[data-theme='daylight'] .bg-\[\#15171B\]\/95 {
   background-color: rgba(255, 255, 255, 0.96) !important;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.10);
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
 }
 
 /* Modal Backdrops */
 html[data-theme='daylight'] .bg-black\/75,
 html[data-theme='daylight'] .bg-black\/80,
 html[data-theme='daylight'] .bg-black\/85 {
-  background-color: rgba(15, 23, 42, 0.56) !important;
+  background-color: rgba(15, 23, 42, 0.48) !important;
 }
 
 /* Tier 4: Interactive Chips, Hover Surfaces & Progress Rails */
 html[data-theme='daylight'] .subtle-chip {
-  background: #F1F5F9;
-  border: 1px solid rgba(15, 23, 42, 0.22);
+  background: #F8FAFC;
+  border: 1px solid rgba(15, 23, 42, 0.16);
   color: #1E293B;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 html[data-theme='daylight'] .subtle-chip:hover {
-  background: #DCE4EE;
-  border-color: rgba(15, 23, 42, 0.38);
+  background: #E2E8F0 !important;
+  border-color: rgba(15, 23, 42, 0.30);
   color: #0F172A;
 }
 
+html[data-theme='daylight'] .hover\:bg-\[\#141518\]:hover,
+html[data-theme='daylight'] .hover\:bg-\[\#14171C\]:hover,
 html[data-theme='daylight'] .hover\:bg-\[\#171B20\]:hover,
 html[data-theme='daylight'] .hover\:bg-\[\#191B1F\]:hover,
 html[data-theme='daylight'] .hover\:bg-\[\#191C21\]:hover,
@@ -399,7 +454,7 @@ html[data-theme='daylight'] .hover\:bg-white\/\[0\.05\]:hover,
 html[data-theme='daylight'] .hover\:bg-white\/\[0\.06\]:hover,
 html[data-theme='daylight'] .group:hover .group-hover\:bg-\[\#141518\],
 html[data-theme='daylight'] .group:hover .group-hover\:bg-\[\#14171C\] {
-  background-color: #DCE4EE !important;
+  background-color: #E2E8F0 !important;
 }
 
 html[data-theme='daylight'] .bg-white\/10,
@@ -409,7 +464,13 @@ html[data-theme='daylight'] .bg-white\/25,
 html[data-theme='daylight'] .bg-white\/\[0\.05\],
 html[data-theme='daylight'] .bg-white\/\[0\.06\],
 html[data-theme='daylight'] .bg-white\/\[0\.07\] {
-  background-color: rgba(15, 23, 42, 0.16) !important;
+  background-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-theme='daylight'] .h-1\.5.bg-white\/10,
+html[data-theme='daylight'] .h-2.bg-white\/10,
+html[data-theme='daylight'] .rounded-full.bg-white\/10 {
+  background-color: #E2E8F0 !important;
 }
 
 html[data-theme='daylight'] .bg-\[\#D4D4CE\],
@@ -418,7 +479,8 @@ html[data-theme='daylight'] .bg-\[\#8E8E88\] {
   background-color: #475569 !important;
 }
 
-html[data-theme='daylight'] .group:hover .group-hover\:bg-\[\#34D399\] {
+html[data-theme='daylight'] .group:hover .group-hover\:bg-\[\#34D399\],
+html[data-theme='daylight'] .hover\:bg-\[\#34D399\]:hover {
   background-color: #047857 !important;
 }
 
@@ -455,7 +517,7 @@ html[data-theme='daylight'] .text-white\/25 {
 
 html[data-theme='daylight'] input::placeholder,
 html[data-theme='daylight'] textarea::placeholder {
-  color: #475569 !important;
+  color: #64748B !important;
 }
 
 /* Optical Deep Emerald Semantic Accents */
@@ -515,10 +577,15 @@ html[data-theme='daylight'] .hover\:border-emerald-400:hover,
 html[data-theme='daylight'] .hover\:border-emerald-400\/40:hover,
 html[data-theme='daylight'] .hover\:border-emerald-400\/45:hover,
 html[data-theme='daylight'] .hover\:border-emerald-400\/50:hover,
+html[data-theme='daylight'] .hover\:border-emerald-400\/55:hover,
 html[data-theme='daylight'] .hover\:border-emerald-400\/60:hover,
 html[data-theme='daylight'] .hover\:border-emerald-400\/65:hover,
-html[data-theme='daylight'] .hover\:border-emerald-400\/70:hover {
-  border-color: rgba(4, 120, 87, 0.58) !important;
+html[data-theme='daylight'] .hover\:border-emerald-400\/70:hover,
+html[data-theme='daylight'] .hover\:border-emerald-400\/75:hover,
+html[data-theme='daylight'] .group:hover .group-hover\:border-emerald-400\/40,
+html[data-theme='daylight'] .focus\:border-emerald-400:focus,
+html[data-theme='daylight'] .focus\:border-emerald-400\/60:focus {
+  border-color: rgba(4, 120, 87, 0.45) !important;
 }
 
 html[data-theme='daylight'] .bg-emerald-500\/\[0\.04\],
@@ -542,7 +609,7 @@ html[data-theme='daylight'] .bg-emerald-400\/18,
 html[data-theme='daylight'] .bg-emerald-400\/20,
 html[data-theme='daylight'] .bg-emerald-400\/22,
 html[data-theme='daylight'] .bg-emerald-400\/25 {
-  background-color: #DDF3EA !important;
+  background-color: #E6F7F0 !important;
 }
 
 html[data-theme='daylight'] .hover\:bg-emerald-400\/16:hover,
@@ -551,10 +618,12 @@ html[data-theme='daylight'] .hover\:bg-emerald-400\/22:hover,
 html[data-theme='daylight'] .hover\:bg-emerald-400\/25:hover,
 html[data-theme='daylight'] .hover\:bg-emerald-500\/\[0\.06\]:hover,
 html[data-theme='daylight'] .hover\:bg-emerald-500\/10:hover,
+html[data-theme='daylight'] .hover\:bg-emerald-500\/14:hover,
 html[data-theme='daylight'] .hover\:bg-emerald-500\/15:hover,
 html[data-theme='daylight'] .hover\:bg-emerald-500\/20:hover,
-html[data-theme='daylight'] .hover\:bg-emerald-500\/25:hover {
-  background-color: #C7EBD9 !important;
+html[data-theme='daylight'] .hover\:bg-emerald-500\/25:hover,
+html[data-theme='daylight'] .group:hover .group-hover\:bg-emerald-500\/20 {
+  background-color: #CBEFE1 !important;
 }
 
 /* Crisp Cobalt / Indigo Semantic Accents (ZERO Yellow, ZERO Peach/Orange Wash in Daylight) */
@@ -590,13 +659,14 @@ html[data-theme='daylight'] .bg-amber-500\/10,
 html[data-theme='daylight'] .bg-amber-500\/12,
 html[data-theme='daylight'] .bg-amber-500\/15,
 html[data-theme='daylight'] .bg-amber-500\/20 {
-  background-color: #E0ECFF !important;
+  background-color: #EBF2FF !important;
 }
 
 html[data-theme='daylight'] .hover\:bg-amber-400\/15:hover,
 html[data-theme='daylight'] .hover\:bg-amber-400\/20:hover,
+html[data-theme='daylight'] .hover\:bg-amber-400\/25:hover,
 html[data-theme='daylight'] .hover\:bg-amber-500\/20:hover {
-  background-color: #C7DCFF !important;
+  background-color: #D8E7FF !important;
 }
 
 html[data-theme='daylight'] .border-amber-400\/25,
@@ -607,8 +677,9 @@ html[data-theme='daylight'] .border-amber-400\/45,
 html[data-theme='daylight'] .border-amber-400\/60,
 html[data-theme='daylight'] .border-amber-400\/65,
 html[data-theme='daylight'] .border-amber-400\/70,
-html[data-theme='daylight'] .hover\:border-amber-400\/45:hover {
-  border-color: rgba(30, 64, 175, 0.42) !important;
+html[data-theme='daylight'] .hover\:border-amber-400\/45:hover,
+html[data-theme='daylight'] .hover\:border-amber-400\/65:hover {
+  border-color: rgba(30, 64, 175, 0.32) !important;
 }
 
 html[data-theme='daylight'] .bg-amber-400 {
@@ -626,7 +697,8 @@ html[data-theme='daylight'] .bg-\[\#FBBF24\] {
   background-color: #1D4ED8 !important;
 }
 
-html[data-theme='daylight'] .text-sky-200 {
+html[data-theme='daylight'] .text-sky-200,
+html[data-theme='daylight'] .text-sky-300 {
   color: #0369A1 !important;
 }
 
@@ -634,8 +706,9 @@ html[data-theme='daylight'] .bg-sky-500\/10 {
   background-color: #E0F2FE !important;
 }
 
+html[data-theme='daylight'] .border-sky-400\/25,
 html[data-theme='daylight'] .border-sky-400\/35 {
-  border-color: rgba(3, 105, 161, 0.45) !important;
+  border-color: rgba(3, 105, 161, 0.35) !important;
 }
 
 html[data-theme='daylight'] .text-rose-100,
@@ -644,25 +717,31 @@ html[data-theme='daylight'] .text-rose-300 {
   color: #B91C1C !important;
 }
 
+html[data-theme='daylight'] .hover\:text-rose-200:hover {
+  color: #991B1B !important;
+}
+
 html[data-theme='daylight'] .bg-rose-500\/10,
 html[data-theme='daylight'] .bg-rose-500\/12,
 html[data-theme='daylight'] .bg-rose-500\/15,
 html[data-theme='daylight'] .bg-rose-500\/20 {
-  background-color: #FEE2E2 !important;
+  background-color: #FEF2F2 !important;
 }
 
+html[data-theme='daylight'] .hover\:bg-rose-500\/20:hover,
 html[data-theme='daylight'] .hover\:bg-rose-500\/25:hover {
-  background-color: #FECACA !important;
+  background-color: #FEE2E2 !important;
 }
 
 html[data-theme='daylight'] .border-rose-400,
 html[data-theme='daylight'] .border-rose-400\/35,
+html[data-theme='daylight'] .hover\:border-rose-400\/40:hover,
 html[data-theme='daylight'] .border-rose-400\/70,
 html[data-theme='daylight'] .border-rose-500\/30,
 html[data-theme='daylight'] .border-rose-500\/35,
 html[data-theme='daylight'] .border-rose-500\/40,
 html[data-theme='daylight'] .border-rose-500\/45 {
-  border-color: rgba(185, 28, 28, 0.48) !important;
+  border-color: rgba(185, 28, 28, 0.35) !important;
 }
 
 /* Crisp Slate Hairline Borders & Dividers */
@@ -674,15 +753,16 @@ html[data-theme='daylight'] .border-white\/25,
 html[data-theme='daylight'] .border-white\/\[0\.06\],
 html[data-theme='daylight'] .border-white\/\[0\.07\],
 html[data-theme='daylight'] .border-white\/\[0\.08\],
+html[data-theme='daylight'] .lg\:border-white\/\[0\.08\],
 html[data-theme='daylight'] .divide-white\/\[0\.06\] > :not([hidden]) ~ :not([hidden]),
 html[data-theme='daylight'] .divide-white\/\[0\.08\] > :not([hidden]) ~ :not([hidden]) {
-  border-color: rgba(15, 23, 42, 0.22) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
 }
 
 html[data-theme='daylight'] .border-white\/30,
 html[data-theme='daylight'] .border-white\/35 {
-  border-color: rgba(15, 23, 42, 0.56) !important;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12) !important;
+  border-color: rgba(15, 23, 42, 0.38) !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
 }
 
 html[data-theme='daylight'] .border-\[\#F3F1EC\] {
@@ -693,28 +773,33 @@ html[data-theme='daylight'] .hover\:border-white\/20:hover,
 html[data-theme='daylight'] .hover\:border-white\/25:hover,
 html[data-theme='daylight'] .hover\:border-white\/30:hover,
 html[data-theme='daylight'] .group:hover .group-hover\:border-white\/30 {
-  border-color: rgba(15, 23, 42, 0.42) !important;
+  border-color: rgba(15, 23, 42, 0.28) !important;
 }
 
 html[data-theme='daylight'] .ring-white\/15,
 html[data-theme='daylight'] .ring-white\/25 {
-  --tw-ring-color: rgba(15, 23, 42, 0.34) !important;
+  --tw-ring-color: rgba(15, 23, 42, 0.24) !important;
 }
 
 html[data-theme='daylight'] .ring-emerald-400\/30,
 html[data-theme='daylight'] .ring-emerald-400\/45 {
-  --tw-ring-color: rgba(4, 120, 87, 0.48) !important;
+  --tw-ring-color: rgba(4, 120, 87, 0.38) !important;
 }
 
 html[data-theme='daylight'] .accent-emerald-400 {
   accent-color: #047857;
 }
 
-/* Active Segmented Pills (#22252A) — Must stay AFTER text overrides! */
-html[data-theme='daylight'] .bg-\[\#22252A\] {
+/* Active Segmented Pills (#22252A & explicit Daylight dark chips) — Must stay AFTER text overrides! */
+html[data-theme='daylight'] .bg-\[\#22252A\],
+html[data-theme='daylight'] .bg-\[\#0F172A\].text-white {
   background-color: #0F172A !important;
   color: #FFFFFF !important;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.20);
+}
+
+html[data-theme='daylight'] .shadow-\[0_0_48px_rgba\(52\,211\,153\,0\.45\)\] {
+  box-shadow: 0 12px 30px -10px rgba(4, 120, 87, 0.28) !important;
 }
 
 html[data-theme='daylight'] .bg-\[\#22252A\] * {
@@ -735,8 +820,8 @@ html[data-theme='daylight'] .btn-aurora {
   color: #FFFFFF !important;
   border: 1px solid #0F172A;
   box-shadow:
-    0 2px 0 rgba(15, 23, 42, 0.22),
-    0 10px 22px -8px rgba(15, 23, 42, 0.28);
+    0 2px 0 rgba(15, 23, 42, 0.16),
+    0 10px 22px -8px rgba(15, 23, 42, 0.24);
 }
 
 html[data-theme='daylight'] .btn-aurora:disabled {
@@ -767,9 +852,9 @@ html[data-theme='daylight'] input[type='range'] {
 }
 
 html[data-theme='daylight'] select {
-  background-color: #F1F5F9 !important;
+  background-color: #FFFFFF !important;
   color: #0F172A !important;
-  border-color: rgba(15, 23, 42, 0.24) !important;
+  border-color: rgba(15, 23, 42, 0.18) !important;
 }
 
 html[data-theme='daylight'] select option {

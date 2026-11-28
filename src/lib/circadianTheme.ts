@@ -39,7 +39,7 @@ export function applyDocumentTheme(mode: ResolvedThemeMode): void {
   root.style.colorScheme = mode === 'daylight' ? 'light' : 'dark';
   const metaTheme = document.querySelector('meta[name="theme-color"]');
   if (metaTheme) {
-    metaTheme.setAttribute('content', mode === 'daylight' ? '#E2E8F0' : '#0A0B0C');
+    metaTheme.setAttribute('content', mode === 'daylight' ? '#F1F5F9' : '#0A0B0C');
   }
 }
 

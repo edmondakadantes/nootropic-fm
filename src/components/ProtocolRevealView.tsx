@@ -119,7 +119,7 @@ function SoundWavePreview({
   return (
     <div
       className={`rounded-xl border px-3 py-2 ${
-        isDay ? 'border-slate-300 bg-[#E8EFF7]' : 'border-white/10 bg-[#070809]'
+        isDay ? 'border-slate-200/90 bg-[#F4F8FB]' : 'border-white/10 bg-[#070809]'
       }`}
     >
       <div className="mb-1 flex items-center justify-between font-mono-tech text-[10px] text-[#8E8E88]">
