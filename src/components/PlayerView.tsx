@@ -2507,9 +2507,9 @@ export function PlayerView({
                 </div>
 
                 <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#131518] px-3 py-2">
-                  <div>
-                    <div className="text-xs font-semibold text-[#F3F1EC]">432 Hz Natural Tuning</div>
-                    <div className="font-mono-tech text-[10px] text-[#8E8E88]">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold text-[#F3F1EC]">432 Hz Tuning</div>
+                    <div className="truncate font-mono-tech text-[10px] text-[#8E8E88]">
                       Active: A={telemetry.tuningA4Hz} Hz
                     </div>
                   </div>
@@ -2517,7 +2517,7 @@ export function PlayerView({
                     type="button"
                     onClick={handleToggleTuning432}
                     aria-pressed={tuning432}
-                    className={`rounded-lg border px-2.5 py-1 font-mono-tech text-[11px] font-semibold transition ${
+                    className={`shrink-0 whitespace-nowrap rounded-lg border px-2.5 py-1 font-mono-tech text-[11px] font-semibold transition ${
                       tuning432
                         ? 'border-emerald-400/55 bg-emerald-500/15 text-[#34D399]'
                         : 'border-white/12 bg-[#14161A] text-[#A3A39E] hover:text-[#F3F1EC]'

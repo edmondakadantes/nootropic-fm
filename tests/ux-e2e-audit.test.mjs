@@ -788,7 +788,15 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
           }
         }
       })()`);
-      await new Promise((r) => setTimeout(r, 550));
+      await evalJs(`new Promise((resolve) => {
+        for (const anim of document.getAnimations()) {
+          if (typeof CSSTransition !== 'undefined' && anim instanceof CSSTransition) {
+            try { anim.finish(); } catch {}
+          }
+        }
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+      })`);
+      await new Promise((r) => setTimeout(r, 120));
     };
 
     const assertContrastWcag = async (label, modes = ['night', 'daylight']) => {
@@ -829,7 +837,7 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
               const bg = parseCssColor(getComputedStyle(cur).backgroundColor);
               if (bg && bg[3] > 0.01) layers.unshift(bg);
             }
-            let cur = isDay ? [246, 247, 249, 1] : [10, 11, 12, 1];
+            let cur = isDay ? [241, 245, 249, 1] : [10, 11, 12, 1];
             for (const l of layers) cur = blend(l, cur);
             return cur;
           };
@@ -1065,7 +1073,7 @@ test('Headless Edge E2E (375px Mobile & 1280px Desktop): Showcase + Studio 90s F
     await evalJs(`(() => {
       if (!window.__origSetTimeout) window.__origSetTimeout = window.setTimeout.bind(window);
       window.setTimeout = (fn, delay, ...args) => {
-        const d = typeof delay === 'number' && delay >= 500 && delay <= 4500 ? 22 : delay;
+        const d = typeof delay === 'number' && delay >= 500 && delay <= 4500 ? 110 : delay;
         return window.__origSetTimeout(fn, d, ...args);
       };
     })()`);

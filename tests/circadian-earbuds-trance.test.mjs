@@ -468,7 +468,9 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
           const fgRaw = parseRgb(st.color);
           const bg = effectiveBg(el);
           if (!fgRaw || !bg) continue;
-          const fg = fgRaw.a < 1 ? blend(fgRaw, bg) : fgRaw;
+          const elOpacity = Number.isFinite(Number(st.opacity)) ? Number(st.opacity) : 1;
+          const fgWithOpacity = { ...fgRaw, a: fgRaw.a * elOpacity };
+          const fg = fgWithOpacity.a < 1 ? blend(fgWithOpacity, bg) : fgWithOpacity;
           const l1 = Math.max(relLum(fg), relLum(bg));
           const l2 = Math.min(relLum(fg), relLum(bg));
           const ratio = (l1 + 0.05) / (l2 + 0.05);
@@ -640,6 +642,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
       return Boolean(Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || '')));
     })()`, 8000, 'Reveal');
     await assertContrastClean('Daylight Reveal');
+    await saveDaylightShot('daylight_reveal_1440.png');
 
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /apply layers\\s*&\\s*start/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(Array.from(document.querySelectorAll('button')).find(b => /End (Session|& Rate)/.test(b.textContent || '')))`, 8000, 'PlayerView');
@@ -702,12 +705,26 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await evalJs(`document.querySelector('button[aria-label="Close protocol blueprint"]')?.click()`);
     await new Promise((r) => setTimeout(r, 150));
 
-    // Verify PVT, Tapping & Huggins Modals in Daylight Mode
+    // Verify PVT (ready + active GREEN go flash), Tapping & Huggins Modals in Daylight Mode
+    await evalJs(`(() => {
+      if (!window.__origSetTimeout) window.__origSetTimeout = window.setTimeout.bind(window);
+      window.setTimeout = (fn, delay, ...args) => {
+        const d = typeof delay === 'number' && delay >= 500 && delay <= 4500 ? 60 : delay;
+        return window.__origSetTimeout(fn, d, ...args);
+      };
+    })()`);
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Run PVT/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.body.innerText.includes('Visual 1/RT Vigilance Check'))`, 4000, 'Daylight PVT Modal');
     await assertContrastClean('Daylight PvtBenchmarkModal 1440px');
     await assertDaylightLayoutAndSurfaces('Daylight PvtBenchmarkModal 1440px', 1440);
     await saveDaylightShot('daylight_pvt_1440.png');
+    await evalJs(`document.querySelector('button[data-pvt-target="true"]')?.click()`);
+    await waitUntil(`Boolean(document.body.innerText.includes('TAP NOW!'))`, 3000, 'Daylight PVT active GO flash');
+    await assertContrastClean('Daylight PvtBenchmarkModal GO flash 1440px');
+    const pvtGoBg = await evalJs(`getComputedStyle(document.querySelector('button[data-pvt-target="true"]')).backgroundColor`);
+    assert.equal(pvtGoBg, 'rgb(5, 150, 105)', `PVT GO flash must be vivid emerald #059669 in Daylight, got ${pvtGoBg}`);
+    await saveDaylightShot('daylight_pvt_go_1440.png');
+    await evalJs(`(() => { if (window.__origSetTimeout) window.setTimeout = window.__origSetTimeout; })()`);
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.body.innerText.includes('Visual 1/RT Vigilance Check')`, 3000, 'PVT Modal closed');
 
@@ -715,6 +732,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await waitUntil(`Boolean(document.body.innerText.includes('Intrinsic Motor Rhythm Check'))`, 4000, 'Daylight Tapping Modal');
     await assertContrastClean('Daylight TappingTestModal 1440px');
     await assertDaylightLayoutAndSurfaces('Daylight TappingTestModal 1440px', 1440);
+    await saveDaylightShot('daylight_tapping_1440.png');
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.body.innerText.includes('Intrinsic Motor Rhythm Check')`, 3000, 'Tapping Modal closed');
 
@@ -722,6 +740,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await waitUntil(`Boolean(document.body.innerText.includes('Huggins Pitch'))`, 4000, 'Daylight Huggins Modal');
     await assertContrastClean('Daylight HugginsCheckModal 1440px');
     await assertDaylightLayoutAndSurfaces('Daylight HugginsCheckModal 1440px', 1440);
+    await saveDaylightShot('daylight_huggins_1440.png');
     await sendCdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
     await waitUntil(`!document.body.innerText.includes('35s Dichotic Headphone Check')`, 3000, 'Huggins Modal closed');
 
@@ -740,6 +759,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await evalJs(`Array.from(document.querySelectorAll('[data-testid="system-pill-drawer"] button')).find(b => /Sound Systems|Earbuds/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`/Acoustic Hardware Lab/i.test(document.body.innerText)`, 4000, 'SoundSystemsModal');
     await assertContrastClean('Daylight SoundSystemsModal');
+    await saveDaylightShot('daylight_soundsystems_1440.png');
     await evalJs(`document.querySelector('button[aria-label="Close Sound Systems modal"]')?.click()`);
     await new Promise((r) => setTimeout(r, 100));
 
@@ -748,6 +768,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await evalJs(`Array.from(document.querySelectorAll('[data-testid="system-pill-drawer"] button')).find(b => /NootropicFM Pro Active|Unlock Pro/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`/Pro Subscription|Unlock Full Sessions/i.test(document.body.innerText)`, 4000, 'UpgradeProModal');
     await assertContrastClean('Daylight UpgradeProModal');
+    await saveDaylightShot('daylight_pro_modal_1440.png');
     await evalJs(`document.querySelector('button[aria-label="Close Pro modal"]')?.click()`);
     await waitUntil(`!document.querySelector('button[aria-label="Close Pro modal"]')`, 3000, 'UpgradeProModal closed');
 
@@ -791,6 +812,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await waitUntil(`Boolean(document.body.innerText.includes('Refine your Neural Identity'))`, 4000, 'Daylight OnboardingView');
     await assertContrastClean('Daylight OnboardingView 1440px');
     await assertDaylightLayoutAndSurfaces('Daylight OnboardingView 1440px', 1440);
+    await saveDaylightShot('daylight_onboarding_1440.png');
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /Back|Cancel/i.test((b.textContent || '').trim()))?.click()`);
     await waitUntil(`Boolean(document.querySelector('[data-testid="mini-player-bar"]'))`, 4000, 'Return from OnboardingView');
 
@@ -801,6 +823,7 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await waitUntil(`Boolean(document.body.innerText.includes('How did your mind'))`, 5000, 'DebriefView');
     await assertContrastClean('Daylight DebriefView 1440px');
     await assertDaylightLayoutAndSurfaces('Daylight DebriefView 1440px', 1440);
+    await saveDaylightShot('daylight_debrief_1440.png');
 
     // FlagshipShowcaseView (?surface=showcase) in Daylight Mode (Photo + CAD X-Ray Blueprint) at 1440px & 375px
     await sendCdp('Page.navigate', { url: `http://127.0.0.1:${port}/?surface=showcase` });
@@ -808,6 +831,11 @@ test('Headless Edge: Daylight/Night segmented switch, persistence across reload,
     await assertContrastClean('Daylight FlagshipShowcaseView 1440px');
     await assertDaylightLayoutAndSurfaces('Daylight FlagshipShowcaseView 1440px', 1440);
     await saveDaylightShot('daylight_showcase_1440.png');
+    await evalJs(`document.getElementById('hardware')?.scrollIntoView({ behavior: 'instant', block: 'start' })`);
+    await new Promise((r) => setTimeout(r, 150));
+    await saveDaylightShot('daylight_showcase_hardware_1440.png');
+    await evalJs(`window.scrollTo(0, 0)`);
+    await new Promise((r) => setTimeout(r, 100));
     await evalJs(`Array.from(document.querySelectorAll('button')).find(b => /CAD X-Ray/i.test(b.textContent || ''))?.click()`);
     await waitUntil(`Boolean(document.querySelector('[aria-label*="Acoustic CAD X-Ray"]'))`, 4000, 'Daylight Showcase CAD X-Ray');
     await assertContrastClean('Daylight FlagshipShowcaseView CAD 1440px');

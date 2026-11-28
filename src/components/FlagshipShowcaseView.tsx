@@ -440,43 +440,43 @@ export function FlagshipShowcaseView({
           <nav className="hidden items-center gap-1 xl:flex" aria-label="Showcase Sections">
             <a
               href="#hardware"
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               Earbuds
             </a>
             <a
               href="#demo"
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               30s Proof
             </a>
             <a
               href="/science/"
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               Science
             </a>
             <a
               href="/compare/"
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               Compare
             </a>
             <a
               href="#pricing"
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               Pricing
             </a>
             <a
               href="/investors/"
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               Investors
             </a>
             <a
               href="/contact/"
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
+              className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium text-[#D4D4CE] transition hover:bg-white/[0.05] hover:text-[#F3F1EC]"
             >
               Contact
             </a>
@@ -1122,7 +1122,9 @@ export function FlagshipShowcaseView({
                   key={item.code}
                   className={`flex flex-col justify-between overflow-hidden rounded-3xl border transition ${
                     selected
-                      ? 'border-emerald-400/65 bg-[#121417]'
+                      ? isDay
+                        ? 'border-emerald-700/50 bg-white shadow-md ring-1 ring-emerald-700/20'
+                        : 'border-emerald-400/65 bg-[#121417]'
                       : 'border-white/12 bg-[#101114] hover:border-white/25'
                   }`}
                 >

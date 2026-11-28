@@ -291,7 +291,7 @@ export function StudyLabView({
             type="button"
             disabled={!queryInput.trim() || searching}
             onClick={() => void handleSearch()}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#14161A] px-5 py-3.5 text-sm font-semibold text-[#F3F1EC] transition hover:border-emerald-400/45 hover:bg-[#191C21] disabled:opacity-45"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#14161A] px-5 py-3.5 text-sm font-semibold text-[#F3F1EC] transition hover:border-emerald-400/45 hover:bg-[#191C21] disabled:opacity-65"
           >
             {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4 text-[#34D399]" />}
             <span>Search PubMed &amp; Trials</span>

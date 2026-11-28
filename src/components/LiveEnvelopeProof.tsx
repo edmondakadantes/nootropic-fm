@@ -533,9 +533,9 @@ export function LiveEnvelopeProof({
       }
     >
       {/* Scope Header + Y(t) / X-Y Toggle + 1-Tap Pure Signal Audition (zero CLS across narrow mobile viewports) */}
-      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex flex-wrap items-center gap-2 font-mono-tech text-[10px]">
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 font-mono-tech text-[10px]">
             <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap font-semibold uppercase tracking-wider text-[#F3F1EC]">
               <Activity className="h-3.5 w-3.5 shrink-0 text-[#34D399]" />
               Oscilloscope · {scopeMode === 'dual_trace' ? 'Dual Trace' : 'X/Y Vector'}
@@ -544,54 +544,54 @@ export function LiveEnvelopeProof({
               Live Measured
             </span>
           </div>
-          <div
-            title={subtitleLine}
-            className="truncate whitespace-nowrap font-mono-tech text-[10px] tabular-nums text-[#8E8E88]"
-          >
-            {subtitleLine}
+
+          <div className="flex max-w-full flex-wrap items-center gap-1.5">
+            <div className="inline-flex shrink-0 rounded-lg border border-white/12 bg-[#141518] p-0.5 font-mono-tech text-[10px]">
+              <button
+                type="button"
+                onClick={() => setScopeMode('dual_trace')}
+                className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold ${
+                  scopeMode === 'dual_trace'
+                    ? 'bg-[#22252A] text-[#F3F1EC]'
+                    : 'text-[#8E8E88] hover:text-[#D4D4CE]'
+                }`}
+              >
+                Y(t) Wave
+              </button>
+              <button
+                type="button"
+                onClick={() => setScopeMode('xy_lissajous')}
+                className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold ${
+                  scopeMode === 'xy_lissajous'
+                    ? 'bg-[#22252A] text-[#34D399]'
+                    : 'text-[#8E8E88] hover:text-[#D4D4CE]'
+                }`}
+              >
+                X/Y Lissajous
+              </button>
+            </div>
+
+            {onTogglePureWave && (
+              <button
+                type="button"
+                onClick={onTogglePureWave}
+                className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                  isPureWave
+                    ? 'border-amber-400/60 bg-amber-400/15 text-amber-200'
+                    : 'border-white/15 bg-[#16181C] text-[#F3F1EC] hover:border-emerald-400/50 hover:bg-[#1B1E24]'
+                }`}
+              >
+                {isPureWave ? <Radio className="h-3 w-3 shrink-0" /> : <Waves className="h-3 w-3 shrink-0 text-[#34D399]" />}
+                {isPureWave ? 'Back to Mix' : 'Isolate Pure Wave'}
+              </button>
+            )}
           </div>
         </div>
-
-        <div className="flex shrink-0 items-center justify-between gap-1.5 sm:justify-end">
-          <div className="inline-flex shrink-0 rounded-lg border border-white/12 bg-[#141518] p-0.5 font-mono-tech text-[10px]">
-            <button
-              type="button"
-              onClick={() => setScopeMode('dual_trace')}
-              className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold ${
-                scopeMode === 'dual_trace'
-                  ? 'bg-[#22252A] text-[#F3F1EC]'
-                  : 'text-[#8E8E88] hover:text-[#D4D4CE]'
-              }`}
-            >
-              Y(t) Wave
-            </button>
-            <button
-              type="button"
-              onClick={() => setScopeMode('xy_lissajous')}
-              className={`whitespace-nowrap rounded-md px-2 py-1 font-semibold ${
-                scopeMode === 'xy_lissajous'
-                  ? 'bg-[#22252A] text-[#34D399]'
-                  : 'text-[#8E8E88] hover:text-[#D4D4CE]'
-              }`}
-            >
-              X/Y Lissajous
-            </button>
-          </div>
-
-          {onTogglePureWave && (
-            <button
-              type="button"
-              onClick={onTogglePureWave}
-              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
-                isPureWave
-                  ? 'border-amber-400/60 bg-amber-400/15 text-amber-200'
-                  : 'border-white/15 bg-[#16181C] text-[#F3F1EC] hover:border-emerald-400/50 hover:bg-[#1B1E24]'
-              }`}
-            >
-              {isPureWave ? <Radio className="h-3 w-3 shrink-0" /> : <Waves className="h-3 w-3 shrink-0 text-[#34D399]" />}
-              {isPureWave ? 'Back to Mix' : 'Isolate Pure Wave'}
-            </button>
-          )}
+        <div
+          title={subtitleLine}
+          className="truncate font-mono-tech text-[10px] tabular-nums text-[#8E8E88]"
+        >
+          {subtitleLine}
         </div>
       </div>
 

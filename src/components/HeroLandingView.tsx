@@ -457,7 +457,9 @@ export function HeroLandingView({
               onPointerCancel={() => setDragging(false)}
               role="application"
               aria-label="Interactive 2D Neural Brain Map"
-              className="relative h-[340px] w-full touch-none select-none overflow-hidden rounded-xl border border-emerald-400/20 bg-[#07090B] cursor-crosshair sm:h-[395px]"
+              className={`relative h-[340px] w-full touch-none select-none overflow-hidden rounded-xl border cursor-crosshair sm:h-[395px] ${
+                isDay ? 'border-slate-200/90 bg-[#F4F8FB] shadow-inner' : 'border-emerald-400/20 bg-[#07090B]'
+              }`}
             >
               {/* Radar Grid, Concentric Rings, Crosshair Lines & Explicit Trajectory Vector */}
               <svg
@@ -518,10 +520,10 @@ export function HeroLandingView({
               </svg>
 
               {/* Axis Labels */}
-              <div className="pointer-events-none absolute left-1/2 top-2 z-0 -translate-x-1/2 rounded bg-[#0E1014]/90 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.12em] text-[#A3A39E]">
+              <div className="pointer-events-none absolute left-1/2 top-1.5 z-0 -translate-x-1/2 whitespace-nowrap rounded bg-[#0E1014]/90 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.12em] text-[#A3A39E]">
                 ▲ High Energy · Wired
               </div>
-              <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2 rounded bg-[#0E1014]/90 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.12em] text-[#A3A39E]">
+              <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-0 -translate-x-1/2 whitespace-nowrap rounded bg-[#0E1014]/90 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.12em] text-[#A3A39E]">
                 ▼ Low Energy · Drained
               </div>
               <div className="pointer-events-none absolute left-1.5 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0E1014]/85 px-1.5 py-0.5 font-mono-tech text-[8.5px] uppercase tracking-wider text-[#8E8E88]">
@@ -533,7 +535,7 @@ export function HeroLandingView({
 
               {/* Prompt pill before Step 1 is selected */}
               {!coords && (
-                <div className="pointer-events-none absolute left-1/2 top-9 z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-emerald-400/30 bg-[#101417]/95 px-3 py-1 text-[11px] font-medium text-[#F3F1EC]">
+                <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md border border-emerald-400/30 bg-[#101417]/95 px-3 py-1 text-[11px] font-medium text-[#F3F1EC]">
                   Tap or drag anywhere on the map
                 </div>
               )}
@@ -583,7 +585,13 @@ export function HeroLandingView({
                   style={{ left: `${x2}%`, top: `${y2}%` }}
                   className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
                 >
-                  <span className="h-3.5 w-3.5 rounded-full border-2 border-[#F3F1EC] bg-[#34D399] shadow-[0_0_12px_rgba(52,211,153,0.85)]" />
+                  <span
+                    className={`h-3.5 w-3.5 rounded-full border-2 ${
+                      isDay
+                        ? 'border-white bg-[#047857] shadow-md'
+                        : 'border-[#F3F1EC] bg-[#34D399] shadow-[0_0_12px_rgba(52,211,153,0.85)]'
+                    }`}
+                  />
                   <span className="-mt-6 whitespace-nowrap rounded border border-emerald-400/40 bg-[#0B1210]/95 px-1.5 py-0.5 font-mono-tech text-[8.5px] font-bold uppercase tracking-wider text-[#34D399]">
                     ★ {activeGoalMeta.title}
                   </span>

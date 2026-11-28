@@ -261,9 +261,9 @@ export function TappingTestModal({ targetBpm = 100, onComplete, onClose }: Tappi
               }}
               className={`flex h-36 w-full flex-col items-center justify-center gap-2 rounded-2xl border transition-all select-none ${
                 tapPulse
-                  ? 'scale-[0.98] border-emerald-400 bg-emerald-500/25 text-[#F3F1EC]'
+                  ? 'tapping-pulse-flash scale-[0.98] border-emerald-400 bg-emerald-500/25 text-[#F3F1EC]'
                   : beatFlash && !inContinuation
-                    ? 'border-amber-400/70 bg-amber-400/15 text-amber-100'
+                    ? 'tapping-beat-flash border-amber-400/70 bg-amber-400/15 text-amber-100'
                     : 'border-white/15 bg-[#121417] text-[#D4D4CE] hover:border-emerald-400/45'
               }`}
             >

@@ -249,7 +249,7 @@ export function PvtBenchmarkModal({
             }}
             className={`flex h-52 w-full select-none flex-col items-center justify-center rounded-2xl border-2 transition-all ${
               stage === 'go'
-                ? 'border-emerald-300 bg-emerald-400/25 shadow-[0_0_48px_rgba(52,211,153,0.45)]'
+                ? 'pvt-go-flash border-emerald-300 bg-emerald-400/25 shadow-[0_0_48px_rgba(52,211,153,0.45)]'
                 : stage === 'false_start'
                   ? 'border-amber-400/70 bg-amber-500/15'
                   : stage === 'waiting'

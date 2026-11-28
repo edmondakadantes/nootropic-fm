@@ -161,10 +161,10 @@ export function NeuralCompassSelector({
         </svg>
 
         {/* Biological Axis Edge Labels */}
-        <div className="pointer-events-none absolute left-1/2 top-2 z-0 -translate-x-1/2 rounded bg-[#0F1013]/90 px-2.5 py-0.5 font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#A3A39E]">
+        <div className="pointer-events-none absolute left-1/2 top-1.5 z-0 -translate-x-1/2 whitespace-nowrap rounded bg-[#0F1013]/90 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.12em] text-[#A3A39E]">
           ▲ High Energy · Wired
         </div>
-        <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2 rounded bg-[#0F1013]/90 px-2.5 py-0.5 font-mono-tech text-[10px] uppercase tracking-[0.14em] text-[#A3A39E]">
+        <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-0 -translate-x-1/2 whitespace-nowrap rounded bg-[#0F1013]/90 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-[0.12em] text-[#A3A39E]">
           ▼ Low Energy · Drained
         </div>
         <div className="pointer-events-none absolute left-2 top-1/2 z-0 -translate-y-1/2 rounded bg-[#0F1013]/85 px-2 py-0.5 font-mono-tech text-[9px] uppercase tracking-wider text-[#8E8E88]">
@@ -233,7 +233,7 @@ export function NeuralCompassSelector({
             </span>
           </div>
         ) : (
-          <div className="pointer-events-none absolute left-1/2 top-9 z-10 -translate-x-1/2 rounded-md border border-white/15 bg-[#121417]/95 px-3 py-1 text-[11px] font-medium text-[#D4D4CE]">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md border border-white/15 bg-[#121417]/95 px-3 py-1 text-[11px] font-medium text-[#D4D4CE]">
             Tap or drag anywhere on the map
           </div>
         )}
@@ -396,7 +396,11 @@ export function NeuralTrajectoryPreview({
         </span>
       </div>
 
-      <div className="relative h-28 w-full overflow-hidden rounded-lg border border-white/[0.08] bg-[#08090B]">
+      <div
+        className={`relative h-28 w-full overflow-hidden rounded-lg border ${
+          isDay ? 'border-slate-200 bg-white' : 'border-white/[0.08] bg-[#08090B]'
+        }`}
+      >
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
           <defs>
             <linearGradient id="nfmVectorGrad" x1="0%" y1="0%" x2="100%" y2="0%">

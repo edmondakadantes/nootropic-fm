@@ -279,7 +279,7 @@ export function HugginsCheckModal({ onComplete, onClose }: HugginsCheckModalProp
                     onClick={() => handleChoice(slot)}
                     className={`flex flex-col items-center justify-center gap-1.5 rounded-xl border py-5 transition-all ${
                       isLit
-                        ? 'border-[#34D399] bg-emerald-400/20 text-[#F3F1EC] shadow-[0_0_24px_rgba(52,211,153,0.3)]'
+                        ? 'huggins-slot-lit border-[#34D399] bg-emerald-400/20 text-[#F3F1EC] shadow-[0_0_24px_rgba(52,211,153,0.3)]'
                         : stage === 'choose'
                           ? 'border-white/15 bg-[#121418] text-[#F3F1EC] hover:border-emerald-400/60 hover:bg-emerald-500/10'
                           : 'border-white/10 bg-[#0B0C0E] text-[#8E8E88]'
